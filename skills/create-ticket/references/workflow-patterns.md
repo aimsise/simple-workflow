@@ -22,6 +22,9 @@
 | `/security-scan` | skill | Security audit |
 | `/catchup` | skill | Branch state analysis and context recovery |
 | `/phase-clear` | skill | Work phase switching and context preservation |
+| `/ticket-done` | skill | Move completed tickets to .backlog/done/ |
+| `/ticket-blocked` | skill | Move blocked tickets to .backlog/blocked/ |
+| `/ticket-active` | skill | Resume tickets by moving to .backlog/active/ |
 | doc-writer | agent | Documentation generation |
 | planner | agent | Implementation plan design (opus) |
 | planner-light | agent | Lightweight planner for S-size tickets (sonnet) |
