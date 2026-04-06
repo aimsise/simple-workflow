@@ -2,6 +2,10 @@
   "name": "simple-workflow",
   "description": "Development workflow skills, agents, and hooks for Claude Code. Provides a complete scout > investigate > plan > implement > ship lifecycle.",
   "version": "1.0.0",
-  "author": "aimsise",
+  "author": {
+    "name": "aimsise",
+    "email": "helix2066@gmail.com"
+  },
+  "repository": "https://github.com/aimsise/simple-workflow",
   "license": "MIT"
 }
