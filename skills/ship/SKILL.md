@@ -19,6 +19,7 @@ allowed-tools:
   - "Bash(mv:*)"
   - "Bash(ls:*)"
   - "Bash(mkdir:*)"
+  - "Bash(date:*)"
 argument-hint: "[target-branch] [merge=true]"
 ---
 
@@ -72,6 +73,16 @@ Commits ahead of main:
 ## Phase 2: Create PR
 
 6. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
+
+6b. **Review gate**: Check for recent code review:
+    - Run `ls -t .docs/reviews/*.md 2>/dev/null | head -1` to find the most recent review file
+    - If a review file exists, compare its modification time with the last commit time
+    - If NO review file exists, or the review predates the last code-changing commit:
+      Print "No recent code review found. Recommended: run /review-diff before shipping."
+      Ask the user: "Proceed without review? (yes/no)"
+      - If "no" → stop
+      - If "yes" → proceed, and append "[shipped without /review-diff]" to the PR body in step 11
+
 7. Determine the target branch from arguments (default: main). If the target is not main, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against main).
 8. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
 9. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
