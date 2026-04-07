@@ -31,6 +31,10 @@ Current state:
 ### Phase 2: Approval
 3. Ask the user to approve before proceeding. If rejected, gather feedback and re-plan (return to Phase 1).
 
+3b. **Safety checkpoint**: After user approval, create a backup branch:
+    - Run `git branch backup/pre-refactor-$(date +%Y%m%d-%H%M%S)` to save current state
+    - Print: "Backup branch created: backup/pre-refactor-{timestamp}. To rollback: git checkout backup/pre-refactor-{timestamp}"
+
 ### Phase 3: Implementation + Review Loop (max 3 iterations)
 4. Implement changes according to the plan
 5. Run verification:

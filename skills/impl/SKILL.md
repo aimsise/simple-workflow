@@ -14,6 +14,7 @@ allowed-tools:
   - "Bash(git status:*)"
   - "Bash(git log:*)"
   - "Bash(git branch:*)"
+  - "Bash(git stash:*)"
 argument-hint: "[plan file path or additional instructions]"
 ---
 
@@ -60,9 +61,14 @@ Current state:
 
 8. If working tree has uncommitted changes unrelated to the plan, warn user.
 
+9. **Safety checkpoint**: Before starting implementation, create a rollback point:
+   - Run `git stash push -m "impl-checkpoint" --include-untracked` to save current working state
+   - If stash succeeds, print: "Safety checkpoint created. To rollback: git stash pop"
+   - If nothing to stash (clean working tree), skip silently
+
 ## Phase 2: Generator-Evaluator Loop (max 3 rounds)
 
-9. Spawn **Generator** agent:
+10. Spawn **Generator** agent:
    - Size S -> `implementer-light` (sonnet)
    - Size M/L/XL -> `implementer` (opus)
    - Prompt must include:
@@ -74,18 +80,18 @@ Current state:
      f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
    - Receive Generator's return value (changed files list + lint/test status)
 
-10. Run `git diff --stat` to capture change summary.
+11. Run `git diff --stat` to capture change summary.
 
-11. Spawn **Evaluator** agent (always sonnet):
+12. Spawn **Evaluator** agent (always sonnet):
    - Prompt must include:
      a. Full plan content
      b. Acceptance Criteria
-     c. Output of `git diff --stat` from step 10
+     c. Output of `git diff --stat` from step 11
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
    - Prompt must NOT include: Generator's return value (bias elimination)
    - Receive Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback)
 
-12. Decision:
+13. Decision:
     - **Status: PASS** → proceed to Phase 3
     - **Status: FAIL-CRITICAL** → stop immediately. Report CRITICAL issues to the user. Do NOT continue to further rounds.
     - **Status: FAIL** → save evaluator's **Feedback**, continue to next round
@@ -93,9 +99,9 @@ Current state:
 
 ## Phase 3: Summary
 
-13. Run `git status -s` and display.
+14. Run `git status -s` and display.
 
-14. Print summary:
+15. Print summary:
     - Plan file executed
     - Files changed or created
     - Generator-Evaluator rounds completed

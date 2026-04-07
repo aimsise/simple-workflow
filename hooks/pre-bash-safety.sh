@@ -16,6 +16,19 @@ if echo "$CHECKED" | grep -qE "$DESTRUCTIVE"; then
   exit 2
 fi
 
+# --- Bulk staging guard ---
+# git add . or git add -A may accidentally stage sensitive files
+BULK_ADD='git\s+add\s+(\.|--all|-A)\b'
+
+if echo "$COMMAND" | grep -qE "$BULK_ADD"; then
+  # Check if any sensitive files exist in the working tree changes
+  SENSITIVE_FILES=$(cd "$(echo "$INPUT" | jq -r '.cwd // "."')" && git status --short 2>/dev/null | grep -iE '\.(env|key|pem)$|credentials|secret' || true)
+  if [ -n "$SENSITIVE_FILES" ]; then
+    echo "Blocked: bulk staging (git add . / -A) with sensitive files in working tree: $SENSITIVE_FILES" >&2
+    exit 2
+  fi
+fi
+
 # --- Sensitive file staging patterns ---
 # Best-effort filename check; does not catch `git add .` or `git add -A`
 SENSITIVE_ADD='git\s+add\s+.*(\.(env|key|pem)\b|credentials|secret)'
