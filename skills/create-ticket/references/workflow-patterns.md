@@ -13,7 +13,7 @@
 | `/plan2doc` | skill | Create implementation plans. Outputs to `.backlog/active/{slug}/plan.md` for ticket work, or `.docs/plans/` otherwise |
 | `/plan2doc-light` | skill | Lightweight plan creation for S-size tickets (sonnet planner) |
 | `/scout` | skill | Chain codebase research + plan creation. Auto-routes S->plan2doc-light, M+->plan2doc |
-| `/impl` | skill | Implement latest plan with automated lint/test loop |
+| `/impl` | skill | Implement latest plan with Generator-Evaluator loop (S→sonnet, M+→opus) |
 | `/ship` | skill | Commit + create PR + optional squash-merge |
 | `/refactor` | skill | Refactoring with safety checks |
 | `/test` | skill | Create and run tests |
@@ -29,6 +29,9 @@
 | planner | agent | Implementation plan design (opus) |
 | planner-light | agent | Lightweight planner for S-size tickets (sonnet) |
 | researcher | agent | Code research and analysis |
+| implementer | agent | Code implementation (opus, M/L/XL tickets) |
+| implementer-light | agent | Code implementation (sonnet, S tickets) |
+| evaluator | agent | Skeptical implementation verification (sonnet) |
 
 ---
 
