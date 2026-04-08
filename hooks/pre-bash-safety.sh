@@ -22,7 +22,7 @@ BULK_ADD='git\s+add\s+(\.|--all|-A)\b'
 
 if echo "$COMMAND" | grep -qE "$BULK_ADD"; then
   # Check if any sensitive files exist in the working tree changes
-  SENSITIVE_FILES=$(cd "$(echo "$INPUT" | jq -r '.cwd // "."')" && git status --short 2>/dev/null | grep -iE '\.(env|key|pem)$|credentials|secret' || true)
+  SENSITIVE_FILES=$(cd "$(echo "$INPUT" | jq -r '.cwd // "."')" && git status --short 2>/dev/null | grep -iE '\.(env|key|pem|p12|pfx|jks|keystore)$|credentials($|[^a-z])|secret($|[^a-z])|(id_rsa|id_ed25519|id_ecdsa)($|[^a-z0-9_.])|\.npmrc$|\.pypirc$' || true)
   if [ -n "$SENSITIVE_FILES" ]; then
     echo "Blocked: bulk staging (git add . / -A) with sensitive files in working tree: $SENSITIVE_FILES" >&2
     exit 2
@@ -31,7 +31,7 @@ fi
 
 # --- Sensitive file staging patterns ---
 # Best-effort filename check; does not catch `git add .` or `git add -A`
-SENSITIVE_ADD='git\s+add\s+.*(\.(env|key|pem)\b|credentials|secret)'
+SENSITIVE_ADD='git\s+add\s+.*(\.(env|key|pem|p12|pfx|jks|keystore)\b|credentials\b|secret\b|id_rsa\b|id_ed25519\b|id_ecdsa\b|\.npmrc\b|\.pypirc\b)'
 
 if echo "$COMMAND" | grep -qE "$SENSITIVE_ADD"; then
   echo "Blocked: staging sensitive file not allowed: $COMMAND" >&2
