@@ -31,10 +31,17 @@ Current state:
 !`git status --short`
 !`git diff --stat`
 
+Current branch:
+!`git branch --show-current`
+
+Active tickets:
+!`ls -d .backlog/active/*/ 2>/dev/null || echo "(none)"`
+
 ## Instructions
 
 ### Phase 1: Planning
 1. Spawn the **planner** agent to create a refactoring plan
+1b. **Ticket detection**: Get the current branch name and active ticket list from the pre-computed context above. Match the current branch name against active ticket directory slugs (branch name contains the slug). If a match is found, set `ticket-dir` to `.backlog/active/{slug}`.
 2. Present the plan summary to the user
 
 ### Phase 2: Approval
@@ -49,7 +56,9 @@ Current state:
 5. Run verification:
    - Run the project's test command (as defined in CLAUDE.md or project conventions)
    - Run the project's lint command (as defined in CLAUDE.md or project conventions)
-6. Spawn the **code-reviewer** agent to review all changes
+6. Spawn the **code-reviewer** agent to review all changes:
+   - If `ticket-dir` is set: specify output path as `{ticket-dir}/quality-refactor-{n}.md` where {n} is the iteration number
+   - If `ticket-dir` is not set: let the code-reviewer use its default (`.docs/reviews/{topic}.md`)
 7. Evaluate review results:
    - **Critical = 0 AND Warning = 0** -> exit loop, proceed to Phase 4
    - **Issues found** -> fix the reported issues, then return to step 5

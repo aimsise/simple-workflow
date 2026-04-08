@@ -75,7 +75,8 @@ Commits ahead of main:
 6. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
 6b. **Review gate**: Check for recent code review:
-    - Run `ls -t .docs/reviews/*.md 2>/dev/null | head -1` to find the most recent review file
+    - If there is an active ticket (`.backlog/active/{slug}/`), run `ls -t .backlog/active/{slug}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file in that ticket directory
+    - If there is no active ticket, skip the review gate (no check needed)
     - If a review file exists, compare its modification time with the last commit time
     - If NO review file exists, or the review predates the last code-changing commit:
       Print "No recent code review found. Recommended: run /review-diff before shipping."
