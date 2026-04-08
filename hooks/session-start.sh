@@ -3,9 +3,11 @@ set -euo pipefail
 cat > /dev/null  # consume stdin
 
 # --- Cleanup old session logs (30+ days) ---
-if [ -d ".docs/reviews" ]; then
-  find .docs/reviews -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
-  find .docs/reviews -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
+if [ -d ".docs/compact-state" ]; then
+  find .docs/compact-state -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
+fi
+if [ -d ".docs/session-log" ]; then
+  find .docs/session-log -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
 
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")

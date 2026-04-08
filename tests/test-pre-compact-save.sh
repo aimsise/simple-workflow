@@ -12,17 +12,17 @@ HOOK="$HOOK_DIR/pre-compact-save.sh"
 # Trap to ensure cleanup on exit
 trap 'cleanup_test_repo' EXIT
 
-# Test 1: .docs/reviews/compact-state-*.md file is created
+# Test 1: .docs/compact-state/compact-state-*.md file is created
 setup_test_repo
 run_hook "$HOOK" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/reviews/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 if [ -n "$COMPACT_FILE" ] && [ -f "$COMPACT_FILE" ]; then
   echo -e "  ${GREEN}PASS${NC} compact-state-*.md file is created"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} compact-state-*.md file is created"
-  echo -e "       No matching file found in $TEST_REPO/.docs/reviews/"
+  echo -e "       No matching file found in $TEST_REPO/.docs/compact-state/"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

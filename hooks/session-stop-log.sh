@@ -4,9 +4,9 @@ cat > /dev/null  # consume stdin
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
-LOG_FILE=".docs/reviews/session-log-${TIMESTAMP}.md"
+LOG_FILE=".docs/session-log/session-log-${TIMESTAMP}.md"
 
-mkdir -p .docs/reviews
+mkdir -p .docs/session-log
 
 {
   echo "# Session Work Log"

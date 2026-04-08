@@ -27,7 +27,7 @@ Working tree:
 
 ## Instructions
 
-1. Check for recent compact-state files in `.docs/reviews/compact-state-*.md` (most recent first). If found, read the latest one to recover pre-compaction context (active tickets, plans, evaluation state).
+1. Check for recent compact-state files in `.docs/compact-state/compact-state-*.md` (most recent first). If found, read the latest one to recover pre-compaction context (active tickets, plans, evaluation state).
 2. Spawn the **researcher** agent to analyze:
    - What has changed on this branch vs main
    - What the changes are trying to accomplish

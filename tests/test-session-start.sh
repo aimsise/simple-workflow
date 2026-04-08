@@ -165,15 +165,16 @@ echo "--- Session log cleanup tests ---"
 
 # Test: Old session-log files (31+ days) are deleted
 setup_session_repo
-mkdir -p "$TEST_REPO/.docs/reviews"
-echo "old log" > "$TEST_REPO/.docs/reviews/session-log-20250101_000000.md"
+mkdir -p "$TEST_REPO/.docs/session-log"
+echo "old log" > "$TEST_REPO/.docs/session-log/session-log-20250101_000000.md"
 # Set modification time to 35 days ago
-touch -t "$(date -v-35d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '35 days ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$TEST_REPO/.docs/reviews/session-log-20250101_000000.md" 2>/dev/null || true
-echo "old compact" > "$TEST_REPO/.docs/reviews/compact-state-20250101_000000.md"
-touch -t "$(date -v-35d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '35 days ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$TEST_REPO/.docs/reviews/compact-state-20250101_000000.md" 2>/dev/null || true
+touch -t "$(date -v-35d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '35 days ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$TEST_REPO/.docs/session-log/session-log-20250101_000000.md" 2>/dev/null || true
+mkdir -p "$TEST_REPO/.docs/compact-state"
+echo "old compact" > "$TEST_REPO/.docs/compact-state/compact-state-20250101_000000.md"
+touch -t "$(date -v-35d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '35 days ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$TEST_REPO/.docs/compact-state/compact-state-20250101_000000.md" 2>/dev/null || true
 run_hook "$HOOK_DIR/session-start.sh" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ ! -f "$TEST_REPO/.docs/reviews/session-log-20250101_000000.md" ] && [ ! -f "$TEST_REPO/.docs/reviews/compact-state-20250101_000000.md" ]; then
+if [ ! -f "$TEST_REPO/.docs/session-log/session-log-20250101_000000.md" ] && [ ! -f "$TEST_REPO/.docs/compact-state/compact-state-20250101_000000.md" ]; then
   echo -e "  ${GREEN}PASS${NC} Old session logs (31+ days) are deleted"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -184,13 +185,14 @@ cleanup_test_repo
 
 # Test: Recent session-log files (< 30 days) are preserved
 setup_session_repo
-mkdir -p "$TEST_REPO/.docs/reviews"
-echo "recent log" > "$TEST_REPO/.docs/reviews/session-log-recent.md"
-echo "recent compact" > "$TEST_REPO/.docs/reviews/compact-state-recent.md"
+mkdir -p "$TEST_REPO/.docs/session-log"
+echo "recent log" > "$TEST_REPO/.docs/session-log/session-log-recent.md"
+mkdir -p "$TEST_REPO/.docs/compact-state"
+echo "recent compact" > "$TEST_REPO/.docs/compact-state/compact-state-recent.md"
 # These files are just created so they're recent (< 30 days)
 run_hook "$HOOK_DIR/session-start.sh" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ -f "$TEST_REPO/.docs/reviews/session-log-recent.md" ] && [ -f "$TEST_REPO/.docs/reviews/compact-state-recent.md" ]; then
+if [ -f "$TEST_REPO/.docs/session-log/session-log-recent.md" ] && [ -f "$TEST_REPO/.docs/compact-state/compact-state-recent.md" ]; then
   echo -e "  ${GREEN}PASS${NC} Recent session logs (< 30 days) are preserved"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
