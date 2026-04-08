@@ -18,7 +18,7 @@ fi
 
 # --- Bulk staging guard ---
 # git add . or git add -A may accidentally stage sensitive files
-BULK_ADD='git\s+add\s+(\.|--all|-A)\b'
+BULK_ADD='git\s+add\s+(\.(\s|$)|--all\b|-A\b)'
 
 if echo "$COMMAND" | grep -qE "$BULK_ADD"; then
   # Check if any sensitive files exist in the working tree changes
