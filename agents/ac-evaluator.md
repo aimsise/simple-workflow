@@ -73,7 +73,7 @@ Independently verify by running:
 - **FAIL**: One or more AC fail, OR [HIGH] issues exist
 - **FAIL-CRITICAL**: Any [CRITICAL] issue exists
 
-Save your detailed evaluation report to the file path specified by the caller. If no path is specified, save to `.docs/reviews/eval-report.md`.
+Save your detailed evaluation report to the file path specified by the caller. If no path is specified, save to `.docs/eval-round/{topic}-eval-report.md` where {topic} is derived from the subject of the evaluation.
 
 You MUST NOT modify source code. Use Write only to save your evaluation report.
 

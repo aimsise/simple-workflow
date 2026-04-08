@@ -4,9 +4,9 @@ cat > /dev/null  # consume stdin
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
-SAVE_FILE=".docs/reviews/compact-state-${TIMESTAMP}.md"
+SAVE_FILE=".docs/compact-state/compact-state-${TIMESTAMP}.md"
 
-mkdir -p .docs/reviews
+mkdir -p .docs/compact-state
 
 {
   echo "# Work State Before Compact"

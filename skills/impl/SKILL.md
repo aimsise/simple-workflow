@@ -109,7 +109,7 @@ Current state:
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
      e. Report save path:
         - If plan is in `.backlog/active/{slug}/` -> "Save your evaluation report to `.backlog/active/{slug}/eval-round-{n}.md`"
-        - Otherwise -> "Save your evaluation report to `.docs/reviews/eval-round-{n}.md`"
+        - Otherwise -> check if any directory in `.backlog/active/` matches the current branch name (branch name contains the slug). If a match is found, use `.backlog/active/{slug}/eval-round-{n}.md`. If no match, use `.docs/eval-round/{topic}-eval-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
         Where {n} is the current round number (1, 2, or 3).
    - Prompt must NOT include: Generator's return value (bias elimination)
    - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback)
@@ -126,7 +126,7 @@ Current state:
      c. "Review the code changes for quality, security, performance, and convention compliance. AC compliance has already been verified by a separate evaluator. Refer to CLAUDE.md or project conventions for coding standards."
      d. Report save path:
         - If plan is in `.backlog/active/{slug}/` -> "Save your review report to `.backlog/active/{slug}/quality-round-{n}.md`"
-        - Otherwise -> "Save your review report to `.docs/reviews/quality-round-{n}.md`"
+        - Otherwise -> check if any directory in `.backlog/active/` matches the current branch name (branch name contains the slug). If a match is found, use `.backlog/active/{slug}/quality-round-{n}.md`. If no match, use `.docs/quality-round/{topic}-quality-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
    - Prompt must NOT include: Generator's return value or AC Evaluator's return value
    - Receive code-reviewer's return value (Critical/Warnings/Suggestions)
 
