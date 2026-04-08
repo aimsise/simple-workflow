@@ -19,6 +19,17 @@ You will be evaluated by an independent evaluator against the Acceptance Criteri
 
 Adhere to project constraints defined in CLAUDE.md or project conventions.
 
+## Test-First Protocol
+
+If the project has an existing test framework (test files exist, test command is defined in CLAUDE.md or project conventions):
+
+1. For each Acceptance Criterion, write a minimal failing test that verifies the criterion BEFORE writing the implementation code
+2. Run the test command to confirm the test FAILS (RED) — this validates the test actually tests something
+3. Implement the code to make the test pass (GREEN)
+4. If no existing test framework is detected, skip this protocol and implement directly
+
+This protocol applies to functional AC only. Skip for non-testable criteria (e.g., "code follows naming conventions").
+
 After implementing, run the project's lint command (as defined in CLAUDE.md or project conventions). If lint fails, fix and re-run (max 3 attempts).
 
 After lint passes, run the project's test command (as defined in CLAUDE.md or project conventions). If tests fail, fix and re-run (max 3 attempts).

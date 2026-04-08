@@ -32,7 +32,7 @@
 | ticket-evaluator | agent | Ticket quality evaluation with 5 quality gates (sonnet) |
 | implementer | agent | Code implementation (opus, M/L/XL tickets) |
 | implementer-light | agent | Code implementation (sonnet, S tickets) |
-| evaluator | agent | Skeptical implementation verification (sonnet) |
+| ac-evaluator | agent | AC compliance verification (sonnet) |
 
 ---
 
