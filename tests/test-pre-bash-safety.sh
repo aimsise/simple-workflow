@@ -85,7 +85,7 @@ echo ""
 # ============================================================
 echo "--- Category B: Pipe/chain detection ---"
 
-assert_allowed "ALLOW: find . | xargs rm -rf (xargs between pipe and rm, not caught)" \
+assert_blocked "BLOCK: find . | xargs rm -rf (indirect destructive via xargs)" \
   "find . | xargs rm -rf"
 
 assert_blocked "BLOCK: ls ; rm -rf /tmp" \
@@ -379,6 +379,40 @@ assert_allowed "ALLOW: cat rm-rf-notes.txt (rm in path, not a command)" \
 
 assert_allowed "ALLOW: npm run clean:build (clean is not targeted)" \
   "npm run clean:build"
+
+echo ""
+
+# ============================================================
+# Category I: Subshell / backtick / indirect destructive (BLOCK)
+# ============================================================
+echo "--- Category I: Subshell and indirect destructive ---"
+
+assert_blocked "BLOCK: rm -rf in \$() subshell" \
+  'echo $(rm -rf /)'
+
+assert_blocked "BLOCK: rm -rf in backtick substitution" \
+  'echo `rm -rf /`'
+
+assert_blocked "BLOCK: git push --force in \$() subshell" \
+  'result=$(git push --force origin main)'
+
+assert_blocked "BLOCK: xargs rm -rf" \
+  'find . -name "*.tmp" | xargs rm -rf'
+
+assert_blocked "BLOCK: find -exec rm -rf" \
+  'find /tmp -exec rm -rf {} \;'
+
+assert_blocked "BLOCK: xargs rm -fr (flag variant)" \
+  'cat files.txt | xargs rm -fr'
+
+assert_allowed "ALLOW: echo \$(date) (safe subshell)" \
+  'echo $(date)'
+
+assert_allowed "ALLOW: xargs cat (safe xargs)" \
+  'find . -name "*.md" | xargs cat'
+
+assert_allowed "ALLOW: find -exec cat (safe find)" \
+  'find . -name "*.md" -exec cat {} \;'
 
 echo ""
 

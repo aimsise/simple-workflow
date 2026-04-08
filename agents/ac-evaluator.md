@@ -34,7 +34,6 @@ tools:
   - "Bash(go test:*)"
   - "Bash(go vet:*)"
   - "Bash(make:*)"
-  - "Bash(bash :*)"
   # Read-only utilities
   - "Bash(cat :*)"
   - "Bash(ls:*)"

@@ -27,13 +27,14 @@ Working tree:
 
 ## Instructions
 
-1. Spawn the **researcher** agent to analyze:
+1. Check for recent compact-state files in `.docs/reviews/compact-state-*.md` (most recent first). If found, read the latest one to recover pre-compaction context (active tickets, plans, evaluation state).
+2. Spawn the **researcher** agent to analyze:
    - What has changed on this branch vs main
    - What the changes are trying to accomplish
    - Current state of work (complete, in-progress, blocked)
    - Check `.backlog/active/` for any active tickets and their artifacts (investigation.md, plan.md)
-2. Check for existing docs in `.docs/plans/`, `.docs/research/`, and `.backlog/active/`
-3. Report a concise summary:
+3. Check for existing docs in `.docs/plans/`, `.docs/research/`, and `.backlog/active/`
+4. Report a concise summary:
    - Current situation (branch, what's been done)
    - Active tickets in `.backlog/active/` (list slug and available artifacts)
    - Relevant .docs/plans files to read

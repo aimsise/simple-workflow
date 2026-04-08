@@ -1,10 +1,9 @@
 ---
 name: impl
 description: >-
-  Implement the latest plan using Generator → AC Evaluator → Code Quality Reviewer
-  architecture. Routes S-size to sonnet implementer, M+ to opus implementer.
-  Independent AC evaluator verifies plan adherence; code-reviewer checks quality.
-  Use after /scout or /plan2doc to execute the plan.
+  Use after /scout or /plan2doc to execute the implementation plan.
+  Implements the latest plan with independent AC verification and
+  code quality review.
 disable-model-invocation: true
 allowed-tools:
   - Agent
@@ -70,7 +69,7 @@ Current state:
    - Prompt: "You are preparing a verification plan. For each Acceptance Criterion below, describe HOW you will verify it (what commands to run, what to check in the code, what edge cases to test). Do NOT evaluate any implementation — no code has been written yet. Return only the verification plan."
    - Include: Full plan content, Acceptance Criteria
    - Receive: Evaluator's verification plan
-   - If Evaluator fails or returns partial: skip this step silently and proceed (non-blocking)
+   - If Evaluator fails or returns partial: warn user "Evaluator Dry Run failed. Verification plan unavailable. Proceeding without bilateral agreement." Continue with implementation.
    - Save the verification plan for inclusion in Generator prompt
 
 9. If related investigation file exists (same directory `investigation.md` or latest in `.docs/research/`), read it.
@@ -92,12 +91,10 @@ Current state:
      b. Acceptance Criteria (highlighted: "You will be evaluated by an independent evaluator against these criteria")
      c. Investigation file content (if exists)
      d. User's additional instructions (if any)
-     e. Round 2+: Read the previous round's feedback files and include content:
-        ## Previous Round Feedback
-        ### AC Evaluator
-        [Read {eval-round-{n-1}.md path} for ac-evaluator's detailed feedback, or "All AC passed"]
-        ### Code Quality Reviewer
-        [Read {quality-round-{n-1}.md path} for quality feedback, or "Not run (AC failed)" or "No issues"]
+     e. Round 2+: Pass the previous round's feedback file paths to the Generator:
+        "Read the following feedback files from the previous evaluation round before implementing:
+        - AC Evaluator feedback: {eval-round-{n-1}.md path} (or 'All AC passed' if none)
+        - Code Quality feedback: {quality-round-{n-1}.md path} (or 'Not run' / 'No issues' if none)"
      f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
      g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
    - Receive Generator's return value (changed files list + lint/test status)
@@ -159,3 +156,11 @@ Current state:
 - **AC Evaluator failure** (Status: failed or partial): Report error. Generator's changes remain in place.
 - **Code Quality Reviewer failure** (Status: failed or partial): Treat as no quality issues. Proceed with AC Evaluator result only.
 - **3 rounds FAIL**: Report remaining issues. Code remains changed.
+
+## Evaluator Tuning
+
+After completing multiple /impl cycles, review evaluator performance:
+1. Read saved evaluation reports (`eval-round-*.md`, `quality-round-*.md`) across recent tickets
+2. Identify patterns: Does the evaluator consistently miss certain issue types? Over-flag certain patterns?
+3. If patterns are found, update the evaluator agent prompt (`agents/ac-evaluator.md` or `agents/code-reviewer.md`) to address them
+4. Track prompt changes in git commit messages for auditability

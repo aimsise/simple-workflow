@@ -12,6 +12,7 @@ allowed-tools:
   - Write
   - Edit
   - AskUserQuestion
+disable-model-invocation: true
 argument-hint: "<ticket description>"
 ---
 

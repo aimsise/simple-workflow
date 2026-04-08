@@ -1,9 +1,9 @@
 ---
 name: phase-clear
 description: >-
-  Switch work phase with context preservation guidance. Auto-detects current
-  phase from git state and .docs/ contents when no argument provided.
-  Supports investigate/plan/implement/test/review/commit phases.
+  Use when switching between development phases (investigate, plan,
+  implement, test, review, commit) or when unsure what to do next.
+  Auto-detects current phase from git state when no argument provided.
 allowed-tools:
   - "Bash(git:*)"
   - "Bash(ls:*)"
