@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 # テストヘルパー - 外部依存なし
 
 TESTS_PASSED=0
