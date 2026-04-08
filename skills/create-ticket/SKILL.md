@@ -15,6 +15,14 @@ allowed-tools:
 argument-hint: "<ticket description>"
 ---
 
+## Pre-computed Context
+
+Workflow patterns:
+!`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/workflow-patterns.md" 2>/dev/null || echo "[WARNING: workflow-patterns.md not found]"`
+
+Ticket template:
+!`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/ticket-template.md" 2>/dev/null || echo "[WARNING: ticket-template.md not found]"`
+
 # /create-ticket
 
 Ticket description: $ARGUMENTS
@@ -54,7 +62,7 @@ Use the planner agent to design:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes)
 2. Appropriate category (Security / CodeQuality / Doc / DevOps / Community) and size (S/M/L/XL)
-3. Workflow recommendations based on category x size, referencing `references/workflow-patterns.md`
+3. Workflow recommendations based on category x size, using the workflow patterns from Pre-computed Context above
 
 Provide the planner agent with the following additional context:
 - User's answers from Phase 2 (scope decisions, priority, edge cases, constraints)
@@ -83,7 +91,7 @@ Evaluate the ticket quality using the ticket-evaluator agent.
 
 ### Phase 5: Output
 
-Read `references/ticket-template.md` for the output format.
+Use the ticket template from Pre-computed Context above for the output format.
 
 After generating the ticket content:
 
@@ -101,7 +109,7 @@ After writing the ticket, print a summary:
 ### Workflow selection guide
 
 Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present),
-listing installed plugin skills/agents, and referencing patterns in `references/workflow-patterns.md` to design the workflow.
+listing installed plugin skills/agents, and using the workflow patterns from Pre-computed Context above to design the workflow.
 
 **Category-specific guidelines**:
 - **Security**: Wrap with `/security-scan` before and after. Spec-first with documentation leading.
