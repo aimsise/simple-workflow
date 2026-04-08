@@ -1,0 +1,12 @@
+# Claude Code - Personal/Local
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
+
+# Auto-generated documentation
+.docs/
+
+# Environment
+.env
+.env.local
+.env.*.local
