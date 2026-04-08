@@ -1,9 +1,9 @@
 ---
 name: scout
 description: >-
-  Investigate codebase and create an implementation plan by chaining
-  /investigate (researcher, sonnet) and /plan2doc or /plan2doc-light.
-  Routes to sonnet planner for S-size tickets, opus for M+.
+  Use after creating a ticket or when starting work on a new feature.
+  Investigates the codebase and creates an implementation plan for the
+  specified topic or active ticket.
 disable-model-invocation: true
 allowed-tools:
   - Skill

@@ -12,7 +12,16 @@ allowed-tools:
   - Grep
   - Write
   - Edit
-  - "Bash(*)"
+  - "Bash(git:*)"
+  - "Bash(npm:*)"
+  - "Bash(npx:*)"
+  - "Bash(yarn:*)"
+  - "Bash(pnpm:*)"
+  - "Bash(bun:*)"
+  - "Bash(pytest:*)"
+  - "Bash(cargo:*)"
+  - "Bash(go :*)"
+  - "Bash(make:*)"
 argument-hint: "<refactoring target and goal>"
 ---
 

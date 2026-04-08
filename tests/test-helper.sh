@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034
 # テストヘルパー - 外部依存なし
 
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_TOTAL=0
+# shellcheck disable=SC2034
 CURRENT_TEST=""
 
 # テスト対象フックのルートディレクトリ
@@ -13,6 +13,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../hooks" && pwd)"
 # カラー出力
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+# shellcheck disable=SC2034
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
@@ -41,6 +42,7 @@ assert_allowed() {
   local description="$1"
   local command="$2"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # shellcheck disable=SC2034
   CURRENT_TEST="$description"
 
   run_safety_hook "$command"
@@ -62,6 +64,7 @@ assert_blocked() {
   local description="$1"
   local command="$2"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # shellcheck disable=SC2034
   CURRENT_TEST="$description"
 
   run_safety_hook "$command"
@@ -83,6 +86,7 @@ assert_blocked_message() {
   local command="$2"
   local expected_message="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # shellcheck disable=SC2034
   CURRENT_TEST="$description"
 
   run_safety_hook "$command"
@@ -139,6 +143,7 @@ run_hook() {
   set -e
 
   LAST_EXIT_CODE=$exit_code
+  # shellcheck disable=SC2034
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
