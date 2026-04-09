@@ -39,9 +39,23 @@ If `$ARGUMENTS` is empty, proceed with full recovery (Steps 1-4).
 
 ### 1. Compact-State and Session-Log Recovery
 
-Check for recent compact-state files in `.docs/compact-state/compact-state-*.md` (most recent first). If found, read the latest one to recover pre-compaction context (active tickets, plans, evaluation state).
+Check for recent compact-state files in `.docs/compact-state/compact-state-*.md` (most recent first).
 
-If no compact-state file is found (or as a complement), check for the most recent session log at `.docs/session-log/session-log-*.md`. If the file starts with a YAML frontmatter (`---`), parse the metadata (`date`, `branch`, `last_commit`, `changed_files`) and the `## Final Status` / `## Recent Commits` sections to recover the last-known working state. Skip files without YAML frontmatter (legacy format).
+**If the latest file starts with a YAML frontmatter (`---`)**, parse the frontmatter and extract the following fields as variables (used in Step 4):
+- `date` — when the compact happened
+- `branch` — branch at compact time
+- `active_tickets` — list of ticket directories that were active
+- `active_plans` — list of plan files that were active
+- `latest_eval_round` — highest round number among saved `eval-round-*.md` files
+- `latest_quality_round` — highest round number among saved `quality-round-*.md` files
+- `last_round_outcome` — `PASS` | `FAIL` | `PASS_WITH_CONCERNS` | `unknown`
+- `in_progress_phase` — `impl-loop` | `impl-done` | `unknown`
+
+Use simple grep/awk on the YAML lines (e.g., `grep '^in_progress_phase:' <file> | sed 's/^in_progress_phase: //'`) to extract scalars. For list fields (`active_tickets`, `active_plans`) collect lines matching `^  - ` until the next non-list line.
+
+**If the latest file does not start with `---`**, treat it as a legacy compact-state file and ignore the structured fields (still keep its existence as a flag for Step 2).
+
+**If no compact-state file is found** (or as a complement), check for the most recent session log at `.docs/session-log/session-log-*.md`. If the file starts with a YAML frontmatter (`---`), parse the metadata (`date`, `branch`, `last_commit`, `changed_files`) and the `## Final Status` / `## Recent Commits` sections to recover the last-known working state. Skip files without YAML frontmatter (legacy format).
 
 ### 2. Context Analysis (conditional)
 
@@ -74,6 +88,12 @@ Check for existing docs (regardless of whether researcher was spawned):
 ### 4. Phase Auto-Detection and Guidance
 
 Detect the current development phase by checking these conditions **in order**. Check both `.docs/` and `.backlog/active/` for artifacts. Use the **first matching** phase:
+
+0. **Compact-state indicates an in-progress `/impl` loop** → suggest **resume `/impl`**
+   - Check: a YAML-frontmatter compact-state file was parsed in Step 1 AND `in_progress_phase == impl-loop`
+   - Check: no new git commit has been made since the compact-state's `date` (compare against `git log -1 --format=%cI` for the most recent commit). If a newer commit exists, the user has already moved on — skip Rule 0 and fall through to the rules below.
+   - Guidance: "You were in the middle of `/impl` (round `{latest_eval_round}` evaluated, last outcome: `{last_round_outcome}`). The next expected step is round `{latest_eval_round + 1}`. Re-run `/impl` to resume the Generator-Evaluator loop."
+   - If `active_tickets` from the compact-state is non-empty, name the ticket directory in the guidance.
 
 1. **No research files for current topic** → suggest **investigate**
    - Check: `.docs/research/` is empty or has no files related to current branch
@@ -109,6 +129,7 @@ Present the detection result with reasoning, including any ticket directory info
 Print a concise summary:
 - Current situation (branch, what's been done)
 - Active tickets in `.backlog/active/` (list slug and available artifacts)
+- If a YAML-frontmatter compact-state was parsed in Step 1, also list the `active_tickets` recorded at compact time (these are the tickets the user was focused on at the moment of compaction — they may differ from the current `.backlog/active/` listing if filesystem state has drifted)
 - Detected phase and recommended next action
 - Exact command sequence, e.g.:
   ```
