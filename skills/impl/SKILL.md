@@ -8,6 +8,7 @@ disable-model-invocation: true
 allowed-tools:
   - Agent
   - AskUserQuestion
+  - Skill
   - Read
   - Glob
   - "Bash(git diff:*)"
@@ -123,22 +124,24 @@ Current state:
     - **Status: FAIL** → save ac-evaluator's **Feedback**, continue to next round (skip quality review for this round)
     - **Status: PASS** → continue to step 16
 
-16. Spawn **Code Quality Reviewer** agent (`code-reviewer`, always sonnet):
-   - Prompt must include:
-     a. Output of `git diff --stat` from step 13
-     b. List of changed files (from `git diff --name-only`)
-     c. "Review the code changes for quality, security, performance, and convention compliance. AC compliance has already been verified by a separate evaluator. Refer to CLAUDE.md or project conventions for coding standards."
-     d. Report save path:
-        - If plan is in `.backlog/active/{slug}/` -> "Save your review report to `.backlog/active/{slug}/quality-round-{n}.md`"
-        - Otherwise -> check if any directory in `.backlog/active/` matches the current branch name (branch name contains the slug). If a match is found, use `.backlog/active/{slug}/quality-round-{n}.md`. If no match, use `.docs/quality-round/{topic}-quality-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
-   - Prompt must NOT include: Generator's return value or AC Evaluator's return value
-   - Receive code-reviewer's return value (Critical/Warnings/Suggestions)
+16. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
+    - Call `/audit` with no `only_security_scan` argument so both code-reviewer and security-scanner run.
+    - `/audit` auto-detects the active ticket directory from the current branch and writes its reports to `{ticket-dir}/quality-round-{n}.md` (code review) and `{ticket-dir}/security-scan-{n}.md` (security), where `{n}` is the next available number — this naturally aligns with the current Generator round.
+    - The `/audit` skill must NOT receive Generator's return value or AC Evaluator's return value (information firewall is preserved because `/audit` independently inspects `git diff` via its own pre-computed context).
+    - Parse `/audit`'s structured return block:
+      - `**Status**`: PASS | PASS_WITH_CONCERNS | FAIL
+      - `**Critical**`: aggregated count across code-reviewer + security-scanner
+      - `**Warnings**`: aggregated count
+      - `**Suggestions**`: aggregated count
+      - `**Reports**`: paths to the saved review files
+      - `**Summary**`: one-line aggregated summary
+    - If `/audit` itself fails (no structured block returned): treat as 0 counts and Status PASS_WITH_CONCERNS, log the failure in the Phase 3 summary, and continue.
 
-17. Combined Decision:
-    - **Code-reviewer Critical > 0** → Status: FAIL. Combine ac-evaluator's pass confirmation and code-reviewer's Critical issues as feedback for next Generator round. Continue to next round.
-    - **Code-reviewer Warnings or Suggestions only (no Critical)** → Status: PASS_WITH_CONCERNS. Proceed to Phase 3. Include quality concerns in the summary.
-    - **Code-reviewer no issues** → Status: PASS. Proceed to Phase 3.
-    - **Round 3 and Status: FAIL** → proceed to Phase 3 with remaining issues noted (both AC and quality).
+17. Combined Decision (based on `/audit` structured return):
+    - **`/audit` Status: FAIL** (Critical > 0) → Combine ac-evaluator's pass confirmation and the audit's Critical findings (from the report files in `**Reports**`) as feedback for the next Generator round. Continue to next round.
+    - **`/audit` Status: PASS_WITH_CONCERNS** (Warnings or Suggestions, no Critical) → Proceed to Phase 3. Include the audit's concerns in the summary.
+    - **`/audit` Status: PASS** (all counts at 0) → Proceed to Phase 3.
+    - **Round 3 and Status: FAIL** → proceed to Phase 3 with remaining issues noted (both AC and quality/security).
 
 ## Phase 3: Summary
 
