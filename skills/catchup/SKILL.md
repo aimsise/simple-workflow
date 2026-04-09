@@ -81,7 +81,7 @@ Detect the current development phase by checking these conditions **in order**. 
 2. **Research exists, no plans** → suggest **plan**
    - Check: `.docs/research/` has files BUT `.docs/plans/` has no related files
    - Also check: `.backlog/active/*/investigation.md` exists BUT `.backlog/active/*/plan.md` does not
-   - Guidance: Read the research first, then use `/plan2doc <feature>` (or `/plan2doc-light` for S-size).
+   - Guidance: Read the research first, then use `/plan2doc <feature>`. `/plan2doc` automatically uses sonnet for S-size and opus for M/L/XL.
 
 3. **Plans exist, no code diff from main** → suggest **implement**
    - Check: `.docs/plans/` has files BUT `git diff main --name-only` shows no changes outside `.docs/` and `.backlog/`

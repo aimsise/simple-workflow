@@ -27,14 +27,13 @@ Investigate and plan: $ARGUMENTS
    - If the response does not contain a research file path (e.g., no `.docs/research/` or `.backlog/active/` path), print an error and stop.
    - Only proceed if `**Status**: success` and a research file path is present.
 5. Print the research summary and file path returned by investigate.
-6. Determine the final Size:
+6. Determine the final Size (informational only — `/plan2doc` will re-detect):
    - If Size was read from the ticket file in step 1, use that value.
    - Otherwise, read the research file for a Size field (S/M/L/XL). Default to M if absent.
-7. Route to the appropriate planner, including the research file path in the arguments:
+7. Call `/plan2doc` with `<topic>` and the following arguments:
    - If `ticket-dir` is set, append `(ticket-dir: .backlog/active/{slug})` and `(research: .backlog/active/{slug}/investigation.md)` to the arguments.
    - If `ticket-dir` is not set, use `(research: <research-file-path>)` as before.
-   - **Size S**: Call `/plan2doc-light` with `<topic>` and the above arguments.
-   - **Size M/L/XL**: Call `/plan2doc` with `<topic>` and the above arguments.
+   - `/plan2doc` will internally select the planner model based on the Size in `ticket.md` (sonnet for S, opus for M/L/XL).
 8. Print the plan summary and file path returned by plan2doc.
 9. Print a final summary with both file paths and the detected size.
 
