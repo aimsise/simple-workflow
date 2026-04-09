@@ -6,6 +6,9 @@ CLAUDE.local.md
 # Auto-generated documentation
 .docs/
 
+# Local ticket backlog
+.backlog/
+
 # Environment
 .env
 .env.local
