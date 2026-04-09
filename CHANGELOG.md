@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/impl` Evaluator Dry Run is now blocking on failure (asks user via AskUserQuestion) and runs only for L/XL tickets.
 - `/impl` Step 16 now invokes `/audit` via the Skill tool instead of spawning `code-reviewer` directly. This eliminates code-reviewer duplication and brings security scanning into the `/impl` review loop.
 - `hooks/session-stop-log.sh` now emits a YAML frontmatter so `/catchup` can recover state from session logs.
+- `hooks/pre-compact-save.sh` now emits a YAML frontmatter (`date`, `branch`, `active_tickets`, `active_plans`, `latest_eval_round`, `latest_quality_round`, `last_round_outcome`, `in_progress_phase`) and computes an in-progress phase heuristic so `/catchup` can detect mid-loop interruptions.
+- `/catchup` Step 1 parses the compact-state YAML frontmatter, Step 4 adds a Rule 0 that recommends resuming `/impl` when `in_progress_phase == impl-loop`, and Step 5 surfaces the active tickets recorded at compact time.
 - `/catchup` reads session logs as a fallback when no compact-state file is available.
 - `/ship` Review Gate now references `/audit` instead of `/review-diff`.
 

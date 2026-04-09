@@ -37,10 +37,10 @@ Treats the context window as a consumable resource and systematically conserves 
 
 Structurally separates "writing code" from "judging code" to guarantee quality by design.
 
-- A **Generator** (implementer) writes code, an **AC Evaluator** independently verifies compliance against acceptance criteria, and a **Code Reviewer** checks code quality
-- The Evaluator never sees the Generator's self-assessment — it judges solely from `git diff` and test results (information firewall)
+- A **Generator** (implementer) writes code, an **AC Evaluator** independently verifies compliance against acceptance criteria, and `/audit` runs a multi-agent quality + security review (code-reviewer + security-scanner) on the resulting diff
+- All evaluators judge solely from `git diff` and test results — they never see the Generator's self-assessment (information firewall)
 - On failure, the Generator receives specific, actionable feedback and retries — up to 3 rounds
-- Critical security issues (FAIL-CRITICAL) halt execution immediately
+- Critical AC violations (FAIL-CRITICAL) halt execution immediately
 
 ### Built-in Ticket Management
 
@@ -102,8 +102,8 @@ Guardrails that fire automatically on tool execution to protect your project.
 - **pre-bash-safety** — Blocks destructive commands (`rm -rf`, `git push --force`, etc.)
 - **pre-write-safety / pre-edit-safety** — Blocks writes to sensitive files (`.env`, private keys, credentials)
 - **session-start** — Loads branch info and changed file count at session start
-- **pre-compact-save** — Auto-saves work state before context compaction
-- **session-stop-log** — Records a work log (branch, status, recent commits) on session end
+- **pre-compact-save** — Auto-saves work state before context compaction as a YAML-frontmatter snapshot (active tickets, plans, latest evaluation rounds, in-progress phase). `/catchup` parses this to resume mid-loop work after compaction.
+- **session-stop-log** — Records a work log (branch, last commit, status, recent commits) on session end as a YAML-frontmatter file. Used by `/catchup` as a fallback state source when no compact-state file exists.
 
 ## Prerequisites
 
@@ -190,15 +190,16 @@ Implements code through a three-phase pipeline:
 
 **Phase 1: Preparation**
 - Loads the active plan and detects ticket size
-- For M-size and above: AC sanity check + Evaluator dry run (agreement on the verification plan before any code is written)
+- For M-size and above: AC sanity check (the Generator flags ambiguous AC up front)
+- For L/XL only: blocking Evaluator dry run (agreement on the verification plan before any code is written; on failure, the user is asked whether to proceed)
 - Saves current state with `git stash` for safety
 
 **Phase 2: Implementation loop (up to 3 rounds)**
-1. **Generator** (implementer) writes code using a test-first approach
+1. **Generator** (implementer) writes code using a test-first approach. Model is auto-selected: sonnet for S, opus for M/L/XL.
 2. **AC Evaluator** independently verifies acceptance criteria compliance — on failure, sends specific feedback back to the Generator
-3. **Code Reviewer** reviews code quality (runs only after AC passes)
+3. **`/audit`** runs after AC passes — a multi-agent review that always invokes `security-scanner` and runs `code-reviewer` in parallel, returning an aggregated `Status / Critical / Warnings / Suggestions` block
 
-Each round's evaluation results are saved as `eval-round-{n}.md` / `quality-round-{n}.md` in the ticket directory.
+Each round's evaluation results are saved as `eval-round-{n}.md` / `quality-round-{n}.md` / `security-scan-{n}.md` in the ticket directory.
 
 **Phase 3: Completion report**
 - Outputs a summary of all evaluation rounds
@@ -223,7 +224,7 @@ If no prior review via `/audit` is detected, a review gate recommends running on
 | Phase | Skill | Description |
 |-------|-------|-------------|
 | Discovery | `/investigate` | Deep-dive codebase exploration |
-| Discovery | `/catchup` | Recover context, detect current phase, and recommend next action |
+| Discovery | `/catchup` | Recover context from compact-state / session-log, detect current phase, and recommend next action (including resuming an in-progress `/impl` loop) |
 | Planning | `/scout` | Chain investigation + planning in one step |
 | Planning | `/plan2doc` | Create a detailed implementation plan (auto-selects model by ticket size) |
 | Tickets | `/create-ticket` | Create a structured ticket with quality evaluation |
