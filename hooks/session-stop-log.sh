@@ -1,23 +1,38 @@
 #!/usr/bin/env bash
+# Stop hook: log session activity to .docs/session-log/ in YAML+Markdown format
+
 set -euo pipefail
-cat > /dev/null  # consume stdin
 
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
-LOG_FILE=".docs/session-log/session-log-${TIMESTAMP}.md"
+# Consume stdin (some hook events provide JSON payload)
+cat > /dev/null
 
-mkdir -p .docs/session-log
+LOG_DIR=".docs/session-log"
+mkdir -p "$LOG_DIR"
+
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_FILE="$LOG_DIR/session-log-${TIMESTAMP}.md"
+
+# Collect metadata for YAML frontmatter
+DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+BRANCH=$(git branch --show-current 2>/dev/null || echo "N/A")
+LAST_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "N/A")
+CHANGED_FILES=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
 
 {
-  echo "# Session Work Log"
-  echo "- Date: $(date -Iseconds)"
-  echo "- Branch: $BRANCH"
+  echo "---"
+  echo "date: ${DATE_ISO}"
+  echo "branch: ${BRANCH}"
+  echo "last_commit: ${LAST_COMMIT}"
+  echo "changed_files: ${CHANGED_FILES}"
+  echo "---"
   echo ""
-  echo "## Final State"
-  git status --short 2>/dev/null || true
+  echo "# Session Work Log"
+  echo ""
+  echo "## Final Status"
+  git status --short 2>/dev/null || echo "(not a git repo)"
   echo ""
   echo "## Recent Commits"
-  git log --oneline -5 2>/dev/null || true
+  git log --oneline -5 2>/dev/null || echo "(no commits)"
 } > "$LOG_FILE"
 
 exit 0

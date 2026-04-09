@@ -37,9 +37,11 @@ If `$ARGUMENTS` specifies a phase name (investigate, plan, implement, test, revi
 
 If `$ARGUMENTS` is empty, proceed with full recovery (Steps 1-4).
 
-### 1. Compact-State Recovery
+### 1. Compact-State and Session-Log Recovery
 
 Check for recent compact-state files in `.docs/compact-state/compact-state-*.md` (most recent first). If found, read the latest one to recover pre-compaction context (active tickets, plans, evaluation state).
+
+If no compact-state file is found (or as a complement), check for the most recent session log at `.docs/session-log/session-log-*.md`. If the file starts with a YAML frontmatter (`---`), parse the metadata (`date`, `branch`, `last_commit`, `changed_files`) and the `## Final Status` / `## Recent Commits` sections to recover the last-known working state. Skip files without YAML frontmatter (legacy format).
 
 ### 2. Context Analysis (conditional)
 
@@ -67,7 +69,7 @@ Check for existing docs (regardless of whether researcher was spawned):
 - `.docs/plans/` — implementation plans
 - `.docs/research/` — research findings
 - `.backlog/active/` — active tickets and their artifacts
-- Read active feature from project memory (`MEMORY.md`) if available
+- `.docs/session-log/session-log-*.md` — most recent session log (if any) for last-known branch state
 
 ### 4. Phase Auto-Detection and Guidance
 
