@@ -7,6 +7,7 @@ description: >-
 disable-model-invocation: true
 allowed-tools:
   - Agent
+  - AskUserQuestion
   - Read
   - Glob
   - "Bash(git diff:*)"
@@ -64,13 +65,15 @@ Current state:
 
 7. **AC Sanity Check** (round 1 only, M/L/XL size only): Include in the Generator prompt: "Before implementing, review each AC. If any AC is ambiguous or technically infeasible, flag it in your **Next Steps** field." If Generator flags ambiguous AC, report to user and stop.
 
-8. **Evaluator Dry Run** (round 1 only, M/L/XL size only):
+8. **Evaluator Dry Run** (round 1 only, **L/XL size only**):
    Spawn the **AC Evaluator** agent (`ac-evaluator`) with a verification planning prompt:
    - Prompt: "You are preparing a verification plan. For each Acceptance Criterion below, describe HOW you will verify it (what commands to run, what to check in the code, what edge cases to test). Do NOT evaluate any implementation — no code has been written yet. Return only the verification plan."
    - Include: Full plan content, Acceptance Criteria
    - Receive: Evaluator's verification plan
-   - If Evaluator fails or returns partial: warn user "Evaluator Dry Run failed. Verification plan unavailable. Proceeding without bilateral agreement." Continue with implementation.
-   - Save the verification plan for inclusion in Generator prompt
+   - **If Evaluator fails or returns partial**: Use `AskUserQuestion` to ask the user "Evaluator が検証プランに合意できませんでした。続行しますか？" with options "yes" (proceed without verification plan) and "no" (stop the skill).
+     - If user answers "no" → stop the skill immediately. Print "Stopped by user after Evaluator Dry Run failure." and exit.
+     - If user answers "yes" → proceed without the verification plan. The Generator prompt will not include the dry run output for this round.
+   - **If Evaluator succeeds**: Save the verification plan for inclusion in Generator prompt (step 12g).
 
 9. If related investigation file exists (same directory `investigation.md` or latest in `.docs/research/`), read it.
 
@@ -83,21 +86,22 @@ Current state:
 
 ## Phase 2: Generator → AC Evaluator → Code Quality Reviewer Loop (max 3 rounds)
 
-12. Spawn **Generator** agent:
-   - Size S -> `implementer-light` (sonnet)
-   - Size M/L/XL -> `implementer` (opus)
-   - Prompt must include:
-     a. Full plan content
-     b. Acceptance Criteria (highlighted: "You will be evaluated by an independent evaluator against these criteria")
-     c. Investigation file content (if exists)
-     d. User's additional instructions (if any)
-     e. Round 2+: Pass the previous round's feedback file paths to the Generator:
-        "Read the following feedback files from the previous evaluation round before implementing:
-        - AC Evaluator feedback: {eval-round-{n-1}.md path} (or 'All AC passed' if none)
-        - Code Quality feedback: {quality-round-{n-1}.md path} (or 'Not run' / 'No issues' if none)"
-     f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
-     g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
-   - Receive Generator's return value (changed files list + lint/test status)
+12. Spawn **Generator** agent via the Agent tool:
+    - subagent_type: `implementer` (always; no -light variant)
+    - model: `sonnet` if Size == S, otherwise `opus` (M/L/XL/unknown)
+    - description: "Implement plan for <feature>"
+    - Prompt must include:
+      a. Full plan content
+      b. Acceptance Criteria (highlighted: "You will be evaluated by an independent evaluator against these criteria")
+      c. Investigation file content (if exists)
+      d. User's additional instructions (if any)
+      e. Round 2+: Pass the previous round's feedback file paths to the Generator:
+         "Read the following feedback files from the previous evaluation round before implementing:
+         - AC Evaluator feedback: {eval-round-{n-1}.md path} (or 'All AC passed' if none)
+         - Code Quality feedback: {quality-round-{n-1}.md path} (or 'Not run' / 'No issues' if none)"
+      f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
+      g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
+    - Receive Generator's return value (changed files list + lint/test status)
 
 13. Run `git diff --stat` to capture change summary.
 
