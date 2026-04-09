@@ -6,6 +6,7 @@ description: >-
   Use when the user wants to ship completed work.
 disable-model-invocation: true
 allowed-tools:
+  - Skill
   - "Bash(git add:*)"
   - "Bash(git commit:*)"
   - "Bash(git status:*)"
@@ -64,11 +65,18 @@ Commits ahead of main:
 
 ## Phase 1: Commit
 
-1. Analyze staged and unstaged changes.
-2. If there are no changes at all (nothing staged, nothing unstaged, no untracked files), print "No changes to ship." and stop.
-3. If there are unstaged or untracked changes, show the file list and ask the user which files to stage. Exclude files matching: `.env*`, `*credentials*`, `*secret*`, `*.key`, `*.pem` -- warn the user if such files are present.
-4. Generate a conventional commit message (feat/fix/improve/chore/docs/test/perf). Focus on the "why", not the "what". Use a HEREDOC for the message.
-5. Run `git status` to verify the commit succeeded.
+1. **Pre-flight check**: Run `git status --short` to detect any changes. If there are no changes at all (nothing staged, nothing unstaged, no untracked files), print "No changes to ship." and stop immediately.
+
+2. **Sensitive file warning**: Inspect the working tree for files matching `.env*`, `*credentials*`, `*secret*`, `*.key`, `*.pem`. If any such files are present (staged, unstaged, or untracked), warn the user explicitly before proceeding. The user may then decide whether to abort or continue.
+
+3. **Delegate to /commit**: Invoke the `/commit` skill via the Skill tool to handle staging and conventional commit creation. Pass any user-provided commit message hint as the argument. The `/commit` skill will:
+   - Show the user the changes
+   - Ask which files to stage (if there are unstaged changes)
+   - Generate a conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"
+   - Create the commit using a HEREDOC
+   - Verify the commit succeeded with `git status`
+
+4. **Post-commit verification**: After the Skill call returns, run `git status` to confirm a commit was actually created. If the working tree is still dirty or no new commit exists (`git log -1 --format=%H` is unchanged from before), report the failure and stop. Otherwise, proceed to Phase 2.
 
 ## Phase 2: Create PR
 
