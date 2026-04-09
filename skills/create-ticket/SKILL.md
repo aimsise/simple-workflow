@@ -113,7 +113,7 @@ Identify available skills and agents by scanning `.claude/skills/` and `.claude/
 listing installed plugin skills/agents, and using the workflow patterns from Pre-computed Context above to design the workflow.
 
 **Category-specific guidelines**:
-- **Security**: Wrap with `/security-scan` before and after. Spec-first with documentation leading.
+- **Security**: Wrap with `/audit only_security_scan=true` before and after. Spec-first with documentation leading.
 - **CodeQuality**: Use `/refactor` skill. Guarantee no behavior changes.
 - **Doc**: Use `/impl` with a doc-focused plan.
 - **DevOps**: CI/CD configs are hard to test; design carefully with `/plan2doc`.

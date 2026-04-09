@@ -135,7 +135,7 @@ Once inside a Claude Code session:
 /impl
 
 # Review and deliver
-/review-diff
+/audit
 /ship
 ```
 
@@ -216,7 +216,7 @@ Ships the current changes through up to three phases:
 2. **Create PR** — Pushes to GitHub and creates a pull request
 3. **Merge** (optional, `merge=true`) — Squash-merges, deletes the branch, and syncs local
 
-If no prior review via `/review-diff` is detected, a review gate recommends running one first. On successful merge, the ticket is automatically moved to `.backlog/done/`.
+If no prior review via `/audit` is detected, a review gate recommends running one first. On successful merge, the ticket is automatically moved to `.backlog/done/`.
 
 ## All Skills
 
@@ -231,8 +231,7 @@ If no prior review via `/review-diff` is detected, a review gate recommends runn
 | Implementation | `/impl` | Implement via Generator-Evaluator pipeline |
 | Implementation | `/refactor` | Safe refactoring with backup branch |
 | Testing | `/test` | Design and run tests |
-| Quality | `/review-diff` | Multi-agent code quality + security review |
-| Quality | `/security-scan` | Security audit |
+| Quality | `/audit` | Multi-agent code quality + security audit (use `only_security_scan=true` for security-only) |
 | Delivery | `/commit` | Create a Conventional Commits-formatted commit |
 | Delivery | `/ship` | Commit + PR in one step (optionally merge) |
 

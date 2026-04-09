@@ -87,10 +87,10 @@ Commits ahead of main:
     - If there is no active ticket, skip the review gate (no check needed)
     - If a review file exists, compare its modification time with the last commit time
     - If NO review file exists, or the review predates the last code-changing commit:
-      Print "No recent code review found. Recommended: run /review-diff before shipping."
+      Print "No recent code review found. Recommended: run /audit before shipping."
       Ask the user: "Proceed without review? (yes/no)"
       - If "no" → stop
-      - If "yes" → proceed, and append "[shipped without /review-diff]" to the PR body in step 11
+      - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 11
 
 7. Determine the target branch from arguments (default: main). If the target is not main, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against main).
 8. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.

@@ -76,24 +76,19 @@ assert_file_not_contains \
   "$REPO_DIR/agents/code-reviewer.md" \
   "more than 20"
 
-assert_file_not_contains \
-  "security-scan/SKILL.md has no stale 'Full report will be saved to'" \
-  "$REPO_DIR/skills/security-scan/SKILL.md" \
-  "Full report will be saved to"
-
 echo ""
 
 # --- Category 3: Ticket-facing skills have ticket detection ---
 echo "--- Ticket-facing skills have ticket detection ---"
 
 assert_file_contains \
-  "security-scan/SKILL.md references ticket-dir" \
-  "$REPO_DIR/skills/security-scan/SKILL.md" \
+  "audit/SKILL.md references ticket-dir" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
   "ticket-dir"
 
 assert_file_contains \
-  "review-diff/SKILL.md references .backlog/active" \
-  "$REPO_DIR/skills/review-diff/SKILL.md" \
+  "audit/SKILL.md references .backlog/active" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
   "\.backlog/active"
 
 assert_file_contains \
@@ -117,19 +112,19 @@ echo ""
 echo "--- Cross-reference consistency ---"
 
 assert_file_contains \
-  "review-diff/SKILL.md references quality-round" \
-  "$REPO_DIR/skills/review-diff/SKILL.md" \
+  "audit/SKILL.md references quality-round" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
   "quality-round"
 
 assert_file_contains \
-  "review-diff/SKILL.md references security-scan" \
-  "$REPO_DIR/skills/review-diff/SKILL.md" \
-  "security-scan"
+  "audit/SKILL.md references security-scanner" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "security-scanner"
 
 assert_file_contains \
-  "security-scan/SKILL.md references output path" \
-  "$REPO_DIR/skills/security-scan/SKILL.md" \
-  "output path"
+  "audit/SKILL.md returns Status field" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "\*\*Status\*\*"
 
 assert_file_contains \
   "refactor/SKILL.md references quality-refactor" \

@@ -96,7 +96,7 @@ Detect the current development phase by checking these conditions **in order**. 
 
 5. **Tests exist, no review files** → suggest **review**
    - Check: Both source and test changes exist BUT no recent review in `.docs/reviews/` or `.backlog/active/*/quality-round-*.md`
-   - Guidance: Use `/review-diff` to check all changes.
+   - Guidance: Use `/audit` to check all changes (code quality + security).
 
 6. **Review done, uncommitted changes** → suggest **commit**
    - Check: Review files exist AND `git status --porcelain` shows uncommitted changes
