@@ -102,11 +102,6 @@ assert_file_contains \
   "search.*\.backlog"
 
 assert_file_contains \
-  "plan2doc-light/SKILL.md searches .backlog for tickets" \
-  "$REPO_DIR/skills/plan2doc-light/SKILL.md" \
-  "search.*\.backlog"
-
-assert_file_contains \
   "impl/SKILL.md uses branch matching for eval-round" \
   "$REPO_DIR/skills/impl/SKILL.md" \
   "branch.*slug"

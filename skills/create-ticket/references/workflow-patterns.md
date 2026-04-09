@@ -10,9 +10,8 @@
 | Tool | Type | Purpose |
 |------|------|---------|
 | `/investigate` | skill | Codebase research and structured report generation. Outputs to `.backlog/active/{slug}/investigation.md` for ticket work, or `.docs/research/` otherwise |
-| `/plan2doc` | skill | Create implementation plans. Outputs to `.backlog/active/{slug}/plan.md` for ticket work, or `.docs/plans/` otherwise |
-| `/plan2doc-light` | skill | Lightweight plan creation for S-size tickets (sonnet planner) |
-| `/scout` | skill | Chain codebase research + plan creation. Auto-routes S->plan2doc-light, M+->plan2doc |
+| `/plan2doc` | skill | Create implementation plans. Auto-selects model by ticket size (sonnet for S, opus for M/L/XL). Outputs to `.backlog/active/{slug}/plan.md` for ticket work, or `.docs/plans/` otherwise |
+| `/scout` | skill | Chain codebase research + plan creation. Delegates to `/plan2doc` which handles model selection |
 | `/impl` | skill | Implement latest plan with Generator-Evaluator loop (S→sonnet, M+→opus) |
 | `/ship` | skill | Commit + create PR + optional squash-merge |
 | `/refactor` | skill | Refactoring with safety checks |
@@ -21,16 +20,11 @@
 | `/commit` | skill | Create conventional commit |
 | `/security-scan` | skill | Security audit |
 | `/catchup` | skill | Context recovery, phase detection, and next action guidance |
-| `/ticket-done` | skill | Move completed tickets to .backlog/done/ |
-| `/ticket-blocked` | skill | Move blocked tickets to .backlog/blocked/ |
-| `/ticket-active` | skill | Resume tickets by moving to .backlog/active/ |
-| doc-writer | agent | Documentation generation |
-| planner | agent | Implementation plan design (opus) |
-| planner-light | agent | Lightweight planner for S-size tickets (sonnet) |
+| `/ticket-move` | skill | Move tickets to a target backlog state (active/blocked/done) |
+| planner | agent | Implementation plan design (opus for M/L/XL, sonnet for S) |
 | researcher | agent | Code research and analysis |
 | ticket-evaluator | agent | Ticket quality evaluation with 5 quality gates (sonnet) |
-| implementer | agent | Code implementation (opus, M/L/XL tickets) |
-| implementer-light | agent | Code implementation (sonnet, S tickets) |
+| implementer | agent | Code implementation (opus for M/L/XL, sonnet for S) |
 | ac-evaluator | agent | AC compliance verification (sonnet) |
 
 ---
@@ -74,9 +68,9 @@ Documentation creation and updates.
 
 | Size | Workflow |
 |------|----------|
-| **S** | doc-writer agent -> `/review-diff` -> `/ship` |
-| **M** | `/scout` -> doc-writer agent + `/impl` -> `/review-diff` -> `/ship` |
-| **L** | `/scout` -> doc-writer agent + incremental `/impl` -> `/review-diff` -> `/ship` |
+| **S** | `/impl` with doc-focused plan -> `/review-diff` -> `/ship` |
+| **M** | `/scout` -> `/impl` with doc-focused plan -> `/review-diff` -> `/ship` |
+| **L** | `/scout` -> incremental `/impl` with doc-focused plan -> `/review-diff` -> `/ship` |
 
 **Requirements**:
 - Maintain consistency with existing documentation
@@ -100,7 +94,7 @@ Community standards and templates.
 | Size | Workflow |
 |------|----------|
 | **S** | `/impl` -> `/review-diff`(optional) -> `/ship` |
-| **M** | doc-writer agent -> `/review-diff` -> `/ship` |
+| **M** | `/impl` with doc-focused plan -> `/review-diff` -> `/ship` |
 
 **Requirements**:
 - Follow industry standards (Contributor Covenant, Keep a Changelog, etc.)

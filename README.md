@@ -85,16 +85,15 @@ Specialists launched by skills. Each runs in an isolated context with the minimu
 | Role | Agent | Model |
 |------|-------|-------|
 | Research | researcher | Sonnet |
-| Planning | planner / planner-light | Opus / Sonnet |
-| Implementation | implementer / implementer-light | Opus / Sonnet |
+| Planning | planner | Opus / Sonnet |
+| Implementation | implementer | Opus / Sonnet |
 | Acceptance evaluation | ac-evaluator | Sonnet |
 | Quality review | code-reviewer | Sonnet |
 | Testing | test-writer | Sonnet |
 | Ticket evaluation | ticket-evaluator | Sonnet |
 | Security audit | security-scanner | Sonnet |
-| Documentation | doc-writer | Haiku |
 
-Models are auto-selected based on ticket size (S/M/L/XL). S-size tickets use Sonnet for speed; M and above use Opus for depth.
+Models are auto-selected based on ticket size (S/M/L/XL). S-size tickets use Sonnet for speed; M and above use Opus for depth. The `planner` and `implementer` agents accept a dynamic model parameter; orchestrator skills pass the appropriate model at invocation time.
 
 ### Hooks (Safety Hooks)
 
@@ -109,7 +108,7 @@ Guardrails that fire automatically on tool execution to protect your project.
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
-- [GitHub CLI](https://cli.github.com/) (`gh`) — required for `/ship`, `/create-pr`, and `/create-pr-with-merge`
+- [GitHub CLI](https://cli.github.com/) (`gh`) — required for `/ship`
 - `git` and `jq`
 
 ## Quick Start
@@ -177,7 +176,7 @@ The resulting ticket is saved to `.backlog/product_backlog/{slug}/ticket.md`.
 /scout .backlog/product_backlog/migrate-to-session-auth/ticket.md
 ```
 
-Chains `/investigate` and `/plan2doc` in sequence. Moves the ticket to `.backlog/active/`, then runs research and creates an implementation plan in one go. Automatically selects planner (Opus) or planner-light (Sonnet) based on ticket size.
+Chains `/investigate` and `/plan2doc` in sequence. Moves the ticket to `.backlog/active/`, then runs research and creates an implementation plan in one go. `/plan2doc` selects model based on ticket size (sonnet for S, opus for M/L/XL).
 
 At this point, `.backlog/active/{slug}/` contains `ticket.md`, `investigation.md`, and `plan.md` — everything needed for implementation.
 
@@ -226,22 +225,16 @@ If no prior review via `/review-diff` is detected, a review gate recommends runn
 | Discovery | `/investigate` | Deep-dive codebase exploration |
 | Discovery | `/catchup` | Recover context, detect current phase, and recommend next action |
 | Planning | `/scout` | Chain investigation + planning in one step |
-| Planning | `/plan2doc` | Create a detailed implementation plan (Opus) |
-| Planning | `/plan2doc-light` | Create a lightweight implementation plan (Sonnet) |
+| Planning | `/plan2doc` | Create a detailed implementation plan (auto-selects model by ticket size) |
 | Tickets | `/create-ticket` | Create a structured ticket with quality evaluation |
-| Tickets | `/ticket-active` | Move a ticket to active |
-| Tickets | `/ticket-blocked` | Move a ticket to blocked |
-| Tickets | `/ticket-done` | Move a ticket to done |
+| Tickets | `/ticket-move` | Move tickets to a target backlog state (active/blocked/done) |
 | Implementation | `/impl` | Implement via Generator-Evaluator pipeline |
 | Implementation | `/refactor` | Safe refactoring with backup branch |
 | Testing | `/test` | Design and run tests |
 | Quality | `/review-diff` | Multi-agent code quality + security review |
 | Quality | `/security-scan` | Security audit |
 | Delivery | `/commit` | Create a Conventional Commits-formatted commit |
-| Delivery | `/create-pr` | Create a pull request |
-| Delivery | `/create-pr-with-merge` | Create a PR and squash-merge |
 | Delivery | `/ship` | Commit + PR in one step (optionally merge) |
-| Utility | `/memorize` | Save work progress to project memory |
 
 ## Configuration
 
@@ -252,7 +245,7 @@ Hook scripts are registered in `hooks/hooks.json`. To customize, edit the JSON f
 ## Limitations
 
 - Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
-- The `/ship` and `/create-pr` skills require GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
+- The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
 

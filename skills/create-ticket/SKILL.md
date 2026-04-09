@@ -115,7 +115,7 @@ listing installed plugin skills/agents, and using the workflow patterns from Pre
 **Category-specific guidelines**:
 - **Security**: Wrap with `/security-scan` before and after. Spec-first with documentation leading.
 - **CodeQuality**: Use `/refactor` skill. Guarantee no behavior changes.
-- **Doc**: Use doc-writer agent.
+- **Doc**: Use `/impl` with a doc-focused plan.
 - **DevOps**: CI/CD configs are hard to test; design carefully with `/plan2doc`.
 - **Community**: Reference industry-standard templates.
 
