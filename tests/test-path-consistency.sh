@@ -636,6 +636,7 @@ for skill_md in "$REPO_DIR"/skills/*/SKILL.md; do
 
   # Check body (after frontmatter) for shell command invocation patterns
   # Exclude !` interpolations (pre-computed context, handled by platform)
+  # shellcheck disable=SC2034
   body_bash=$( awk 'BEGIN{depth=0} /^---/{depth++;next} depth>=2{print}' "$skill_md" \
     | { grep -cvE '^!' || true; } \
     | head -1 )
