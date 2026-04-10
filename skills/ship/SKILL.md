@@ -46,7 +46,7 @@ Current branch:
 !`git branch --show-current`
 
 Default branch:
-!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main`
+!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 Current state:
 !`git status --short`
@@ -58,13 +58,13 @@ Unstaged diff summary:
 !`git diff --stat`
 
 Diff stats vs default branch:
-!`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main) --stat`
+!`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main) --stat`
 
 Recent commits for style reference:
 !`git log --oneline -10`
 
 Commits ahead of default branch:
-!`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)..HEAD --oneline`
+!`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)..HEAD --oneline`
 
 ## Instructions
 
@@ -87,9 +87,9 @@ Commits ahead of default branch:
 
 ## Phase 2: Create PR
 
-6. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
+5. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
-6b. **Review gate**: Check for recent code review:
+6. **Review gate**: Check for recent code review:
     - If there is an active ticket (`.backlog/active/{slug}/`), run `ls -t .backlog/active/{slug}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file in that ticket directory
     - If there is no active ticket, skip the review gate (no check needed)
     - If a review file exists, compare its modification time with the last commit time

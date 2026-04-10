@@ -126,8 +126,8 @@ Current state:
     - **Status: PASS** → continue to step 16
 
 16. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
-    - Call `/audit` with no `only_security_scan` argument so both code-reviewer and security-scanner run.
-    - `/audit` auto-detects the active ticket directory from the current branch and writes its reports to `{ticket-dir}/quality-round-{n}.md` (code review) and `{ticket-dir}/security-scan-{n}.md` (security), where `{n}` is the next available number — this naturally aligns with the current Generator round.
+    - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 14). Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.
+    - `/audit` writes its reports to `{ticket-dir}/quality-round-{n}.md`, `{ticket-dir}/security-scan-{n}.md`, and `{ticket-dir}/audit-round-{n}.md` using the round number passed via `round={n}`. This guarantees `eval-round-{n}` and `quality-round-{n}` / `audit-round-{n}` stay aligned across retries and resumed sessions.
     - The `/audit` skill must NOT receive Generator's return value or AC Evaluator's return value (information firewall is preserved because `/audit` independently inspects `git diff` via its own pre-computed context).
     - Parse `/audit`'s structured return block:
       - `**Status**`: PASS | PASS_WITH_CONCERNS | FAIL

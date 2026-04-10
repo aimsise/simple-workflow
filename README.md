@@ -38,7 +38,7 @@ Treats the context window as a consumable resource and systematically conserves 
 Structurally separates "writing code" from "judging code" to guarantee quality by design.
 
 - A **Generator** (implementer) writes code, an **AC Evaluator** independently verifies compliance against acceptance criteria, and `/audit` runs a multi-agent quality + security review (code-reviewer + security-scanner) on the resulting diff
-- All evaluators judge solely from `git diff` and test results — they never see the Generator's self-assessment (information firewall)
+- **Information firewall (asymmetric)**: evaluators judge solely from `git diff` and test results — they never see the Generator's self-assessment. The reverse direction is intentionally open: on retry, the Generator receives evaluator feedback (via `eval-round-{n}.md` / `quality-round-{n}.md`), and for L/XL tickets, the Evaluator Dry Run verification plan. This asymmetry is deliberate — bias from Generator to Evaluator is blocked, while corrective feedback from Evaluator to Generator is allowed
 - On failure, the Generator receives specific, actionable feedback and retries — up to 3 rounds
 - Critical AC violations (FAIL-CRITICAL) halt execution immediately
 
@@ -80,7 +80,13 @@ Operations invoked as slash commands like `/scout` or `/impl`. There are two kin
 
 ### Sub-agents
 
-Specialists launched by skills. Each runs in an isolated context with the minimum set of tool permissions it needs.
+Specialists launched by skills. Each runs in an isolated context with a tool permission scope appropriate to its role:
+
+- **Generator agents** (`implementer`, `test-writer`) need broad `Bash(*)` access to run arbitrary build/test tools defined by the target project
+- **Evaluator agents** (`ac-evaluator`, `code-reviewer`, `security-scanner`, `ticket-evaluator`) are restricted to read-only git, specific test/lint runners, and read-only file utilities
+- **Research/planning agents** (`researcher`, `planner`) are restricted to read-only git and filesystem tools
+
+This asymmetry is deliberate: the Generator-Evaluator separation relies on evaluators being unable to execute destructive commands even if prompted to do so.
 
 | Role | Agent | Model |
 |------|-------|-------|

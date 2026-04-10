@@ -15,7 +15,7 @@ tools:
   # Test/lint runners — JS ecosystem
   - "Bash(npm test:*)"
   - "Bash(npm run:*)"
-  - "Bash(npx :*)"
+  - "Bash(npx:*)"
   - "Bash(yarn test:*)"
   - "Bash(yarn run:*)"
   - "Bash(pnpm test:*)"
@@ -35,12 +35,12 @@ tools:
   - "Bash(go vet:*)"
   - "Bash(make:*)"
   # Read-only utilities
-  - "Bash(cat :*)"
+  - "Bash(cat:*)"
   - "Bash(ls:*)"
-  - "Bash(find :*)"
-  - "Bash(wc :*)"
-  - "Bash(head :*)"
-  - "Bash(tail :*)"
+  - "Bash(find:*)"
+  - "Bash(wc:*)"
+  - "Bash(head:*)"
+  - "Bash(tail:*)"
 model: sonnet
 maxTurns: 20
 ---

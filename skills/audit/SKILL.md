@@ -11,7 +11,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-argument-hint: "[only_security_scan=true|false] [branch or commit range (optional)]"
+argument-hint: "[only_security_scan=true|false] [round=N] [branch or commit range (optional)]"
 ---
 
 Audit current code changes. Args: $ARGUMENTS
@@ -39,6 +39,8 @@ Parse `$ARGUMENTS` for the following:
 - `only_security_scan=true` (case-insensitive): set the flag to skip code-reviewer.
 - `only_security_scan=false`: explicit default (run both agents).
 - If neither token is present, default `only_security_scan=false`.
+- `round=N` (case-insensitive, N is a positive integer): explicit round number for output filenames. When provided, the skill MUST write to `quality-round-{N}.md`, `security-scan-{N}.md`, and `audit-round-{N}.md` using this number instead of auto-incrementing. This lets the calling skill (e.g. `/impl`) synchronize audit round numbers with its own Generator-Evaluator loop counter. If N is ≤ 0 or not an integer, print a warning and fall back to auto-increment.
+- If `round=` is absent, use the current behavior (auto-increment: max existing round + 1).
 - Any other tokens are treated as an optional commit/branch range hint, passed through to the agents as additional context.
 
 ### 1. Determine Output Destinations
@@ -47,8 +49,10 @@ Parse `$ARGUMENTS` for the following:
 - List directories in `.backlog/active/` from the pre-computed context above.
 - Match the current branch name against active ticket directory slugs (branch name contains the slug).
 - If a match is found: set `ticket-dir` to `.backlog/active/{slug}`.
-  - Code-reviewer output (when invoked): `{ticket-dir}/quality-round-{n}.md` where `{n}` is the next available number — check existing `quality-round-*.md` files in `ticket-dir`, take max + 1, or 1 if none.
-  - Security-scanner output (always invoked): `{ticket-dir}/security-scan-{n}.md` where `{n}` is the next available number — check existing `security-scan-*.md` files in `ticket-dir`, take max + 1, or 1 if none.
+  - If `round=N` was parsed in Step 0, use `{N}` as the round number for all output files.
+  - Otherwise, auto-increment: check existing `quality-round-*.md` files in `ticket-dir`, take max + 1, or 1 if none.
+  - Code-reviewer output (when invoked): `{ticket-dir}/quality-round-{n}.md`
+  - Security-scanner output (always invoked): `{ticket-dir}/security-scan-{n}.md`
 - If no match: use defaults (code-reviewer: `.docs/reviews/{topic}.md`, security-scanner: `.docs/reviews/security-{topic}.md`) where `{topic}` is derived from the current branch name.
 
 ### 2. Spawn Agents
@@ -100,7 +104,7 @@ Then, print exactly the following structured block at the end of your output (th
 ### 4a. Persist Aggregated Result (when ticket-dir is set)
 
 If an active ticket directory was detected in Step 1 (`ticket-dir`):
-- Write the structured result block below to `{ticket-dir}/audit-round-{n}.md`, where `{n}` is the same round number used for `quality-round-{n}.md` / `security-scan-{n}.md` in Step 1.
+- Write the structured result block below to `{ticket-dir}/audit-round-{n}.md`, where `{n}` is the same round number used for `quality-round-{n}.md` / `security-scan-{n}.md` in Step 1 (the explicit `round=N` value if provided, else the auto-incremented value).
 - The file content is exactly the same 7-line `**Status**:...**Summary**:...` block printed in Step 4 (no extra header, no extra text).
 - This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0 (impl-loop resume detection).
 
