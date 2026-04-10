@@ -116,7 +116,8 @@ Commits ahead of default branch:
     - **Skip**: Stop without merging. Print the PR URL for manual follow-up.
 16. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
 17. **Ticket completion**: If `.backlog/active/` exists, list its contents. Match the current branch name against the ticket directory slugs (branch name contains the slug). If a match is found, run `mkdir -p .backlog/done && mv .backlog/active/{slug} .backlog/done/{slug}`. If no match, skip silently.
-18. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 17, also include "Ticket moved to .backlog/done/{slug}".
+18. **Knowledge base tuning** (only after a ticket was moved in step 17): Invoke `/tune` via the Skill tool, passing the completed ticket slug as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the PR is already merged and the ticket is already moved.
+19. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 17, also include "Ticket moved to .backlog/done/{slug}".
 
 ## Error Handling
 

@@ -9,6 +9,9 @@ CLAUDE.local.md
 # Local ticket backlog
 .backlog/
 
+# Knowledge base (project-local, auto-maintained by /tune)
+.simple-wf-knowledge/
+
 # Environment
 .env
 .env.local

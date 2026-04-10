@@ -103,6 +103,7 @@ Current state:
          - Code Quality feedback: {quality-round-{n-1}.md path} (or 'Not run' / 'No issues' if none)"
       f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
       g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
+      h. Knowledge-base injection: Read `.simple-wf-knowledge/index.yaml`. If the file exists, filter entries where the role is `implementer` and `confidence >= 0.8`. Collect up to 20 lines of summaries and include them in the prompt under a heading "## Known Project Patterns". If `.simple-wf-knowledge/index.yaml` does not exist, skip this injection silently. **Note: Acceptance Criteria always take precedence over KB patterns. If a KB pattern conflicts with an AC, the AC wins.**
     - Receive Generator's return value (changed files list + lint/test status)
 
 13. Run `git diff --stat` to capture change summary.
@@ -171,8 +172,9 @@ Current state:
 
 ## Evaluator Tuning
 
-After completing multiple /impl cycles, review evaluator performance:
-1. Read saved evaluation reports (`eval-round-*.md`, `quality-round-*.md`) across recent tickets
-2. Identify patterns: Does the evaluator consistently miss certain issue types? Over-flag certain patterns?
-3. If patterns are found, update the evaluator agent prompt (`agents/ac-evaluator.md` or `agents/code-reviewer.md`) to address them
-4. Track prompt changes in git commit messages for auditability
+Evaluator tuning is now automated via the `/tune` skill:
+1. After `/ship` completes a ticket, `/tune` is invoked automatically (Step 18 in `/ship`) to extract patterns from evaluation logs
+2. Extracted patterns are stored in `.simple-wf-knowledge/candidates.yaml` and promoted to `entries.yaml` when confidence reaches 0.8
+3. Promoted patterns are injected into the Generator prompt (Step 12h above) via `index.yaml`
+4. To run tuning manually: `/tune {ticket-slug}` or `/tune all`
+5. To review the current knowledge base: read `.simple-wf-knowledge/entries.yaml` and `.simple-wf-knowledge/index.yaml`
