@@ -53,6 +53,7 @@ Before drafting the ticket, refine the scope through targeted questions.
    - **Edge cases**: Boundary conditions or error cases discovered during investigation
    - **Constraints**: Performance, security, or backward compatibility requirements
 3. Use AskUserQuestion to ask up to 3 targeted questions (multiple questions in a single call)
+   - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), skip Phase 2 entirely and proceed directly to Phase 3 with the researcher's findings only. Note "Phase 2 skipped (non-interactive mode)" in the final summary so the user knows refinement did not happen. Do NOT hang waiting for input.
 4. Save the user's answers for inclusion in the Phase 3 planner prompt
 
 Note: If the investigation results provide sufficient clarity (e.g., a simple S-size change with obvious scope), skip questioning and proceed directly to Phase 3.
@@ -89,6 +90,7 @@ Evaluate the ticket quality using the ticket-evaluator agent.
         - Ask: "The ticket has unresolved quality issues: [list FAIL gates and their issues]. Proceed with this ticket anyway, or stop to revise manually?"
         - If user chooses to proceed → continue to Phase 5 with remaining issues noted in the summary
         - If user chooses to stop → print the ticket file path and remaining issues, then stop
+        - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to **stop**. Print "Stopped: /create-ticket cannot resolve unresolved quality FAIL gates without interactive confirmation. Ticket saved at <path>. Re-run in interactive mode to decide whether to proceed." and exit. The ticket file remains on disk for manual editing. Do NOT hang waiting for input.
 
 ### Phase 5: Output
 
@@ -113,9 +115,9 @@ Identify available skills and agents by scanning `.claude/skills/` and `.claude/
 listing installed plugin skills/agents, and using the workflow patterns from Pre-computed Context above to design the workflow.
 
 **Category-specific guidelines**:
-- **Security**: Wrap with `/security-scan` before and after. Spec-first with documentation leading.
+- **Security**: Wrap with `/audit only_security_scan=true` before and after. Spec-first with documentation leading.
 - **CodeQuality**: Use `/refactor` skill. Guarantee no behavior changes.
-- **Doc**: Use doc-writer agent.
+- **Doc**: Use `/impl` with a doc-focused plan.
 - **DevOps**: CI/CD configs are hard to test; design carefully with `/plan2doc`.
 - **Community**: Reference industry-standard templates.
 
@@ -130,4 +132,4 @@ listing installed plugin skills/agents, and using the workflow patterns from Pre
 - **Researcher failure**: Report error and stop.
 - **Planner failure**: Report error and stop.
 - **Ticket-evaluator failure**: Output ticket without evaluation. Display "Quality: NOT EVALUATED" in summary.
-- **2 rounds FAIL**: Present remaining issues to user via AskUserQuestion. Proceed only with user confirmation. If user declines, stop and print ticket path for manual editing.
+- **2 rounds FAIL**: Present remaining issues to user via AskUserQuestion. Proceed only with user confirmation. If user declines, stop and print ticket path for manual editing. **In non-interactive mode** (when `AskUserQuestion` is unavailable / errors, typical in `claude -p` / CI automation), default to stop and print the ticket path with remaining issues. Do NOT hang waiting for input.

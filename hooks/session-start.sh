@@ -10,38 +10,13 @@ if [ -d ".docs/session-log" ]; then
   find .docs/session-log -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
 
-BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
-CHANGED=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
-
-CONTEXT="Branch: ${BRANCH} | Changed files: ${CHANGED}"
-
-# Read active feature from project memory
-MEMORY_DIR="$HOME/.claude/projects/-$(echo "$PWD" | tr '/' '-')/memory"
-if [ -f "$MEMORY_DIR/MEMORY.md" ]; then
-  ACTIVE=$(grep -A1 "Active Feature" "$MEMORY_DIR/MEMORY.md" 2>/dev/null | tail -1 | sed 's/^- //' | head -c 200)
-  [ -n "$ACTIVE" ] && CONTEXT="${CONTEXT} | Active: ${ACTIVE}"
-fi
-
-# Find latest plan document (check both .backlog/active/ and .docs/plans/)
-BACKLOG_PLAN=$(ls -t .backlog/active/*/plan.md 2>/dev/null | head -1)
-DOCS_PLAN=$(ls -t .docs/plans/*.md 2>/dev/null | head -1)
-
-if [ -n "${BACKLOG_PLAN:-}" ] && [ -n "${DOCS_PLAN:-}" ]; then
-  # Compare modification times, pick the newer one
-  if [ "${BACKLOG_PLAN}" -nt "${DOCS_PLAN}" ]; then
-    LATEST_PLAN="$BACKLOG_PLAN"
-  else
-    LATEST_PLAN="$DOCS_PLAN"
-  fi
-elif [ -n "${BACKLOG_PLAN:-}" ]; then
-  LATEST_PLAN="$BACKLOG_PLAN"
-elif [ -n "${DOCS_PLAN:-}" ]; then
-  LATEST_PLAN="$DOCS_PLAN"
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
+  CHANGED=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
+  CONTEXT="Branch: ${BRANCH} | Changed files: ${CHANGED}"
 else
-  LATEST_PLAN=""
+  CONTEXT="Branch: (not a git repo) | Changed files: 0"
 fi
-
-[ -n "${LATEST_PLAN:-}" ] && CONTEXT="${CONTEXT} | Latest Plan: ${LATEST_PLAN}"
 
 # Output as additionalContext JSON
 jq -n --arg ctx "$CONTEXT" '{"additionalContext": $ctx}'

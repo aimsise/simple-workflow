@@ -12,18 +12,9 @@ HOOK="$HOOK_DIR/session-start.sh"
 # Trap to ensure cleanup on exit
 trap 'cleanup_test_repo' EXIT
 
-# Helper: session-start.sh requires .backlog/active/*/plan.md and
-# .docs/plans/*.md to exist (due to set -euo pipefail + ls glob).
-# Create minimal plan structure and commit it so it doesn't count as changed files.
+# Helper: alias for setup_test_repo (basic git repo with initial commit)
 setup_session_repo() {
   setup_test_repo
-  mkdir -p "$TEST_REPO/.backlog/active/stub"
-  echo "stub" > "$TEST_REPO/.backlog/active/stub/plan.md"
-  mkdir -p "$TEST_REPO/.docs/plans"
-  echo "stub" > "$TEST_REPO/.docs/plans/stub.md"
-  cd "$TEST_REPO"
-  git add -A
-  git commit -q -m "add plan stubs"
 }
 
 # Test 1: Valid JSON output in a normal git repo
@@ -105,57 +96,47 @@ else
 fi
 cleanup_test_repo
 
-# Test 6: Outside git repo, hook exits non-zero
-# (git status --short fails with exit 128 in non-git dir, and set -euo pipefail terminates the hook)
+# Test 6: Outside git repo, hook exits 0 with a graceful fallback context
+# (guarded by `git rev-parse --git-dir` so the hook never aborts on non-git dirs)
 NON_GIT_DIR=$(mktemp -d)
 run_hook "$HOOK" "" "$NON_GIT_DIR"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -ne 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} Outside git repo, hook exits non-zero (pipefail on git status)"
+if [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} Outside git repo, hook exits 0"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} Outside git repo, expected non-zero exit"
-  echo -e "       Exit code: $LAST_EXIT_CODE"
+  echo -e "  ${RED}FAIL${NC} Outside git repo, expected exit 0 but got $LAST_EXIT_CODE"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
+if echo "$CONTEXT" | grep -qF "(not a git repo)"; then
+  echo -e "  ${GREEN}PASS${NC} Outside git repo, additionalContext reports '(not a git repo)'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Outside git repo, expected '(not a git repo)' marker in context"
+  echo -e "       Context: $CONTEXT"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 rm -rf "$NON_GIT_DIR"
 
-# Test 7: With .backlog/active/test/plan.md, contains "Latest Plan:"
+# Test 7: Output does not contain "Latest Plan:" or "Active:" (simplified hook)
 setup_session_repo
 mkdir -p "$TEST_REPO/.backlog/active/test"
 echo "# Plan" > "$TEST_REPO/.backlog/active/test/plan.md"
 run_hook "$HOOK" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if echo "$CONTEXT" | grep -qF "Latest Plan:"; then
-  echo -e "  ${GREEN}PASS${NC} With plan file, contains 'Latest Plan:'"
+if ! echo "$CONTEXT" | grep -qE "Latest Plan:|Active:"; then
+  echo -e "  ${GREEN}PASS${NC} Simplified hook does not contain 'Latest Plan:' or 'Active:'"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} With plan file, contains 'Latest Plan:'"
+  echo -e "  ${RED}FAIL${NC} Simplified hook should not contain 'Latest Plan:' or 'Active:'"
   echo -e "       Context: $CONTEXT"
   TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test 8: Without plan file, hook exits non-zero
-# (known limitation: ls glob + set -euo pipefail causes early exit)
-setup_test_repo
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -ne 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} Without plan dirs, hook exits non-zero (known pipefail behavior)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  # If hook succeeds, verify no Latest Plan
-  CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-  if ! echo "$CONTEXT" | grep -qF "Latest Plan:"; then
-    echo -e "  ${GREEN}PASS${NC} Without plan file, does not contain 'Latest Plan:'"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} Without plan file, should not contain 'Latest Plan:'"
-    echo -e "       Context: $CONTEXT"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
 fi
 cleanup_test_repo
 

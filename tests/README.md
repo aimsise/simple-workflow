@@ -9,7 +9,7 @@ All hooks in `hooks/` have corresponding test files in `tests/`:
 | pre-bash-safety.sh | test-pre-bash-safety.sh | Destructive commands, pipes, chains, prefixes, subshells, sensitive files, bulk staging, edge cases |
 | pre-write-safety.sh | test-pre-write-safety.sh | Sensitive file blocking, allowed files |
 | pre-edit-safety.sh | test-pre-edit-safety.sh | Sensitive file blocking, allowed files |
-| session-start.sh | test-session-start.sh | JSON output, context injection, branch detection, plan detection, log cleanup |
+| session-start.sh | test-session-start.sh | JSON output, context injection, branch detection, log cleanup |
 | session-stop-log.sh | test-session-stop-log.sh | Log creation and content |
 | pre-compact-save.sh | test-pre-compact-save.sh | State file creation, content verification |
 
