@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- `/tune` skill: automatic evaluation log analysis and knowledge base management
+- `tune-analyzer` agent: cross-ticket pattern extraction from evaluation logs
+- Knowledge base infrastructure (`.simple-wf-knowledge/`) for cross-session learning
+- `/ship` Step 18: automatic `/tune` invocation after ticket completion
+- `/impl` Step 12h: knowledge base pattern injection into Generator prompts
+- Test Category I: `/tune` knowledge base contract tests (20 assertions)
+
+### Changed
+- `/impl` Evaluator Tuning section updated to reference automated `/tune` workflow
+
 ## [1.1.0] - 2026-04-10
 
 ### Breaking Changes
