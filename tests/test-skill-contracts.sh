@@ -481,5 +481,151 @@ done
 
 echo ""
 
+# =============================================================================
+# カテゴリ I: /tune ナレッジベース契約
+# 差分: 新規カテゴリ。tune スキル・エージェント・KB 注入の構造整合性を検証。
+# =============================================================================
+echo "--- Cat I: /tune ナレッジベース契約 ---"
+
+# I-1: tune SKILL.md が存在する
+TUNE_SKILL="$REPO_DIR/skills/tune/SKILL.md"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$TUNE_SKILL" ]; then
+  echo -e "  ${GREEN}PASS${NC} tune SKILL.md が存在する"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tune SKILL.md が存在しない"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# I-2: tune-analyzer.md が存在する
+TUNE_AGENT="$REPO_DIR/agents/tune-analyzer.md"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$TUNE_AGENT" ]; then
+  echo -e "  ${GREEN}PASS${NC} tune-analyzer.md が存在する"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tune-analyzer.md が存在しない"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# I-3: tune SKILL.md に entries 上限50件の記述がある
+assert_file_contains \
+  "tune SKILL.md にエントリ上限50件の記述がある" \
+  "$TUNE_SKILL" \
+  "maximum 50 entries"
+
+# I-4: tune SKILL.md に candidates 上限30件の記述がある
+assert_file_contains \
+  "tune SKILL.md に candidates 上限30件の記述がある" \
+  "$TUNE_SKILL" \
+  "(Maximum 30|maximum 30|max.*30) candidates"
+
+# I-5: tune SKILL.md に TTL 90日の記述がある
+assert_file_contains \
+  "tune SKILL.md に TTL 90日の記述がある" \
+  "$TUNE_SKILL" \
+  "TTL.*90|90.*days"
+
+# I-6: tune SKILL.md に信頼度3分岐がある (auto-promote, propose, accumulate)
+assert_file_contains \
+  "tune SKILL.md に Auto-promote 分岐がある" \
+  "$TUNE_SKILL" \
+  "Auto-promote|auto-promote"
+
+assert_file_contains \
+  "tune SKILL.md に Propose 分岐がある" \
+  "$TUNE_SKILL" \
+  "Propose"
+
+assert_file_contains \
+  "tune SKILL.md に Accumulate 分岐がある" \
+  "$TUNE_SKILL" \
+  "Accumulate"
+
+# I-7: tune-analyzer.md に confidence 初期値4種がある
+assert_file_contains \
+  "tune-analyzer.md に eval-round confidence 0.3 がある" \
+  "$TUNE_AGENT" \
+  "0\\.3"
+
+assert_file_contains \
+  "tune-analyzer.md に impl success confidence 0.2 がある" \
+  "$TUNE_AGENT" \
+  "0\\.2"
+
+assert_file_contains \
+  "tune-analyzer.md に security confidence 0.4 がある" \
+  "$TUNE_AGENT" \
+  "0\\.4"
+
+assert_file_contains \
+  "tune-analyzer.md に human feedback confidence 0.5 がある" \
+  "$TUNE_AGENT" \
+  "0\\.5"
+
+# I-8: tune-analyzer.md に Status 行がある（Agent Status 契約準拠）
+assert_file_contains \
+  "tune-analyzer.md に Status 行がある" \
+  "$TUNE_AGENT" \
+  '\*\*Status\*\*.*success.*partial.*failed'
+
+# I-9: tune-analyzer.md に読み取り専用ツール + Write（Edit, Bash(*)を含まない）
+TUNE_AGENT_FM=$(extract_frontmatter_block "$TUNE_AGENT")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+has_edit="false"
+has_bash_star="false"
+if echo "$TUNE_AGENT_FM" | grep -qE '^\s*-\s*Edit'; then
+  has_edit="true"
+fi
+if echo "$TUNE_AGENT_FM" | grep -qE 'Bash\(\*\)'; then
+  has_bash_star="true"
+fi
+if [ "$has_edit" = "false" ] && [ "$has_bash_star" = "false" ]; then
+  echo -e "  ${GREEN}PASS${NC} tune-analyzer.md は Edit, Bash(*) を含まない"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tune-analyzer.md に Edit または Bash(*) が含まれる (edit=$has_edit, bash_star=$has_bash_star)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# I-10: ship SKILL.md に /tune 呼び出しがある（バッククォート付き）
+assert_file_contains \
+  "ship SKILL.md にバッククォート付き /tune 呼び出しがある" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  '`/tune`'
+
+# I-11: ship SKILL.md に tune 失敗で停止しない旨の記述がある
+assert_file_contains \
+  "ship SKILL.md に tune 失敗で ship 停止しない旨がある" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "not stop|do not.*stop|not.*stop.*ship"
+
+# I-12: impl SKILL.md に KB 注入 (index.yaml) の記述がある
+assert_file_contains \
+  "impl SKILL.md に index.yaml からの KB 注入がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "index\\.yaml"
+
+# I-13: impl SKILL.md に AC 優先の注記がある
+assert_file_contains \
+  "impl SKILL.md に AC が KB に優先する注記がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "Acceptance Criteria.*take precedence|AC.*precedence|AC.*wins"
+
+# I-14: impl SKILL.md に Known Project Patterns 見出しがある
+assert_file_contains \
+  "impl SKILL.md に Known Project Patterns 見出しがある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "Known Project Patterns"
+
+# I-15: impl SKILL.md に KB 未存在時スキップの記述がある
+assert_file_contains \
+  "impl SKILL.md に KB 未存在時スキップの記述がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "does not exist.*skip|not exist.*skip"
+
+echo ""
+
 # --- サマリー ---
 print_summary

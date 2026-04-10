@@ -49,22 +49,23 @@ RUN_LEVEL1_TESTS=true bash tests/run-all.sh
 bash tests/spike-claude-p.sh
 ```
 
-### 12 Skill x Verification Category Matrix
+### 13 Skill x Verification Category Matrix
 
-| Skill | A: dmi | B: AskUQ | C: Skill委譲 | D: Agent委譲 | E: args | F: fork | G: Status | H: hook |
-|-------|--------|----------|-------------|-------------|---------|---------|-----------|---------|
-| commit | x | | | | x | | | |
-| ticket-move | x | | | | x | | | |
-| investigate | x | | | x | x | x | | |
-| test | x | | | x | x | x | | |
-| scout | x | | x | | x | | | |
-| plan2doc | x | | | x | x | | | |
-| audit | x | | | x | x | | x | |
-| catchup | x | | | x | x | | | x |
-| create-ticket | x | x | | x | x | | | |
-| refactor | x | x | | x | x | | | |
-| impl | x | x | x | x | x | | x | |
-| ship | x | | x | | x | | | |
+| Skill | A: dmi | B: AskUQ | C: Skill委譲 | D: Agent委譲 | E: args | F: fork | G: Status | H: hook | I: KB |
+|-------|--------|----------|-------------|-------------|---------|---------|-----------|---------|-------|
+| commit | x | | | | x | | | | |
+| ticket-move | x | | | | x | | | | |
+| investigate | x | | | x | x | x | | | |
+| test | x | | | x | x | x | | | |
+| scout | x | | x | | x | | | | |
+| plan2doc | x | | | x | x | | | | |
+| audit | x | | | x | x | | x | | |
+| catchup | x | | | x | x | | | x | |
+| create-ticket | x | x | | x | x | | | | |
+| refactor | x | x | | x | x | | | | |
+| impl | x | x | x | x | x | | x | | |
+| ship | x | | x | | x | | | | |
+| tune | x | | | x | x | | | | x |
 
 Legend: `x` = skill is tested in that category
 
@@ -78,6 +79,7 @@ Legend: `x` = skill is tested in that category
 - **F**: `context:fork` and `agent:` co-occurrence contract
 - **G**: `/audit` -> `/impl` Status contract type alignment (PASS/PASS_WITH_CONCERNS/FAIL)
 - **H**: hook -> skill data flow integrity (pre-compact-save fields consumed by catchup)
+- **I**: `/tune` knowledge base contract (KB directory structure, pattern file format, impl injection)
 
 ## Skill/Agent Integration Testing (Level 1)
 
