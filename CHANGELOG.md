@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.1.0] - 2026-04-10
+
 ### Breaking Changes
 - Removed `/create-pr` and `/create-pr-with-merge` skills. Use `/ship` (which includes commit + PR + optional merge) instead.
 - Removed `/plan2doc-light` skill. `/plan2doc` now auto-selects the planner model (sonnet for S-size tickets, opus for M/L/XL).
@@ -40,7 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`/impl` non-interactive environment fallback**: both `AskUserQuestion` paths (Evaluator Dry Run failure for L/XL tickets and `/audit` infrastructure failure) now have an explicit fallback to `stop` with a message instructing the user to re-run in interactive mode. Prevents stalls in `claude -p` / CI automation.
 - **`README.md` `pre-bash-safety` description corrected**: the hook is now documented as **best-effort** with explicit examples of commands it does NOT catch (`gh repo delete`, `aws s3 rm`, `kubectl delete`, `terraform destroy`, `sh -c`, `python -c`). Treat as guardrail, not security boundary.
 
+### Fixed (v1.1.0 audit follow-up)
+- **`pre-bash-safety.sh` regex hardened**: now detects `rm -Rf`/`rm -fR`/`rm --recursive --force` (uppercase and long-option variants), case-insensitive `drop table/database`, `find -delete`, and `find -exec bash/sh -c` (HIGH-3, HIGH-4, MED-8).
+- **`pre-compact-save.sh` per-ticket processing**: round numbers, outcome, and phase are now computed per-ticket instead of a single global maximum. Fixes incorrect `last_round_outcome` when multiple tickets are active (HIGH-5).
+- **`/audit` round synchronization**: accepts explicit `round=N` argument; `/impl` now passes its loop counter to keep `eval-round-{n}` and `quality-round-{n}`/`audit-round-{n}` aligned across retries (MED-7).
+- **README corrected**: "minimum set of tool permissions" replaced with explicit per-role scope description; information firewall documented as asymmetric (HIGH-6, MED-9).
+- **`catchup/SKILL.md` allowed-tools compliance**: grep/sed pipe example replaced with `Read`/`Grep` tool instructions matching the skill's allowed-tools (LOW-11).
+- **`ac-evaluator.md` whitespace consistency**: `Bash(cmd :*)` entries unified to `Bash(cmd:*)` matching other agents (LOW-12).
+- **CHANGELOG/plugin.json version sync**: Unreleased section released as 1.1.0; plugin.json version bumped to match (MED-10).
+
 ### Tests
+- New `tests/test-path-consistency.sh` Categories 11-15: Bash(*) scope guard, /audit round=N contract, Bash permission whitespace consistency, catchup allowed-tools compliance, CHANGELOG/plugin.json version consistency.
+- New `tests/test-pre-compact-save.sh` Test Group 5: multi-ticket per-ticket mapping with aggregate value verification.
+- New `tests/test-pre-bash-safety.sh` tests for `rm -Rf`/`--recursive --force`, lowercase `drop table`, `find -delete`, `find -exec bash/sh -c`.
 - New `tests/test-path-consistency.sh` Category 9 (Default-branch hardcode guard): grep guard preventing literal `origin/main` from reappearing in any `skills/*.md`. Same regression-prevention pattern can be reused for future "hardcode" classes.
 - New `tests/test-path-consistency.sh` Category 10 (Agent Status contract): asserts every agent in `agents/` has a `**Status**:` line in its return format, catching contract drift between agent return formats and consumers.
 - New `tests/test-path-consistency.sh` Categories 5-8 (Skill / Agent structural validity): YAML frontmatter validation, body section presence, agent reachability, and `bash -n` syntax check on inline `!`...`` interpolations.
@@ -60,4 +74,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[1.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.1.0
 [1.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.0.0

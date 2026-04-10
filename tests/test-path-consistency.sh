@@ -13,7 +13,7 @@ assert_file_contains() {
   local file="$2"
   local pattern="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if grep -qE "$pattern" "$file"; then
+  if grep -qE -- "$pattern" "$file"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -408,6 +408,272 @@ for agent_md in \
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done
+
+echo ""
+
+# --- Category 11: Bash(*) scope restricted to generator agents ---
+echo "--- Bash(*) scope guard ---"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+bstar_files=$(grep -rl '"Bash(\*)"' "$REPO_DIR"/agents/*.md 2>/dev/null | sort)
+bstar_count=$(echo "$bstar_files" | grep -c . 2>/dev/null || echo 0)
+expected_files=$(printf '%s\n' "$REPO_DIR/agents/implementer.md" "$REPO_DIR/agents/test-writer.md")
+if [ "$bstar_count" -eq 2 ] && [ "$bstar_files" = "$expected_files" ]; then
+  echo -e "  ${GREEN}PASS${NC} Bash(*) restricted to implementer + test-writer"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Unexpected Bash(*) agents (expected implementer + test-writer only): $(echo "$bstar_files" | tr '\n' ' ')"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# --- Category 12: /audit round=N contract ---
+echo "--- /audit round=N contract ---"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'round=N' "$REPO_DIR/skills/audit/SKILL.md" && grep -qF 'round={n}' "$REPO_DIR/skills/impl/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} /audit supports round=N and /impl passes round={n}"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} /audit round=N contract is missing or /impl does not pass round={n}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# --- Category 13: Bash permission whitespace consistency ---
+echo "--- Bash permission whitespace consistency ---"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+inconsistent=$( (grep -rE 'Bash\([a-z]+ :\*\)' "$REPO_DIR"/agents/ 2>/dev/null || true) | wc -l | tr -d ' ')
+if [ "$inconsistent" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} No whitespace inconsistency in Bash(<cmd> :*) permissions"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Found $inconsistent Bash(<cmd> :*) whitespace-mixed entries in agents/"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# --- Category 14: catchup allowed-tools compliance ---
+echo "--- catchup allowed-tools compliance ---"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! grep -qE "grep.*\|.*sed" "$REPO_DIR/skills/catchup/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} catchup does not suggest grep|sed piping outside allowed-tools"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} catchup still contains grep|sed pipe example"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# --- Category 15: CHANGELOG / plugin.json version consistency ---
+echo "--- CHANGELOG / plugin.json version consistency ---"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PLUGIN_VER=$(jq -r '.version' "$REPO_DIR/.claude-plugin/plugin.json")
+CHANGELOG_LATEST=$(grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$REPO_DIR/CHANGELOG.md" | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
+if [ "$PLUGIN_VER" = "$CHANGELOG_LATEST" ]; then
+  echo -e "  ${GREEN}PASS${NC} plugin.json version ($PLUGIN_VER) matches latest CHANGELOG release ($CHANGELOG_LATEST)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} version mismatch: plugin.json=$PLUGIN_VER CHANGELOG=$CHANGELOG_LATEST"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# --- Category 16: Default-branch pipe correctness ---
+echo "--- Default-branch pipe correctness ---"
+
+for skill_md in "$REPO_DIR"/skills/*/SKILL.md; do
+  skill_slug=$(basename "$(dirname "$skill_md")")
+
+  mapfile -t pipes < <(grep -oE '!`[^`]*git symbolic-ref[^`]*`' "$skill_md" | sed -E 's/^!`//; s/`$//')
+
+  if [ ${#pipes[@]} -eq 0 ]; then
+    continue
+  fi
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  all_ok=1
+  bad_pipe=""
+  for pipe in "${pipes[@]}"; do
+    if ! echo "$pipe" | grep -qF '| grep .'; then
+      all_ok=0
+      bad_pipe="$pipe"
+      break
+    fi
+  done
+
+  if [ $all_ok -eq 1 ]; then
+    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md git symbolic-ref pipes include '| grep .'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} skills/$skill_slug/SKILL.md git symbolic-ref pipe missing '| grep .'"
+    echo -e "       Bad pipe: $bad_pipe"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+echo ""
+
+# --- Category 17: Step number continuity ---
+echo "--- Step number continuity ---"
+
+for skill_md in \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "$REPO_DIR/skills/impl/SKILL.md"; do
+  skill_slug=$(basename "$(dirname "$skill_md")")
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+  mapfile -t steps < <(grep -nE '^[0-9]+[a-z]?\.' "$skill_md" | sed -E 's/:([0-9]+[a-z]?)\..*/:\1/')
+
+  if [ ${#steps[@]} -eq 0 ]; then
+    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md has no top-level steps (skipped)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    continue
+  fi
+
+  has_branch=0
+  has_gap=0
+  bad_detail=""
+  prev_num=0
+  for entry in "${steps[@]}"; do
+    line_no="${entry%%:*}"
+    step_id="${entry##*:}"
+    if echo "$step_id" | grep -qE '[a-z]$'; then
+      has_branch=1
+      bad_detail="branch step '${step_id}' at line $line_no"
+      break
+    fi
+    num="$step_id"
+    if [ "$prev_num" -gt 0 ] && [ "$num" -ne $((prev_num + 1)) ] && [ "$num" -ne 1 ]; then
+      has_gap=1
+      bad_detail="gap: step $prev_num -> $num at line $line_no"
+      break
+    fi
+    prev_num=$num
+  done
+
+  if [ "$has_branch" -eq 0 ] && [ "$has_gap" -eq 0 ]; then
+    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md steps are sequential (1..$prev_num)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} skills/$skill_slug/SKILL.md step numbering issue: $bad_detail"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+echo ""
+
+# --- Category 18: Phase-step alignment ---
+echo "--- Phase-step alignment ---"
+
+for skill_md in \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "$REPO_DIR/skills/impl/SKILL.md"; do
+  skill_slug=$(basename "$(dirname "$skill_md")")
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+  phase_ok=1
+  bad_detail=""
+  prev_last_step=0
+
+  while IFS= read -r line; do
+    line_no=$(echo "$line" | cut -d: -f1)
+    first_step=$(awk -v start="$line_no" 'NR > start && /^[0-9]+\./ { sub(/\..*/, ""); print; exit }' "$skill_md")
+    if [ -z "$first_step" ]; then
+      continue
+    fi
+
+    if [ "$prev_last_step" -gt 0 ] && [ "$first_step" -ne $((prev_last_step + 1)) ]; then
+      phase_ok=0
+      bad_detail="Phase at line $line_no starts at step $first_step, expected $((prev_last_step + 1))"
+      break
+    fi
+
+    next_phase_line=$(awk -v start="$line_no" 'NR > start && /^## Phase/ { print NR; exit }' "$skill_md")
+    if [ -n "$next_phase_line" ]; then
+      prev_last_step=$(awk -v start="$line_no" -v end="$next_phase_line" 'NR > start && NR < end && /^[0-9]+\./ { sub(/\..*/, ""); last=$0 } END { print last+0 }' "$skill_md")
+    else
+      prev_last_step=$(awk -v start="$line_no" 'NR > start && /^[0-9]+\./ { sub(/\..*/, ""); last=$0 } END { print last+0 }' "$skill_md")
+    fi
+  done < <(grep -nE '^## Phase' "$skill_md")
+
+  if [ "$phase_ok" -eq 1 ]; then
+    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md phase-step alignment is correct"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} skills/$skill_slug/SKILL.md phase-step misalignment: $bad_detail"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+echo ""
+
+# --- Category 19: allowed-tools vs body Bash usage consistency ---
+echo "--- allowed-tools vs body Bash usage consistency ---"
+
+for skill_md in "$REPO_DIR"/skills/*/SKILL.md; do
+  skill_slug=$(basename "$(dirname "$skill_md")")
+
+  # Skip delegator skills with agent: field (they delegate to an agent that has Bash)
+  if grep -qE '^agent:' "$skill_md"; then
+    continue
+  fi
+
+  has_bash_in_tools=$(awk '
+    BEGIN{in_fm=0;depth=0;found=0}
+    /^---/{depth++;if(depth==1){in_fm=1;next};if(depth==2){exit}}
+    in_fm && /Bash/{found=1}
+    END{print found}
+  ' "$skill_md")
+
+  # Check body (after frontmatter) for shell command invocation patterns
+  # Exclude !` interpolations (pre-computed context, handled by platform)
+  body_bash=$( awk 'BEGIN{depth=0} /^---/{depth++;next} depth>=2{print}' "$skill_md" \
+    | { grep -cvE '^!' || true; } \
+    | head -1 )
+  # More targeted: look for "Run `git/gh/ls/mkdir" patterns in body
+  # Exclude !` interpolation lines (pre-computed context, not agent shell instructions)
+  body_shell_refs=$( awk 'BEGIN{depth=0} /^---/{depth++;next} depth>=2{print}' "$skill_md" \
+    | grep -vE '^!' \
+    | { grep -cE '`(git |gh |npm |npx |cargo |go |make |pytest |bash )' || true; } )
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ "$has_bash_in_tools" -eq 0 ] && [ "$body_shell_refs" -gt 3 ]; then
+    echo -e "  ${RED}FAIL${NC} skills/$skill_slug/SKILL.md body has $body_shell_refs shell refs but allowed-tools has no Bash"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  else
+    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md allowed-tools vs body Bash usage is consistent"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  fi
+done
+
+echo ""
+
+# --- Category 20: catchup tickets field documentation ---
+echo "--- catchup tickets field documentation ---"
+
+assert_file_contains \
+  "catchup/SKILL.md documents tickets: field" \
+  "$REPO_DIR/skills/catchup/SKILL.md" \
+  'tickets'
+
+assert_file_contains \
+  "catchup/SKILL.md documents per-ticket dir field" \
+  "$REPO_DIR/skills/catchup/SKILL.md" \
+  '- dir:'
+
+assert_file_contains \
+  "catchup/SKILL.md documents per-ticket in_progress_phase" \
+  "$REPO_DIR/skills/catchup/SKILL.md" \
+  'in_progress_phase'
 
 echo ""
 
