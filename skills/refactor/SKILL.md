@@ -60,6 +60,12 @@ Active tickets:
    - If `ticket-dir` is set: specify output path as `{ticket-dir}/quality-refactor-{n}.md` where {n} is the iteration number
    - If `ticket-dir` is not set: let the code-reviewer use its default (`.docs/reviews/{topic}.md`)
 7. Evaluate review results:
+   - **code-reviewer Status: failed or partial** (review infrastructure failure):
+     Use `AskUserQuestion` to ask "code-reviewerが失敗しました。どうしますか？" with options:
+     - "stop": stop the skill immediately. Print "Stopped by user after code-reviewer failure. Refactoring changes remain in working tree." and exit.
+     - "continue without review": proceed to Phase 4 without quality verification, noting "Quality review SKIPPED (code-reviewer failed)" in the final summary.
+     - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to **stop**. Print "Stopped: /refactor cannot proceed without code-reviewer in non-interactive mode. Refactoring changes remain in working tree. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
+     - **Never** silently treat code-reviewer failure as "no issues" — that would let Critical bugs slip through unverified.
    - **Critical = 0 AND Warning = 0** -> exit loop, proceed to Phase 4
    - **Issues found** -> fix the reported issues, then return to step 5
    - **Iteration 3 reached** -> exit loop with remaining issues noted

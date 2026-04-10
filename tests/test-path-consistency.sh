@@ -360,11 +360,15 @@ fi
 
 echo ""
 
-# --- Category 10: Agent Status contract ---
+# --- Category 10: Agent Status contract (vocabulary verification) ---
 # Every agent must publish a `**Status**:` contract line in its return format
 # so that orchestrator skills can parse a consistent structured return block.
 # This catches drift between the agent prompt and the parser contract.
-echo "--- Agent Status contract ---"
+# In addition, verify the Status line is non-empty AND contains a recognizable
+# token from the known vocabulary set, to catch empty or garbage values.
+echo "--- Agent Status contract (vocabulary verification) ---"
+
+KNOWN_TOKENS='success|partial|failed|PASS|FAIL|FAIL-CRITICAL|PASS_WITH_CONCERNS'
 
 for agent_md in \
   "$REPO_DIR/agents/code-reviewer.md" \
@@ -382,11 +386,25 @@ for agent_md in \
     TESTS_FAILED=$((TESTS_FAILED + 1))
     continue
   fi
-  if grep -qE '^\*\*Status\*\*:' "$agent_md"; then
-    echo -e "  ${GREEN}PASS${NC} $agent_basename.md has '**Status**:' contract line"
+  STATUS_LINE=$(grep -m1 -E '^\*\*Status\*\*:' "$agent_md" || true)
+  if [ -z "$STATUS_LINE" ]; then
+    echo -e "  ${RED}FAIL${NC} $agent_basename.md is missing '**Status**:' contract line"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    continue
+  fi
+  # Extract the value portion after "**Status**:"
+  STATUS_VALUES=$(echo "$STATUS_LINE" | sed -E 's/^\*\*Status\*\*:[[:space:]]*//')
+  if [ -z "$STATUS_VALUES" ] || [ "$STATUS_VALUES" = "$STATUS_LINE" ]; then
+    echo -e "  ${RED}FAIL${NC} $agent_basename.md has empty Status value"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    continue
+  fi
+  # Verify at least one known token appears
+  if echo "$STATUS_VALUES" | grep -qE "($KNOWN_TOKENS)"; then
+    echo -e "  ${GREEN}PASS${NC} $agent_basename.md Status vocabulary is recognized"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
-    echo -e "  ${RED}FAIL${NC} $agent_basename.md is missing '**Status**:' contract line"
+    echo -e "  ${RED}FAIL${NC} $agent_basename.md Status value '$STATUS_VALUES' contains no known token ($KNOWN_TOKENS)"
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done

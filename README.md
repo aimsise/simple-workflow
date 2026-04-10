@@ -205,6 +205,8 @@ Each round's evaluation results are saved as `eval-round-{n}.md` / `quality-roun
 - Outputs a summary of all evaluation rounds
 
 > **Note**: `/impl` requires interactive mode for specific failure recovery paths (Evaluator Dry Run failure for L/XL tickets, `/audit` infrastructure failure). In `claude -p` or CI automation, these paths will stop the skill with an explanatory message rather than hang. For fully autonomous pipelines, avoid relying on L/XL ticket sizes or pre-validate your audit infrastructure.
+>
+> Similarly, `/create-ticket` requires interactive mode for two paths: (1) Phase 2 Socratic Refinement is **skipped** in non-interactive mode (the ticket is generated from researcher findings alone without Q&A refinement, and the summary notes "Phase 2 skipped"); (2) Phase 4 quality FAIL escalation **stops** the skill with the ticket saved on disk for manual editing — non-interactive mode will not silently bypass unresolved quality gates.
 
 ### 5. `/ship` — Commit and PR
 
