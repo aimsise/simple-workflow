@@ -103,6 +103,7 @@ Current state:
          - Code Quality feedback: {quality-round-{n-1}.md path} (or 'Not run' / 'No issues' if none)"
       f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
       g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
+      h. Knowledge-base injection: Read `.simple-wf-knowledge/index.yaml`. If the file exists, filter entries where the role is `implementer` and `confidence >= 0.8`. Collect up to 20 lines of summaries and include them in the prompt under a heading "## Known Project Patterns". If `.simple-wf-knowledge/index.yaml` does not exist, skip this injection silently. **Note: Acceptance Criteria always take precedence over KB patterns. If a KB pattern conflicts with an AC, the AC wins.**
     - Receive Generator's return value (changed files list + lint/test status)
 
 13. Run `git diff --stat` to capture change summary.
@@ -126,8 +127,8 @@ Current state:
     - **Status: PASS** → continue to step 16
 
 16. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
-    - Call `/audit` with no `only_security_scan` argument so both code-reviewer and security-scanner run.
-    - `/audit` auto-detects the active ticket directory from the current branch and writes its reports to `{ticket-dir}/quality-round-{n}.md` (code review) and `{ticket-dir}/security-scan-{n}.md` (security), where `{n}` is the next available number — this naturally aligns with the current Generator round.
+    - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 14). Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.
+    - `/audit` writes its reports to `{ticket-dir}/quality-round-{n}.md`, `{ticket-dir}/security-scan-{n}.md`, and `{ticket-dir}/audit-round-{n}.md` using the round number passed via `round={n}`. This guarantees `eval-round-{n}` and `quality-round-{n}` / `audit-round-{n}` stay aligned across retries and resumed sessions.
     - The `/audit` skill must NOT receive Generator's return value or AC Evaluator's return value (information firewall is preserved because `/audit` independently inspects `git diff` via its own pre-computed context).
     - Parse `/audit`'s structured return block:
       - `**Status**`: PASS | PASS_WITH_CONCERNS | FAIL
@@ -171,8 +172,9 @@ Current state:
 
 ## Evaluator Tuning
 
-After completing multiple /impl cycles, review evaluator performance:
-1. Read saved evaluation reports (`eval-round-*.md`, `quality-round-*.md`) across recent tickets
-2. Identify patterns: Does the evaluator consistently miss certain issue types? Over-flag certain patterns?
-3. If patterns are found, update the evaluator agent prompt (`agents/ac-evaluator.md` or `agents/code-reviewer.md`) to address them
-4. Track prompt changes in git commit messages for auditability
+Evaluator tuning is now automated via the `/tune` skill:
+1. After `/ship` completes a ticket, `/tune` is invoked automatically (Step 18 in `/ship`) to extract patterns from evaluation logs
+2. Extracted patterns are stored in `.simple-wf-knowledge/candidates.yaml` and promoted to `entries.yaml` when confidence reaches 0.8
+3. Promoted patterns are injected into the Generator prompt (Step 12h above) via `index.yaml`
+4. To run tuning manually: `/tune {ticket-slug}` or `/tune all`
+5. To review the current knowledge base: read `.simple-wf-knowledge/entries.yaml` and `.simple-wf-knowledge/index.yaml`

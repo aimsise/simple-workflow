@@ -24,10 +24,10 @@ Recent history:
 !`git log --oneline -20`
 
 Default branch:
-!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main`
+!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 Changes from default branch:
-!`git diff --stat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)`
+!`git diff --stat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)`
 
 Working tree:
 !`git status --short`
@@ -51,12 +51,13 @@ Check for recent compact-state files in `.docs/compact-state/compact-state-*.md`
 - `branch` — branch at compact time
 - `active_tickets` — list of ticket directories that were active
 - `active_plans` — list of plan files that were active
-- `latest_eval_round` — highest round number among saved `eval-round-*.md` files
-- `latest_audit_round` — highest round number among saved `audit-round-*.md` files (written by `/audit` Step 4a)
-- `last_round_outcome` — `PASS` | `FAIL` | `PASS_WITH_CONCERNS` | `unknown`
-- `in_progress_phase` — `impl-loop` | `impl-done` | `unknown`
+- `latest_eval_round` — highest round number across all tickets (aggregate)
+- `latest_audit_round` — highest round number across all tickets (aggregate)
+- `last_round_outcome` — `PASS` | `FAIL` | `PASS_WITH_CONCERNS` | `unknown` (aggregate — from the most relevant impl-loop ticket)
+- `in_progress_phase` — `impl-loop` | `impl-done` | `unknown` (aggregate — `impl-loop` if any ticket is looping)
+- `tickets` — per-ticket array with `{dir, latest_eval_round, latest_audit_round, last_round_outcome, in_progress_phase}` for each active ticket
 
-Use simple grep/awk on the YAML lines (e.g., `grep '^in_progress_phase:' <file> | sed 's/^in_progress_phase: //'`) to extract scalars. For list fields (`active_tickets`, `active_plans`) collect lines matching `^  - ` until the next non-list line.
+Use the `Read` tool to load the full compact-state file into context, then extract scalar fields by matching line prefixes (e.g., `latest_eval_round:`, `in_progress_phase:`). For list fields (`active_tickets`, `active_plans`) collect lines matching `^  - ` (2-space indent, dash, space) until the next non-list line. For the per-ticket `tickets:` array, each ticket entry begins with `  - dir: ` and its attributes are indented by 4 spaces (`    latest_eval_round:`, `    latest_audit_round:`, `    last_round_outcome:`, `    in_progress_phase:`). Parse them as an ordered list of maps; each map terminates when the next `  - dir: ` line appears or when the block ends. Do NOT use Bash for parsing — the allowed-tools of this skill do not include shell piping; `Read` and `Grep` are sufficient.
 
 **If the latest file does not start with `---`**, treat it as a legacy compact-state file and ignore the structured fields (still keep its existence as a flag for Step 2).
 
@@ -95,10 +96,12 @@ Check for existing docs (regardless of whether researcher was spawned):
 Detect the current development phase by checking these conditions **in order**. Check both `.docs/` and `.backlog/active/` for artifacts. Use the **first matching** phase:
 
 0. **Compact-state indicates an in-progress `/impl` loop** → suggest **resume `/impl`**
-   - Check: a YAML-frontmatter compact-state file was parsed in Step 1 AND `in_progress_phase == impl-loop`
+   - Check: a YAML-frontmatter compact-state file was parsed in Step 1 AND `in_progress_phase == impl-loop` (aggregate field)
    - Check: no new git commit has been made since the compact-state's `date` (compare against `git log -1 --format=%cI` for the most recent commit). If a newer commit exists, the user has already moved on — skip Rule 0 and fall through to the rules below.
-   - Guidance: "You were in the middle of `/impl` (round `{latest_eval_round}` evaluated, last outcome: `{last_round_outcome}`). The next expected step is round `{latest_eval_round + 1}`. Re-run `/impl` to resume the Generator-Evaluator loop."
-   - If `active_tickets` from the compact-state is non-empty, name the ticket directory in the guidance.
+   - **Per-ticket guidance** (when `tickets:` array is present): identify ticket(s) with `in_progress_phase == impl-loop` from the per-ticket array. For each such ticket, include its directory, round number, and outcome in the guidance.
+     - Single impl-loop ticket: "You were in the middle of `/impl` for `{dir}` (round `{latest_eval_round}` evaluated, last outcome: `{last_round_outcome}`). Re-run `/impl` to resume."
+     - Multiple impl-loop tickets: List all looping tickets with their round/outcome, then recommend resuming the one with the highest `latest_eval_round`.
+   - **Fallback** (when `tickets:` array is absent — legacy compact-state): use the aggregate `latest_eval_round` and `last_round_outcome` as before. If `active_tickets` is non-empty, name the ticket directory in the guidance.
 
 1. **No research files for current topic** → suggest **investigate**
    - Check: `.docs/research/` is empty or has no files related to current branch

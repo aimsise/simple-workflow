@@ -119,6 +119,16 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# Test 10b: YAML frontmatter contains 'tickets:' key with empty list (empty repo)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^tickets:$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} YAML frontmatter contains 'tickets:' key (empty repo)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} YAML frontmatter contains 'tickets:' key (empty repo)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 # Test 11: File contains '## Changed Files' section
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -n "$COMPACT_FILE" ] && grep -qF "## Changed Files" "$COMPACT_FILE"; then
@@ -169,6 +179,7 @@ echo ""
 
 setup_test_repo
 mkdir -p "$TEST_REPO/.backlog/active/feature-x"
+echo "ticket" > "$TEST_REPO/.backlog/active/feature-x/ticket.md"
 # Round 1: eval done, audit done with PASS
 echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-x/eval-round-1.md"
 echo "round 1 audit" > "$TEST_REPO/.backlog/active/feature-x/audit-round-1.md"
@@ -232,6 +243,7 @@ echo ""
 
 setup_test_repo
 mkdir -p "$TEST_REPO/.backlog/active/feature-y"
+echo "ticket" > "$TEST_REPO/.backlog/active/feature-y/ticket.md"
 echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-y/eval-round-1.md"
 # Test 19 fake Status row is written to audit-round-1.md (Fix 3)
 {
@@ -268,6 +280,7 @@ echo ""
 # This verifies pre-compact-save does NOT fall back to parsing quality-round files.
 setup_test_repo
 mkdir -p "$TEST_REPO/.backlog/active/feature-z"
+echo "ticket" > "$TEST_REPO/.backlog/active/feature-z/ticket.md"
 echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-z/eval-round-1.md"
 {
   echo "# Code review round 1 (raw code-reviewer output)"
@@ -296,6 +309,7 @@ echo ""
 # loosening of the case filter.
 setup_test_repo
 mkdir -p "$TEST_REPO/.backlog/active/feature-w"
+echo "ticket" > "$TEST_REPO/.backlog/active/feature-w/ticket.md"
 echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-w/eval-round-1.md"
 {
   echo "# Misplaced raw code-reviewer output in audit-round file"
@@ -313,6 +327,121 @@ else
   echo -e "  ${RED}FAIL${NC} case filter should reject 'success' vocabulary in audit-round files"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
+cleanup_test_repo
+
+echo ""
+
+# --- Test group 5: multi-ticket per-ticket mapping (HIGH-5) ---
+# Verifies that with multiple active tickets, per-ticket data is correctly
+# computed and aggregate values reflect the most relevant ticket.
+
+setup_test_repo
+mkdir -p "$TEST_REPO/.backlog/active/feature-a"
+mkdir -p "$TEST_REPO/.backlog/active/feature-b"
+echo "ticket a" > "$TEST_REPO/.backlog/active/feature-a/ticket.md"
+echo "ticket b" > "$TEST_REPO/.backlog/active/feature-b/ticket.md"
+
+# feature-a: round 1+2 eval, round 1+2 audit, last audit PASS -> impl-done
+echo "e1" > "$TEST_REPO/.backlog/active/feature-a/eval-round-1.md"
+echo "e2" > "$TEST_REPO/.backlog/active/feature-a/eval-round-2.md"
+{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/feature-a/audit-round-1.md"
+{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/feature-a/audit-round-2.md"
+
+# feature-b: round 1+2+3 eval, round 1+2 audit FAIL -> impl-loop
+echo "e1" > "$TEST_REPO/.backlog/active/feature-b/eval-round-1.md"
+echo "e2" > "$TEST_REPO/.backlog/active/feature-b/eval-round-2.md"
+echo "e3" > "$TEST_REPO/.backlog/active/feature-b/eval-round-3.md"
+{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/feature-b/audit-round-1.md"
+{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/feature-b/audit-round-2.md"
+
+run_hook "$HOOK" "" "$TEST_REPO"
+COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+
+# Test 22: aggregate latest_eval_round is 3 (from feature-b)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^latest_eval_round: 3$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} multi-ticket aggregate latest_eval_round is 3"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} multi-ticket aggregate latest_eval_round should be 3"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 23: aggregate latest_audit_round is 2 (max across both tickets)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^latest_audit_round: 2$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} multi-ticket aggregate latest_audit_round is 2"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} multi-ticket aggregate latest_audit_round should be 2"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 24: aggregate in_progress_phase is impl-loop (feature-b is still looping)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^in_progress_phase: impl-loop$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} multi-ticket aggregate in_progress_phase is impl-loop"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} multi-ticket aggregate in_progress_phase should be impl-loop"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 25: aggregate last_round_outcome is FAIL (from feature-b, the impl-loop ticket)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^last_round_outcome: FAIL$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} multi-ticket aggregate last_round_outcome is FAIL (from impl-loop ticket)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} multi-ticket aggregate last_round_outcome should be FAIL"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 26: per-ticket 'tickets:' array has 2 entries
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+TICKET_COUNT=$(grep -c '^  - dir: ' "$COMPACT_FILE" 2>/dev/null || echo 0)
+if [ "$TICKET_COUNT" -eq 2 ]; then
+  echo -e "  ${GREEN}PASS${NC} per-ticket 'tickets:' array has 2 entries"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} per-ticket 'tickets:' array should have 2 entries (got $TICKET_COUNT)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 27: per-ticket feature-a has impl-done
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+# Extract feature-a block and check in_progress_phase
+A_PHASE=$(awk '/- dir: .*feature-a/{found=1} found && /in_progress_phase:/{print $2; exit}' "$COMPACT_FILE")
+if [ "$A_PHASE" = "impl-done" ]; then
+  echo -e "  ${GREEN}PASS${NC} per-ticket feature-a in_progress_phase is impl-done"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} per-ticket feature-a in_progress_phase should be impl-done (got '$A_PHASE')"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 28: per-ticket feature-b has impl-loop
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+B_PHASE=$(awk '/- dir: .*feature-b/{found=1} found && /in_progress_phase:/{print $2; exit}' "$COMPACT_FILE")
+if [ "$B_PHASE" = "impl-loop" ]; then
+  echo -e "  ${GREEN}PASS${NC} per-ticket feature-b in_progress_phase is impl-loop"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} per-ticket feature-b in_progress_phase should be impl-loop (got '$B_PHASE')"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test 29: per-ticket feature-a last_round_outcome is PASS
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+A_OUTCOME=$(awk '/- dir: .*feature-a/{found=1} found && /last_round_outcome:/{print $2; exit}' "$COMPACT_FILE")
+if [ "$A_OUTCOME" = "PASS" ]; then
+  echo -e "  ${GREEN}PASS${NC} per-ticket feature-a last_round_outcome is PASS"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} per-ticket feature-a last_round_outcome should be PASS (got '$A_OUTCOME')"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 cleanup_test_repo
 
 echo ""

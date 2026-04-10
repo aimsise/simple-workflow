@@ -78,6 +78,50 @@ assert_blocked "BLOCK: DROP DATABASE mydb" \
 assert_blocked "BLOCK: DROP TABLE IF EXISTS users" \
   "DROP TABLE IF EXISTS users"
 
+# --- rm uppercase/long-option variants (HIGH-3) ---
+assert_blocked "BLOCK: rm -Rf /path (uppercase R)" \
+  "rm -Rf /some/path"
+
+assert_blocked "BLOCK: rm -fR /path (uppercase R, reversed)" \
+  "rm -fR /some/path"
+
+assert_blocked "BLOCK: rm --recursive --force /path (long options)" \
+  "rm --recursive --force /some/path"
+
+assert_blocked "BLOCK: rm --force --recursive /path (long options reversed)" \
+  "rm --force --recursive /some/path"
+
+assert_blocked "BLOCK: rm -r --force /path (mixed short+long)" \
+  "rm -r --force /some/path"
+
+assert_blocked "BLOCK: rm -R --force /path (mixed short+long uppercase)" \
+  "rm -R --force /some/path"
+
+assert_blocked "BLOCK: rm --recursive -f /path (mixed long+short)" \
+  "rm --recursive -f /some/path"
+
+assert_blocked "BLOCK: rm -f --recursive /path (mixed short+long reversed)" \
+  "rm -f --recursive /some/path"
+
+assert_blocked "BLOCK: rm --force -r /path (mixed long+short reversed)" \
+  "rm --force -r /some/path"
+
+assert_blocked "BLOCK: rm --force -R /path (mixed long+short reversed uppercase)" \
+  "rm --force -R /some/path"
+
+# --- drop table/database case-insensitive (HIGH-4) ---
+assert_blocked "BLOCK: drop table users (lowercase)" \
+  "drop table users"
+
+assert_blocked "BLOCK: drop database mydb (lowercase)" \
+  "drop database mydb"
+
+assert_blocked "BLOCK: Drop Table users (mixed case)" \
+  "Drop Table users"
+
+assert_blocked "BLOCK: drop table IF EXISTS users (lowercase drop)" \
+  "drop table IF EXISTS users"
+
 echo ""
 
 # ============================================================
@@ -201,6 +245,18 @@ assert_allowed "ALLOW: git add id_rsa_test.pub (public key is safe)" "git add id
 assert_allowed "ALLOW: git add secretariat.md (contains 'secret' but harmless)" "git add secretariat.md"
 assert_allowed "ALLOW: git add environment.ts (contains 'env' but wrong extension)" "git add environment.ts"
 
+# --- rm long-option safe variants (HIGH-3 regression guard) ---
+assert_allowed "ALLOW: rm --recursive dir (no force)" \
+  "rm --recursive /tmp/foo"
+
+assert_allowed "ALLOW: rm --force file (no recursive)" \
+  "rm --force /tmp/foo"
+
+# --- Uppercase false positive prevention (CRITICAL-2 regression guard) ---
+assert_allowed "ALLOW: git add ENVIRONMENT.ts (uppercase, no dot prefix)" "git add ENVIRONMENT.ts"
+assert_allowed "ALLOW: git add SECRETARIAT.md (uppercase, word boundary)" "git add SECRETARIAT.md"
+assert_allowed "ALLOW: git add KEY_METRICS.md (uppercase, no dot prefix)" "git add KEY_METRICS.md"
+
 echo ""
 
 # ============================================================
@@ -243,6 +299,28 @@ assert_blocked "BLOCK: git add id_ecdsa" "git add id_ecdsa"
 assert_blocked "BLOCK: git add .npmrc" "git add .npmrc"
 assert_blocked "BLOCK: git add .pypirc" "git add .pypirc"
 assert_blocked "BLOCK: git add path/to/id_rsa" "git add path/to/id_rsa"
+
+# --- Uppercase sensitive file staging (CRITICAL-2) ---
+assert_blocked "BLOCK: git add .ENV (uppercase)" \
+  "git add .ENV"
+
+assert_blocked "BLOCK: git add CREDENTIALS.json (uppercase)" \
+  "git add CREDENTIALS.json"
+
+assert_blocked "BLOCK: git add PRIVATE.KEY (uppercase)" \
+  "git add PRIVATE.KEY"
+
+assert_blocked "BLOCK: git add path/ID_RSA (uppercase)" \
+  "git add path/ID_RSA"
+
+assert_blocked "BLOCK: git add .NPMRC (uppercase)" \
+  "git add .NPMRC"
+
+assert_blocked "BLOCK: git add .Env.Production (mixed case)" \
+  "git add .Env.Production"
+
+assert_blocked "BLOCK: git add Secret.yaml (mixed case)" \
+  "git add Secret.yaml"
 
 echo ""
 
@@ -413,6 +491,26 @@ assert_allowed "ALLOW: xargs cat (safe xargs)" \
 
 assert_allowed "ALLOW: find -exec cat (safe find)" \
   'find . -name "*.md" -exec cat {} \;'
+
+# --- find -delete and find -exec bash/sh -c (MED-8) ---
+assert_blocked "BLOCK: find -delete" \
+  'find /tmp -name "*.log" -delete'
+
+assert_blocked "BLOCK: find -delete without name filter" \
+  'find /tmp -delete'
+
+assert_blocked "BLOCK: find -exec bash -c (shell indirect)" \
+  'find . -exec bash -c "rm -rf $1" _ {} \;'
+
+assert_blocked "BLOCK: find -exec sh -c (shell indirect)" \
+  'find . -exec sh -c "rm -f /tmp/foo" \;'
+
+# --- xargs with uppercase/long-option rm (HIGH-3 indirect) ---
+assert_blocked "BLOCK: xargs rm -Rf (uppercase)" \
+  'find . | xargs rm -Rf'
+
+assert_blocked "BLOCK: xargs rm --recursive --force (long options)" \
+  'find . | xargs rm --recursive --force'
 
 echo ""
 

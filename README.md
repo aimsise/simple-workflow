@@ -21,25 +21,26 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for a com
 
 ## Why simple-workflow?
 
-Claude Code is powerful, but its context window is finite. When you tackle a large task in a single conversation, context overflows mid-work and progress is lost.
+Claude Code is powerful, but its context window is finite. When you tackle a large task in a single conversation, accumulated tool output and inter-round state progressively degrade instruction-following and slow responses — and when context eventually overflows, progress is lost.
 
 simple-workflow solves this with two design principles: **Context Conservation Protocol** and **Harness Engineering**.
 
 ### Context Conservation Protocol
 
-Treats the context window as a consumable resource and systematically conserves it.
+Treats the context window as a consumable resource and systematically conserves it. Without deliberate management, accumulated tool output and inter-round state degrade instruction-following, slow responses, and increase API costs — even before context overflow causes outright progress loss.
 
-- **Delegate to sub-agents**: Investigation, planning, implementation, and review are each delegated to specialist sub-agents. Each agent launches with a fresh context, writes detailed artifacts to files, and returns only a summary (under 500 tokens) to the caller
-- **Release context between phases**: Once an investigation phase is complete, its artifacts live on disk — you can clear the context and move to the next phase. `/catchup` restores your working state at any time
-- **Auto-save before compaction**: When Claude Code compresses context, a hook automatically saves the current work state to a file so nothing is lost
+- **Bounded sub-agent returns**: Investigation, planning, implementation, and review are each delegated to specialist sub-agents. Each agent launches with a fresh context, writes detailed artifacts to files, and returns only a structured summary (under 500 tokens) to the caller. This bound is especially critical in multi-round orchestration — without it, `/impl`'s 3-round Generator-Evaluator cycle would accumulate unbounded output (raw test results, full diffs, verbose evaluation reports) round over round, degrading the orchestrator's instruction-following and decision quality as context fills
+- **Phase-aware context release**: `/catchup` auto-detects your current position across six development phases (investigate → plan → implement → test → review → commit) — as well as interrupted `/impl` loops — and recommends the next action with the exact command sequence to resume. Once a phase is complete, its artifacts live on disk — you clear the context and move on with a fresh window
+- **Structured state preservation with mid-loop resume**: Before context compaction, a hook saves structured state per ticket as YAML frontmatter — evaluation round number, audit round number, outcome (PASS/FAIL/PASS_WITH_CONCERNS), and in-progress phase (`impl-loop` / `impl-done`). If compaction interrupts `/impl`'s evaluation loop, `/catchup` detects the interrupted state — including which round was last evaluated — and recommends re-running `/impl` to resume
 
 ### Harness Engineering
 
 Structurally separates "writing code" from "judging code" to guarantee quality by design.
 
 - A **Generator** (implementer) writes code, an **AC Evaluator** independently verifies compliance against acceptance criteria, and `/audit` runs a multi-agent quality + security review (code-reviewer + security-scanner) on the resulting diff
-- All evaluators judge solely from `git diff` and test results — they never see the Generator's self-assessment (information firewall)
+- **Information firewall (asymmetric)**: evaluators judge solely from `git diff` and test results — they never see the Generator's self-assessment. The reverse direction is intentionally open: on retry, the Generator receives AC feedback (`eval-round-{n}.md`) and, when `/audit` ran, quality feedback (`quality-round-{n}.md`). For L/XL tickets, the Generator also receives the Evaluator Dry Run verification plan. This asymmetry is deliberate — bias from Generator to Evaluator is blocked, while corrective feedback from Evaluator to Generator is allowed
 - On failure, the Generator receives specific, actionable feedback and retries — up to 3 rounds
+- After ticket completion, `/tune` automatically extracts patterns from evaluation logs and stores them in `.simple-wf-knowledge/`. On the next `/impl` run, these patterns are injected into the Generator's prompt — creating a cross-session feedback loop that improves implementation quality over time
 - Critical AC violations (FAIL-CRITICAL) halt execution immediately
 
 ### Built-in Ticket Management
@@ -67,6 +68,10 @@ Each ticket is a directory where all work artifacts accumulate:
 
 From creation to completion, every intermediate artifact is preserved as a file. This is the heart of the Context Conservation Protocol — information accumulates in the filesystem, not the context window.
 
+### Knowledge Base (Cross-Session Learning)
+
+`.simple-wf-knowledge/` is an automatically maintained knowledge base that captures recurring patterns from evaluation logs. `/tune` analyzes completed ticket evaluations (eval-round, audit-round files) via the `tune-analyzer` agent, extracts actionable patterns (common failures, recurring feedback themes), and persists them as structured entries. At implementation time, `/impl` injects relevant knowledge base patterns into the Generator's dispatch prompt, so lessons learned from past tickets inform future implementation — closing the loop between evaluation feedback and code generation across sessions.
+
 ## Building Blocks
 
 simple-workflow is composed of three types of components: **Skills**, **Sub-agents**, and **Hooks**.
@@ -80,7 +85,13 @@ Operations invoked as slash commands like `/scout` or `/impl`. There are two kin
 
 ### Sub-agents
 
-Specialists launched by skills. Each runs in an isolated context with the minimum set of tool permissions it needs.
+Specialists launched by skills. Each runs in an isolated context with a tool permission scope appropriate to its role:
+
+- **Generator agents** (`implementer`, `test-writer`) need broad `Bash(*)` access to run arbitrary build/test tools defined by the target project
+- **Evaluator agents** (`ac-evaluator`, `code-reviewer`, `security-scanner`, `ticket-evaluator`) are restricted to read-only file utilities, with `ac-evaluator` additionally having read-only git access and specific test/lint runners
+- **Research/planning agents** (`researcher`, `planner`) are restricted to read-only git and filesystem tools
+
+This asymmetry is deliberate: the Generator-Evaluator separation relies on evaluators being unable to execute destructive commands even if prompted to do so.
 
 | Role | Agent | Model |
 |------|-------|-------|
@@ -92,6 +103,7 @@ Specialists launched by skills. Each runs in an isolated context with the minimu
 | Testing | test-writer | Sonnet |
 | Ticket evaluation | ticket-evaluator | Sonnet |
 | Security audit | security-scanner | Sonnet |
+| Pattern analysis | tune-analyzer | Sonnet |
 
 Models are auto-selected based on ticket size (S/M/L/XL). S-size tickets use Sonnet for speed; M and above use Opus for depth. The `planner` and `implementer` agents accept a dynamic model parameter; orchestrator skills pass the appropriate model at invocation time.
 
@@ -237,12 +249,13 @@ If no prior review via `/audit` is detected, a review gate recommends running on
 | Implementation | `/refactor` | Safe refactoring with backup branch |
 | Testing | `/test` | Design and run tests |
 | Quality | `/audit` | Multi-agent code quality + security audit (use `only_security_scan=true` for security-only) |
+| Quality | `/tune` | Analyze evaluation logs and maintain project knowledge base |
 | Delivery | `/commit` | Create a Conventional Commits-formatted commit |
 | Delivery | `/ship` | Commit + PR in one step (optionally merge) |
 
 ## Configuration
 
-Model selection is automatic based on ticket size — S-size tickets use Sonnet for speed, M and above use Opus for depth. This behavior is defined in each agent's frontmatter and orchestrator skill.
+Model selection is automatic based on ticket size — S-size tickets use Sonnet for speed, M and above use Opus for depth. This selection is driven by the orchestrator skills (`/impl`, `/plan2doc`), which pass the appropriate model to agents at invocation time.
 
 Hook scripts are registered in `hooks/hooks.json`. To customize, edit the JSON file or override individual scripts while keeping the same interface (read stdin, exit 0 to allow / exit 2 to block).
 
