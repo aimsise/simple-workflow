@@ -23,13 +23,18 @@ Current branch:
 Recent history:
 !`git log --oneline -20`
 
-Changes from main:
-!`git diff --stat main`
+Default branch:
+!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main`
+
+Changes from default branch:
+!`git diff --stat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)`
 
 Working tree:
 !`git status --short`
 
 ## Instructions
+
+**Note**: Throughout this skill, `<default-branch>` denotes the repository's default branch, taken from the `Default branch:` value in the pre-computed context above (which resolves `git symbolic-ref refs/remotes/origin/HEAD` and falls back to `main` when `origin/HEAD` is not set). Use this resolved value wherever the rules below mention `<default-branch>` — never hardcode `main`.
 
 ### 0. Argument Parsing
 
@@ -47,7 +52,7 @@ Check for recent compact-state files in `.docs/compact-state/compact-state-*.md`
 - `active_tickets` — list of ticket directories that were active
 - `active_plans` — list of plan files that were active
 - `latest_eval_round` — highest round number among saved `eval-round-*.md` files
-- `latest_quality_round` — highest round number among saved `quality-round-*.md` files
+- `latest_audit_round` — highest round number among saved `audit-round-*.md` files (written by `/audit` Step 4a)
 - `last_round_outcome` — `PASS` | `FAIL` | `PASS_WITH_CONCERNS` | `unknown`
 - `in_progress_phase` — `impl-loop` | `impl-done` | `unknown`
 
@@ -62,7 +67,7 @@ Use simple grep/awk on the YAML lines (e.g., `grep '^in_progress_phase:' <file> 
 Determine whether the **researcher** agent is needed:
 
 - **Skip researcher** if ALL of the following are true:
-  - Current branch is `main` or `master`
+  - Current branch equals `<default-branch>` (the value resolved at the top of the Instructions section)
   - Working tree has 0 changed files
   - No compact-state file was found in Step 1
   (State is obvious — clean start, no prior work to recover.)
@@ -72,7 +77,7 @@ Determine whether the **researcher** agent is needed:
   (State is already available from the file — no need for deep analysis.)
 
 - **Otherwise**: Spawn the **researcher** agent to analyze:
-  - What has changed on this branch vs main
+  - What has changed on this branch vs `<default-branch>`
   - What the changes are trying to accomplish
   - Current state of work (complete, in-progress, blocked)
   - Check `.backlog/active/` for any active tickets and their artifacts (investigation.md, plan.md, eval-round-*.md)
@@ -105,13 +110,13 @@ Detect the current development phase by checking these conditions **in order**. 
    - Also check: `.backlog/active/*/investigation.md` exists BUT `.backlog/active/*/plan.md` does not
    - Guidance: Read the research first, then use `/plan2doc <feature>`. `/plan2doc` automatically uses sonnet for S-size and opus for M/L/XL.
 
-3. **Plans exist, no code diff from main** → suggest **implement**
-   - Check: `.docs/plans/` has files BUT `git diff main --name-only` shows no changes outside `.docs/` and `.backlog/`
+3. **Plans exist, no code diff from default branch** → suggest **implement**
+   - Check: `.docs/plans/` has files BUT `git diff <default-branch> --name-only` shows no changes outside `.docs/` and `.backlog/`
    - Also check: `.backlog/active/*/plan.md` exists BUT no code changes outside `.backlog/`
    - Guidance: Read the plan first, then use `/impl`.
 
 4. **Code diff exists, no test changes** → suggest **test**
-   - Check: `git diff main --name-only` shows source changes BUT no test file changes
+   - Check: `git diff <default-branch> --name-only` shows source changes BUT no test file changes
    - Guidance: Use `/test <changed files>`.
 
 5. **Tests exist, no review files** → suggest **review**

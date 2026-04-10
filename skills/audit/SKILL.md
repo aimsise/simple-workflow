@@ -97,10 +97,26 @@ Then, print exactly the following structured block at the end of your output (th
 **Summary**: <one-line aggregated summary across all spawned agents>
 ```
 
+### 4a. Persist Aggregated Result (when ticket-dir is set)
+
+If an active ticket directory was detected in Step 1 (`ticket-dir`):
+- Write the structured result block below to `{ticket-dir}/audit-round-{n}.md`, where `{n}` is the same round number used for `quality-round-{n}.md` / `security-scan-{n}.md` in Step 1.
+- The file content is exactly the same 7-line `**Status**:...**Summary**:...` block printed in Step 4 (no extra header, no extra text).
+- This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0 (impl-loop resume detection).
+
+If no ticket directory was detected, skip this persistence step (no audit-round file is written for non-ticket flows).
+
 ## Error Handling
 
 - **No changes at all**: Print "No changes to audit." and return Status: PASS with all counts at 0.
-- **code-reviewer agent failure**: Treat code-reviewer counts as 0, set Status based on security-scanner only. Note the failure in the Summary.
-- **security-scanner agent failure**: Treat security-scanner counts as 0, set Status based on code-reviewer only (or PASS if also skipped). Note the failure in the Summary.
-- **Both agents fail**: Status: FAIL. Summary: "All review agents failed."
+- **Single agent failure (the other succeeded)**: Return Status: FAIL with Critical = 1 (counting "review infrastructure failure" as a Critical finding).
+  The Summary MUST explicitly name the failed agent and the failure reason.
+  Do NOT silently set counts to 0 — a partial review is not enough evidence to return PASS or PASS_WITH_CONCERNS.
+  **Never silently treat a failed agent as PASS or PASS_WITH_CONCERNS.**
+  Example: "**Status**: FAIL | **Summary**: security-scanner failed (timeout) — review incomplete; retry required"
+- **Both agents fail (or the only requested agent failed)**:
+  Do NOT return the structured result block at all. Instead, print the failure details to stderr and exit abnormally.
+  This forces the calling skill's fallback (e.g. `/impl` Step 16) to detect "no structured block" and escalate via `AskUserQuestion`.
+  Example stderr output:
+  "/audit: all spawned agents failed. code-reviewer: <error>. security-scanner: <error>."
 - **Invalid only_security_scan value** (e.g., `only_security_scan=yes`): Print warning and treat as `false` (default behavior).

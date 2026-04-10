@@ -17,7 +17,7 @@ ACTIVE_TICKET_FILES=(.backlog/active/*/ticket.md)
 ACTIVE_BACKLOG_PLAN_FILES=(.backlog/active/*/plan.md)
 ACTIVE_DOCS_PLAN_FILES=(.docs/plans/*.md)
 EVAL_ROUND_FILES=(.backlog/active/*/eval-round-*.md)
-QUALITY_ROUND_FILES=(.backlog/active/*/quality-round-*.md)
+AUDIT_ROUND_FILES=(.backlog/active/*/audit-round-*.md)
 shopt -u nullglob
 
 # Compute the maximum round number from a list of files matching *-N.md.
@@ -31,26 +31,30 @@ if [ "${#EVAL_ROUND_FILES[@]}" -gt 0 ]; then
   done
 fi
 
-LATEST_QUALITY_ROUND=0
-if [ "${#QUALITY_ROUND_FILES[@]}" -gt 0 ]; then
-  for f in "${QUALITY_ROUND_FILES[@]}"; do
+LATEST_AUDIT_ROUND=0
+if [ "${#AUDIT_ROUND_FILES[@]}" -gt 0 ]; then
+  for f in "${AUDIT_ROUND_FILES[@]}"; do
     n=$(echo "$f" | sed -E 's/.*-([0-9]+)\.md$/\1/')
-    if [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt "$LATEST_QUALITY_ROUND" ]; then
-      LATEST_QUALITY_ROUND="$n"
+    if [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt "$LATEST_AUDIT_ROUND" ]; then
+      LATEST_AUDIT_ROUND="$n"
     fi
   done
 fi
 
-# Determine the outcome of the most recent quality round by parsing its
+# Determine the outcome of the most recent audit round by parsing its
 # Status field. Defaults to "unknown" when no file or no parseable line.
+# The audit-round-{n}.md file is written by the /audit skill (Step 4a) and
+# contains the aggregated PASS/PASS_WITH_CONCERNS/FAIL vocabulary; the
+# code-reviewer's raw quality-round-*.md file uses a different vocabulary
+# (success/partial/failed) and is intentionally NOT parsed here.
 LAST_ROUND_OUTCOME="unknown"
-if [ "$LATEST_QUALITY_ROUND" -gt 0 ]; then
+if [ "$LATEST_AUDIT_ROUND" -gt 0 ]; then
   shopt -s nullglob
-  LATEST_Q_FILES=(.backlog/active/*/quality-round-"${LATEST_QUALITY_ROUND}".md)
+  LATEST_A_FILES=(.backlog/active/*/audit-round-"${LATEST_AUDIT_ROUND}".md)
   shopt -u nullglob
-  if [ "${#LATEST_Q_FILES[@]}" -gt 0 ]; then
-    LATEST_Q_FILE="${LATEST_Q_FILES[0]}"
-    STATUS_LINE=$(grep -m 1 -E '^\*\*Status\*\*:' "$LATEST_Q_FILE" 2>/dev/null || true)
+  if [ "${#LATEST_A_FILES[@]}" -gt 0 ]; then
+    LATEST_A_FILE="${LATEST_A_FILES[0]}"
+    STATUS_LINE=$(grep -m 1 -E '^\*\*Status\*\*:' "$LATEST_A_FILE" 2>/dev/null || true)
     if [ -n "$STATUS_LINE" ]; then
       STATUS_VAL=$(echo "$STATUS_LINE" | sed -E 's/^\*\*Status\*\*:[[:space:]]*([A-Z_]+).*/\1/')
       case "$STATUS_VAL" in
@@ -61,15 +65,15 @@ if [ "$LATEST_QUALITY_ROUND" -gt 0 ]; then
 fi
 
 # Heuristic for in_progress_phase:
-#   - Eval done but quality not yet for the same round -> impl-loop
-#   - Eval and quality both done at same round, FAIL    -> impl-loop (next round expected)
-#   - Eval and quality both done at same round, PASS(*) -> impl-done (loop completed)
-#   - Otherwise                                         -> unknown
+#   - Eval done but audit not yet for the same round -> impl-loop
+#   - Eval and audit both done at same round, FAIL    -> impl-loop (next round expected)
+#   - Eval and audit both done at same round, PASS(*) -> impl-done (loop completed)
+#   - Otherwise                                       -> unknown
 IN_PROGRESS_PHASE="unknown"
 if [ "$LATEST_EVAL_ROUND" -gt 0 ]; then
-  if [ "$LATEST_QUALITY_ROUND" -lt "$LATEST_EVAL_ROUND" ]; then
+  if [ "$LATEST_AUDIT_ROUND" -lt "$LATEST_EVAL_ROUND" ]; then
     IN_PROGRESS_PHASE="impl-loop"
-  elif [ "$LATEST_QUALITY_ROUND" -eq "$LATEST_EVAL_ROUND" ]; then
+  elif [ "$LATEST_AUDIT_ROUND" -eq "$LATEST_EVAL_ROUND" ]; then
     case "$LAST_ROUND_OUTCOME" in
       FAIL) IN_PROGRESS_PHASE="impl-loop" ;;
       PASS|PASS_WITH_CONCERNS) IN_PROGRESS_PHASE="impl-done" ;;
@@ -107,7 +111,7 @@ fi
     fi
   fi
   echo "latest_eval_round: ${LATEST_EVAL_ROUND}"
-  echo "latest_quality_round: ${LATEST_QUALITY_ROUND}"
+  echo "latest_audit_round: ${LATEST_AUDIT_ROUND}"
   echo "last_round_outcome: ${LAST_ROUND_OUTCOME}"
   echo "in_progress_phase: ${IN_PROGRESS_PHASE}"
   echo "---"
@@ -140,14 +144,14 @@ fi
   fi
   echo ""
   echo "## Evaluation State"
-  if [ "${#EVAL_ROUND_FILES[@]}" -eq 0 ] && [ "${#QUALITY_ROUND_FILES[@]}" -eq 0 ]; then
+  if [ "${#EVAL_ROUND_FILES[@]}" -eq 0 ] && [ "${#AUDIT_ROUND_FILES[@]}" -eq 0 ]; then
     echo "(none)"
   else
     if [ "${#EVAL_ROUND_FILES[@]}" -gt 0 ]; then
       printf '%s\n' "${EVAL_ROUND_FILES[@]}"
     fi
-    if [ "${#QUALITY_ROUND_FILES[@]}" -gt 0 ]; then
-      printf '%s\n' "${QUALITY_ROUND_FILES[@]}"
+    if [ "${#AUDIT_ROUND_FILES[@]}" -gt 0 ]; then
+      printf '%s\n' "${AUDIT_ROUND_FILES[@]}"
     fi
   fi
 } > "$SAVE_FILE"

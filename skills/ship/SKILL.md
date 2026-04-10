@@ -30,20 +30,23 @@ User arguments: $ARGUMENTS
 ## Argument Parsing
 
 Parse `$ARGUMENTS` for positional arguments:
-- First argument: target branch name (default: `main`). If the first argument is `true` or `merge=true`, treat it as the merge flag and use `main` as target.
+- First argument: target branch name (default: `<default-branch>` — see pre-computed context above). If the first argument is `true` or `merge=true`, treat it as the merge flag and use `<default-branch>` as target.
 - Second argument: `merge=true` or `true` to enable squash-merge after PR creation (default: no merge).
 
 Examples:
-- `/ship` -> commit + PR to main
+- `/ship` -> commit + PR to `<default-branch>` (e.g. main, master, develop)
 - `/ship develop` -> commit + PR to develop
-- `/ship merge=true` -> commit + PR to main + squash-merge
-- `/ship main true` -> commit + PR to main + squash-merge
+- `/ship merge=true` -> commit + PR to `<default-branch>` + squash-merge
+- `/ship <default-branch> true` -> commit + PR to `<default-branch>` + squash-merge
 - `/ship develop merge=true` -> commit + PR to develop + squash-merge
 
 ## Pre-computed Context
 
 Current branch:
 !`git branch --show-current`
+
+Default branch:
+!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main`
 
 Current state:
 !`git status --short`
@@ -54,14 +57,18 @@ Staged diff:
 Unstaged diff summary:
 !`git diff --stat`
 
-Diff stats vs main:
-!`git diff origin/main --stat`
+Diff stats vs default branch:
+!`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main) --stat`
 
 Recent commits for style reference:
 !`git log --oneline -10`
 
-Commits ahead of main:
-!`git log origin/main..HEAD --oneline`
+Commits ahead of default branch:
+!`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)..HEAD --oneline`
+
+## Instructions
+
+**Note**: Throughout this skill, `<default-branch>` denotes the repository's default branch, taken from the `Default branch:` value in the pre-computed context above (which resolves `git symbolic-ref refs/remotes/origin/HEAD` and falls back to `main` when `origin/HEAD` is not set). Use this resolved value wherever the rules below mention `<default-branch>` — never hardcode `main`.
 
 ## Phase 1: Commit
 
@@ -92,7 +99,7 @@ Commits ahead of main:
       - If "no" → stop
       - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 11
 
-7. Determine the target branch from arguments (default: main). If the target is not main, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against main).
+7. Determine the target branch from arguments (default: `<default-branch>` — obtained from the `Default branch:` pre-computed context above). If the target is not `<default-branch>`, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against `<default-branch>`).
 8. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
 9. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
 10. Push with `git push origin HEAD`. On failure, show the error and stop.

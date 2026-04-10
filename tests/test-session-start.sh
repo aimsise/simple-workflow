@@ -96,17 +96,29 @@ else
 fi
 cleanup_test_repo
 
-# Test 6: Outside git repo, hook exits non-zero
-# (git status --short fails with exit 128 in non-git dir, and set -euo pipefail terminates the hook)
+# Test 6: Outside git repo, hook exits 0 with a graceful fallback context
+# (guarded by `git rev-parse --git-dir` so the hook never aborts on non-git dirs)
 NON_GIT_DIR=$(mktemp -d)
 run_hook "$HOOK" "" "$NON_GIT_DIR"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -ne 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} Outside git repo, hook exits non-zero (pipefail on git status)"
+if [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} Outside git repo, hook exits 0"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} Outside git repo, expected non-zero exit"
-  echo -e "       Exit code: $LAST_EXIT_CODE"
+  echo -e "  ${RED}FAIL${NC} Outside git repo, expected exit 0 but got $LAST_EXIT_CODE"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
+if echo "$CONTEXT" | grep -qF "(not a git repo)"; then
+  echo -e "  ${GREEN}PASS${NC} Outside git repo, additionalContext reports '(not a git repo)'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Outside git repo, expected '(not a git repo)' marker in context"
+  echo -e "       Context: $CONTEXT"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 rm -rf "$NON_GIT_DIR"

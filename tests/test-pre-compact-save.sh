@@ -89,13 +89,13 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# Test 8: YAML frontmatter contains 'latest_quality_round:' key (with value 0 in empty repo)
+# Test 8: YAML frontmatter contains 'latest_audit_round:' key (with value 0 in empty repo)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ -n "$COMPACT_FILE" ] && grep -qE '^latest_quality_round: 0$' "$COMPACT_FILE"; then
-  echo -e "  ${GREEN}PASS${NC} YAML frontmatter contains 'latest_quality_round: 0' (empty repo)"
+if [ -n "$COMPACT_FILE" ] && grep -qE '^latest_audit_round: 0$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} YAML frontmatter contains 'latest_audit_round: 0' (empty repo)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} YAML frontmatter contains 'latest_quality_round: 0' (empty repo)"
+  echo -e "  ${RED}FAIL${NC} YAML frontmatter contains 'latest_audit_round: 0' (empty repo)"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -164,21 +164,22 @@ cleanup_test_repo
 
 echo ""
 
-# --- Test group 2: repo with eval-round + quality-round files ---
+# --- Test group 2: repo with eval-round + audit-round files ---
 # Verifies the in_progress_phase heuristic and latest_*_round detection.
 
 setup_test_repo
 mkdir -p "$TEST_REPO/.backlog/active/feature-x"
-# Round 1: eval done, quality done with PASS
+# Round 1: eval done, audit done with PASS
 echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-x/eval-round-1.md"
-echo "round 1 quality" > "$TEST_REPO/.backlog/active/feature-x/quality-round-1.md"
-# Round 2: eval done, quality done with FAIL
+echo "round 1 audit" > "$TEST_REPO/.backlog/active/feature-x/audit-round-1.md"
+# Round 2: eval done, audit done with FAIL
 echo "round 2 eval" > "$TEST_REPO/.backlog/active/feature-x/eval-round-2.md"
+# Test 17 fake Status row is written to audit-round-2.md (Fix 3)
 {
-  echo "# Quality round 2"
+  echo "# Audit round 2"
   echo ""
   echo "**Status**: FAIL"
-} > "$TEST_REPO/.backlog/active/feature-x/quality-round-2.md"
+} > "$TEST_REPO/.backlog/active/feature-x/audit-round-2.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
@@ -193,17 +194,17 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# Test 16: latest_quality_round is 2
+# Test 16: latest_audit_round is 2
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ -n "$COMPACT_FILE" ] && grep -qE '^latest_quality_round: 2$' "$COMPACT_FILE"; then
-  echo -e "  ${GREEN}PASS${NC} latest_quality_round detected as 2"
+if [ -n "$COMPACT_FILE" ] && grep -qE '^latest_audit_round: 2$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} latest_audit_round detected as 2"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} latest_quality_round detected as 2"
+  echo -e "  ${RED}FAIL${NC} latest_audit_round detected as 2"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# Test 17: last_round_outcome is FAIL (parsed from quality-round-2.md)
+# Test 17: last_round_outcome is FAIL (parsed from audit-round-2.md)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -n "$COMPACT_FILE" ] && grep -qE '^last_round_outcome: FAIL$' "$COMPACT_FILE"; then
   echo -e "  ${GREEN}PASS${NC} last_round_outcome parsed as FAIL"
@@ -232,11 +233,12 @@ echo ""
 setup_test_repo
 mkdir -p "$TEST_REPO/.backlog/active/feature-y"
 echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-y/eval-round-1.md"
+# Test 19 fake Status row is written to audit-round-1.md (Fix 3)
 {
-  echo "# Quality round 1"
+  echo "# Audit round 1"
   echo ""
   echo "**Status**: PASS_WITH_CONCERNS"
-} > "$TEST_REPO/.backlog/active/feature-y/quality-round-1.md"
+} > "$TEST_REPO/.backlog/active/feature-y/audit-round-1.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
@@ -251,6 +253,66 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+cleanup_test_repo
+
+echo ""
+
+# --- Test group 4: contract-drift regression tests (Fix 3) ---
+# These tests guard against the HIGH-A class bug where pre-compact-save
+# was parsing the code-reviewer's raw quality-round-*.md (vocabulary:
+# success/partial/failed) instead of /audit's aggregated audit-round-*.md
+# (vocabulary: PASS/FAIL/PASS_WITH_CONCERNS).
+
+# Test 20: code-reviewer's raw "**Status**: success" output misplaced in
+# quality-round-1.md (no audit-round file) must yield last_round_outcome=unknown.
+# This verifies pre-compact-save does NOT fall back to parsing quality-round files.
+setup_test_repo
+mkdir -p "$TEST_REPO/.backlog/active/feature-z"
+echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-z/eval-round-1.md"
+{
+  echo "# Code review round 1 (raw code-reviewer output)"
+  echo ""
+  echo "**Status**: success"
+} > "$TEST_REPO/.backlog/active/feature-z/quality-round-1.md"
+# NOTE: no audit-round-1.md — simulates code-reviewer ran but /audit did not persist
+run_hook "$HOOK" "" "$TEST_REPO"
+COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^last_round_outcome: unknown$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} code-reviewer '**Status**: success' in quality-round-1.md yields last_round_outcome=unknown (contract isolation)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} code-reviewer '**Status**: success' should not be parsed by pre-compact-save"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+echo ""
+
+# Test 21: even if code-reviewer's raw "**Status**: success" is misplaced into
+# audit-round-1.md, the case statement only matches PASS/FAIL/PASS_WITH_CONCERNS,
+# so last_round_outcome must remain "unknown" — this detects accidental future
+# loosening of the case filter.
+setup_test_repo
+mkdir -p "$TEST_REPO/.backlog/active/feature-w"
+echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-w/eval-round-1.md"
+{
+  echo "# Misplaced raw code-reviewer output in audit-round file"
+  echo ""
+  echo "**Status**: success"
+} > "$TEST_REPO/.backlog/active/feature-w/audit-round-1.md"
+run_hook "$HOOK" "" "$TEST_REPO"
+COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$COMPACT_FILE" ] && grep -qE '^last_round_outcome: unknown$' "$COMPACT_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} '**Status**: success' in audit-round-1.md yields last_round_outcome=unknown (case filter)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} case filter should reject 'success' vocabulary in audit-round files"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 cleanup_test_repo
 
 echo ""

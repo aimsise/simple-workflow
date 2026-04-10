@@ -74,6 +74,7 @@ Current state:
    - **If Evaluator fails or returns partial**: Use `AskUserQuestion` to ask the user "Evaluator が検証プランに合意できませんでした。続行しますか？" with options "yes" (proceed without verification plan) and "no" (stop the skill).
      - If user answers "no" → stop the skill immediately. Print "Stopped by user after Evaluator Dry Run failure." and exit.
      - If user answers "yes" → proceed without the verification plan. The Generator prompt will not include the dry run output for this round.
+   - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "no" (stop the skill). Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
    - **If Evaluator succeeds**: Save the verification plan for inclusion in Generator prompt (step 12g).
 
 9. If related investigation file exists (same directory `investigation.md` or latest in `.docs/research/`), read it.
@@ -135,7 +136,11 @@ Current state:
       - `**Suggestions**`: aggregated count
       - `**Reports**`: paths to the saved review files
       - `**Summary**`: one-line aggregated summary
-    - If `/audit` itself fails (no structured block returned): treat as 0 counts and Status PASS_WITH_CONCERNS, log the failure in the Phase 3 summary, and continue.
+    - **If `/audit` itself fails** (no structured block returned, or the block is malformed): print the failure details (`/audit`'s raw output if available) and use `AskUserQuestion` to ask "/auditが失敗しました。どうしますか？" with options:
+      - "stop": stop the skill immediately. Print "Stopped by user after /audit failure." and exit. Do NOT proceed to Phase 3.
+      - "fail": treat the audit as **Status: FAIL** with `Critical = 1` (audit infrastructure failure). Combine the audit failure note with ac-evaluator's pass confirmation as feedback for the next Generator round, and follow the same flow as a normal FAIL in step 17. If this is round 3, proceed to Phase 3 with the audit failure noted in the summary.
+      - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "stop" (do NOT default to "fail" — a silent FAIL retry would mask the infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
+      - **Never** silently treat audit failure as PASS or PASS_WITH_CONCERNS — that would let Critical/security issues slip through unverified.
 
 17. Combined Decision (based on `/audit` structured return):
     - **`/audit` Status: FAIL** (Critical > 0) → Combine ac-evaluator's pass confirmation and the audit's Critical findings (from the report files in `**Reports**`) as feedback for the next Generator round. Continue to next round.
@@ -161,7 +166,7 @@ Current state:
 - **Dirty working tree**: Warn user about unrelated changes, ask whether to continue.
 - **Generator failure** (Status: failed): Report error and stop.
 - **AC Evaluator failure** (Status: failed or partial): Report error. Generator's changes remain in place.
-- **Code Quality Reviewer failure** (Status: failed or partial): Treat as no quality issues. Proceed with AC Evaluator result only.
+- **/audit failure** (no structured block returned, or malformed): See Step 16 — ask the user via `AskUserQuestion` whether to STOP or treat the audit as FAIL. Never silently treat audit failure as PASS / PASS_WITH_CONCERNS.
 - **3 rounds FAIL**: Report remaining issues. Code remains changed.
 
 ## Evaluator Tuning

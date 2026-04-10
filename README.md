@@ -99,7 +99,7 @@ Models are auto-selected based on ticket size (S/M/L/XL). S-size tickets use Son
 
 Guardrails that fire automatically on tool execution to protect your project.
 
-- **pre-bash-safety** — Blocks destructive commands (`rm -rf`, `git push --force`, etc.)
+- **pre-bash-safety** — **Best-effort** blocking of common destructive commands (`rm -rf`, `git push --force`, `git reset --hard`, `git clean -f`, `DROP TABLE/DATABASE`, and bulk-staging of sensitive files). Does NOT catch arbitrary destructive commands from cloud / orchestration CLIs (`gh repo delete`, `aws s3 rm`, `kubectl delete`, `terraform destroy`, etc.) or shell-string indirection (`sh -c '...'`, `python -c '...'`). Treat this hook as a guardrail for common slip-ups, **not** as a security boundary.
 - **pre-write-safety / pre-edit-safety** — Blocks writes to sensitive files (`.env`, private keys, credentials)
 - **session-start** — Loads branch info and changed file count at session start
 - **pre-compact-save** — Auto-saves work state before context compaction as a YAML-frontmatter snapshot (active tickets, plans, latest evaluation rounds, in-progress phase). `/catchup` parses this to resume mid-loop work after compaction.
@@ -203,6 +203,8 @@ Each round's evaluation results are saved as `eval-round-{n}.md` / `quality-roun
 
 **Phase 3: Completion report**
 - Outputs a summary of all evaluation rounds
+
+> **Note**: `/impl` requires interactive mode for specific failure recovery paths (Evaluator Dry Run failure for L/XL tickets, `/audit` infrastructure failure). In `claude -p` or CI automation, these paths will stop the skill with an explanatory message rather than hang. For fully autonomous pipelines, avoid relying on L/XL ticket sizes or pre-validate your audit infrastructure.
 
 ### 5. `/ship` — Commit and PR
 
