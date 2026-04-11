@@ -21,31 +21,37 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for a com
 
 ## Why simple-workflow?
 
-Claude Code is powerful, but its context window is finite. When you tackle a large task in a single conversation, accumulated tool output and inter-round state progressively degrade instruction-following and slow responses — and when context eventually overflows, progress is lost.
+Claude Code is powerful, but its context window is finite — and fragile. Long-running agent sessions face four structural threats:
 
-simple-workflow solves this with two design principles: **Context Conservation Protocol** and **Harness Engineering**.
+| Threat | What happens | Structural countermeasure |
+|--------|-------------|--------------------------|
+| **Loss** (喪失) | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact hooks, `/catchup` recovery, `/tune` cross-session learning |
+| **Exhaustion** (枯渇) | The window fills up, degrading instruction-following and response quality | Bounded sub-agent returns (< 500 tokens), phase-aware context release |
+| **Contamination** (汚染) | Biasing information leaks into contexts where it distorts judgment | Information firewall (Generator → Evaluator blocked), ticket directory confinement |
+| **Bloat** (肥大化) | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
+
+simple-workflow addresses each threat with architectural constraints that hold regardless of model behavior — not prompt-level instructions that the model might rationalize away.
 
 ### Context Conservation Protocol
 
-Treats the context window as a consumable resource and systematically conserves it. Without deliberate management, accumulated tool output and inter-round state degrade instruction-following, slow responses, and increase API costs — even before context overflow causes outright progress loss.
+Treats the context window as a consumable resource and systematically conserves it.
 
-- **Bounded sub-agent returns**: Investigation, planning, implementation, and review are each delegated to specialist sub-agents. Each agent launches with a fresh context, writes detailed artifacts to files, and returns only a structured summary (under 500 tokens) to the caller. This bound is especially critical in multi-round orchestration — without it, `/impl`'s 3-round Generator-Evaluator cycle would accumulate unbounded output (raw test results, full diffs, verbose evaluation reports) round over round, degrading the orchestrator's instruction-following and decision quality as context fills
-- **Phase-aware context release**: `/catchup` auto-detects your current position across six development phases (investigate → plan → implement → test → review → commit) — as well as interrupted `/impl` loops — and recommends the next action with the exact command sequence to resume. Once a phase is complete, its artifacts live on disk — you clear the context and move on with a fresh window
-- **Structured state preservation with mid-loop resume**: Before context compaction, a hook saves structured state per ticket as YAML frontmatter — evaluation round number, audit round number, outcome (PASS/FAIL/PASS_WITH_CONCERNS), and in-progress phase (`impl-loop` / `impl-done`). If compaction interrupts `/impl`'s evaluation loop, `/catchup` detects the interrupted state — including which round was last evaluated — and recommends re-running `/impl` to resume
+- **Bounded sub-agent returns**: Each sub-agent launches with a fresh context, writes detailed artifacts to files, and returns only a structured summary (< 500 tokens). Without this bound, multi-round orchestration would accumulate unbounded output and degrade the orchestrator's decision quality
+- **Phase-aware context release**: `/catchup` auto-detects your current phase (investigate → plan → implement → test → review → commit) and recommends the next action. Completed phases live on disk — clear the context and move on
+- **Structured state preservation**: Before context compaction, a hook saves per-ticket state as YAML frontmatter. `/catchup` parses this to resume interrupted work — including mid-`/impl` loops
 
 ### Harness Engineering
 
 Structurally separates "writing code" from "judging code" to guarantee quality by design.
 
-- A **Generator** (implementer) writes code, an **AC Evaluator** independently verifies compliance against acceptance criteria, and `/audit` runs a multi-agent quality + security review (code-reviewer + security-scanner) on the resulting diff
-- **Information firewall (asymmetric)**: evaluators judge solely from `git diff` and test results — they never see the Generator's self-assessment. The reverse direction is intentionally open: on retry, the Generator receives AC feedback (`eval-round-{n}.md`) and, when `/audit` ran, quality feedback (`quality-round-{n}.md`). For L/XL tickets, the Generator also receives the Evaluator Dry Run verification plan. This asymmetry is deliberate — bias from Generator to Evaluator is blocked, while corrective feedback from Evaluator to Generator is allowed
-- On failure, the Generator receives specific, actionable feedback and retries — up to 3 rounds
-- After ticket completion, `/tune` automatically extracts patterns from evaluation logs and stores them in `.simple-wf-knowledge/`. On the next `/impl` run, these patterns are injected into the Generator's prompt — creating a cross-session feedback loop that improves implementation quality over time
-- Critical AC violations (FAIL-CRITICAL) halt execution immediately
+- A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 3 rounds. See [`/impl`](#4-impl--implement) for the full pipeline
+- **Information firewall (asymmetric)**: Evaluators never see the Generator's self-assessment — they judge solely from `git diff` and test results. The reverse is intentionally open: on retry, the Generator receives Evaluator feedback. Even though both sides run the same model, **weights × context = output**: by excluding the Generator's trial-and-error history and implicit knowledge of shortcuts from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt
+- **FAIL-CRITICAL** violations halt execution immediately — no rationalization, no retry
+- After ticket completion, evaluation logs feed into the [Knowledge Base](#knowledge-base-cross-session-learning), creating a cross-session feedback loop
 
 ### Built-in Ticket Management
 
-Your project's `.backlog/` directory becomes a ticket board. No external tools required.
+Your project's `.backlog/` directory is a state machine. Tickets transition between states via physical directory moves (`mv .backlog/product_backlog/{slug} .backlog/active/{slug}`), making state visible, traceable, and greppable — no database or external tools required.
 
 ```
 .backlog/
@@ -66,11 +72,13 @@ Each ticket is a directory where all work artifacts accumulate:
 └── quality-round-1.md # Quality review (round 1)
 ```
 
-From creation to completion, every intermediate artifact is preserved as a file. This is the heart of the Context Conservation Protocol — information accumulates in the filesystem, not the context window.
+From creation to completion, every intermediate artifact is confined within its ticket directory. This directory-level confinement serves dual purposes: **audit trail** (the complete history of investigation, planning, evaluation, and review is preserved as files) and **contamination prevention** (artifacts from one ticket never leak into another's context). The directory structure itself enforces governance — information accumulates in the filesystem, not the context window.
 
 ### Knowledge Base (Cross-Session Learning)
 
 `.simple-wf-knowledge/` is an automatically maintained knowledge base that captures recurring patterns from evaluation logs. `/tune` analyzes completed ticket evaluations (eval-round, audit-round files) via the `tune-analyzer` agent, extracts actionable patterns (common failures, recurring feedback themes), and persists them as structured entries. At implementation time, `/impl` injects relevant knowledge base patterns into the Generator's dispatch prompt, so lessons learned from past tickets inform future implementation — closing the loop between evaluation feedback and code generation across sessions.
+
+This feedback loop means simple-workflow is not a static tool — it is a **learning system that improves with use**. The more tickets you complete in a project, the more project-specific patterns accumulate, and the higher the probability that future implementations pass evaluation on the first round. In effect, the system develops project-specific expertise over time — analogous to a human developer becoming more effective the longer they work on a codebase — without fine-tuning the underlying model.
 
 ## Building Blocks
 
@@ -233,7 +241,7 @@ Ships the current changes through up to three phases:
 2. **Create PR** — Pushes to GitHub and creates a pull request
 3. **Merge** (optional, `merge=true`) — Squash-merges, deletes the branch, and syncs local
 
-If no prior review via `/audit` is detected, a review gate recommends running one first. On successful merge, the ticket is automatically moved to `.backlog/done/`.
+If no prior review via `/audit` is detected, a review gate recommends running one first. On successful merge, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
 
 ## All Skills
 
