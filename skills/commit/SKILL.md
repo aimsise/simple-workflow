@@ -6,7 +6,19 @@ description: >-
   explicitly asks to commit or finalize changes.
 disable-model-invocation: true
 model: haiku
-allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), Bash(git diff:*), Bash(git log:*)
+allowed-tools:
+  # Claude Code
+  - "Bash(git add:*)"
+  - "Bash(git status:*)"
+  - "Bash(git commit:*)"
+  - "Bash(git diff:*)"
+  - "Bash(git log:*)"
+  # Copilot CLI
+  - "shell(git add:*)"
+  - "shell(git status:*)"
+  - "shell(git commit:*)"
+  - "shell(git diff:*)"
+  - "shell(git log:*)"
 argument-hint: "[commit message hint (optional)]"
 ---
 

@@ -6,6 +6,7 @@ description: >-
   (sonnet for S, opus for M/L/XL). Use for any size of planning work.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Agent
   - Read
   - Glob
@@ -17,6 +18,18 @@ allowed-tools:
   - "Bash(ls:*)"
   - "Bash(mv:*)"
   - "Bash(mkdir:*)"
+  # Copilot CLI
+  - task
+  - view
+  - glob
+  - create
+  - edit
+  - "shell(git diff:*)"
+  - "shell(git status:*)"
+  - "shell(git log:*)"
+  - "shell(ls:*)"
+  - "shell(mv:*)"
+  - "shell(mkdir:*)"
 argument-hint: "<feature or change to plan>"
 ---
 

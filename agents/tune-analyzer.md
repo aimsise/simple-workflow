@@ -2,10 +2,16 @@
 name: tune-analyzer
 description: "Analyze evaluation logs to extract reusable patterns for the project knowledge base."
 tools:
+  # Claude Code
   - Read
   - Write
   - Grep
   - Glob
+  # Copilot CLI
+  - view
+  - create
+  - grep
+  - glob
 model: sonnet
 maxTurns: 20
 ---

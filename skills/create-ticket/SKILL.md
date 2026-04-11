@@ -5,6 +5,7 @@ description: >-
   criteria, and Claude Code workflow recommendations. Use when defining
   new work items or breaking down features into tickets.
 allowed-tools:
+  # Claude Code
   - Agent
   - Read
   - Glob
@@ -12,6 +13,14 @@ allowed-tools:
   - Write
   - Edit
   - AskUserQuestion
+  # Copilot CLI
+  - task
+  - view
+  - glob
+  - grep
+  - create
+  - edit
+  - ask_user
 disable-model-invocation: true
 argument-hint: "<ticket description>"
 ---

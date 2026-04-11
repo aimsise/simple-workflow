@@ -6,8 +6,12 @@ description: >-
   specified topic or active ticket.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Skill
   - Read
+  # Copilot CLI
+  - skill
+  - view
 argument-hint: "<topic or ticket to investigate and plan>"
 ---
 

@@ -2,10 +2,16 @@
 name: security-scanner
 description: "Security audit for application code focusing on common vulnerability patterns."
 tools:
+  # Claude Code
   - Read
   - Write
   - Grep
   - Glob
+  # Copilot CLI
+  - view
+  - create
+  - grep
+  - glob
 model: sonnet
 maxTurns: 25
 ---

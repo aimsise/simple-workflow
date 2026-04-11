@@ -6,6 +6,7 @@ description: >-
   code quality review.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Agent
   - AskUserQuestion
   - Skill
@@ -16,6 +17,17 @@ allowed-tools:
   - "Bash(git log:*)"
   - "Bash(git branch:*)"
   - "Bash(git stash:*)"
+  # Copilot CLI
+  - task
+  - ask_user
+  - skill
+  - view
+  - glob
+  - "shell(git diff:*)"
+  - "shell(git status:*)"
+  - "shell(git log:*)"
+  - "shell(git branch:*)"
+  - "shell(git stash:*)"
 argument-hint: "[plan file path or additional instructions]"
 ---
 

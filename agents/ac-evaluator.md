@@ -2,6 +2,7 @@
 name: ac-evaluator
 description: "AC compliance evaluator. Independently verifies acceptance criteria, test results, and functional correctness. Code quality is reviewed separately."
 tools:
+  # Claude Code
   - Read
   - Write
   - Grep
@@ -41,6 +42,46 @@ tools:
   - "Bash(wc:*)"
   - "Bash(head:*)"
   - "Bash(tail:*)"
+  # Copilot CLI
+  - view
+  - create
+  - grep
+  - glob
+  # Git read-only
+  - "shell(git diff:*)"
+  - "shell(git status:*)"
+  - "shell(git log:*)"
+  - "shell(git show:*)"
+  - "shell(git branch:*)"
+  # Test/lint runners — JS ecosystem
+  - "shell(npm test:*)"
+  - "shell(npm run:*)"
+  - "shell(npx:*)"
+  - "shell(yarn test:*)"
+  - "shell(yarn run:*)"
+  - "shell(pnpm test:*)"
+  - "shell(pnpm run:*)"
+  - "shell(bun test:*)"
+  # Test/lint runners — Python
+  - "shell(pytest:*)"
+  - "shell(python -m pytest:*)"
+  - "shell(python -m unittest:*)"
+  - "shell(ruff:*)"
+  - "shell(flake8:*)"
+  - "shell(mypy:*)"
+  # Test/lint runners — Rust/Go/Make/Bash
+  - "shell(cargo test:*)"
+  - "shell(cargo clippy:*)"
+  - "shell(go test:*)"
+  - "shell(go vet:*)"
+  - "shell(make:*)"
+  # Read-only utilities
+  - "shell(cat:*)"
+  - "shell(ls:*)"
+  - "shell(find:*)"
+  - "shell(wc:*)"
+  - "shell(head:*)"
+  - "shell(tail:*)"
 model: sonnet
 maxTurns: 20
 ---

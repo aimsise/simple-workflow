@@ -5,11 +5,18 @@ description: >-
   project knowledge base. Run after /ship or manually to tune agent behavior.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Agent
   - Read
   - Write
   - Glob
   - Grep
+  # Copilot CLI
+  - task
+  - view
+  - create
+  - glob
+  - grep
 argument-hint: "[ticket-slug or 'all']"
 ---
 
