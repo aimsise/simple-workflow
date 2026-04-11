@@ -29,12 +29,35 @@ tools:
   - "Bash(ruff:*)"
   - "Bash(flake8:*)"
   - "Bash(mypy:*)"
-  # Test/lint runners — Rust/Go/Make/Bash
+  # Test/lint runners — Rust/Go/Make
   - "Bash(cargo test:*)"
   - "Bash(cargo clippy:*)"
   - "Bash(go test:*)"
   - "Bash(go vet:*)"
   - "Bash(make:*)"
+  # Test/lint runners — JVM (Java/Kotlin/Scala)
+  - "Bash(gradle:*)"
+  - "Bash(./gradlew:*)"
+  - "Bash(mvn:*)"
+  - "Bash(./mvnw:*)"
+  - "Bash(sbt:*)"
+  # Test/lint runners — .NET (C#/F#)
+  - "Bash(dotnet test:*)"
+  - "Bash(dotnet build:*)"
+  # Test/lint runners — Ruby
+  - "Bash(bundle exec:*)"
+  - "Bash(rake:*)"
+  # Test/lint runners — Elixir
+  - "Bash(mix:*)"
+  # Test/lint runners — Swift
+  - "Bash(swift test:*)"
+  - "Bash(swift build:*)"
+  # Test/lint runners — Flutter/Dart
+  - "Bash(flutter test:*)"
+  - "Bash(dart test:*)"
+  # Test/lint runners — PHP
+  - "Bash(composer:*)"
+  - "Bash(./vendor/bin/phpunit:*)"
   # Read-only utilities
   - "Bash(cat:*)"
   - "Bash(ls:*)"
@@ -69,12 +92,35 @@ tools:
   - "shell(ruff:*)"
   - "shell(flake8:*)"
   - "shell(mypy:*)"
-  # Test/lint runners — Rust/Go/Make/Bash
+  # Test/lint runners — Rust/Go/Make
   - "shell(cargo test:*)"
   - "shell(cargo clippy:*)"
   - "shell(go test:*)"
   - "shell(go vet:*)"
   - "shell(make:*)"
+  # Test/lint runners — JVM (Java/Kotlin/Scala)
+  - "shell(gradle:*)"
+  - "shell(./gradlew:*)"
+  - "shell(mvn:*)"
+  - "shell(./mvnw:*)"
+  - "shell(sbt:*)"
+  # Test/lint runners — .NET (C#/F#)
+  - "shell(dotnet test:*)"
+  - "shell(dotnet build:*)"
+  # Test/lint runners — Ruby
+  - "shell(bundle exec:*)"
+  - "shell(rake:*)"
+  # Test/lint runners — Elixir
+  - "shell(mix:*)"
+  # Test/lint runners — Swift
+  - "shell(swift test:*)"
+  - "shell(swift build:*)"
+  # Test/lint runners — Flutter/Dart
+  - "shell(flutter test:*)"
+  - "shell(dart test:*)"
+  # Test/lint runners — PHP
+  - "shell(composer:*)"
+  - "shell(./vendor/bin/phpunit:*)"
   # Read-only utilities
   - "shell(cat:*)"
   - "shell(ls:*)"
@@ -95,6 +141,10 @@ Independently verify by running:
 2. The project's lint command (as defined in CLAUDE.md or project conventions)
 3. The project's test command (as defined in CLAUDE.md or project conventions)
 
+**Test Execution Fallback**: If the project's test/lint command is not in your permitted tool list:
+1. Check if a Makefile exists with `test` or `lint` targets — if yes, use `make test` / `make lint`
+2. If no viable runner is available, mark the Test/Lint field as `SKIPPED (no runner available)` and set Status to at most PASS-WITH-CAVEATS
+
 4. Beyond verifying existing tests, actively probe for failure modes:
    - Identify boundary conditions in the changed code and verify they are handled
    - Check error handling paths (invalid input, null values, empty collections)
@@ -111,6 +161,7 @@ Independently verify by running:
 ## Status Decision
 
 - **PASS**: All AC pass AND no [MEDIUM] or above issues
+- **PASS-WITH-CAVEATS**: All AC pass based on code inspection AND no [MEDIUM]+ issues, BUT automated test/lint verification was skipped due to unavailable runner. The Caveats field must list which verifications were skipped.
 - **FAIL**: One or more AC fail, OR [HIGH] issues exist
 - **FAIL-CRITICAL**: Any [CRITICAL] issue exists
 
@@ -128,10 +179,11 @@ Your Feedback field must contain specific, actionable instructions that a develo
 
 ```
 ## Result
-**Status**: PASS | FAIL | FAIL-CRITICAL
+**Status**: PASS | PASS-WITH-CAVEATS | FAIL | FAIL-CRITICAL
 **Output**: [evaluation report file path]
-**Lint**: pass | fail (independently verified)
-**Test**: pass | fail (independently verified)
+**Lint**: pass | fail | skipped (independently verified)
+**Test**: pass | fail | skipped (independently verified)
+**Caveats**: [only when PASS-WITH-CAVEATS — list skipped verifications]
 **AC Results**:
 - [x] AC 1: description
 - [ ] AC 2: description — FAILED: reason

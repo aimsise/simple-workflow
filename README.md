@@ -266,6 +266,7 @@ Hook scripts are registered in `hooks/hooks.json`. To customize, edit the JSON f
 - The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
+- AC Evaluator ships with built-in test/lint runners for JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator will rely on static code analysis only (reported as PASS-WITH-CAVEATS).
 
 ## Acknowledgements
 

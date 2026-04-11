@@ -136,6 +136,7 @@ Current state:
 15. AC Gate:
     - **Status: FAIL-CRITICAL** → stop immediately. Report CRITICAL issues to the user. Do NOT continue to further rounds.
     - **Status: FAIL** → save ac-evaluator's **Feedback**, continue to next round (skip quality review for this round)
+    - **Status: PASS-WITH-CAVEATS** → treat as PASS (continue to step 16), but record the Caveats field for inclusion in Phase 3 summary: "AC passed with caveats: {caveats}"
     - **Status: PASS** → continue to step 16
 
 16. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):

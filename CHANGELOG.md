@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.3.0] - 2026-04-12
+
+### Added
+- AC Evaluator multi-language support: JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, and PHP test/lint runners added to `ac-evaluator` agent and `/refactor` skill
+- `PASS-WITH-CAVEATS` status for AC Evaluator: transparently reports when automated test/lint verification was skipped due to unavailable runner
+- Test Execution Fallback protocol: Makefile `make test`/`make lint` as universal fallback before degrading to static-analysis-only evaluation
+
+### Changed
+- `/impl` AC Gate (Step 15) now handles `PASS-WITH-CAVEATS` as PASS with caveats recorded in Phase 3 summary
+- `test-path-consistency.sh` Category 10 KNOWN_TOKENS updated to include `PASS-WITH-CAVEATS`
+- README Limitations section now documents supported test ecosystems and Makefile fallback
+
 ## [1.2.0] - 2026-04-11
 
 ### Added
@@ -90,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[1.3.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.3.0
 [1.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.2.0
 [1.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.1.0
 [1.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.0.0
