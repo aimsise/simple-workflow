@@ -11,7 +11,6 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [GitHub Copilo
 - [Why simple-workflow?](#why-simple-workflow)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
-- [Usage with GitHub Copilot CLI](#usage-with-github-copilot-cli)
 - [Building Blocks](#building-blocks)
 - [Core Workflow](#core-workflow)
 - [All Skills](#all-skills)
@@ -136,64 +135,22 @@ Guardrails that fire automatically on tool execution to protect your project.
 
 ```bash
 # Install the plugin
-claude plugin install aimsise/simple-workflow
-
-# Start Claude Code in your project
-claude
+claude plugin install aimsise/simple-workflow   # Claude Code
+copilot plugin install aimsise/simple-workflow   # GitHub Copilot CLI
 ```
 
-Once inside a Claude Code session:
+Once installed, all slash commands work the same on both platforms:
 
 ```
-# Investigate an issue and create a ticket
 /investigate <topic>
 /create-ticket <description>
-
-# Research + plan in one step
 /scout .backlog/product_backlog/{slug}/ticket.md
-
-# Implement
 /impl
-
-# Review and deliver
 /audit
 /ship
 ```
 
-## Usage with GitHub Copilot CLI
-
-This plugin is cross-platform compatible with GitHub Copilot CLI. All skills and agents include both Claude Code and Copilot CLI tool names, so pre-approved tool access works on both platforms.
-
-### Installation
-
-```bash
-# Install directly from GitHub
-copilot plugin install aimsise/simple-workflow
-```
-
-### Usage
-
-Once installed, skills are available in Copilot CLI sessions:
-
-```bash
-copilot
-
-# All skills work the same as in Claude Code
-/investigate <topic>
-/create-ticket <description>
-/scout .backlog/product_backlog/{slug}/ticket.md
-/impl
-/ship
-```
-
-### Platform Differences
-
-| Feature | Claude Code | Copilot CLI |
-|---------|------------|-------------|
-| Skills & Agents | Fully supported | Fully supported |
-| Safety hooks | All 5 hooks active | `PreToolUse` hooks active; session lifecycle hooks may vary |
-| LSP servers | Supported | Not yet supported |
-| MCP servers | Supported | Supported |
+> **Note**: Session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire on Copilot CLI. Context recovery via `/catchup` after compaction works best on Claude Code.
 
 ## Core Workflow
 
