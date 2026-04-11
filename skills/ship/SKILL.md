@@ -6,6 +6,7 @@ description: >-
   Use when the user wants to ship completed work.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Skill
   - "Bash(git add:*)"
   - "Bash(git commit:*)"
@@ -21,6 +22,22 @@ allowed-tools:
   - "Bash(ls:*)"
   - "Bash(mkdir:*)"
   - "Bash(date:*)"
+  # Copilot CLI
+  - skill
+  - "shell(git add:*)"
+  - "shell(git commit:*)"
+  - "shell(git status:*)"
+  - "shell(git diff:*)"
+  - "shell(git log:*)"
+  - "shell(git push:*)"
+  - "shell(git checkout:*)"
+  - "shell(git pull:*)"
+  - "shell(git branch:*)"
+  - "shell(gh:*)"
+  - "shell(mv:*)"
+  - "shell(ls:*)"
+  - "shell(mkdir:*)"
+  - "shell(date:*)"
 argument-hint: "[target-branch] [merge=true]"
 ---
 

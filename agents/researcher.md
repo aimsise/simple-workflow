@@ -2,6 +2,7 @@
 name: researcher
 description: "Codebase exploration, dependency tracking, and architecture investigation."
 tools:
+  # Claude Code
   - Read
   - Write
   - Edit
@@ -11,6 +12,16 @@ tools:
   - "Bash(git diff:*)"
   - "Bash(git status:*)"
   - "Bash(git branch:*)"
+  # Copilot CLI
+  - view
+  - create
+  - edit
+  - grep
+  - glob
+  - "shell(git log:*)"
+  - "shell(git diff:*)"
+  - "shell(git status:*)"
+  - "shell(git branch:*)"
 model: sonnet
 maxTurns: 30
 ---

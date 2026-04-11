@@ -7,10 +7,16 @@ description: >-
   shipping or as part of /impl review loop.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Agent
   - Read
   - Glob
   - Grep
+  # Copilot CLI
+  - task
+  - view
+  - glob
+  - grep
 argument-hint: "[only_security_scan=true|false] [round=N] [branch or commit range (optional)]"
 ---
 

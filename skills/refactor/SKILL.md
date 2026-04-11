@@ -6,6 +6,7 @@ description: >-
   Use only when the user explicitly asks to refactor code.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - Agent
   - Read
   - Glob
@@ -22,6 +23,23 @@ allowed-tools:
   - "Bash(cargo:*)"
   - "Bash(go :*)"
   - "Bash(make:*)"
+  # Copilot CLI
+  - task
+  - view
+  - glob
+  - grep
+  - create
+  - edit
+  - "shell(git:*)"
+  - "shell(npm:*)"
+  - "shell(npx:*)"
+  - "shell(yarn:*)"
+  - "shell(pnpm:*)"
+  - "shell(bun:*)"
+  - "shell(pytest:*)"
+  - "shell(cargo:*)"
+  - "shell(go :*)"
+  - "shell(make:*)"
 argument-hint: "<refactoring target and goal>"
 ---
 

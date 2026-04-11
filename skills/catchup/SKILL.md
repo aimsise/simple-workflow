@@ -5,12 +5,20 @@ description: >-
   start, after context compaction, or when unsure what to do next. Detects
   current development phase and recommends the next action.
 allowed-tools:
+  # Claude Code
   - Agent
   - Read
   - Glob
   - Grep
   - "Bash(git:*)"
   - "Bash(ls:*)"
+  # Copilot CLI
+  - task
+  - view
+  - glob
+  - grep
+  - "shell(git:*)"
+  - "shell(ls:*)"
 argument-hint: "[phase: investigate|plan|implement|test|review|commit]"
 ---
 

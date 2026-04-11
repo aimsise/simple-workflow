@@ -6,9 +6,14 @@ description: >-
   and /ticket-done with a single unified entry point.
 disable-model-invocation: true
 allowed-tools:
+  # Claude Code
   - "Bash(ls:*)"
   - "Bash(mv:*)"
   - "Bash(mkdir:*)"
+  # Copilot CLI
+  - "shell(ls:*)"
+  - "shell(mv:*)"
+  - "shell(mkdir:*)"
 argument-hint: "<ticket-slug> [<ticket-slug>...] <state:active|blocked|done>"
 ---
 

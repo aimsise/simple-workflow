@@ -2,6 +2,7 @@
 name: planner
 description: "Create detailed implementation plans for features and refactoring."
 tools:
+  # Claude Code
   - Read
   - Write
   - Edit
@@ -11,6 +12,16 @@ tools:
   - "Bash(git diff:*)"
   - "Bash(git status:*)"
   - "Bash(git branch:*)"
+  # Copilot CLI
+  - view
+  - create
+  - edit
+  - grep
+  - glob
+  - "shell(git log:*)"
+  - "shell(git diff:*)"
+  - "shell(git status:*)"
+  - "shell(git branch:*)"
 model: opus
 maxTurns: 30
 permissionMode: acceptEdits

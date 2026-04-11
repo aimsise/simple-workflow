@@ -2,10 +2,16 @@
 name: ticket-evaluator
 description: "Skeptical ticket quality evaluator. Verifies acceptance criteria testability, clarity, and implementability."
 tools:
+  # Claude Code
   - Read
   - Write
   - Grep
   - Glob
+  # Copilot CLI
+  - view
+  - create
+  - grep
+  - glob
 model: sonnet
 maxTurns: 15
 ---
