@@ -4,13 +4,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Stars](https://img.shields.io/github/stars/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/stargazers)
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
 
 ## Table of Contents
 
 - [Why simple-workflow?](#why-simple-workflow)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+- [Usage with GitHub Copilot CLI](#usage-with-github-copilot-cli)
 - [Building Blocks](#building-blocks)
 - [Core Workflow](#core-workflow)
 - [All Skills](#all-skills)
@@ -127,7 +128,7 @@ Guardrails that fire automatically on tool execution to protect your project.
 
 ## Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI or [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
 - [GitHub CLI](https://cli.github.com/) (`gh`) — required for `/ship`
 - `git` and `jq`
 
@@ -158,6 +159,41 @@ Once inside a Claude Code session:
 /audit
 /ship
 ```
+
+## Usage with GitHub Copilot CLI
+
+This plugin is cross-platform compatible with GitHub Copilot CLI. All skills and agents include both Claude Code and Copilot CLI tool names, so pre-approved tool access works on both platforms.
+
+### Installation
+
+```bash
+# Install directly from GitHub
+copilot plugin install aimsise/simple-workflow
+```
+
+### Usage
+
+Once installed, skills are available in Copilot CLI sessions:
+
+```bash
+copilot
+
+# All skills work the same as in Claude Code
+/investigate <topic>
+/create-ticket <description>
+/scout .backlog/product_backlog/{slug}/ticket.md
+/impl
+/ship
+```
+
+### Platform Differences
+
+| Feature | Claude Code | Copilot CLI |
+|---------|------------|-------------|
+| Skills & Agents | Fully supported | Fully supported |
+| Safety hooks | All 5 hooks active | `PreToolUse` hooks active; session lifecycle hooks may vary |
+| LSP servers | Supported | Not yet supported |
+| MCP servers | Supported | Supported |
 
 ## Core Workflow
 
@@ -269,7 +305,7 @@ Hook scripts are registered in `hooks/hooks.json`. To customize, edit the JSON f
 
 ## Limitations
 
-- Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
+- Designed for use with Claude Code CLI and GitHub Copilot CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
 - The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
