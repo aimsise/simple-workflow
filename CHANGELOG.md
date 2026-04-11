@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.2.0] - 2026-04-11
+
 ### Added
+- GitHub Copilot CLI tool name equivalents across all 20 skill and agent definition files for cross-platform compatibility
+- GitHub Copilot CLI installation and usage instructions in README
+- Consolidated Quick Start section for both Claude Code and Copilot CLI
 - `/tune` skill: automatic evaluation log analysis and knowledge base management
 - `tune-analyzer` agent: cross-ticket pattern extraction from evaluation logs
 - Knowledge base infrastructure (`.simple-wf-knowledge/`) for cross-session learning
@@ -85,5 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[1.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.2.0
 [1.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.1.0
 [1.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.0.0
