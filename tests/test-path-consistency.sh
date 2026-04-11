@@ -368,7 +368,7 @@ echo ""
 # token from the known vocabulary set, to catch empty or garbage values.
 echo "--- Agent Status contract (vocabulary verification) ---"
 
-KNOWN_TOKENS='success|partial|failed|PASS|FAIL|FAIL-CRITICAL|PASS_WITH_CONCERNS'
+KNOWN_TOKENS='success|partial|failed|PASS|PASS-WITH-CAVEATS|FAIL|FAIL-CRITICAL|PASS_WITH_CONCERNS'
 
 for agent_md in \
   "$REPO_DIR/agents/code-reviewer.md" \
