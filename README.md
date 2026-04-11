@@ -25,10 +25,10 @@ Claude Code is powerful, but its context window is finite — and fragile. Long-
 
 | Threat | What happens | Structural countermeasure |
 |--------|-------------|--------------------------|
-| **Loss** (喪失) | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact hooks, `/catchup` recovery, `/tune` cross-session learning |
-| **Exhaustion** (枯渇) | The window fills up, degrading instruction-following and response quality | Bounded sub-agent returns (< 500 tokens), phase-aware context release |
-| **Contamination** (汚染) | Biasing information leaks into contexts where it distorts judgment | Information firewall (Generator → Evaluator blocked), ticket directory confinement |
-| **Bloat** (肥大化) | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
+| **Loss** | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact hooks, `/catchup` recovery, `/tune` cross-session learning |
+| **Exhaustion** | The window fills up, degrading instruction-following and response quality | Bounded sub-agent returns (< 500 tokens), phase-aware context release |
+| **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall (Generator → Evaluator blocked), ticket directory confinement |
+| **Bloat** | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
 
 simple-workflow addresses each threat with architectural constraints that hold regardless of model behavior — not prompt-level instructions that the model might rationalize away.
 
