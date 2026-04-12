@@ -3,7 +3,7 @@
 Generate the ticket in the following format:
 
 ```markdown
-## T-NNN: [Title]
+## T-{NNN}: [Title]
 
 | Field | Value |
 |-------|-------|

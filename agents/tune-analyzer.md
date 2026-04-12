@@ -44,6 +44,83 @@ You receive from the caller:
 - **security finding** (from `security-scan-*.md`): `0.4`
 - **human feedback** (explicit user correction or instruction): `0.5`
 
+### Autopilot Decision Pattern Extraction
+
+If `autopilot-log.md` exists in the ticket directory, extract decision patterns:
+
+1. Read the "Decisions Made" section of autopilot-log.md
+2. For each decision entry, extract:
+   - gate name (e.g., `ac_eval_fail`, `ship_review_gate`)
+   - action taken (e.g., `retry`, `proceed_without`)
+   - outcome (e.g., `success`, `failure`)
+   - ticket size (from ticket.md or brief.md `estimated_size`)
+
+3. Create candidate patterns in the format:
+   ```yaml
+   - id: "decision-{NNN}"
+     pattern: "{gate} + {action} → {outcome}"
+     category: "decision"
+     scope: "{ticket_size}"
+     roles: ["autopilot"]
+     confidence: {calculated}
+     evidence_count: 1
+     success_count: {0 or 1}
+     failure_count: {0 or 1}
+   ```
+
+4. **Confidence calculation for decision patterns**:
+   - New pattern initial confidence: 0.35
+   - Same gate + action + scope match (duplicate detection):
+     - outcome=success: confidence += 0.1 (capped at 0.9)
+     - outcome=failure: confidence -= 0.15 (floor at 0.1)
+     - Increment evidence_count, success_count or failure_count accordingly
+
+5. **Regression detection**: For promoted patterns (in entries.yaml) with new failure evidence:
+   - Calculate success rate: success_count / evidence_count
+   - If success rate drops by 20% or more compared to previous: demote to candidates.yaml (confidence -= 0.2), remove from entries.yaml and index.yaml
+
+6. `success_count` and `failure_count` are fields specific to category `decision`. Existing entries of other categories (error-handling, security, etc.) do not require these fields. If an existing entry lacks these fields, treat them as null.
+
+7. Add role `autopilot` to index.yaml for promoted decision patterns:
+   ```yaml
+   autopilot:
+     - id: "decision-001"
+       summary: "{gate} + {action} → success ({scope} tickets, {success_rate}%)"
+       confidence: 0.85
+   ```
+
+8. If `autopilot-log.md` does not exist in the ticket directory, skip this section entirely (do not error).
+
+### Human Override Learning
+
+If the autopilot-log.md contains a "Human Overrides" section with entries of type `human_override`:
+
+1. For each human override entry (gate, expected_action, actual_action):
+   - Create a candidate pattern with:
+     ```yaml
+     - id: "override-{NNN}"
+       pattern: "{gate}: user changed {expected_action} → {actual_action}"
+       category: "decision"
+       scope: "{ticket_size}"
+       roles: ["autopilot"]
+       confidence: 0.5
+       evidence_count: 1
+       success_count: 0
+       failure_count: 0
+       sources:
+         - ticket: "{ticket-dir}"
+           round: 0
+           type: "human_override"
+           observed_at: "{date}"
+     ```
+   - The initial confidence for human override patterns is **0.5** (same as human feedback).
+
+2. **Deduplication with existing patterns**: Before adding, check if a pattern for the same gate + action combination already exists in candidates.yaml:
+   - If found: increment `evidence_count` by 1, add the new source, increase `confidence` by 0.1 (capped at 0.9).
+   - If not found: add as a new candidate.
+
+3. Human override patterns follow the same promotion lifecycle as other decision patterns (via `/tune` confidence thresholds).
+
 ## Deduplication
 
 Before proposing a new candidate, check existing candidates in `candidates.yaml` (path specified by the caller). If a pattern with substantially the same meaning already exists:

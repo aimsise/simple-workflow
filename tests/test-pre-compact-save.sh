@@ -178,19 +178,19 @@ echo ""
 # Verifies the in_progress_phase heuristic and latest_*_round detection.
 
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/feature-x"
-echo "ticket" > "$TEST_REPO/.backlog/active/feature-x/ticket.md"
+mkdir -p "$TEST_REPO/.backlog/active/001-feature-x"
+echo "ticket" > "$TEST_REPO/.backlog/active/001-feature-x/ticket.md"
 # Round 1: eval done, audit done with PASS
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-x/eval-round-1.md"
-echo "round 1 audit" > "$TEST_REPO/.backlog/active/feature-x/audit-round-1.md"
+echo "round 1 eval" > "$TEST_REPO/.backlog/active/001-feature-x/eval-round-1.md"
+echo "round 1 audit" > "$TEST_REPO/.backlog/active/001-feature-x/audit-round-1.md"
 # Round 2: eval done, audit done with FAIL
-echo "round 2 eval" > "$TEST_REPO/.backlog/active/feature-x/eval-round-2.md"
+echo "round 2 eval" > "$TEST_REPO/.backlog/active/001-feature-x/eval-round-2.md"
 # Test 17 fake Status row is written to audit-round-2.md (Fix 3)
 {
   echo "# Audit round 2"
   echo ""
   echo "**Status**: FAIL"
-} > "$TEST_REPO/.backlog/active/feature-x/audit-round-2.md"
+} > "$TEST_REPO/.backlog/active/001-feature-x/audit-round-2.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
@@ -242,15 +242,15 @@ echo ""
 # --- Test group 3: repo with completed round (PASS_WITH_CONCERNS) ---
 
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/feature-y"
-echo "ticket" > "$TEST_REPO/.backlog/active/feature-y/ticket.md"
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-y/eval-round-1.md"
+mkdir -p "$TEST_REPO/.backlog/active/002-feature-y"
+echo "ticket" > "$TEST_REPO/.backlog/active/002-feature-y/ticket.md"
+echo "round 1 eval" > "$TEST_REPO/.backlog/active/002-feature-y/eval-round-1.md"
 # Test 19 fake Status row is written to audit-round-1.md (Fix 3)
 {
   echo "# Audit round 1"
   echo ""
   echo "**Status**: PASS_WITH_CONCERNS"
-} > "$TEST_REPO/.backlog/active/feature-y/audit-round-1.md"
+} > "$TEST_REPO/.backlog/active/002-feature-y/audit-round-1.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
@@ -279,14 +279,14 @@ echo ""
 # quality-round-1.md (no audit-round file) must yield last_round_outcome=unknown.
 # This verifies pre-compact-save does NOT fall back to parsing quality-round files.
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/feature-z"
-echo "ticket" > "$TEST_REPO/.backlog/active/feature-z/ticket.md"
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-z/eval-round-1.md"
+mkdir -p "$TEST_REPO/.backlog/active/003-feature-z"
+echo "ticket" > "$TEST_REPO/.backlog/active/003-feature-z/ticket.md"
+echo "round 1 eval" > "$TEST_REPO/.backlog/active/003-feature-z/eval-round-1.md"
 {
   echo "# Code review round 1 (raw code-reviewer output)"
   echo ""
   echo "**Status**: success"
-} > "$TEST_REPO/.backlog/active/feature-z/quality-round-1.md"
+} > "$TEST_REPO/.backlog/active/003-feature-z/quality-round-1.md"
 # NOTE: no audit-round-1.md — simulates code-reviewer ran but /audit did not persist
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
@@ -308,14 +308,14 @@ echo ""
 # so last_round_outcome must remain "unknown" — this detects accidental future
 # loosening of the case filter.
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/feature-w"
-echo "ticket" > "$TEST_REPO/.backlog/active/feature-w/ticket.md"
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/feature-w/eval-round-1.md"
+mkdir -p "$TEST_REPO/.backlog/active/004-feature-w"
+echo "ticket" > "$TEST_REPO/.backlog/active/004-feature-w/ticket.md"
+echo "round 1 eval" > "$TEST_REPO/.backlog/active/004-feature-w/eval-round-1.md"
 {
   echo "# Misplaced raw code-reviewer output in audit-round file"
   echo ""
   echo "**Status**: success"
-} > "$TEST_REPO/.backlog/active/feature-w/audit-round-1.md"
+} > "$TEST_REPO/.backlog/active/004-feature-w/audit-round-1.md"
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 
@@ -336,23 +336,23 @@ echo ""
 # computed and aggregate values reflect the most relevant ticket.
 
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/feature-a"
-mkdir -p "$TEST_REPO/.backlog/active/feature-b"
-echo "ticket a" > "$TEST_REPO/.backlog/active/feature-a/ticket.md"
-echo "ticket b" > "$TEST_REPO/.backlog/active/feature-b/ticket.md"
+mkdir -p "$TEST_REPO/.backlog/active/001-feature-a"
+mkdir -p "$TEST_REPO/.backlog/active/002-feature-b"
+echo "ticket a" > "$TEST_REPO/.backlog/active/001-feature-a/ticket.md"
+echo "ticket b" > "$TEST_REPO/.backlog/active/002-feature-b/ticket.md"
 
 # feature-a: round 1+2 eval, round 1+2 audit, last audit PASS -> impl-done
-echo "e1" > "$TEST_REPO/.backlog/active/feature-a/eval-round-1.md"
-echo "e2" > "$TEST_REPO/.backlog/active/feature-a/eval-round-2.md"
-{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/feature-a/audit-round-1.md"
-{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/feature-a/audit-round-2.md"
+echo "e1" > "$TEST_REPO/.backlog/active/001-feature-a/eval-round-1.md"
+echo "e2" > "$TEST_REPO/.backlog/active/001-feature-a/eval-round-2.md"
+{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/001-feature-a/audit-round-1.md"
+{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/001-feature-a/audit-round-2.md"
 
 # feature-b: round 1+2+3 eval, round 1+2 audit FAIL -> impl-loop
-echo "e1" > "$TEST_REPO/.backlog/active/feature-b/eval-round-1.md"
-echo "e2" > "$TEST_REPO/.backlog/active/feature-b/eval-round-2.md"
-echo "e3" > "$TEST_REPO/.backlog/active/feature-b/eval-round-3.md"
-{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/feature-b/audit-round-1.md"
-{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/feature-b/audit-round-2.md"
+echo "e1" > "$TEST_REPO/.backlog/active/002-feature-b/eval-round-1.md"
+echo "e2" > "$TEST_REPO/.backlog/active/002-feature-b/eval-round-2.md"
+echo "e3" > "$TEST_REPO/.backlog/active/002-feature-b/eval-round-3.md"
+{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/002-feature-b/audit-round-1.md"
+{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/002-feature-b/audit-round-2.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
 COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
@@ -411,7 +411,7 @@ fi
 # Test 27: per-ticket feature-a has impl-done
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 # Extract feature-a block and check in_progress_phase
-A_PHASE=$(awk '/- dir: .*feature-a/{found=1} found && /in_progress_phase:/{print $2; exit}' "$COMPACT_FILE")
+A_PHASE=$(awk '/- dir: .*001-feature-a/{found=1} found && /in_progress_phase:/{print $2; exit}' "$COMPACT_FILE")
 if [ "$A_PHASE" = "impl-done" ]; then
   echo -e "  ${GREEN}PASS${NC} per-ticket feature-a in_progress_phase is impl-done"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -422,7 +422,7 @@ fi
 
 # Test 28: per-ticket feature-b has impl-loop
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-B_PHASE=$(awk '/- dir: .*feature-b/{found=1} found && /in_progress_phase:/{print $2; exit}' "$COMPACT_FILE")
+B_PHASE=$(awk '/- dir: .*002-feature-b/{found=1} found && /in_progress_phase:/{print $2; exit}' "$COMPACT_FILE")
 if [ "$B_PHASE" = "impl-loop" ]; then
   echo -e "  ${GREEN}PASS${NC} per-ticket feature-b in_progress_phase is impl-loop"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -433,7 +433,7 @@ fi
 
 # Test 29: per-ticket feature-a last_round_outcome is PASS
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-A_OUTCOME=$(awk '/- dir: .*feature-a/{found=1} found && /last_round_outcome:/{print $2; exit}' "$COMPACT_FILE")
+A_OUTCOME=$(awk '/- dir: .*001-feature-a/{found=1} found && /last_round_outcome:/{print $2; exit}' "$COMPACT_FILE")
 if [ "$A_OUTCOME" = "PASS" ]; then
   echo -e "  ${GREEN}PASS${NC} per-ticket feature-a last_round_outcome is PASS"
   TESTS_PASSED=$((TESTS_PASSED + 1))

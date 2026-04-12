@@ -14,7 +14,7 @@ allowed-tools:
   - "shell(ls:*)"
   - "shell(mv:*)"
   - "shell(mkdir:*)"
-argument-hint: "<ticket-slug> [<ticket-slug>...] <state:active|blocked|done>"
+argument-hint: "<ticket-name or slug> [<ticket-name or slug>...] <state:active|blocked|done>"
 ---
 
 Move tickets to target state: $ARGUMENTS
@@ -25,19 +25,19 @@ Move tickets to target state: $ARGUMENTS
 
 1. If `$ARGUMENTS` is empty, print the usage message and stop:
    ```
-   Usage: /ticket-move <slug> [<slug>...] <state:active|blocked|done>
+   Usage: /ticket-move <ticket-name or slug> [<ticket-name or slug>...] <state:active|blocked|done>
    ```
 2. Split `$ARGUMENTS` by whitespace into a list of tokens.
 3. If the list contains only one token, print the following error and stop:
    ```
    Error: missing state argument.
-   Usage: /ticket-move <slug> [<slug>...] <state:active|blocked|done>
+   Usage: /ticket-move <ticket-name or slug> [<ticket-name or slug>...] <state:active|blocked|done>
    ```
 4. Extract the **last token** as `state`.
 5. If `state` is not one of `active`, `blocked`, or `done`, print the following error and stop:
    ```
    Error: invalid state "<state>". Valid values: active, blocked, done.
-   Usage: /ticket-move <slug> [<slug>...] <state:active|blocked|done>
+   Usage: /ticket-move <ticket-name or slug> [<ticket-name or slug>...] <state:active|blocked|done>
    ```
 6. Treat all remaining tokens (everything except the last) as the list of `slugs`.
 
@@ -51,15 +51,18 @@ For each slug in `slugs`:
    - `.backlog/blocked/` (skip when `state` is `blocked`)
    - `.backlog/done/` (skip when `state` is `done`)
 
-2. Search each search path for a directory whose name matches the slug exactly. Use `ls` to list the contents of each search path and check for a match.
+2. Search each search path for a directory whose name matches the user input. Use `ls` to list the contents of each search path and check for a match using the following strategy (stop at the first hit):
+   - **Exact match**: a directory whose name equals the user input exactly.
+   - **Suffix match**: a directory whose name ends with `-{user-input}` (e.g., input `add-search-feature` matches `001-add-search-feature`).
 
 3. **If found:**
+   - Let `matched-dir` be the actual directory name that was matched.
    - Run `mkdir -p .backlog/<state>` to ensure the destination directory exists.
-   - Run `mv <source-path> .backlog/<state>/<slug>` to move the ticket.
-   - Print: `Moved: <source-path> → .backlog/<state>/<slug>`
+   - Run `mv <source-path> .backlog/<state>/<matched-dir>` to move the ticket.
+   - Print: `Moved: <source-path> → .backlog/<state>/<matched-dir>`
 
 4. **If not found in any search path:**
-   - Print: `Not found: <slug>`
+   - Print: `Not found: <user-input>`
    - Continue to the next slug.
 
 ### Summary Output
@@ -80,5 +83,5 @@ Summary: 2 moved, 1 not found.
 | `$ARGUMENTS` is empty | Print usage and stop |
 | Only one token provided | Print "missing state" error and usage, then stop |
 | Last token is not `active`/`blocked`/`done` | Print "invalid state" error and usage, then stop |
-| A slug is not found in any search path | Print "Not found: <slug>" and continue |
+| A ticket is not found in any search path | Print "Not found: <user-input>" and continue |
 | All slugs not found | Print summary (0 moved, N not found) and exit 0 |

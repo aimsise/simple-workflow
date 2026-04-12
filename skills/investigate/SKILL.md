@@ -18,7 +18,7 @@ Current repo state:
 
 1. Parse `$ARGUMENTS` for `(ticket-dir: <path>)` to determine the output destination:
    - If `ticket-dir` is specified: output findings to `{ticket-dir}/investigation.md`
-   - If `ticket-dir` is not specified: search `.backlog/product_backlog/` and `.backlog/active/` using Glob for directories matching `$ARGUMENTS` keywords. If a match is found in `product_backlog`, move it to `active` (`mv .backlog/product_backlog/{slug} .backlog/active/{slug}`) and use `.backlog/active/{slug}` as the ticket-dir. If already in `active`, use it as-is.
+   - If `ticket-dir` is not specified: search `.backlog/product_backlog/` and `.backlog/active/` using Glob for directories matching `$ARGUMENTS` keywords. If a match is found in `product_backlog`, move it to `active` (`mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`) and use `.backlog/active/{ticket-dir}` as the ticket-dir. If already in `active`, use it as-is.
    - If no ticket-dir and no matching ticket found: use the default `.docs/research/` directory
 2. Investigate this topic thoroughly
 3. Use Grep/Glob to find relevant code, then Read to understand it

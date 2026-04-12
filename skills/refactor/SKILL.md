@@ -91,7 +91,7 @@ Active tickets:
 
 ### Phase 1: Planning
 1. Spawn the **planner** agent to create a refactoring plan
-1b. **Ticket detection**: Get the current branch name and active ticket list from the pre-computed context above. Match the current branch name against active ticket directory slugs (branch name contains the slug). If a match is found, set `ticket-dir` to `.backlog/active/{slug}`.
+1b. **Ticket detection**: Get the current branch name and active ticket list from the pre-computed context above. Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix).
 2. Present the plan summary to the user
 
 ### Phase 2: Approval
