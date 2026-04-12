@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.3.1] - 2026-04-12
+
+### Fixed
+- `session-stop-log.sh`: add pipefail fallback to `CHANGED_FILES` pipeline to prevent non-zero exit when `git status` fails
+
 ## [1.3.0] - 2026-04-12
 
 ### Added

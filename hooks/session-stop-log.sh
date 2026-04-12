@@ -16,7 +16,7 @@ LOG_FILE="$LOG_DIR/session-log-${TIMESTAMP}.md"
 DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 BRANCH=$(git branch --show-current 2>/dev/null || echo "N/A")
 LAST_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "N/A")
-CHANGED_FILES=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
+CHANGED_FILES=$(git status --short 2>/dev/null | wc -l | tr -d ' ') || CHANGED_FILES="0"
 
 {
   echo "---"
