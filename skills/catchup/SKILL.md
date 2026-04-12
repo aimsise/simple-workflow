@@ -144,7 +144,7 @@ Present the detection result with reasoning, including any ticket directory info
 
 Print a concise summary:
 - Current situation (branch, what's been done)
-- Active tickets in `.backlog/active/` (list slug and available artifacts)
+- Active tickets in `.backlog/active/` (list ticket-dir name and available artifacts)
 - If a YAML-frontmatter compact-state was parsed in Step 1, also list the `active_tickets` recorded at compact time (these are the tickets the user was focused on at the moment of compaction — they may differ from the current `.backlog/active/` listing if filesystem state has drifted)
 - Detected phase and recommended next action
 - Exact command sequence, e.g.:

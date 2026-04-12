@@ -61,7 +61,7 @@ Current state:
 2. Read the plan file.
 
 3. Size detection:
-   - If plan is in `.backlog/active/{slug}/plan.md` -> read `.backlog/active/{slug}/ticket.md`, extract Size from `| Size |` row.
+   - If plan is in `.backlog/active/{ticket-dir}/plan.md` -> read `.backlog/active/{ticket-dir}/ticket.md`, extract Size from `| Size |` row.
    - If plan is in `.docs/plans/` -> default to M.
 
 4. **Worktree recommendation** (L/XL size only):
@@ -69,7 +69,7 @@ Current state:
    "Tip: This is a Size {size} ticket. For safer isolation, consider using a git worktree:
    `git worktree add -b impl/{slug} ../impl-{slug} && cd ../impl-{slug}`
    Then re-run `/impl` in the new worktree."
-   Where `{slug}` is derived from the plan path (`.backlog/active/{slug}/plan.md`) or the plan filename.
+   Where `{slug}` is the slug portion of the ticket directory name (strip the leading `NNN-` prefix, e.g., `001-add-search-feature` -> `add-search-feature`).
    This is a non-blocking suggestion — proceed regardless.
 
 5. Identify Acceptance Criteria section in the plan (`### Acceptance Criteria` or equivalent).
@@ -83,7 +83,13 @@ Current state:
    - Prompt: "You are preparing a verification plan. For each Acceptance Criterion below, describe HOW you will verify it (what commands to run, what to check in the code, what edge cases to test). Do NOT evaluate any implementation — no code has been written yet. Return only the verification plan."
    - Include: Full plan content, Acceptance Criteria
    - Receive: Evaluator's verification plan
-   - **If Evaluator fails or returns partial**: Use `AskUserQuestion` to ask the user "Evaluator が検証プランに合意できませんでした。続行しますか？" with options "yes" (proceed without verification plan) and "no" (stop the skill).
+   - **If Evaluator fails or returns partial**:
+     - **Autopilot policy check**: Before asking the user, check if `{ticket-dir}/autopilot-policy.yaml` exists (where ticket-dir is the directory containing the plan file, e.g. `.backlog/active/{ticket-dir}/`).
+       - If it exists, read `gates.evaluator_dry_run_fail.action`:
+         - If `proceed_without`: proceed without the verification plan. Print `[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=proceed_without`.
+         - If `stop`: stop the skill. Print `[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=stop`.
+       - If it does not exist, proceed with the existing interactive flow below.
+     Use `AskUserQuestion` to ask the user "Evaluator が検証プランに合意できませんでした。続行しますか？" with options "yes" (proceed without verification plan) and "no" (stop the skill).
      - If user answers "no" → stop the skill immediately. Print "Stopped by user after Evaluator Dry Run failure." and exit.
      - If user answers "yes" → proceed without the verification plan. The Generator prompt will not include the dry run output for this round.
    - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "no" (stop the skill). Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
@@ -99,6 +105,8 @@ Current state:
    - If nothing to stash (clean working tree), skip silently
 
 ## Phase 2: Generator → AC Evaluator → Code Quality Reviewer Loop (max 3 rounds)
+
+**Autopilot round limit**: If `{ticket-dir}/autopilot-policy.yaml` exists and `constraints.max_total_rounds` is defined, use that value as the maximum number of rounds for this loop (replacing the default of 3). If the policy does not exist or the field is not defined, use the default of 3 rounds.
 
 12. Spawn **Generator** agent via the Agent tool:
     - subagent_type: `implementer` (always; no -light variant)
@@ -116,6 +124,7 @@ Current state:
       f. "Refer to CLAUDE.md or project conventions for lint/test commands and coding standards."
       g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
       h. Knowledge-base injection: Read `.simple-wf-knowledge/index.yaml`. If the file exists, filter entries where the role is `implementer` and `confidence >= 0.8`. Collect up to 20 lines of summaries and include them in the prompt under a heading "## Known Project Patterns". If `.simple-wf-knowledge/index.yaml` does not exist, skip this injection silently. **Note: Acceptance Criteria always take precedence over KB patterns. If a KB pattern conflicts with an AC, the AC wins.**
+      i. Autopilot constraints: If `{ticket-dir}/autopilot-policy.yaml` exists, read `constraints.allow_breaking_changes`. If `false`, include in the Generator prompt: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." If `true` or if the policy file does not exist, omit this constraint.
     - Receive Generator's return value (changed files list + lint/test status)
 
 13. Run `git diff --stat` to capture change summary.
@@ -127,14 +136,19 @@ Current state:
      c. Output of `git diff --stat` from step 13
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
      e. Report save path:
-        - If plan is in `.backlog/active/{slug}/` -> "Save your evaluation report to `.backlog/active/{slug}/eval-round-{n}.md`"
-        - Otherwise -> check if any directory in `.backlog/active/` matches the current branch name (branch name contains the slug). If a match is found, use `.backlog/active/{slug}/eval-round-{n}.md`. If no match, use `.docs/eval-round/{topic}-eval-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
+        - If plan is in `.backlog/active/{ticket-dir}/` -> "Save your evaluation report to `.backlog/active/{ticket-dir}/eval-round-{n}.md`"
+        - Otherwise -> Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix) and use `{ticket-dir}/eval-round-{n}.md`. If no match, use `.docs/eval-round/{topic}-eval-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
         Where {n} is the current round number (1, 2, or 3).
    - Prompt must NOT include: Generator's return value (bias elimination)
    - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback)
 
 15. AC Gate:
     - **Status: FAIL-CRITICAL** → stop immediately. Report CRITICAL issues to the user. Do NOT continue to further rounds.
+    - **Autopilot policy check for ac_eval_fail**: If `{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ac_eval_fail`:
+      - `on_critical: stop` is always enforced (FAIL-CRITICAL always stops regardless of policy — this is a safety invariant).
+      - If `action` is `retry`: continue to next round (default behavior). Print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=retry round={n}`.
+      - If `action` is `stop`: stop the skill immediately. Print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=stop`.
+    - If autopilot-policy.yaml does not exist, proceed with the existing behavior below.
     - **Status: FAIL** → save ac-evaluator's **Feedback**, continue to next round (skip quality review for this round)
     - **Status: PASS-WITH-CAVEATS** → treat as PASS (continue to step 16), but record the Caveats field for inclusion in Phase 3 summary: "AC passed with caveats: {caveats}"
     - **Status: PASS** → continue to step 16
@@ -150,7 +164,13 @@ Current state:
       - `**Suggestions**`: aggregated count
       - `**Reports**`: paths to the saved review files
       - `**Summary**`: one-line aggregated summary
-    - **If `/audit` itself fails** (no structured block returned, or the block is malformed): print the failure details (`/audit`'s raw output if available) and use `AskUserQuestion` to ask "/auditが失敗しました。どうしますか？" with options:
+    - **If `/audit` itself fails** (no structured block returned, or the block is malformed):
+     - **Autopilot policy check**: Before asking the user, check if `{ticket-dir}/autopilot-policy.yaml` exists.
+       - If it exists, read `gates.audit_infrastructure_fail.action`:
+         - If `treat_as_fail`: treat the audit as **Status: FAIL** with `Critical = 1`. Print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=treat_as_fail`. Continue to next round with audit failure noted in feedback.
+         - If `stop`: stop the skill. Print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=stop`.
+       - If it does not exist, proceed with the existing interactive flow below.
+     print the failure details (`/audit`'s raw output if available) and use `AskUserQuestion` to ask "/auditが失敗しました。どうしますか？" with options:
       - "stop": stop the skill immediately. Print "Stopped by user after /audit failure." and exit. Do NOT proceed to Phase 3.
       - "fail": treat the audit as **Status: FAIL** with `Critical = 1` (audit infrastructure failure). Combine the audit failure note with ac-evaluator's pass confirmation as feedback for the next Generator round, and follow the same flow as a normal FAIL in step 17. If this is round 3, proceed to Phase 3 with the audit failure noted in the summary.
       - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "stop" (do NOT default to "fail" — a silent FAIL retry would mask the infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
@@ -189,5 +209,5 @@ Evaluator tuning is now automated via the `/tune` skill:
 1. After `/ship` completes a ticket, `/tune` is invoked automatically (Step 18 in `/ship`) to extract patterns from evaluation logs
 2. Extracted patterns are stored in `.simple-wf-knowledge/candidates.yaml` and promoted to `entries.yaml` when confidence reaches 0.8
 3. Promoted patterns are injected into the Generator prompt (Step 12h above) via `index.yaml`
-4. To run tuning manually: `/tune {ticket-slug}` or `/tune all`
+4. To run tuning manually: `/tune {ticket-dir}` or `/tune all`
 5. To review the current knowledge base: read `.simple-wf-knowledge/entries.yaml` and `.simple-wf-knowledge/index.yaml`

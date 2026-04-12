@@ -53,8 +53,8 @@ Parse `$ARGUMENTS` for the following:
 
 - Get the current branch name from the pre-computed context above.
 - List directories in `.backlog/active/` from the pre-computed context above.
-- Match the current branch name against active ticket directory slugs (branch name contains the slug).
-- If a match is found: set `ticket-dir` to `.backlog/active/{slug}`.
+- Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion.
+- If a match is found: set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix).
   - If `round=N` was parsed in Step 0, use `{N}` as the round number for all output files.
   - Otherwise, auto-increment: check existing `quality-round-*.md` files in `ticket-dir`, take max + 1, or 1 if none.
   - Code-reviewer output (when invoked): `{ticket-dir}/quality-round-{n}.md`

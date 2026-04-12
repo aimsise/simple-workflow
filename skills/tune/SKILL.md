@@ -17,7 +17,7 @@ allowed-tools:
   - create
   - glob
   - grep
-argument-hint: "[ticket-slug or 'all']"
+argument-hint: "[ticket-dir name or 'all']"
 ---
 
 Analyze evaluation logs and maintain the project knowledge base.
@@ -42,7 +42,7 @@ Knowledge base status:
 entries:
   - id: "entry-001"
     pattern: "description"
-    category: "error-handling|security|performance|convention|testing"
+    category: "error-handling|security|performance|convention|testing|decision"
     scope: "bash|typescript|python|general"
     roles: ["implementer"]
     confidence: 0.92
@@ -87,7 +87,7 @@ candidates:
 ### Step 0: Parse Arguments
 
 Parse `$ARGUMENTS`:
-- If a ticket slug is provided, scope log analysis to that ticket only (`.backlog/active/{slug}/` or `.backlog/done/{slug}/`)
+- If a ticket-dir name is provided, scope log analysis to that ticket only (`.backlog/active/{ticket-dir}/` or `.backlog/done/{ticket-dir}/`)
 - If `all` is provided, analyze all tickets in `.backlog/done/` and `.backlog/active/`
 - If no argument, default to the most recently completed ticket in `.backlog/done/` (by modification time)
 
@@ -108,8 +108,9 @@ Gather evaluation log file paths from the target ticket(s):
 - `quality-round-*.md` (code quality feedback)
 - `security-scan-*.md` (security scanner findings)
 - `audit-round-*.md` (audit summaries)
+- `autopilot-log.md` (autopilot decision log — category `decision`)
 
-Use Glob to find these files. If no logs are found, print "No evaluation logs found for the specified scope." and stop.
+Use Glob to find these files. If `autopilot-log.md` does not exist in the ticket directory, skip it (do not error). If no logs are found at all, print "No evaluation logs found for the specified scope." and stop.
 
 ### Step 3: Spawn tune-analyzer Agent
 

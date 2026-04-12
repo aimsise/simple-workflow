@@ -30,7 +30,7 @@ You are a codebase researcher. Explore, discover, and document findings.
 
 ## Instructions
 
-**Output path**: If the caller specifies an output file path (e.g., `.backlog/active/{slug}/investigation.md`), write findings to that path instead of the default. Create parent directories as needed.
+**Output path**: If the caller specifies an output file path (e.g., `.backlog/active/{ticket-dir}/investigation.md`), write findings to that path instead of the default. Create parent directories as needed.
 
 1. Investigate the topic specified by the caller thoroughly
 2. Use Grep/Glob to find relevant code, then Read to understand it

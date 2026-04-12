@@ -9,8 +9,8 @@
 
 | Tool | Type | Purpose |
 |------|------|---------|
-| `/investigate` | skill | Codebase research and structured report generation. Outputs to `.backlog/active/{slug}/investigation.md` for ticket work, or `.docs/research/` otherwise |
-| `/plan2doc` | skill | Create implementation plans. Auto-selects model by ticket size (sonnet for S, opus for M/L/XL). Outputs to `.backlog/active/{slug}/plan.md` for ticket work, or `.docs/plans/` otherwise |
+| `/investigate` | skill | Codebase research and structured report generation. Outputs to `.backlog/active/{ticket-dir}/investigation.md` for ticket work, or `.docs/research/` otherwise |
+| `/plan2doc` | skill | Create implementation plans. Auto-selects model by ticket size (sonnet for S, opus for M/L/XL). Outputs to `.backlog/active/{ticket-dir}/plan.md` for ticket work, or `.docs/plans/` otherwise |
 | `/scout` | skill | Chain codebase research + plan creation. Delegates to `/plan2doc` which handles model selection |
 | `/impl` | skill | Implement latest plan with Generator-Evaluator loop (S→sonnet, M+→opus). Internally calls `/audit` for quality + security review |
 | `/ship` | skill | Commit + create PR + optional squash-merge |

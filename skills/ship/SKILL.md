@@ -8,6 +8,7 @@ disable-model-invocation: true
 allowed-tools:
   # Claude Code
   - Skill
+  - Read
   - "Bash(git add:*)"
   - "Bash(git commit:*)"
   - "Bash(git status:*)"
@@ -24,6 +25,7 @@ allowed-tools:
   - "Bash(date:*)"
   # Copilot CLI
   - skill
+  - view
   - "shell(git add:*)"
   - "shell(git commit:*)"
   - "shell(git status:*)"
@@ -107,10 +109,17 @@ Commits ahead of default branch:
 5. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
 6. **Review gate**: Check for recent code review:
-    - If there is an active ticket (`.backlog/active/{slug}/`), run `ls -t .backlog/active/{slug}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file in that ticket directory
+    - If there is an active ticket (`{ticket-dir}`), run `ls -t {ticket-dir}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file in that ticket directory
     - If there is no active ticket, skip the review gate (no check needed)
     - If a review file exists, compare its modification time with the last commit time
     - If NO review file exists, or the review predates the last code-changing commit:
+      - **Autopilot policy check**: Check if `{ticket-dir}/autopilot-policy.yaml` exists.
+        - If it exists, read `gates.ship_review_gate.action`:
+          - If `proceed_if_eval_passed`: Check the latest `eval-round-*.md` in the ticket directory. Read its Status line.
+            - If Status is PASS or PASS-WITH-CAVEATS: proceed automatically. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to the PR body.
+            - If Status is FAIL or no eval-round exists: stop (safety valve — do not ship code that failed AC evaluation). Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop reason=eval_status_not_pass`.
+          - If `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop`.
+        - If it does not exist, proceed with the existing interactive flow below.
       Print "No recent code review found. Recommended: run /audit before shipping."
       Ask the user: "Proceed without review? (yes/no)"
       - If "no" → stop
@@ -127,14 +136,22 @@ Commits ahead of default branch:
 ## Phase 3: Merge (only when merge=true)
 
 14. Attempt `gh pr merge <pr-url> --squash --delete-branch`.
-15. If merge fails due to pending CI checks, ask the user to choose one of:
+15. If merge fails due to pending CI checks,
+    - **Autopilot policy check**: Check if `{ticket-dir}/autopilot-policy.yaml` exists.
+      - If it exists, read `gates.ship_ci_pending`:
+        - If `action` is `wait`: Run `gh pr checks <pr-number> --watch` with a timeout of `timeout_minutes` minutes. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
+          - If checks pass within timeout: retry the merge.
+          - If timeout expires: follow `on_timeout` action (`stop` by default). Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=on_timeout`.
+        - If `action` is `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=stop`.
+      - If it does not exist, proceed with the existing interactive flow below.
+    ask the user to choose one of:
     - **Wait**: Run `gh pr checks <pr-number> --watch`, then retry the merge.
     - **Force**: Run `gh pr merge <pr-url> --squash --delete-branch --admin` to bypass checks. **WARNING: This bypasses CI checks and risks merging untested code. Confirm with the user before proceeding.** Note: requires admin permissions on the repository.
     - **Skip**: Stop without merging. Print the PR URL for manual follow-up.
 16. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
-17. **Ticket completion**: If `.backlog/active/` exists, list its contents. Match the current branch name against the ticket directory slugs (branch name contains the slug). If a match is found, run `mkdir -p .backlog/done && mv .backlog/active/{slug} .backlog/done/{slug}`. If no match, skip silently.
-18. **Knowledge base tuning** (only after a ticket was moved in step 17): Invoke `/tune` via the Skill tool, passing the completed ticket slug as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the PR is already merged and the ticket is already moved.
-19. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 17, also include "Ticket moved to .backlog/done/{slug}".
+17. **Ticket completion**: If `.backlog/active/` exists, list its contents. Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix), then run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`. If no match, skip silently.
+18. **Knowledge base tuning** (only after a ticket was moved in step 17): Invoke `/tune` via the Skill tool, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the PR is already merged and the ticket is already moved.
+19. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 17, also include "Ticket moved to .backlog/done/{ticket-dir}".
 
 ## Error Handling
 
