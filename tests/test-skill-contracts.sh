@@ -230,7 +230,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   # 本文からバッククォート囲みの /name パターンを抽出（実際のスキル委譲参照のみ）
   body=$(awk 'BEGIN{depth=0} /^---[[:space:]]*$/{depth++;next} depth>=2{print}' "$skill_md")
   # shellcheck disable=SC2207
-  delegated_skills=($(echo "$body" | grep -oE '`/[a-z][a-z0-9-]+`' | sed -E 's/`\///;s/`//' | sort -u))
+  delegated_skills=($(echo "$body" | grep -oE '`/[a-z][a-z0-9-]+`' | sed -E 's/`\///;s/`//' | sort -u || true))
 
   if [ ${#delegated_skills[@]} -eq 0 ]; then
     continue
@@ -624,6 +624,338 @@ assert_file_contains \
   "impl SKILL.md に KB 未存在時スキップの記述がある" \
   "$REPO_DIR/skills/impl/SKILL.md" \
   "does not exist.*skip|not exist.*skip"
+
+# I-16: tune SKILL.md に autopilot-log の記述がある
+assert_file_contains \
+  "tune SKILL.md に autopilot-log の記述がある" \
+  "$TUNE_SKILL" \
+  "autopilot-log"
+
+# I-17: tune SKILL.md に category decision の記述がある
+assert_file_contains \
+  "tune SKILL.md に category decision の記述がある" \
+  "$TUNE_SKILL" \
+  "decision"
+
+# I-18: tune-analyzer.md に decision カテゴリの抽出ルールがある
+assert_file_contains \
+  "tune-analyzer.md に decision パターン抽出の記述がある" \
+  "$TUNE_AGENT" \
+  "decision"
+
+# I-19: tune-analyzer.md に success_count と failure_count がある
+assert_file_contains \
+  "tune-analyzer.md に success_count がある" \
+  "$TUNE_AGENT" \
+  "success_count"
+
+assert_file_contains \
+  "tune-analyzer.md に failure_count がある" \
+  "$TUNE_AGENT" \
+  "failure_count"
+
+# I-20: tune-analyzer.md に autopilot-log decision の初期 confidence 0.35 がある
+assert_file_contains \
+  "tune-analyzer.md に decision 初期 confidence 0.35 がある" \
+  "$TUNE_AGENT" \
+  "0\\.35"
+
+echo ""
+
+# =============================================================================
+# カテゴリ J: Autopilot Policy 契約
+# 差分: 新規カテゴリ。autopilot-policy.yaml 対応スキルの構造整合性を検証。
+# =============================================================================
+echo "--- Cat J: Autopilot Policy 契約 ---"
+
+# J-1: policy 対応スキルに autopilot-policy.yaml への参照がある
+POLICY_SKILLS="create-ticket impl ship"
+for skill_slug in $POLICY_SKILLS; do
+  assert_file_contains \
+    "$skill_slug SKILL.md に autopilot-policy.yaml への参照がある" \
+    "$REPO_DIR/skills/$skill_slug/SKILL.md" \
+    "autopilot-policy\\.yaml"
+done
+
+# J-2: 各スキルに対応する gate 名の記述がある
+assert_file_contains \
+  "create-ticket SKILL.md に gates.ticket_quality_fail がある" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "gates\\.ticket_quality_fail"
+
+assert_file_contains \
+  "impl SKILL.md に gates.evaluator_dry_run_fail がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "gates\\.evaluator_dry_run_fail"
+
+assert_file_contains \
+  "impl SKILL.md に gates.audit_infrastructure_fail がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "gates\\.audit_infrastructure_fail"
+
+assert_file_contains \
+  "ship SKILL.md に gates.ship_review_gate がある" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "gates\\.ship_review_gate"
+
+assert_file_contains \
+  "ship SKILL.md に gates.ship_ci_pending がある" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "gates\\.ship_ci_pending"
+
+# J-3: policy 対応スキルに [AUTOPILOT-POLICY] ログ出力指示がある
+for skill_slug in $POLICY_SKILLS; do
+  assert_file_contains \
+    "$skill_slug SKILL.md に [AUTOPILOT-POLICY] ログ出力がある" \
+    "$REPO_DIR/skills/$skill_slug/SKILL.md" \
+    '\[AUTOPILOT-POLICY\]'
+done
+
+# J-4: brief SKILL.md に split-plan.md への参照がある
+assert_file_contains \
+  "brief SKILL.md に split-plan.md への参照がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "split-plan\\.md"
+
+# J-5: brief SKILL.md に分割トリガー条件の記述がある
+assert_file_contains \
+  "brief SKILL.md に estimated_size と L/XL の分割判定がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "estimated_size.*L.*XL|L or XL|L/XL"
+
+# J-6: autopilot SKILL.md に split-plan.md の検出手順がある
+assert_file_contains \
+  "autopilot SKILL.md に split-plan.md の検出がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "split-plan\\.md"
+
+# J-7: autopilot SKILL.md にトポロジカルソートの記述がある
+assert_file_contains \
+  "autopilot SKILL.md に topological sort がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "topological"
+
+# J-8: brief SKILL.md に index.yaml からの KB 参照がある
+assert_file_contains \
+  "brief SKILL.md に index.yaml からの KB 参照がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "index\\.yaml"
+
+# J-9: brief SKILL.md に role=autopilot のフィルタリングがある
+assert_file_contains \
+  "brief SKILL.md に autopilot ロールのフィルタリングがある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "autopilot"
+
+# J-10: brief SKILL.md に confidence 閾値 0.7 の記述がある
+assert_file_contains \
+  "brief SKILL.md に confidence 閾値の記述がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "0\\.7"
+
+# J-11: impl SKILL.md に gates.ac_eval_fail がある
+assert_file_contains \
+  "impl SKILL.md に gates.ac_eval_fail がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "gates\\.ac_eval_fail"
+
+# J-12: autopilot SKILL.md に gates.unexpected_error がある
+assert_file_contains \
+  "autopilot SKILL.md に gates.unexpected_error がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "gates\\.unexpected_error"
+
+# J-13: impl SKILL.md に constraints.allow_breaking_changes がある
+assert_file_contains \
+  "impl SKILL.md に constraints.allow_breaking_changes がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "constraints\\.allow_breaking_changes"
+
+# J-14: impl SKILL.md に constraints.max_total_rounds がある
+assert_file_contains \
+  "impl SKILL.md に constraints.max_total_rounds がある" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "constraints\\.max_total_rounds"
+
+# J-15: autopilot SKILL.md に unexpected_error の unsupported action フォールバック記述がある
+assert_file_contains \
+  "autopilot SKILL.md に unexpected_error の unsupported action フォールバック記述がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "fallback from unsupported action"
+
+# J-16: autopilot SKILL.md に unexpected_error の動的 action ログ出力がある (ハードコードでない)
+assert_file_contains \
+  "autopilot SKILL.md に unexpected_error の動的 action={actual_action} ログがある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'action=\{actual_action\}'
+
+# J-17: autopilot SKILL.md で moderate と aggressive のデフォルトが別定義されている
+assert_file_contains \
+  "autopilot SKILL.md に moderate defaults が独立定義されている" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  '`moderate` defaults:'
+
+assert_file_contains \
+  "autopilot SKILL.md に aggressive defaults が独立定義されている" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  '`aggressive` defaults:'
+
+# J-18: autopilot SKILL.md の aggressive defaults に固有値がある
+assert_file_contains \
+  "autopilot SKILL.md の aggressive に timeout_minutes: 60 がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'aggressive.*timeout_minutes: 60'
+
+assert_file_contains \
+  "autopilot SKILL.md の aggressive に max_total_rounds: 12 がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'aggressive.*max_total_rounds: 12'
+
+assert_file_contains \
+  "autopilot SKILL.md の aggressive に allow_breaking_changes: true がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'aggressive.*allow_breaking_changes: true'
+
+# J-19: brief SKILL.md の policy テンプレートに aggressive 固有値がある
+assert_file_contains \
+  "brief SKILL.md に timeout_minutes の aggressive 分岐 (60) がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  'timeout_minutes:.*60.*aggressive'
+
+assert_file_contains \
+  "brief SKILL.md に max_total_rounds の aggressive 分岐 (12) がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  'max_total_rounds:.*12.*aggressive'
+
+assert_file_contains \
+  "brief SKILL.md に allow_breaking_changes の aggressive 分岐 (true) がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  'allow_breaking_changes:.*true.*aggressive'
+
+echo ""
+
+# =============================================================================
+# カテゴリ K: kb-suggested / kb_override 契約
+# 差分: 新規カテゴリ。KB 由来のデフォルト変更を human_override と誤検出しない
+#        ための kb-suggested コメント付与・検出・分離ログの整合性を検証。
+# =============================================================================
+echo "--- Cat K: kb-suggested / kb_override 契約 ---"
+
+# K-1: brief SKILL.md Phase 4 に kb-suggested コメント付与の指示がある
+assert_file_contains \
+  "brief SKILL.md に kb-suggested コメント付与の指示がある" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "kb-suggested"
+
+# K-2: autopilot SKILL.md step 6 に kb-suggested コメント検出ロジックがある
+assert_file_contains \
+  "autopilot SKILL.md に kb-suggested コメント検出がある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "kb-suggested"
+
+# K-3: autopilot SKILL.md に kb_override タイプの記述がある
+assert_file_contains \
+  "autopilot SKILL.md に kb_override タイプがある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "kb_override"
+
+# K-4: autopilot SKILL.md に KB Overrides セクションの記述がある
+assert_file_contains \
+  "autopilot SKILL.md に KB Overrides セクションがある" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "KB Overrides"
+
+# K-5: autopilot SKILL.md の Human Overrides セクションが kb_override を除外する記述がある
+assert_file_contains \
+  "autopilot SKILL.md の Human Overrides が kb_override を除外する" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "Exclude.*kb_override"
+
+# K-6: autopilot SKILL.md の Decisions Made テーブルで human_override と kb_override を区別する記述がある
+assert_file_contains \
+  "autopilot SKILL.md の Decisions Made で human_override と kb_override を区別する" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "human_override.*kb_override"
+
+# K-7: brief SKILL.md で confidence >= 0.7 と kb-suggested が同じ行に記述されている
+assert_file_contains \
+  "brief SKILL.md で confidence >= 0.7 の分岐に kb-suggested が紐付いている" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "0\.7.*kb-suggested"
+
+echo ""
+
+# =============================================================================
+# カテゴリ L: autopilot/brief/create-ticket v2.2.0 契約
+# 差分: 新規カテゴリ。v2.2.0 で追加された ticket_mapping, ticket_dir,
+#        brief_slug メタデータ、および ticket-slug 廃止の構造整合性を検証。
+# =============================================================================
+echo "--- Cat L: autopilot/brief/create-ticket v2.2.0 契約 ---"
+
+# L-1: autopilot SKILL.md に ticket_mapping が split flow 内に記述されている
+assert_file_contains \
+  "autopilot SKILL.md has ticket_mapping in split flow" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ticket_mapping"
+
+# L-2: autopilot SKILL.md に ticket_dir frontmatter フィールドがある
+assert_file_contains \
+  "autopilot SKILL.md has ticket_dir frontmatter field" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ticket_dir:"
+
+# L-3: create-ticket SKILL.md に brief_slug メタデータがある
+assert_file_contains \
+  "create-ticket SKILL.md has brief_slug metadata" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "brief_slug"
+
+# L-4: create-ticket SKILL.md に Split Judgment 構造（Split criteria / Split Rationale）がある
+assert_file_contains \
+  "create-ticket SKILL.md has Split criteria description" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "Split criteria"
+
+assert_file_contains \
+  "create-ticket SKILL.md has Split Rationale description" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "Split Rationale"
+
+# L-5: create-ticket SKILL.md に Split guardrails（最低サイズ/AC数）がある
+assert_file_contains \
+  "create-ticket SKILL.md has split guardrail (at least Size S or 2+ AC)" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "at least Size S|2 or more Acceptance Criteria"
+
+# L-6: ticket-move SKILL.md に suffix match 検索戦略がある
+assert_file_contains \
+  "ticket-move SKILL.md has suffix match search strategy" \
+  "$REPO_DIR/skills/ticket-move/SKILL.md" \
+  "[Ss]uffix match|ends with"
+
+# L-7: create-ticket SKILL.md に .ticket-counter の記述がある
+assert_file_contains \
+  "create-ticket SKILL.md has .ticket-counter reference" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "\\.ticket-counter"
+
+# L-8: create-ticket SKILL.md に brief_part メタデータの記述がある
+assert_file_contains \
+  "create-ticket SKILL.md has brief_part metadata" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "brief_part"
+
+# L-9 (was L-4): tune-analyzer.md に stale ticket-slug が残っていないこと
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! grep -qE '\{ticket-slug\}' "$REPO_DIR/agents/tune-analyzer.md"; then
+  echo -e "  ${GREEN}PASS${NC} tune-analyzer.md has no stale ticket-slug"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tune-analyzer.md has stale {ticket-slug} reference"
+  echo -e "       File: $REPO_DIR/agents/tune-analyzer.md"
+  echo -e "       Unexpected pattern found: {ticket-slug}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

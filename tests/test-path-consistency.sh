@@ -99,12 +99,22 @@ assert_file_contains \
 assert_file_contains \
   "impl/SKILL.md uses branch matching for eval-round" \
   "$REPO_DIR/skills/impl/SKILL.md" \
-  "branch.*slug"
+  "slug.*portion|strip.*prefix|branch.*contains"
 
 assert_file_contains \
   "refactor/SKILL.md references ticket-dir or .backlog/active" \
   "$REPO_DIR/skills/refactor/SKILL.md" \
   "ticket-dir|\.backlog/active"
+
+assert_file_contains \
+  "autopilot/SKILL.md references ticket-dir" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ticket-dir"
+
+assert_file_not_contains \
+  "autopilot/SKILL.md has no stale ticket-slug" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  '\{ticket-slug\}'
 
 echo ""
 
@@ -675,6 +685,22 @@ assert_file_contains \
   "catchup/SKILL.md documents per-ticket in_progress_phase" \
   "$REPO_DIR/skills/catchup/SKILL.md" \
   'in_progress_phase'
+
+echo ""
+
+# --- Category 21: ticket-slug regression guard (cross-skill) ---
+echo "--- ticket-slug regression guard (cross-skill) ---"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+TICKET_SLUG_HITS=$(grep -rE '\{ticket-slug\}' "$REPO_DIR/skills/" --include='*.md' 2>/dev/null || true)
+if [ -z "$TICKET_SLUG_HITS" ]; then
+  echo -e "  ${GREEN}PASS${NC} skills/ has no stale {ticket-slug} references"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} skills/ has stale {ticket-slug} references:"
+  echo "$TICKET_SLUG_HITS" | sed 's/^/       /'
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

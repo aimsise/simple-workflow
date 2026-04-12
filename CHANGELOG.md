@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [2.2.0] - 2026-04-13
+
+### Added
+- Autopilot `ticket_mapping` for split flow crash recovery
+- `brief_slug`/`brief_part` traceability metadata in create-ticket
+
+### Changed
+- autopilot/tune-analyzer `{ticket-slug}` unified to `{ticket-dir}`
+- Split-plan logical name annotation in brief
+
+## [2.1.0] - 2026-04-12
+
+### Added
+- Sequential ticket numbering via `.backlog/.ticket-counter` — ticket directories now use `{NNN}-{slug}` format (3-digit zero-padded prefix)
+- `/create-ticket` split support — tickets of Size >= M with independent AC groups can be split into up to 5 sub-tickets, each numbered sequentially
+
+### Changed
+- `{slug}` variable unified to `{ticket-dir}` across all skills and agents — `{ticket-dir}` represents the full directory name including the numeric prefix (e.g., `001-add-search-feature`)
+- `/ticket-move` suffix-match fallback — when exact directory match fails, falls back to suffix matching on the slug portion
+- Branch matching updated to NNN-prefix stripping — extracts the slug portion by removing the leading `NNN-` prefix, then checks if the branch name contains the slug
+
+## [2.0.0] - 2026-04-12
+
+### Added
+- `/brief` skill — structured interview to generate brief documents and autopilot-policy.yaml for full automation
+- `/autopilot` skill — execute the full pipeline (create-ticket → scout → impl → ship) from a brief document with zero human intervention
+- Autopilot-policy.yaml mechanism — file-based autonomous decision making at all pipeline gates
+- Auto-split feature — large scopes (L/XL) automatically split into multiple tickets with dependency-ordered execution
+- Decision pattern learning — `/tune` extracts decision outcomes from autopilot logs into the knowledge base
+- Human override learning — policy edits by users are tracked and fed back into the knowledge base
+- Cat J contract tests — autopilot policy structural integrity verification (J-1 through J-19)
+- Cat K contract tests — kb-suggested / kb_override contract verification (K-1 through K-7)
+- Cat I extensions (I-16 through I-20) — decision pattern and tune-analyzer contract tests
+
+### Changed
+- `/create-ticket` — added `brief=<path>` parameter for brief injection, autopilot-policy gate check
+- `/impl` — added autopilot-policy gate checks for evaluator dry-run failure and audit infrastructure failure
+- `/ship` — added autopilot-policy gate checks for review gate and CI pending, added Read to allowed-tools
+- `/tune` — added autopilot-log.md as analysis source, decision category support
+- `tune-analyzer` agent — added decision pattern extraction, success/failure tracking, regression detection, human override learning
+
 ## [1.3.1] - 2026-04-12
 
 ### Fixed
@@ -107,6 +148,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[2.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.2.0
+[2.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.1.0
+[2.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.0.0
+[1.3.1]: https://github.com/aimsise/simple-workflow/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.3.0
 [1.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.2.0
 [1.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v1.1.0

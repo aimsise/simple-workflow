@@ -51,7 +51,7 @@ Structurally separates "writing code" from "judging code" to guarantee quality b
 
 ### Built-in Ticket Management
 
-Your project's `.backlog/` directory is a state machine. Tickets transition between states via physical directory moves (`mv .backlog/product_backlog/{slug} .backlog/active/{slug}`), making state visible, traceable, and greppable — no database or external tools required.
+Your project's `.backlog/` directory is a state machine. Tickets transition between states via physical directory moves (`mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`), making state visible, traceable, and greppable — no database or external tools required.
 
 ```
 .backlog/
@@ -64,7 +64,7 @@ Your project's `.backlog/` directory is a state machine. Tickets transition betw
 Each ticket is a directory where all work artifacts accumulate:
 
 ```
-.backlog/active/add-search-feature/
+.backlog/active/001-add-search-feature/
 ├── ticket.md          # The ticket (size, acceptance criteria, scope)
 ├── investigation.md   # Research findings
 ├── plan.md            # Implementation plan
@@ -88,7 +88,7 @@ simple-workflow is composed of three types of components: **Skills**, **Sub-agen
 
 Operations invoked as slash commands like `/scout` or `/impl`. There are two kinds:
 
-- **Orchestrators**: Don't do work themselves — they coordinate sub-agents to drive a workflow (`/impl`, `/ship`, `/create-ticket`, etc.)
+- **Orchestrators**: Don't do work themselves — they coordinate sub-agents to drive a workflow (`/impl`, `/ship`, `/create-ticket`, `/brief`, `/autopilot`, etc.)
 - **Delegators**: Hand off work to a specific sub-agent (`/investigate`, `/plan2doc`, `/test`, etc.)
 
 ### Sub-agents
@@ -144,7 +144,7 @@ Once installed, all slash commands work the same on both platforms:
 ```
 /investigate <topic>
 /create-ticket <description>
-/scout .backlog/product_backlog/{slug}/ticket.md
+/scout .backlog/product_backlog/001-migrate-to-session-auth/ticket.md
 /impl
 /audit
 /ship
@@ -181,17 +181,17 @@ Creates a structured ticket through four phases:
 3. **Ticket drafting**: The planner creates a ticket with size, acceptance criteria, and scope
 4. **Quality evaluation**: The ticket-evaluator checks five quality gates (testability, unambiguity, completeness, implementability, size fit) — if any gate fails, the ticket is revised and re-evaluated
 
-The resulting ticket is saved to `.backlog/product_backlog/{slug}/ticket.md`.
+The resulting ticket is saved to `.backlog/product_backlog/{ticket-dir}/ticket.md` (where `{ticket-dir}` is `{NNN}-{slug}`, e.g., `001-migrate-to-session-auth`).
 
 ### 3. `/scout` — Research + Plan
 
 ```
-/scout .backlog/product_backlog/migrate-to-session-auth/ticket.md
+/scout .backlog/product_backlog/001-migrate-to-session-auth/ticket.md
 ```
 
 Chains `/investigate` and `/plan2doc` in sequence. Moves the ticket to `.backlog/active/`, then runs research and creates an implementation plan in one go. `/plan2doc` selects model based on ticket size (sonnet for S, opus for M/L/XL).
 
-At this point, `.backlog/active/{slug}/` contains `ticket.md`, `investigation.md`, and `plan.md` — everything needed for implementation.
+At this point, `.backlog/active/{ticket-dir}/` contains `ticket.md`, `investigation.md`, and `plan.md` — everything needed for implementation.
 
 ### 4. `/impl` — Implement
 
@@ -236,12 +236,25 @@ Ships the current changes through up to three phases:
 
 If no prior review via `/audit` is detected, a review gate recommends running one first. On successful merge, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
 
+### Full Automation with /brief + /autopilot
+
+For a fully automated pipeline from idea to PR:
+
+1. **`/brief <what-to-build>`** — Investigates the codebase and conducts a structured interview to gather all requirements. Generates a brief document and an autopilot-policy.yaml defining autonomous decision rules.
+
+2. **`/autopilot <slug>`** — Reads the brief and executes the full pipeline (`create-ticket → scout → impl → ship`) with zero human intervention. Decision points are resolved by the autopilot-policy. Large scopes are automatically split into multiple tickets and executed in dependency order.
+
+> **Note**: `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `product_backlog/`. To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
+
+The autopilot-policy evolves over time: `/tune` extracts decision patterns from execution logs, and future `/brief` runs use these patterns to suggest more accurate defaults.
+
 ## All Skills
 
 | Phase | Skill | Description |
 |-------|-------|-------------|
 | Discovery | `/investigate` | Deep-dive codebase exploration |
 | Discovery | `/catchup` | Recover context from compact-state / session-log, detect current phase, and recommend next action (including resuming an in-progress `/impl` loop) |
+| Discovery | `/brief` | Structured interview to generate brief + autopilot-policy. Investigates codebase and conducts Q&A to gather requirements |
 | Planning | `/scout` | Chain investigation + planning in one step |
 | Planning | `/plan2doc` | Create a detailed implementation plan (auto-selects model by ticket size) |
 | Tickets | `/create-ticket` | Create a structured ticket with quality evaluation |
@@ -253,6 +266,7 @@ If no prior review via `/audit` is detected, a review gate recommends running on
 | Quality | `/tune` | Analyze evaluation logs and maintain project knowledge base |
 | Delivery | `/commit` | Create a Conventional Commits-formatted commit |
 | Delivery | `/ship` | Commit + PR in one step (optionally merge) |
+| Full Pipeline | `/autopilot` | Execute the full pipeline (create-ticket → scout → impl → ship) from a brief document with zero human intervention. Auto-splits large scopes |
 
 ## Configuration
 
