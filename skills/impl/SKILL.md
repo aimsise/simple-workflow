@@ -38,13 +38,13 @@ User arguments: $ARGUMENTS
 ## Pre-computed Context
 
 Oldest non-autopilot plan in .backlog/active/ (FIFO, lowest ticket number):
-!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}plan.md" ] && echo "${d}plan.md" && break; done`
+!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}plan.md" ] && echo "${d}plan.md" && break; done || true`
 
 Latest plan in .docs/plans/:
 !`ls -t .docs/plans/*.md 2>/dev/null | head -1`
 
 Oldest non-autopilot research in .backlog/active/:
-!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}investigation.md" ] && echo "${d}investigation.md" && break; done`
+!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}investigation.md" ] && echo "${d}investigation.md" && break; done || true`
 
 Latest research in .docs/research/:
 !`ls -t .docs/research/*.md 2>/dev/null | head -1`
