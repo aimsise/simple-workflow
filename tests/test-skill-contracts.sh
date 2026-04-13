@@ -86,9 +86,8 @@ echo ""
 # =============================================================================
 echo "--- Cat A: disable-model-invocation 契約 ---"
 
-# A-1: dmi=true のスキルは allowed-tools に Agent or Skill を含む、
-#      OR 例外リスト（commit, ticket-move）に含まれる
-DMI_EXCEPTION_LIST="commit ticket-move"
+# A-1: dmi=true のスキルは allowed-tools に Agent or Skill を含む
+DMI_TRUE_EXCEPTION_LIST=""
 
 for skill_dir in "$REPO_DIR"/skills/*/; do
   skill_slug=$(basename "$skill_dir")
@@ -104,7 +103,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
       has_agent_or_skill="true"
     fi
     is_exception="false"
-    for exc in $DMI_EXCEPTION_LIST; do
+    for exc in $DMI_TRUE_EXCEPTION_LIST; do
       if [ "$skill_slug" = "$exc" ]; then
         is_exception="true"
         break
@@ -121,7 +120,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   fi
 done
 
-# A-2: dmi がないスキル（catchup, investigate, test）は agent: または Agent allowed-tools を持つ
+# A-2: dmi 未設定のスキル（delegator: catchup, investigate, test）は agent: または Agent allowed-tools を持つ
 for skill_dir in "$REPO_DIR"/skills/*/; do
   skill_slug=$(basename "$skill_dir")
   skill_md="$skill_dir/SKILL.md"
@@ -145,7 +144,66 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
       result="true"
     fi
     assert_true \
-      "dmi なしスキル '$skill_slug' は agent: フィールドまたは Agent ツールを持つ" \
+      "dmi 未設定スキル '$skill_slug' は agent: フィールドまたは Agent ツールを持つ" \
+      "$result"
+  fi
+done
+
+# A-3: dmi=false のスキルは allowed-tools に Agent or Skill を含む（他スキルから呼ばれるオーケストレータ）
+DMI_FALSE_EXCEPTION_LIST=""
+
+cat_a3_count=0
+for skill_dir in "$REPO_DIR"/skills/*/; do
+  skill_slug=$(basename "$skill_dir")
+  skill_md="$skill_dir/SKILL.md"
+  [ -f "$skill_md" ] || continue
+
+  dmi=$(extract_frontmatter_field "$skill_md" "disable-model-invocation")
+
+  if [ "$dmi" = "false" ]; then
+    fm_block=$(extract_frontmatter_block "$skill_md")
+    has_agent_or_skill="false"
+    if echo "$fm_block" | grep -qE '(Agent|Skill)'; then
+      has_agent_or_skill="true"
+    fi
+    is_exception="false"
+    for exc in $DMI_FALSE_EXCEPTION_LIST; do
+      if [ "$skill_slug" = "$exc" ]; then
+        is_exception="true"
+        break
+      fi
+    done
+
+    result="false"
+    if [ "$has_agent_or_skill" = "true" ] || [ "$is_exception" = "true" ]; then
+      result="true"
+    fi
+    assert_true \
+      "dmi=false スキル '$skill_slug' は Agent/Skill を持つか例外リストに含まれる" \
+      "$result"
+    cat_a3_count=$((cat_a3_count + 1))
+  fi
+done
+
+# ガードアサーション: 最低1件の dmi=false スキルがテストされたこと
+assert_true "Category A-3: at least 1 dmi=false skill verified ($cat_a3_count total)" "$([ $cat_a3_count -ge 1 ] && echo true || echo false)"
+
+# A-4: dmi=false のスキルは description に "Do not auto-invoke" を含む
+for skill_dir in "$REPO_DIR"/skills/*/; do
+  skill_slug=$(basename "$skill_dir")
+  skill_md="$skill_dir/SKILL.md"
+  [ -f "$skill_md" ] || continue
+
+  dmi=$(extract_frontmatter_field "$skill_md" "disable-model-invocation")
+
+  if [ "$dmi" = "false" ]; then
+    has_phrase=$(grep -c 'Do not auto-invoke' "$skill_md" || true)
+    result="false"
+    if [ "$has_phrase" -gt 0 ]; then
+      result="true"
+    fi
+    assert_true \
+      "dmi=false スキル '$skill_slug' の description に 'Do not auto-invoke' を含む" \
       "$result"
   fi
 done
@@ -214,7 +272,7 @@ echo ""
 echo "--- Cat C: Skill 委譲グラフ整合性 ---"
 
 # Skill allowed-tools を持つスキルの本文からバッククォート囲みの `/skillname` を抽出
-# パターン: `/commit` や `/audit` のようにバッククォートで囲まれたスキル呼び出し
+# パターン: `/audit` や `/impl` のようにバッククォートで囲まれたスキル呼び出し
 # /Error, /Phase 等の非スキル参照や .backlog/active/ 等のパス内スラッシュは除外
 cat_c_count=0
 for skill_dir in "$REPO_DIR"/skills/*/; do
@@ -927,12 +985,6 @@ assert_file_contains \
   "$REPO_DIR/skills/create-ticket/SKILL.md" \
   "at least Size S|2 or more Acceptance Criteria"
 
-# L-6: ticket-move SKILL.md に suffix match 検索戦略がある
-assert_file_contains \
-  "ticket-move SKILL.md has suffix match search strategy" \
-  "$REPO_DIR/skills/ticket-move/SKILL.md" \
-  "[Ss]uffix match|ends with"
-
 # L-7: create-ticket SKILL.md に .ticket-counter の記述がある
 assert_file_contains \
   "create-ticket SKILL.md has .ticket-counter reference" \
@@ -1042,6 +1094,44 @@ assert_file_contains \
   "autopilot SKILL.md delegates to /create-ticket for ticket numbering" \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "Invoke.*/create-ticket"
+
+echo ""
+
+# =============================================================================
+# カテゴリ N: impl safety contracts
+# 差分: 新規カテゴリ。/impl のスタッシュ除外パス、/ship のチケット完了順序を検証。
+# =============================================================================
+echo "--- Cat N: impl safety contracts ---"
+
+# N-1: impl SKILL.md に3つのスタッシュ除外 pathspec が全て含まれる
+assert_file_contains \
+  "impl SKILL.md contains stash exclusion ':!.backlog'" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "':!\.backlog'"
+
+assert_file_contains \
+  "impl SKILL.md contains stash exclusion ':!.docs'" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "':!\.docs'"
+
+assert_file_contains \
+  "impl SKILL.md contains stash exclusion ':!.simple-wf-knowledge'" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "':!\.simple-wf-knowledge'"
+
+# N-2: ship SKILL.md で .backlog/done が Phase 2 より前に記述されている
+ship_md="$REPO_DIR/skills/ship/SKILL.md"
+done_line=$(awk '/\.backlog\/done/{print NR; exit}' "$ship_md")
+phase2_line=$(awk '/^## Phase 2/{print NR; exit}' "$ship_md")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$done_line" ] && [ -n "$phase2_line" ] && [ "$done_line" -lt "$phase2_line" ]; then
+  echo -e "  ${GREEN}PASS${NC} ship SKILL.md moves ticket to done before Phase 2"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ship SKILL.md moves ticket to done before Phase 2"
+  echo -e "       done_line=$done_line phase2_line=$phase2_line (expected done < phase2)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

@@ -1,10 +1,11 @@
 ---
 name: scout
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Use after creating a ticket or when starting work on a new feature.
   Investigates the codebase and creates an implementation plan for the
   specified topic or active ticket.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Skill

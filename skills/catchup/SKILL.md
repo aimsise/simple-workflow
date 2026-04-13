@@ -136,7 +136,7 @@ Detect the current development phase by checking these conditions **in order**. 
 
 6. **Review done, uncommitted changes** → suggest **commit**
    - Check: Review files exist AND `git status --porcelain` shows uncommitted changes
-   - Guidance: Use `/commit` to create a conventional commit, or `/ship` to commit + create PR.
+   - Guidance: Use `/ship` to commit and create PR.
 
 Present the detection result with reasoning, including any ticket directory information from `.backlog/active/`. If the user specified a phase via `$ARGUMENTS`, skip detection and go directly to the guidance for that phase.
 

@@ -1,9 +1,11 @@
 ---
 name: create-ticket
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Create a structured ticket with scope analysis, acceptance
   criteria, and Claude Code workflow recommendations. Use when defining
   new work items or breaking down features into tickets.
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Agent
@@ -21,7 +23,6 @@ allowed-tools:
   - create
   - edit
   - ask_user
-disable-model-invocation: true
 argument-hint: "<ticket description> [brief=<path>]"
 ---
 

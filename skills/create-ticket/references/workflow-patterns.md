@@ -17,9 +17,7 @@
 | `/refactor` | skill | Refactoring with safety checks |
 | `/test` | skill | Create and run tests |
 | `/audit` | skill | Multi-agent code quality + security audit. Always runs security-scanner; use `only_security_scan=true` for security-only mode |
-| `/commit` | skill | Create conventional commit |
 | `/catchup` | skill | Context recovery, phase detection, and next action guidance |
-| `/ticket-move` | skill | Move tickets to a target backlog state (active/blocked/done) |
 | planner | agent | Implementation plan design (opus for M/L/XL, sonnet for S) |
 | researcher | agent | Code research and analysis |
 | ticket-evaluator | agent | Ticket quality evaluation with 5 quality gates (sonnet) |

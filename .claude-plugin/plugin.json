@@ -1,7 +1,7 @@
 {
   "name": "simple-workflow",
   "description": "Complete development lifecycle plugin with built-in ticket management, Generator-Evaluator quality pipeline, and context conservation for long-running sessions.",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "author": {
     "name": "aimsise",
     "url": "https://github.com/aimsise"

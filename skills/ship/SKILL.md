@@ -1,13 +1,15 @@
 ---
 name: ship
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Commit current changes, create a PR, and optionally squash-merge.
   Combines commit + create-pr + merge into a single workflow.
   Use when the user wants to ship completed work.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Skill
+  - AskUserQuestion
   - Read
   - "Bash(git add:*)"
   - "Bash(git commit:*)"
@@ -95,25 +97,32 @@ Commits ahead of default branch:
 
 2. **Sensitive file warning**: Inspect the working tree for files matching `.env*`, `*credentials*`, `*secret*`, `*.key`, `*.pem`. If any such files are present (staged, unstaged, or untracked), warn the user explicitly before proceeding. The user may then decide whether to abort or continue.
 
-3. **Delegate to /commit**: Invoke the `/commit` skill via the Skill tool to handle staging and conventional commit creation. Pass any user-provided commit message hint as the argument. The `/commit` skill will:
-   - Show the user the changes
-   - Ask which files to stage (if there are unstaged changes)
-   - Generate a conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"
-   - Create the commit using a HEREDOC
-   - Verify the commit succeeded with `git status`
+3. **Create commit**: Handle staging and conventional commit creation directly:
+   a. Run `git diff --stat` and `git diff --cached --stat` to understand the changes.
+   b. If there are unstaged changes, determine which files to stage based on the implementation context. In autopilot mode (autopilot-policy.yaml exists), stage all modified/new files relevant to the ticket. In interactive mode, use `AskUserQuestion` to ask which files to stage. **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error, stage all modified/new files (same as autopilot mode).
+   c. Stage the selected files with `git add`.
+   d. Generate a conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why", using `git log --oneline -5` for style reference.
+   e. Create the commit using a HEREDOC.
+   f. Run `git status` to verify the commit succeeded.
 
-4. **Post-commit verification**: After the Skill call returns, run `git status` to confirm a commit was actually created. If the working tree is still dirty or no new commit exists (`git log -1 --format=%H` is unchanged from before), report the failure and stop. Otherwise, proceed to Phase 2.
+4. **Post-commit verification**: Run `git status` to confirm a commit was actually created. If the working tree is still dirty or no new commit exists (`git log -1 --format=%H` is unchanged from before), report the failure and stop.
+
+5. **Ticket completion**: If `.backlog/active/` exists, list its contents. Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix), then run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`. If no match, skip silently.
+
+6. **Knowledge base tuning** (only after a ticket was moved in step 5): Invoke `/tune` via the Skill tool, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved.
+
+Proceed to Phase 2.
 
 ## Phase 2: Create PR
 
-5. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
+7. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
-6. **Review gate**: Check for recent code review:
-    - If there is an active ticket (`{ticket-dir}`), run `ls -t {ticket-dir}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file in that ticket directory
-    - If there is no active ticket, skip the review gate (no check needed)
+8. **Review gate**: Check for recent code review:
+    - If there is a completed ticket (`{ticket-dir}` — now in `.backlog/done/` after step 5), run `ls -t .backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file
+    - If there is no ticket, skip the review gate (no check needed)
     - If a review file exists, compare its modification time with the last commit time
     - If NO review file exists, or the review predates the last code-changing commit:
-      - **Autopilot policy check**: Check if `{ticket-dir}/autopilot-policy.yaml` exists.
+      - **Autopilot policy check**: Check if `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists.
         - If it exists, read `gates.ship_review_gate.action`:
           - If `proceed_if_eval_passed`: Check the latest `eval-round-*.md` in the ticket directory. Read its Status line.
             - If Status is PASS or PASS-WITH-CAVEATS: proceed automatically. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to the PR body.
@@ -123,21 +132,21 @@ Commits ahead of default branch:
       Print "No recent code review found. Recommended: run /audit before shipping."
       Ask the user: "Proceed without review? (yes/no)"
       - If "no" → stop
-      - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 11
+      - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 13
 
-7. Determine the target branch from arguments (default: `<default-branch>` — obtained from the `Default branch:` pre-computed context above). If the target is not `<default-branch>`, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against `<default-branch>`).
-8. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
-9. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
-10. Push with `git push origin HEAD`. On failure, show the error and stop.
-11. Generate PR title (conventional commit style, single line) and body (summarize changes and scope) from the commit log and diff.
-12. Create the PR with `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
-13. Print the PR URL. If merge is not enabled, stop here. Note: when squash-merged, the PR title becomes the commit message on the target branch.
+9. Determine the target branch from arguments (default: `<default-branch>` — obtained from the `Default branch:` pre-computed context above). If the target is not `<default-branch>`, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against `<default-branch>`).
+10. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
+11. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
+12. Push with `git push origin HEAD`. On failure, show the error and stop.
+13. Generate PR title (conventional commit style, single line) and body (summarize changes and scope) from the commit log and diff.
+14. Create the PR with `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
+15. Print the PR URL. If merge is not enabled, stop here. Note: when squash-merged, the PR title becomes the commit message on the target branch.
 
 ## Phase 3: Merge (only when merge=true)
 
-14. Attempt `gh pr merge <pr-url> --squash --delete-branch`.
-15. If merge fails due to pending CI checks,
-    - **Autopilot policy check**: Check if `{ticket-dir}/autopilot-policy.yaml` exists.
+16. Attempt `gh pr merge <pr-url> --squash --delete-branch`.
+17. If merge fails due to pending CI checks,
+    - **Autopilot policy check**: Check if `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists.
       - If it exists, read `gates.ship_ci_pending`:
         - If `action` is `wait`: Run `gh pr checks <pr-number> --watch` with a timeout of `timeout_minutes` minutes. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
           - If checks pass within timeout: retry the merge.
@@ -148,10 +157,8 @@ Commits ahead of default branch:
     - **Wait**: Run `gh pr checks <pr-number> --watch`, then retry the merge.
     - **Force**: Run `gh pr merge <pr-url> --squash --delete-branch --admin` to bypass checks. **WARNING: This bypasses CI checks and risks merging untested code. Confirm with the user before proceeding.** Note: requires admin permissions on the repository.
     - **Skip**: Stop without merging. Print the PR URL for manual follow-up.
-16. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
-17. **Ticket completion**: If `.backlog/active/` exists, list its contents. Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix), then run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`. If no match, skip silently.
-18. **Knowledge base tuning** (only after a ticket was moved in step 17): Invoke `/tune` via the Skill tool, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the PR is already merged and the ticket is already moved.
-19. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 17, also include "Ticket moved to .backlog/done/{ticket-dir}".
+18. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
+19. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 5, also include "Ticket moved to .backlog/done/{ticket-dir}".
 
 ## Error Handling
 
@@ -161,7 +168,7 @@ Commits ahead of default branch:
 - **Push failure**: Show the error and stop.
 - **Existing PR (merge disabled)**: Show the PR URL and stop.
 - **Existing PR (merge enabled)**: Capture the PR URL and proceed to Phase 3.
-- **CI checks pending**: Ask user to choose Wait / Force / Skip (Phase 3 step 15).
+- **CI checks pending**: Ask user to choose Wait / Force / Skip (Phase 3 step 17).
 - **Force merge failure (no admin)**: Inform user, keep PR open, print URL.
 - **Merge conflict**: Print details, keep PR open, stop.
 - **Merge failure (any reason)**: Keep PR open, print PR URL for manual follow-up.

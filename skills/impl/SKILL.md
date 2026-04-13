@@ -1,10 +1,11 @@
 ---
 name: impl
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Use after /scout or /plan2doc to execute the implementation plan.
   Implements the latest plan with independent AC verification and
   code quality review.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Agent
@@ -106,7 +107,7 @@ Current state:
 10. If working tree has uncommitted changes unrelated to the plan, warn user.
 
 11. **Safety checkpoint**: Before starting implementation, create a rollback point:
-   - Run `git stash push -m "impl-checkpoint" --include-untracked` to save current working state
+   - Run `git stash push -m "impl-checkpoint" --include-untracked -- ':!.backlog' ':!.docs' ':!.simple-wf-knowledge'` to save current working state while preserving plugin artifacts
    - If stash succeeds, print: "Safety checkpoint created. To rollback: git stash pop"
    - If nothing to stash (clean working tree), skip silently
 
@@ -212,7 +213,7 @@ Current state:
 ## Evaluator Tuning
 
 Evaluator tuning is now automated via the `/tune` skill:
-1. After `/ship` completes a ticket, `/tune` is invoked automatically (Step 18 in `/ship`) to extract patterns from evaluation logs
+1. After `/ship` commits and completes a ticket, `/tune` is invoked automatically (Step 6 in `/ship`) to extract patterns from evaluation logs
 2. Extracted patterns are stored in `.simple-wf-knowledge/candidates.yaml` and promoted to `entries.yaml` when confidence reaches 0.8
 3. Promoted patterns are injected into the Generator prompt (Step 12h above) via `index.yaml`
 4. To run tuning manually: `/tune {ticket-dir}` or `/tune all`

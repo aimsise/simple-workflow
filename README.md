@@ -61,6 +61,15 @@ Your project's `.backlog/` directory is a state machine. Tickets transition betw
 └── done/              # Completed tickets
 ```
 
+> **Note**: Moving tickets to `blocked/` is done manually:
+> ```bash
+> mv .backlog/active/{ticket-dir} .backlog/blocked/{ticket-dir}
+> ```
+> To unblock and resume work:
+> ```bash
+> mv .backlog/blocked/{ticket-dir} .backlog/active/{ticket-dir}
+> ```
+
 Each ticket is a directory where all work artifacts accumulate:
 
 ```
@@ -234,7 +243,7 @@ Ships the current changes through up to three phases:
 2. **Create PR** — Pushes to GitHub and creates a pull request
 3. **Merge** (optional, `merge=true`) — Squash-merges, deletes the branch, and syncs local
 
-If no prior review via `/audit` is detected, a review gate recommends running one first. On successful merge, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
+If no prior review via `/audit` is detected, a review gate recommends running one first. After a successful commit, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
 
 ### Full Automation with /brief + /autopilot
 
@@ -258,13 +267,11 @@ The autopilot-policy evolves over time: `/tune` extracts decision patterns from 
 | Planning | `/scout` | Chain investigation + planning in one step |
 | Planning | `/plan2doc` | Create a detailed implementation plan (auto-selects model by ticket size) |
 | Tickets | `/create-ticket` | Create a structured ticket with quality evaluation |
-| Tickets | `/ticket-move` | Move tickets to a target backlog state (active/blocked/done) |
 | Implementation | `/impl` | Implement via Generator-Evaluator pipeline |
 | Implementation | `/refactor` | Safe refactoring with backup branch |
 | Testing | `/test` | Design and run tests |
 | Quality | `/audit` | Multi-agent code quality + security audit (use `only_security_scan=true` for security-only) |
 | Quality | `/tune` | Analyze evaluation logs and maintain project knowledge base |
-| Delivery | `/commit` | Create a Conventional Commits-formatted commit |
 | Delivery | `/ship` | Commit + PR in one step (optionally merge) |
 | Full Pipeline | `/autopilot` | Execute the full pipeline (create-ticket → scout → impl → ship) from a brief document with zero human intervention. Auto-splits large scopes |
 

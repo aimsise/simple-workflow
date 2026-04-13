@@ -5,7 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [3.0.0] - 2026-04-14
+
+### Breaking Changes
+- Removed `/ticket-move` skill — blocked-state moves now use manual `mv` commands
+- Removed `/commit` skill — commit logic inlined into `/ship` Phase 1
+
+### Changed
+- `disable-model-invocation` changed from `true` to `false` on 8 skills (autopilot, create-ticket, scout, impl, ship, audit, plan2doc, tune) with "Do not auto-invoke" description guardrail replacing hard block, enabling skill-to-skill invocation via Skill tool
+- Ticket completion in `/ship` moved from after-merge (Phase 3) to after-commit (Phase 1 Step 5) — tickets move to `.backlog/done/` earlier in the flow
+- `/ship` Phase 1 now handles commit logic directly (previously delegated to `/commit` via Skill tool)
+- `/ship` Phase 2 review gate and Phase 3 autopilot-policy reads now reference `.backlog/done/{ticket-dir}/` (ticket already moved in Step 5)
+- `/autopilot` Phase 3 autopilot-log.md write path now uses filesystem check (`.backlog/done/` first, then `.backlog/active/`) instead of assuming ticket location
+- `/impl` stash exclusion now skips `.backlog`, `.docs`, and `.simple-wf-knowledge` directories to preserve plugin artifacts
 
 ## [2.3.0] - 2026-04-13
 
@@ -161,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[3.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.0.0
 [2.3.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.3.0
 [2.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.2.0
 [2.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.1.0
