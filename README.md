@@ -244,7 +244,7 @@ For a fully automated pipeline from idea to PR:
 
 2. **`/autopilot <slug>`** — Reads the brief and executes the full pipeline (`create-ticket → scout → impl → ship`) with zero human intervention. Decision points are resolved by the autopilot-policy. Large scopes are automatically split into multiple tickets and executed in dependency order.
 
-> **Note**: `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `product_backlog/`. To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
+> **Note**: Workflow isolation is bidirectional. `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `product_backlog/`. Conversely, manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO). To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
 
 The autopilot-policy evolves over time: `/tune` extracts decision patterns from execution logs, and future `/brief` runs use these patterns to suggest more accurate defaults.
 

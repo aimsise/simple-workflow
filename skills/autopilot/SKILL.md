@@ -114,22 +114,25 @@ If no split-plan.md:
    - Record: `[PIPELINE] create-ticket: success | ticket={ticket-dir}`
 
 10. **Step: scout**
-   Invoke `/scout` via the Skill tool with argument: `{ticket-dir}`
+   - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/product_backlog/{ticket-dir}/` (copied in step 9). If not found, log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
+   - Invoke `/scout` via the Skill tool with argument: `{ticket-dir}`
    - Parse the response for success/failure status.
    - If `/scout` fails, log the error and go to Phase 3 (failure).
    - On success: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/` (scout moved the ticket directory including the policy). If missing, copy it from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
    - Record: `[PIPELINE] scout: success`
 
 11. **Step: impl**
-    Invoke `/impl` via the Skill tool (no explicit plan path needed — `/impl` auto-detects from .backlog/active/).
+    - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
+    - Invoke `/impl` via the Skill tool with argument: `.backlog/active/{ticket-dir}/plan.md`
     - Parse the response for the final status (PASS/FAIL/STOP).
     - If FAIL-CRITICAL or stopped, log the error and go to Phase 3 (failure).
     - Record: `[PIPELINE] impl: {status} | rounds={n}`
     - Note: Decision points within `/impl` (evaluator_dry_run_fail, audit_infrastructure_fail) are handled by the autopilot-policy.yaml already copied to the ticket dir.
 
 12. **Step: ship**
-    Determine the target branch from Pre-computed Context (Default branch).
-    Invoke `/ship` via the Skill tool with argument: `{target-branch}` (do NOT pass merge=true).
+    - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
+    - Determine the target branch from Pre-computed Context (Default branch).
+    - Invoke `/ship` via the Skill tool with argument: `{target-branch}` (do NOT pass merge=true).
     - Parse the response to extract the PR URL.
     - If `/ship` fails, log the error and go to Phase 3 (failure).
     - Record: `[PIPELINE] ship: success | pr={pr-url}`
@@ -189,9 +192,12 @@ For each ticket in topological order:
       - Parse the `/create-ticket` response to extract `{ticket-dir}` (from the summary output: "Ticket file path: .backlog/product_backlog/{ticket-dir}/ticket.md").
       - **Register mapping**: Add entry `{slug}-part-{N}` → `{ticket-dir}` to `ticket_mapping`.
    b. Copy `autopilot-policy.yaml` from `.backlog/briefs/active/{slug}/` to `.backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (so `/scout` moves it to active with the ticket).
-   c. Invoke `/scout {ticket-dir}`. On success, verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If missing, copy from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
-   d. Invoke `/impl`
-   e. Invoke `/ship {target-branch}` (no merge)
+   c. **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/product_backlog/{ticket-dir}/`. If not found, log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, and continue to the next ticket.
+      Invoke `/scout {ticket-dir}`. On success, verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If missing, copy from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
+   d. **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, and continue to the next ticket.
+      Invoke `/impl .backlog/active/{ticket-dir}/plan.md`
+   e. **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, and continue to the next ticket.
+      Invoke `/ship {target-branch}` (no merge)
    f. Record PR URL and status.
 
 3. **Error handling per ticket**:

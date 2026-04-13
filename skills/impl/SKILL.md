@@ -36,14 +36,14 @@ User arguments: $ARGUMENTS
 
 ## Pre-computed Context
 
-Latest plan in .backlog/active/:
-!`ls -t .backlog/active/*/plan.md 2>/dev/null | head -1`
+Oldest non-autopilot plan in .backlog/active/ (FIFO, lowest ticket number):
+!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}plan.md" ] && echo "${d}plan.md" && break; done`
 
 Latest plan in .docs/plans/:
 !`ls -t .docs/plans/*.md 2>/dev/null | head -1`
 
-Latest research in .backlog/active/:
-!`ls -t .backlog/active/*/investigation.md 2>/dev/null | head -1`
+Oldest non-autopilot research in .backlog/active/:
+!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}investigation.md" ] && echo "${d}investigation.md" && break; done`
 
 Latest research in .docs/research/:
 !`ls -t .docs/research/*.md 2>/dev/null | head -1`
@@ -55,8 +55,14 @@ Current state:
 
 1. Parse `$ARGUMENTS`:
    - If it starts with `.backlog/active/` or `.docs/plans/` -> use it as the plan file path. Remaining text is additional instructions.
-   - Otherwise -> entire argument is additional instructions. Use the latest plan from pre-computed context above, preferring `.backlog/active/*/plan.md` (most recent) over `.docs/plans/*.md`.
+   - Otherwise -> entire argument is additional instructions. Auto-select from `.backlog/active/`:
+     1. List all directories in `.backlog/active/` that contain `plan.md`
+     2. **Exclude** directories that contain `autopilot-policy.yaml` (these are managed by `/autopilot` and must not be processed by manual `/impl`)
+     3. Sort by directory name ascending to select the lowest ticket number first (FIFO order)
+     4. Select the first match
+     5. If no match in `.backlog/active/`, fall back to the latest plan in `.docs/plans/*.md`
    - If no plan file exists in either location, print "No plan found in .backlog/active/ or .docs/plans/. Run /scout or /plan2doc first." and stop.
+   - If `.backlog/active/` contains only autopilot-managed tickets (all have `autopilot-policy.yaml`), print "All active tickets are managed by /autopilot. To implement manually, specify the plan path explicitly: /impl .backlog/active/{ticket-dir}/plan.md" and fall back to `.docs/plans/*.md`.
 
 2. Read the plan file.
 
