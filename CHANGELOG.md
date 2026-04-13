@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [2.3.0] - 2026-04-13
+
+### Added
+- Bidirectional workflow isolation between manual `/impl` and `/autopilot` — `/impl` excludes `autopilot-policy.yaml` directories and uses FIFO (lowest ticket number) selection; `/autopilot` uses Policy guards and passes explicit plan paths to `/impl`
+- Cat M contract tests — workflow isolation verification (M-1 through M-9, 13 assertions)
+
+### Changed
+- `/impl` pre-computed context: `ls -t` (newest timestamp) replaced with shell loop excluding autopilot-managed tickets
+- `/impl` auto-selection logic: ascending sort order (FIFO) replaces newest-first, with explicit fallback message when all active tickets are autopilot-managed
+- `/autopilot` single ticket flow (steps 10-12): added Policy guard before scout, impl, and ship steps
+- `/autopilot` step 11: changed from no-argument `/impl` invocation to explicit `.backlog/active/{ticket-dir}/plan.md` path
+- `/autopilot` split execution flow (steps c-e): added Policy guard and explicit `/impl` path
+
 ## [2.2.0] - 2026-04-13
 
 ### Added
@@ -148,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[2.3.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.3.0
 [2.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.2.0
 [2.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.1.0
 [2.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.0.0

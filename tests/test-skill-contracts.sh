@@ -959,5 +959,91 @@ fi
 
 echo ""
 
+# =============================================================================
+# カテゴリ M: Workflow Isolation 契約
+# 差分: 新規カテゴリ。manual /impl と /autopilot 間のワークフロー分離を検証。
+#        /impl は autopilot-policy.yaml を含むチケットを除外し、
+#        /autopilot は Policy guard で明示的パスを使用する。
+#        Cat J は autopilot-policy の構造整合性を検証するが、
+#        本カテゴリは両ワークフロー間の分離メカニズムの存在を検証する。
+# =============================================================================
+echo "--- Cat M: Workflow Isolation 契約 ---"
+
+# M-1: /impl SKILL.md は autopilot-policy.yaml を含むディレクトリを除外する
+assert_file_contains \
+  "impl SKILL.md excludes autopilot-policy.yaml directories" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "Exclude.*autopilot-policy\.yaml"
+
+# M-2: /impl SKILL.md は ascending (FIFO) ソート順でチケットを選択する
+assert_file_contains \
+  "impl SKILL.md documents ascending/FIFO ticket selection" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "ascending.*lowest ticket number"
+
+# M-3: /impl SKILL.md は全チケットが autopilot 管理の場合のフォールバックメッセージがある
+assert_file_contains \
+  "impl SKILL.md has all-autopilot-managed fallback message" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "All active tickets are managed by /autopilot"
+
+# M-4: /autopilot SKILL.md の single ticket flow に Policy guard がある (steps 10, 11, 12)
+assert_file_contains \
+  "autopilot SKILL.md has Policy guard for scout (ABORT message)" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "\\[PIPELINE\\] scout: ABORT"
+
+assert_file_contains \
+  "autopilot SKILL.md has Policy guard for impl (ABORT message)" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "\\[PIPELINE\\] impl: ABORT"
+
+assert_file_contains \
+  "autopilot SKILL.md has Policy guard for ship (ABORT message)" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "\\[PIPELINE\\] ship: ABORT"
+
+# M-5: /autopilot SKILL.md の single ticket flow で /impl に明示的パスを渡す
+assert_file_contains \
+  "autopilot SKILL.md passes explicit plan path to /impl in single flow" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "/impl.*\.backlog/active/.*plan\.md"
+
+# M-6: /autopilot SKILL.md の split execution flow に Policy guard ABORT ログがある (steps c, d, e)
+assert_file_contains \
+  "autopilot SKILL.md has split flow Policy guard ABORT for scout" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "\\[PIPELINE\\] scout: ABORT.*mark this ticket"
+
+assert_file_contains \
+  "autopilot SKILL.md has split flow Policy guard ABORT for impl" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "\\[PIPELINE\\] impl: ABORT.*mark this ticket"
+
+assert_file_contains \
+  "autopilot SKILL.md has split flow Policy guard ABORT for ship" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "\\[PIPELINE\\] ship: ABORT.*mark this ticket"
+
+# M-7: /autopilot SKILL.md の split flow で /impl に明示的パスを渡す
+assert_file_contains \
+  "autopilot SKILL.md passes explicit plan path in split flow" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "/impl \.backlog/active/.*plan\.md"
+
+# M-8: create-ticket SKILL.md に .ticket-counter のアトミック更新ロジックがある
+assert_file_contains \
+  "create-ticket SKILL.md has atomic ticket-counter update (counter + N)" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "counter.*N.*ticket-counter"
+
+# M-9: /autopilot は /create-ticket に委譲してチケット番号を割り当てる（共有カウンターメカニズム）
+assert_file_contains \
+  "autopilot SKILL.md delegates to /create-ticket for ticket numbering" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "Invoke.*/create-ticket"
+
+echo ""
+
 # --- サマリー ---
 print_summary
