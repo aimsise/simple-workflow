@@ -1,11 +1,12 @@
 ---
 name: audit
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Comprehensive multi-agent code audit using code-reviewer and
   security-scanner. Always runs security-scanner. Set only_security_scan=true
   to skip code-reviewer (security-only mode). Use to verify changes before
   shipping or as part of /impl review loop.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Agent

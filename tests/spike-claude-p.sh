@@ -53,12 +53,12 @@ echo "=== Spike: claude -p 動作検証 ==="
 echo ""
 
 # --- 検証 1: skill 名解決 ---
-# claude -p で /commit --help 等を呼び出し、skill が認識されるか確認
+# claude -p で /audit --help 等を呼び出し、skill が認識されるか確認
 echo "--- 検証 1: skill 名解決 ---"
 verify1_result="fail"
 if output=$(claude -p "List available skills. Just print the skill names, one per line." --max-turns 1 2>&1); then
   # 少なくとも1つの既知スキル名が含まれているか
-  if echo "$output" | grep -qiE '(commit|audit|impl|ship|scout)'; then
+  if echo "$output" | grep -qiE '(audit|impl|ship|scout|plan2doc)'; then
     verify1_result="pass"
   fi
 fi

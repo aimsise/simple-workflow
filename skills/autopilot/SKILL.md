@@ -1,10 +1,11 @@
 ---
 name: autopilot
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Execute the full development pipeline automatically from a brief document.
   Chains create-ticket, scout, impl, and ship with policy-based autonomous
   decision making at each gate.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Skill
@@ -140,7 +141,11 @@ If no split-plan.md:
 
 ## Phase 3: Completion
 
-13. **Generate autopilot-log.md**: Write to `.backlog/active/{ticket-dir}/autopilot-log.md`. If `{ticket-dir}` is not yet determined (e.g., create-ticket failed before producing a slug), fall back to `.backlog/briefs/active/{slug}/autopilot-log.md`.
+13. **Generate autopilot-log.md**: Write to the ticket directory's `autopilot-log.md`. Determine the actual ticket location by checking the filesystem in this order:
+    1. Check `.backlog/done/{ticket-dir}/` first — the ticket is here if `/ship` completed or partially completed (ticket moves to `done/` at `/ship` Step 5, before PR creation).
+    2. Check `.backlog/active/{ticket-dir}/` — the ticket is here if `/ship` was never invoked or did not reach Step 5.
+    3. If `{ticket-dir}` is not yet determined (e.g., create-ticket failed before producing a slug), fall back to `.backlog/briefs/active/{slug}/autopilot-log.md`.
+    Write `autopilot-log.md` to whichever path is found.
 
 ```yaml
 ---
@@ -208,7 +213,10 @@ For each ticket in topological order:
 
 ### Split Autopilot Log
 
-For split execution, write the overall autopilot-log to `.backlog/briefs/active/{slug}/autopilot-log.md`. Additionally, each ticket's individual log is written to `.backlog/active/{ticket-dir}/autopilot-log.md`.
+For split execution, write the overall autopilot-log to `.backlog/briefs/active/{slug}/autopilot-log.md`. Additionally, each ticket's individual log is written to its ticket directory (`autopilot-log.md`). Determine each ticket's actual location by checking the filesystem in this order:
+1. Check `.backlog/done/{ticket-dir}/` first — the ticket is here if `/ship` completed or partially completed (ticket moves to `done/` at `/ship` Step 5, before PR creation).
+2. Check `.backlog/active/{ticket-dir}/` — the ticket is here if `/ship` was never invoked or did not reach Step 5.
+Write each ticket's individual `autopilot-log.md` to whichever path is found.
 
 The overall autopilot-log.md includes additional fields:
 
@@ -268,4 +276,4 @@ Print:
   - If the policy does not exist or `unexpected_error` is not defined, default to `stop`.
   Print `[AUTOPILOT-POLICY] gate=unexpected_error action={actual_action}` when this gate is invoked (where `{actual_action}` is the resolved action: `stop` in all cases, including fallback).
 - **Any pipeline step failure (split flow)**: Log to autopilot-log.md for that ticket, mark as failed, continue to next ticket. Dependent tickets are skipped.
-- **Artifact preservation**: On failure, all artifacts created so far (ticket, plan, eval-round, etc.) are preserved in .backlog/active/{ticket-dir}/. The user can resume manually.
+- **Artifact preservation**: On failure, all artifacts created so far (ticket, plan, eval-round, etc.) are preserved in the ticket directory. This may be `.backlog/done/{ticket-dir}/` (if `/ship` Step 5 completed before the failure) or `.backlog/active/{ticket-dir}/` (if `/ship` was never invoked or did not reach Step 5). Check both locations to find the artifacts. The user can resume manually.

@@ -34,7 +34,6 @@ Skill contract and structural integrity tests verify cross-skill/agent/hook cons
 ### Test Levels
 
 - **Level 0** (static analysis): `test-skill-contracts.sh` -- no external dependencies, runs in CI
-- **Level 1** (integration): `test-skill-commit-l1.sh` -- requires `claude` CLI + `RUN_LEVEL1_TESTS=true`
 
 ### Running Tests
 
@@ -42,38 +41,33 @@ Skill contract and structural integrity tests verify cross-skill/agent/hook cons
 # Level 0 のみ（CI と同等）
 bash tests/run-all.sh
 
-# Level 1 を含める（claude CLI 必須）
-RUN_LEVEL1_TESTS=true bash tests/run-all.sh
-
 # スパイク検証（claude -p の動作確認）
 bash tests/spike-claude-p.sh
 ```
 
-### 17 Skill x Verification Category Matrix
+### 13 Skill x Verification Category Matrix
 
-| Skill | A: dmi | B: AskUQ | C: Skill委譲 | D: Agent委譲 | E: args | F: fork | G: Status | H: hook | I: KB | J: Policy | K: kb-suggested | L: v2.2.0 | M: WF分離 |
-|-------|--------|----------|-------------|-------------|---------|---------|-----------|---------|-------|-----------|-----------------|-----------|-----------|
-| commit | x | | | | x | | | | | | | | |
-| ticket-move | x | | | | x | | | | | | | x | |
-| investigate | x | | | x | x | x | | | | | | | |
-| test | x | | | x | x | x | | | | | | | |
-| scout | x | | x | | x | | | | | | | | |
-| plan2doc | x | | | x | x | | | | | | | | |
-| audit | x | | | x | x | | x | | | | | | |
-| catchup | x | | | x | x | | | x | | | | | |
-| create-ticket | x | x | | x | x | | | | | x | | x | x |
-| refactor | x | x | | x | x | | | | | | | | |
-| impl | x | x | x | x | x | | x | | | x | | | x |
-| ship | x | | x | | x | | | | | x | | | |
-| tune | x | | | x | x | | | | x | | | | |
-| brief | x | x | x | x | x | | | | | x | x | | |
-| autopilot | x | | x | | x | | | | | x | x | x | x |
+| Skill | A: dmi | B: AskUQ | C: Skill委譲 | D: Agent委譲 | E: args | F: fork | G: Status | H: hook | I: KB | J: Policy | K: kb-suggested | L: v2.2.0 | M: WF分離 | N: safety |
+|-------|--------|----------|-------------|-------------|---------|---------|-----------|---------|-------|-----------|-----------------|-----------|-----------|-----------|
+| investigate | x | | | x | x | x | | | | | | | | |
+| test | x | | | x | x | x | | | | | | | | |
+| scout | x | | x | | x | | | | | | | | | |
+| plan2doc | x | | | x | x | | | | | | | | | |
+| audit | x | | | x | x | | x | | | | | | | |
+| catchup | x | | | x | x | | | x | | | | | | |
+| create-ticket | x | x | | x | x | | | | | x | | x | x | |
+| refactor | x | x | | x | x | | | | | | | | | |
+| impl | x | x | x | x | x | | x | | | x | | | x | x |
+| ship | x | x | x | | x | | | | | x | | | | x |
+| tune | x | | | x | x | | | | x | | | | | |
+| brief | x | x | x | x | x | | | | | x | x | | | |
+| autopilot | x | | x | | x | | | | | x | x | x | x | |
 
 Legend: `x` = skill is tested in that category
 
 ### Categories
 
-- **A**: `disable-model-invocation` contract (dmi=true implies Agent/Skill delegation or exception)
+- **A**: `disable-model-invocation` contract (dmi=true implies Agent/Skill delegation; dmi=false or unset skills validated for correct delegation tools)
 - **B**: `AskUserQuestion` non-interactive fallback (Non-interactive documentation)
 - **C**: Skill delegation graph integrity (`/skill-name` references resolve to existing SKILL.md)
 - **D**: Agent delegation integrity (agent field and body references resolve to existing agents)
@@ -84,8 +78,9 @@ Legend: `x` = skill is tested in that category
 - **I**: `/tune` knowledge base contract (KB directory structure, pattern file format, impl injection, decision pattern extraction I-16 through I-20)
 - **J**: Autopilot-policy structural integrity (policy YAML schema, gate resolution, decision logging, human override tracking — J-1 through J-19)
 - **K**: kb-suggested / kb_override contract — verifies KB-driven policy comments and override type distinction (K-1 through K-7)
-- **L**: autopilot/brief/create-ticket v2.2.0 contract — ticket_mapping, ticket_dir, brief_slug metadata, split criteria, suffix match, ticket-counter, and stale ticket-slug absence (L-1 through L-9)
+- **L**: autopilot/brief/create-ticket v2.2.0 contract — ticket_mapping, ticket_dir, brief_slug metadata, split criteria, ticket-counter, and stale ticket-slug absence (L-1 through L-5, L-7 through L-9)
 - **M**: Workflow isolation contract — bidirectional isolation between manual `/impl` and `/autopilot` workflows: autopilot-policy.yaml exclusion, FIFO ordering, Policy guard, explicit plan path, shared `.ticket-counter` mechanism (M-1 through M-9)
+- **N**: impl safety contracts — `/impl` stash exclusion pathspecs for plugin artifact directories, `/ship` ticket completion ordering (done before Phase 2) (N-1 through N-2)
 
 ## Skill/Agent Integration Testing (Level 1)
 

@@ -1,10 +1,11 @@
 ---
 name: plan2doc
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Create an implementation plan and save to ticket dir or .docs/plans/.
   Spawns planner agent with model auto-selected by ticket size
   (sonnet for S, opus for M/L/XL). Use for any size of planning work.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Agent

@@ -1,9 +1,10 @@
 ---
 name: tune
 description: >-
+  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Analyze evaluation logs, extract reusable patterns, and maintain the
   project knowledge base. Run after /ship or manually to tune agent behavior.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Agent
