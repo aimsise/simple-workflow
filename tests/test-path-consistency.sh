@@ -793,4 +793,14 @@ fi
 
 echo ""
 
+# --- Category 24: /ship staging exclusion for .backlog/briefs/ ---
+echo "--- /ship staging exclusion for .backlog/briefs/ ---"
+
+assert_file_contains \
+  "ship/SKILL.md Step 3b excludes .backlog/briefs/ from staging" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  '\.backlog/briefs/'
+
+echo ""
+
 print_summary

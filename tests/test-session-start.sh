@@ -81,6 +81,9 @@ cleanup_test_repo
 
 # Test 5: Changed files count is correct after modifications
 setup_session_repo
+# Pre-seed .gitignore so session-start hook won't create one (which would inflate the count)
+printf '.docs/\n.backlog/\n.simple-wf-knowledge/\n' > "$TEST_REPO/.gitignore"
+cd "$TEST_REPO" && git add .gitignore && git commit -q -m "add gitignore"
 echo "change1" > "$TEST_REPO/file1.txt"
 echo "change2" > "$TEST_REPO/file2.txt"
 run_hook "$HOOK" "" "$TEST_REPO"
@@ -181,6 +184,32 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 cleanup_test_repo
+
+echo ""
+
+echo "--- .gitignore auto-append tests ---"
+
+# Test: session-start.sh contains .gitignore handling logic
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '.gitignore' "$HOOK"; then
+  echo -e "  ${GREEN}PASS${NC} session-start.sh contains .gitignore logic"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} session-start.sh contains .gitignore logic"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test: session-start.sh references all three gitignore entries
+for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qF "$entry" "$HOOK"; then
+    echo -e "  ${GREEN}PASS${NC} session-start.sh references '$entry' entry"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} session-start.sh references '$entry' entry"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
 
 echo ""
 
