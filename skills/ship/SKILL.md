@@ -104,7 +104,7 @@ Commits ahead of default branch:
 
 3. **Create commit**: Handle staging and conventional commit creation directly:
    a. Run `git diff --stat` and `git diff --cached --stat` to understand the changes.
-   b. If there are unstaged changes, determine which files to stage based on the implementation context. In autopilot mode (autopilot-policy.yaml exists), stage all modified/new files relevant to the ticket. In interactive mode, use `AskUserQuestion` to ask which files to stage. **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error, stage all modified/new files (same as autopilot mode).
+   b. If there are unstaged changes, determine which files to stage based on the implementation context. In autopilot mode (autopilot-policy.yaml exists), stage all modified/new files relevant to the ticket, **except** files under `.backlog/briefs/` (e.g., `autopilot-state.yaml`, `brief.md`, `split-plan.md`) — these are pipeline management files, not ticket artifacts and must not be committed as part of ticket work. This exclusion is defense-in-depth: normally `.gitignore` prevents these files from being tracked, but if `.gitignore` is missing or misconfigured, they should still never be staged. In interactive mode, use `AskUserQuestion` to ask which files to stage. **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error, stage all modified/new files (same as autopilot mode, including the same `.backlog/briefs/` exclusion).
    c. Stage the selected files with `git add`.
    d. Generate a conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why", using `git log --oneline -5` for style reference.
    e. Create the commit using a HEREDOC.

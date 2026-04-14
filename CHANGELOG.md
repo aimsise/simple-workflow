@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.4] - 2026-04-14
+
+### Added
+- Session-start hook automatically ensures `.gitignore` contains entries for `.docs/`, `.backlog/`, `.simple-wf-knowledge/` — prevents pipeline artifacts from being committed to user projects
+- Category 24 contract test for `/ship` staging exclusion
+
+### Changed
+- `/ship` Step 3b now explicitly excludes `.backlog/briefs/` files (e.g., `autopilot-state.yaml`, `brief.md`) from staging in autopilot mode — defense-in-depth for cases where `.gitignore` is missing
+
 ## [3.1.3] - 2026-04-14
 
 ### Added
@@ -222,6 +231,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[3.1.4]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.4
 [3.1.3]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.3
 [3.1.2]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.2
 [3.1.1]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.1

@@ -11,6 +11,28 @@ if [ -d ".docs/session-log" ]; then
 fi
 
 if git rev-parse --git-dir >/dev/null 2>&1; then
+  # --- Ensure .gitignore contains simple-workflow entries ---
+  _sw_gitignore_entries=(.docs/ .backlog/ .simple-wf-knowledge/)
+  _sw_needs_header=false
+  _sw_missing_entries=()
+  for _sw_entry in "${_sw_gitignore_entries[@]}"; do
+    if ! grep -qxF "$_sw_entry" .gitignore 2>/dev/null; then
+      _sw_missing_entries+=("$_sw_entry")
+      _sw_needs_header=true
+    fi
+  done
+  if [[ "$_sw_needs_header" == "true" ]]; then
+    # Add a blank line separator if .gitignore exists and is non-empty
+    if [[ -s .gitignore ]]; then
+      printf '\n' >> .gitignore
+    fi
+    printf '# simple-workflow plugin\n' >> .gitignore
+    for _sw_entry in "${_sw_missing_entries[@]}"; do
+      printf '%s\n' "$_sw_entry" >> .gitignore
+    done
+  fi
+  unset _sw_gitignore_entries _sw_needs_header _sw_missing_entries _sw_entry
+
   BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
   CHANGED=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
   CONTEXT="Branch: ${BRANCH} | Changed files: ${CHANGED}"
