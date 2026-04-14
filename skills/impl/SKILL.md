@@ -100,13 +100,31 @@ Current state:
      - If user answers "no" → stop the skill immediately. Print "Stopped by user after Evaluator Dry Run failure." and exit.
      - If user answers "yes" → proceed without the verification plan. The Generator prompt will not include the dry run output for this round.
    - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "no" (stop the skill). Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
-   - **If Evaluator succeeds**: Save the verification plan for inclusion in Generator prompt (step 12g).
+   - **If Evaluator succeeds**: Save the verification plan for inclusion in Generator prompt (step 13g).
 
 9. If related investigation file exists (same directory `investigation.md` or latest in `.docs/research/`), read it.
 
 10. If working tree has uncommitted changes unrelated to the plan, warn user.
 
-11. **Safety checkpoint**: Before starting implementation, create a rollback point:
+11. **Resume check**: Check if `{ticket-dir}/impl-state.yaml` exists (where `{ticket-dir}` is the directory containing the plan file, e.g. `.backlog/active/{ticket-dir}/`).
+    - If it does NOT exist: set `impl_resume_mode = false` and proceed normally to step 12.
+    - If it exists: set `impl_resume_mode = true`. Read and parse the state file.
+      - Print resume summary:
+        ```
+        [IMPL-RESUME] 前回の /impl 実行が途中で停止しています。途中から再開します。
+        [IMPL-RESUME] Round: {current_round}/{max_rounds}
+        [IMPL-RESUME] Phase: {phase}
+        [IMPL-RESUME] Next action: {next_action}
+        ```
+      - Carry forward `feedback_files` from the state file.
+      - Skip to the step corresponding to `next_action`:
+        - `start-round-{N}-generator` → skip to Step 13 (Generator) with `current_round = N`. If `feedback_files.eval` and/or `feedback_files.quality` exist from a prior round, pass them to the Generator prompt (step 13e).
+        - `start-evaluator` → skip to Step 15 (AC Evaluator) with the current round from the state file.
+        - `start-audit` → skip to Step 17 (/audit) with the current round from the state file.
+        - `proceed-to-phase-3` → skip directly to Phase 3 (Step 19).
+        - `stop-critical` → print "Previous run stopped due to CRITICAL issues. Delete impl-state.yaml to re-run from scratch." and stop.
+
+12. **Safety checkpoint**: Before starting implementation, create a rollback point:
    - Run `git stash push -m "impl-checkpoint" --include-untracked -- ':!.backlog' ':!.docs' ':!.simple-wf-knowledge'` to save current working state while preserving plugin artifacts
    - If stash succeeds, print: "Safety checkpoint created. To rollback: git stash pop"
    - If nothing to stash (clean working tree), skip silently
@@ -115,7 +133,39 @@ Current state:
 
 **Autopilot round limit**: If `{ticket-dir}/autopilot-policy.yaml` exists and `constraints.max_total_rounds` is defined, use that value as the maximum number of rounds for this loop (replacing the default of 3). If the policy does not exist or the field is not defined, use the default of 3 rounds.
 
-12. Spawn **Generator** agent via the Agent tool:
+### impl-state.yaml Management
+
+If `impl_resume_mode = false` (no existing state file), initialize `{ticket-dir}/impl-state.yaml` before entering the loop:
+
+```yaml
+version: 1
+plan_file: .backlog/active/{ticket-dir}/plan.md
+ticket_dir: .backlog/active/{ticket-dir}
+size: {S|M|L|XL}
+started: {ISO-8601 timestamp via `date -u +%Y-%m-%dT%H:%M:%SZ`}
+current_round: 1
+max_rounds: {3 or autopilot policy value}
+phase: generator-pending
+last_ac_status: null
+last_audit_status: null
+last_audit_critical: 0
+next_action: start-round-1-generator
+feedback_files:
+  eval: null
+  quality: null
+```
+
+**phase** values: `generator-pending`, `generator-complete`, `evaluator-complete`, `audit-complete`, `round-complete`, `done`
+
+**next_action** values: `start-round-{N}-generator`, `start-evaluator`, `start-audit`, `proceed-to-phase-3`, `stop-critical`
+
+State updates occur at these 4 points within each round:
+- **Before Generator (step 13)**: Update `phase: generator-pending`, `next_action: start-round-{N}-generator`, `current_round: {N}`
+- **After Generator (step 14)**: Update `phase: generator-complete`, `next_action: start-evaluator`
+- **After Evaluator (step 16)**: Update `phase: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action: start-audit` (if PASS) or `next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `next_action: stop-critical` (if FAIL-CRITICAL)
+- **After /audit (step 18)**: Update `phase: audit-complete`, `last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `last_audit_critical: {count}`, `next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `feedback_files.eval: {eval-round-{N}.md path}`, `feedback_files.quality: {quality-round-{N}.md path}`
+
+13. Spawn **Generator** agent via the Agent tool:
     - subagent_type: `implementer` (always; no -light variant)
     - model: `sonnet` if Size == S, otherwise `opus` (M/L/XL/unknown)
     - description: "Implement plan for <feature>"
@@ -134,13 +184,13 @@ Current state:
       i. Autopilot constraints: If `{ticket-dir}/autopilot-policy.yaml` exists, read `constraints.allow_breaking_changes`. If `false`, include in the Generator prompt: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." If `true` or if the policy file does not exist, omit this constraint.
     - Receive Generator's return value (changed files list + lint/test status)
 
-13. Run `git diff --stat` to capture change summary.
+14. Run `git diff --stat` to capture change summary.
 
-14. Spawn **AC Evaluator** agent (`ac-evaluator`, always sonnet):
+15. Spawn **AC Evaluator** agent (`ac-evaluator`, always sonnet):
    - Prompt must include:
      a. Full plan content
      b. Acceptance Criteria
-     c. Output of `git diff --stat` from step 13
+     c. Output of `git diff --stat` from step 14
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
      e. Report save path:
         - If plan is in `.backlog/active/{ticket-dir}/` -> "Save your evaluation report to `.backlog/active/{ticket-dir}/eval-round-{n}.md`"
@@ -149,7 +199,7 @@ Current state:
    - Prompt must NOT include: Generator's return value (bias elimination)
    - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback)
 
-15. AC Gate:
+16. AC Gate:
     - **Status: FAIL-CRITICAL** → stop immediately. Report CRITICAL issues to the user. Do NOT continue to further rounds.
     - **Autopilot policy check for ac_eval_fail**: If `{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ac_eval_fail`:
       - `on_critical: stop` is always enforced (FAIL-CRITICAL always stops regardless of policy — this is a safety invariant).
@@ -157,11 +207,11 @@ Current state:
       - If `action` is `stop`: stop the skill immediately. Print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=stop`.
     - If autopilot-policy.yaml does not exist, proceed with the existing behavior below.
     - **Status: FAIL** → save ac-evaluator's **Feedback**, continue to next round (skip quality review for this round)
-    - **Status: PASS-WITH-CAVEATS** → treat as PASS (continue to step 16), but record the Caveats field for inclusion in Phase 3 summary: "AC passed with caveats: {caveats}"
-    - **Status: PASS** → continue to step 16
+    - **Status: PASS-WITH-CAVEATS** → treat as PASS (continue to step 17), but record the Caveats field for inclusion in Phase 3 summary: "AC passed with caveats: {caveats}"
+    - **Status: PASS** → continue to step 17
 
-16. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
-    - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 14). Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.
+17. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
+    - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 15). Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.
     - `/audit` writes its reports to `{ticket-dir}/quality-round-{n}.md`, `{ticket-dir}/security-scan-{n}.md`, and `{ticket-dir}/audit-round-{n}.md` using the round number passed via `round={n}`. This guarantees `eval-round-{n}` and `quality-round-{n}` / `audit-round-{n}` stay aligned across retries and resumed sessions.
     - The `/audit` skill must NOT receive Generator's return value or AC Evaluator's return value (information firewall is preserved because `/audit` independently inspects `git diff` via its own pre-computed context).
     - Parse `/audit`'s structured return block:
@@ -179,11 +229,16 @@ Current state:
        - If it does not exist, proceed with the existing interactive flow below.
      print the failure details (`/audit`'s raw output if available) and use `AskUserQuestion` to ask "/auditが失敗しました。どうしますか？" with options:
       - "stop": stop the skill immediately. Print "Stopped by user after /audit failure." and exit. Do NOT proceed to Phase 3.
-      - "fail": treat the audit as **Status: FAIL** with `Critical = 1` (audit infrastructure failure). Combine the audit failure note with ac-evaluator's pass confirmation as feedback for the next Generator round, and follow the same flow as a normal FAIL in step 17. If this is round 3, proceed to Phase 3 with the audit failure noted in the summary.
+      - "fail": treat the audit as **Status: FAIL** with `Critical = 1` (audit infrastructure failure). Combine the audit failure note with ac-evaluator's pass confirmation as feedback for the next Generator round, and follow the same flow as a normal FAIL in step 18. If this is round 3, proceed to Phase 3 with the audit failure noted in the summary.
       - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "stop" (do NOT default to "fail" — a silent FAIL retry would mask the infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
       - **Never** silently treat audit failure as PASS or PASS_WITH_CONCERNS — that would let Critical/security issues slip through unverified.
 
-17. Combined Decision (based on `/audit` structured return):
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `{ticket-dir}/impl-state.yaml`
+    > 2. The state file shows `next_action`. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize the audit results to the user. Proceed directly to the next action.
+
+18. Combined Decision (based on `/audit` structured return):
     - **`/audit` Status: FAIL** (Critical > 0) → Combine ac-evaluator's pass confirmation and the audit's Critical findings (from the report files in `**Reports**`) as feedback for the next Generator round. Continue to next round.
     - **`/audit` Status: PASS_WITH_CONCERNS** (Warnings or Suggestions, no Critical) → Proceed to Phase 3. Include the audit's concerns in the summary.
     - **`/audit` Status: PASS** (all counts at 0) → Proceed to Phase 3.
@@ -191,9 +246,9 @@ Current state:
 
 ## Phase 3: Summary
 
-18. Run `git status -s` and display.
+19. Run `git status -s` and display.
 
-19. Print summary:
+20. Print summary:
     - Plan file executed
     - Files changed or created
     - Generator → AC Evaluator → Code Quality Reviewer rounds completed
@@ -201,13 +256,15 @@ Current state:
     - Evaluation reports: [list of saved eval-round-*.md and quality-round-*.md file paths]
     - "Review the changes above, then run `/ship` to commit and create PR"
 
+21. **impl-state.yaml cleanup**: Delete `{ticket-dir}/impl-state.yaml`. The `eval-round-*.md` and `quality-round-*.md` files serve as the permanent record of each round's results.
+
 ## Error Handling
 
 - **No plan**: Print "No plan found in .backlog/active/ or .docs/plans/. Run /scout or /plan2doc first." and stop.
 - **Dirty working tree**: Warn user about unrelated changes, ask whether to continue.
 - **Generator failure** (Status: failed): Report error and stop.
 - **AC Evaluator failure** (Status: failed or partial): Report error. Generator's changes remain in place.
-- **/audit failure** (no structured block returned, or malformed): See Step 16 — ask the user via `AskUserQuestion` whether to STOP or treat the audit as FAIL. Never silently treat audit failure as PASS / PASS_WITH_CONCERNS.
+- **/audit failure** (no structured block returned, or malformed): See Step 17 — ask the user via `AskUserQuestion` whether to STOP or treat the audit as FAIL. Never silently treat audit failure as PASS / PASS_WITH_CONCERNS.
 - **3 rounds FAIL**: Report remaining issues. Code remains changed.
 
 ## Evaluator Tuning
@@ -215,6 +272,6 @@ Current state:
 Evaluator tuning is now automated via the `/tune` skill:
 1. After `/ship` commits and completes a ticket, `/tune` is invoked automatically (Step 6 in `/ship`) to extract patterns from evaluation logs
 2. Extracted patterns are stored in `.simple-wf-knowledge/candidates.yaml` and promoted to `entries.yaml` when confidence reaches 0.8
-3. Promoted patterns are injected into the Generator prompt (Step 12h above) via `index.yaml`
+3. Promoted patterns are injected into the Generator prompt (Step 13h above) via `index.yaml`
 4. To run tuning manually: `/tune {ticket-dir}` or `/tune all`
 5. To review the current knowledge base: read `.simple-wf-knowledge/entries.yaml` and `.simple-wf-knowledge/index.yaml`

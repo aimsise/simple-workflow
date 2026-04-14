@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-04-14
+
+### Changed
+- Autopilot pipeline: replaced 8 passive `PIPELINE CONTINUATION REQUIRED` reminders with active `CHECKPOINT — RE-ANCHOR` blocks that force a Read of `autopilot-state.yaml` before continuing, preventing premature `end_turn` after deep skill nesting
+- `/impl` round-level state tracking via `impl-state.yaml` — phase, next_action, and feedback_files are persisted at 4 points within each Generator-Evaluator-Audit round
+- `/impl` active re-anchoring after `/audit`: CHECKPOINT — RE-ANCHOR block forces Read of `impl-state.yaml` and immediate execution of `next_action`
+- `/impl` crash recovery: `impl_resume_mode` detects existing `impl-state.yaml` on startup and skips to the step corresponding to `next_action`
+- `/impl` Phase 3 cleanup: `impl-state.yaml` is deleted on completion; `eval-round-*.md` and `quality-round-*.md` serve as permanent records
+
+### Added
+- Cat P contract tests — pipeline re-anchoring verification (P-1 through P-10)
+
 ## [3.1.0] - 2026-04-14
 
 ### Added
@@ -187,6 +199,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[3.1.1]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.1
+[3.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.0
 [3.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.0.0
 [2.3.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.3.0
 [2.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v2.2.0

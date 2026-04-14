@@ -1148,11 +1148,11 @@ assert_file_contains \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "autopilot-state\\.yaml"
 
-# O-2: autopilot SKILL.md に PIPELINE CONTINUATION REQUIRED がある
+# O-2: autopilot SKILL.md に CHECKPOINT — RE-ANCHOR がある
 assert_file_contains \
-  "autopilot SKILL.md has pipeline continuation reminders" \
+  "autopilot SKILL.md has checkpoint re-anchor blocks" \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
-  "PIPELINE CONTINUATION REQUIRED"
+  "CHECKPOINT — RE-ANCHOR"
 
 # O-3: autopilot SKILL.md に resume_mode の記述がある
 assert_file_contains \
@@ -1166,14 +1166,14 @@ assert_file_contains \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "State file cleanup"
 
-# O-5: PIPELINE CONTINUATION REQUIRED が Single/Split 両方にある (最低8箇所: Single 4 + Split 4)
-CONTINUATION_COUNT=$(grep -c "PIPELINE CONTINUATION REQUIRED" "$REPO_DIR/skills/autopilot/SKILL.md" || true)
+# O-5: CHECKPOINT — RE-ANCHOR が Single/Split 両方にある (最低8箇所: Single 4 + Split 4)
+CHECKPOINT_COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/autopilot/SKILL.md" || true)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$CONTINUATION_COUNT" -ge 8 ]; then
-  echo -e "  ${GREEN}PASS${NC} autopilot has >= 8 PIPELINE CONTINUATION reminders ($CONTINUATION_COUNT found)"
+if [ "$CHECKPOINT_COUNT" -ge 8 ]; then
+  echo -e "  ${GREEN}PASS${NC} autopilot has >= 8 CHECKPOINT — RE-ANCHOR blocks ($CHECKPOINT_COUNT found)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} autopilot has >= 8 PIPELINE CONTINUATION reminders ($CONTINUATION_COUNT found, expected >= 8)"
+  echo -e "  ${RED}FAIL${NC} autopilot has >= 8 CHECKPOINT — RE-ANCHOR blocks ($CHECKPOINT_COUNT found, expected >= 8)"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -1188,6 +1188,85 @@ assert_file_contains \
   "autopilot SKILL.md has stale state warning" \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "7 days"
+
+echo ""
+
+# =============================================================================
+# カテゴリ P: Pipeline Re-Anchoring 契約
+# 差分: 新規カテゴリ。autopilot/impl の CHECKPOINT — RE-ANCHOR ブロック、
+#        impl-state.yaml 管理、再開ロジックの構造整合性を検証する。
+# =============================================================================
+echo "--- Cat P: Pipeline Re-Anchoring 契約 ---"
+
+# P-1: autopilot SKILL.md に "CHECKPOINT — RE-ANCHOR" がある
+assert_file_contains \
+  "P-1: autopilot SKILL.md has CHECKPOINT — RE-ANCHOR" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "CHECKPOINT — RE-ANCHOR"
+
+# P-2: autopilot SKILL.md に Read.*autopilot-state.yaml の指示がある
+assert_file_contains \
+  "P-2: autopilot SKILL.md has Read autopilot-state.yaml instruction" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "Read.*autopilot-state\.yaml"
+
+# P-3: impl SKILL.md に impl-state.yaml の記述がある
+assert_file_contains \
+  "P-3: impl SKILL.md references impl-state.yaml" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "impl-state\.yaml"
+
+# P-4: impl SKILL.md に "CHECKPOINT — RE-ANCHOR" がある
+assert_file_contains \
+  "P-4: impl SKILL.md has CHECKPOINT — RE-ANCHOR" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "CHECKPOINT — RE-ANCHOR"
+
+# P-5: impl SKILL.md に Read.*impl-state.yaml の指示がある
+assert_file_contains \
+  "P-5: impl SKILL.md has Read impl-state.yaml instruction" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "Read.*impl-state\.yaml"
+
+# P-6: impl SKILL.md に impl_resume_mode の記述がある
+assert_file_contains \
+  "P-6: impl SKILL.md has impl_resume_mode logic" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "impl_resume_mode"
+
+# P-7: impl SKILL.md に impl-state.yaml の cleanup/削除 記述がある
+assert_file_contains \
+  "P-7: impl SKILL.md has impl-state.yaml cleanup/delete" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "(cleanup|[Dd]elete).*impl-state\.yaml|impl-state\.yaml.*(cleanup|[Dd]elete)"
+
+# P-8: CHECKPOINT — RE-ANCHOR が autopilot に最低 8 箇所ある (count check)
+COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/autopilot/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$COUNT" -ge 8 ]; then
+  echo -e "  ${GREEN}PASS${NC} P-8: autopilot CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 8)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} P-8: autopilot CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 8)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# P-9: CHECKPOINT — RE-ANCHOR が impl に最低 1 箇所ある (count check)
+COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/impl/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} P-9: impl CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} P-9: impl CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 1)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# P-10: impl SKILL.md に next_action の記述がある
+assert_file_contains \
+  "P-10: impl SKILL.md has next_action references" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "next_action"
 
 echo ""
 

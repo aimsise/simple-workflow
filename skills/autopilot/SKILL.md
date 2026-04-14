@@ -161,7 +161,10 @@ tickets:
     - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.create-ticket = "completed"`, `tickets[0].ticket_dir = {ticket-dir}`, `ticket_mapping.{slug} = {ticket-dir}`.
     - Record: `[PIPELINE] create-ticket: success | ticket={ticket-dir}`
 
-    > **PIPELINE CONTINUATION REQUIRED**: /create-ticket complete. Proceed to Step 11 (/scout). Do NOT end your turn. Remaining: scout → impl → ship → Phase 3.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
 11. **Step: scout**
     If `resume_mode = true` and this step is already `completed` in the state file, skip to step 12. The ticket is already in `.backlog/active/{ticket-dir}/` with investigation.md and plan.md.
@@ -174,7 +177,10 @@ tickets:
     - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.scout = "completed"`.
     - Record: `[PIPELINE] scout: success`
 
-    > **PIPELINE CONTINUATION REQUIRED**: /scout complete. Proceed to Step 12 (/impl). Do NOT end your turn. WARNING: This is where premature stopping is most likely due to deep skill nesting. The pipeline is NOT finished. Remaining: impl → ship → Phase 3.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
 12. **Step: impl**
     If `resume_mode = true` and this step is already `completed` in the state file, skip to step 13.
@@ -187,7 +193,10 @@ tickets:
     - Record: `[PIPELINE] impl: {status} | rounds={n}`
     - Note: Decision points within `/impl` (evaluator_dry_run_fail, audit_infrastructure_fail) are handled by the autopilot-policy.yaml already copied to the ticket dir.
 
-    > **PIPELINE CONTINUATION REQUIRED**: /impl complete. Proceed to Step 13 (/ship). Do NOT end your turn. Remaining: ship → Phase 3.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
 13. **Step: ship**
     If `resume_mode = true` and this step is already `completed` in the state file, skip to Phase 3.
@@ -201,7 +210,10 @@ tickets:
     - Record: `[PIPELINE] ship: success | pr={pr-url}`
     - Note: Decision points within `/ship` (ship_review_gate, ship_ci_pending) are handled by the autopilot-policy.yaml in the ticket dir.
 
-    > **PIPELINE CONTINUATION REQUIRED**: /ship complete. Proceed to Phase 3 (Completion). Do NOT end your turn.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
 ## Phase 3: Completion
 
@@ -274,7 +286,10 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
       - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.create-ticket = "completed"`, `tickets[i].ticket_dir = {ticket-dir}`, `ticket_mapping.{slug}-part-{N} = {ticket-dir}`.
       - **Register mapping**: Add entry `{slug}-part-{N}` → `{ticket-dir}` to `ticket_mapping`.
 
-      > **PIPELINE CONTINUATION REQUIRED**: /create-ticket for ticket {N}/{total} complete. Proceed to step 3b (copy policy) then 3c (/scout). Do NOT end your turn.
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
    b. Copy `autopilot-policy.yaml` from `.backlog/briefs/active/{slug}/` to `.backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (so `/scout` moves it to active with the ticket).
 
@@ -286,7 +301,10 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
       - If `/scout` fails: Update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
       - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.scout = "completed"`.
 
-      > **PIPELINE CONTINUATION REQUIRED**: /scout for ticket {N}/{total} complete. Proceed to step 3d (/impl). Do NOT end your turn. WARNING: This is where premature stopping is most likely. Remaining for this ticket: impl → ship.
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
    d. **Step: impl**
       If `resume_mode = true` and `tickets[i].steps.impl` is `completed`, skip to step 3e.
@@ -296,7 +314,10 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
       - If `/impl` fails: Update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
       - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.impl = "completed"`.
 
-      > **PIPELINE CONTINUATION REQUIRED**: /impl for ticket {N}/{total} complete. Proceed to step 3e (/ship). Do NOT end your turn.
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
    e. **Step: ship**
       If `resume_mode = true` and `tickets[i].steps.ship` is `completed`, skip to step 3f.
@@ -308,7 +329,10 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
 
    f. Record PR URL and status.
 
-      > **PIPELINE CONTINUATION REQUIRED**: /ship for ticket {N}/{total} complete. Proceed to next ticket or Phase 3 if this was the last ticket. Do NOT end your turn.
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
 4. **Error handling per ticket**:
    - If any step fails → mark this ticket as `failed` (state file already updated above), log the error.
