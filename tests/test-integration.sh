@@ -537,7 +537,6 @@ MD
   # Retry up to 2 attempts before failing.
   local impl_attempt=0
   local impl_max_attempts=2
-  local impl_success=false
 
   while [ "$impl_attempt" -lt "$impl_max_attempts" ]; do
     impl_attempt=$((impl_attempt + 1))
@@ -561,7 +560,6 @@ MD
 
     # Check if eval-round was created
     if ls "$ticket_dir"/eval-round-*.md >/dev/null 2>&1; then
-      impl_success=true
       break
     fi
 
