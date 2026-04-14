@@ -211,6 +211,102 @@ for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
   fi
 done
 
+# --- Behavioral tests: .gitignore auto-append ---
+
+# AC1 + AC2: No .gitignore exists -> hook creates it with all 3 entries and comment header
+setup_test_repo
+# Remove any .gitignore that setup_test_repo may have produced
+rm -f "$TEST_REPO/.gitignore"
+run_hook "$HOOK" "" "$TEST_REPO"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$TEST_REPO/.gitignore" ]; then
+  echo -e "  ${GREEN}PASS${NC} .gitignore created when none existed"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} .gitignore created when none existed"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qxF "$entry" "$TEST_REPO/.gitignore"; then
+    echo -e "  ${GREEN}PASS${NC} .gitignore contains '$entry' after creation"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} .gitignore contains '$entry' after creation"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '# simple-workflow plugin' "$TEST_REPO/.gitignore"; then
+  echo -e "  ${GREEN}PASS${NC} .gitignore contains comment header '# simple-workflow plugin'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} .gitignore contains comment header '# simple-workflow plugin'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# AC3: Idempotency - running hook twice does not duplicate entries
+setup_test_repo
+rm -f "$TEST_REPO/.gitignore"
+run_hook "$HOOK" "" "$TEST_REPO"
+run_hook "$HOOK" "" "$TEST_REPO"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DOCS_COUNT=$(grep -cxF '.docs/' "$TEST_REPO/.gitignore")
+BACKLOG_COUNT=$(grep -cxF '.backlog/' "$TEST_REPO/.gitignore")
+KNOWLEDGE_COUNT=$(grep -cxF '.simple-wf-knowledge/' "$TEST_REPO/.gitignore")
+if [ "$DOCS_COUNT" -eq 1 ] && [ "$BACKLOG_COUNT" -eq 1 ] && [ "$KNOWLEDGE_COUNT" -eq 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} Idempotency: no duplicate entries after running hook twice"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Idempotency: entries duplicated (.docs/=$DOCS_COUNT .backlog/=$BACKLOG_COUNT .simple-wf-knowledge/=$KNOWLEDGE_COUNT)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# AC4: Existing .gitignore with user entries is preserved
+setup_test_repo
+printf 'node_modules/\n' > "$TEST_REPO/.gitignore"
+run_hook "$HOOK" "" "$TEST_REPO"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qxF 'node_modules/' "$TEST_REPO/.gitignore"; then
+  echo -e "  ${GREEN}PASS${NC} Existing user entry 'node_modules/' preserved after hook"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Existing user entry 'node_modules/' preserved after hook"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qxF "$entry" "$TEST_REPO/.gitignore"; then
+    echo -e "  ${GREEN}PASS${NC} Plugin entry '$entry' added alongside existing entries"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Plugin entry '$entry' added alongside existing entries"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+cleanup_test_repo
+
+# AC5: Non-git directory - .gitignore should NOT be created
+NON_GIT_DIR_GITIGNORE=$(mktemp -d)
+run_hook "$HOOK" "" "$NON_GIT_DIR_GITIGNORE"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ ! -f "$NON_GIT_DIR_GITIGNORE/.gitignore" ]; then
+  echo -e "  ${GREEN}PASS${NC} .gitignore not created in non-git directory"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} .gitignore should not be created in non-git directory"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$NON_GIT_DIR_GITIGNORE"
+
 echo ""
 
 print_summary

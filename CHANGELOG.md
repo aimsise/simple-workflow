@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-04-14
+
+### Added
+- Level 1 integration test suite (`tests/test-integration.sh`) — exercises real skill invocations via `claude -p` in headless mode:
+  - `/ship` integration test: verifies ticket is moved to `.backlog/done/` and `autopilot-state.yaml` is not committed
+  - `/audit` integration test: verifies `quality-round-1.md` and `security-scan-1.md` are written to the correct ticket directory
+  - `/impl` integration test: verifies `eval-round-*.md`, `quality-round-*.md`, `audit-round-*.md`, and `security-scan-*.md` are produced (retry logic for non-determinism)
+  - `/autopilot` integration test: full pipeline for a 2-ticket brief — verifies `investigation.md`, `plan.md`, and `eval-round-*.md` per ticket, brief moved to `briefs/done/`, `autopilot-log.md` written, state file cleaned up
+- Behavioral tests for `session-start.sh` `.gitignore` auto-append in `tests/test-session-start.sh`: creation, idempotency, existing-entry preservation, non-git directory guard
+- `tests/run-all.sh` automatically runs `test-integration.sh` last; auto-skipped when `claude` CLI is unavailable (CI-safe)
+
 ## [3.1.4] - 2026-04-14
 
 ### Added
