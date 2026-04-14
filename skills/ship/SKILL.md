@@ -78,14 +78,17 @@ Staged diff:
 Unstaged diff summary:
 !`git diff --stat`
 
+Remote configured:
+!`git remote get-url origin 2>/dev/null && echo "yes" || echo "no"`
+
 Diff stats vs default branch:
-!`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main) --stat`
+!`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main) --stat 2>/dev/null || echo "[no remote — skipped]"`
 
 Recent commits for style reference:
 !`git log --oneline -10`
 
 Commits ahead of default branch:
-!`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)..HEAD --oneline`
+!`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)..HEAD --oneline 2>/dev/null || echo "[no remote — skipped]"`
 
 ## Instructions
 
@@ -115,9 +118,11 @@ Proceed to Phase 2.
 
 ## Phase 2: Create PR
 
-7. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
+7. **Remote availability check**: Check the `Remote configured:` value from pre-computed context. If it is `no` (no remote origin configured), print "コミット完了。リモートが未設定のため、push/PR作成はスキップしました。" and stop. Do NOT attempt push, PR creation, or merge.
 
-8. **Review gate**: Check for recent code review:
+8. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
+
+9. **Review gate**: Check for recent code review:
     - If there is a completed ticket (`{ticket-dir}` — now in `.backlog/done/` after step 5), run `ls -t .backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file
     - If there is no ticket, skip the review gate (no check needed)
     - If a review file exists, compare its modification time with the last commit time
@@ -132,20 +137,20 @@ Proceed to Phase 2.
       Print "No recent code review found. Recommended: run /audit before shipping."
       Ask the user: "Proceed without review? (yes/no)"
       - If "no" → stop
-      - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 13
+      - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 14
 
-9. Determine the target branch from arguments (default: `<default-branch>` — obtained from the `Default branch:` pre-computed context above). If the target is not `<default-branch>`, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against `<default-branch>`).
-10. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
-11. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
-12. Push with `git push origin HEAD`. On failure, show the error and stop.
-13. Generate PR title (conventional commit style, single line) and body (summarize changes and scope) from the commit log and diff.
-14. Create the PR with `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
-15. Print the PR URL. If merge is not enabled, stop here. Note: when squash-merged, the PR title becomes the commit message on the target branch.
+10. Determine the target branch from arguments (default: `<default-branch>` — obtained from the `Default branch:` pre-computed context above). If the target is not `<default-branch>`, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against `<default-branch>`).
+11. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
+12. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
+13. Push with `git push origin HEAD`. On failure, show the error and stop.
+14. Generate PR title (conventional commit style, single line) and body (summarize changes and scope) from the commit log and diff.
+15. Create the PR with `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
+16. Print the PR URL. If merge is not enabled, stop here. Note: when squash-merged, the PR title becomes the commit message on the target branch.
 
 ## Phase 3: Merge (only when merge=true)
 
-16. Attempt `gh pr merge <pr-url> --squash --delete-branch`.
-17. If merge fails due to pending CI checks,
+17. Attempt `gh pr merge <pr-url> --squash --delete-branch`.
+18. If merge fails due to pending CI checks,
     - **Autopilot policy check**: Check if `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists.
       - If it exists, read `gates.ship_ci_pending`:
         - If `action` is `wait`: Run `gh pr checks <pr-number> --watch` with a timeout of `timeout_minutes` minutes. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
@@ -157,18 +162,19 @@ Proceed to Phase 2.
     - **Wait**: Run `gh pr checks <pr-number> --watch`, then retry the merge.
     - **Force**: Run `gh pr merge <pr-url> --squash --delete-branch --admin` to bypass checks. **WARNING: This bypasses CI checks and risks merging untested code. Confirm with the user before proceeding.** Note: requires admin permissions on the repository.
     - **Skip**: Stop without merging. Print the PR URL for manual follow-up.
-18. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
-19. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 5, also include "Ticket moved to .backlog/done/{ticket-dir}".
+19. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
+20. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 5, also include "Ticket moved to .backlog/done/{ticket-dir}".
 
 ## Error Handling
 
 - **No changes**: Print "No changes to ship." and stop.
+- **No remote**: Print "コミット完了。リモートが未設定のため、push/PR作成はスキップしました。" and stop after Phase 1.
 - **No commits ahead**: Print "No commits ahead of target branch." and stop.
 - **gh auth failure**: Print `gh auth login` instructions and stop.
 - **Push failure**: Show the error and stop.
 - **Existing PR (merge disabled)**: Show the PR URL and stop.
 - **Existing PR (merge enabled)**: Capture the PR URL and proceed to Phase 3.
-- **CI checks pending**: Ask user to choose Wait / Force / Skip (Phase 3 step 17).
+- **CI checks pending**: Ask user to choose Wait / Force / Skip (Phase 3 step 18).
 - **Force merge failure (no admin)**: Inform user, keep PR open, print URL.
 - **Merge conflict**: Print details, keep PR open, stop.
 - **Merge failure (any reason)**: Keep PR open, print PR URL for manual follow-up.
