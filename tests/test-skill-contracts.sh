@@ -1135,5 +1135,61 @@ fi
 
 echo ""
 
+# =============================================================================
+# カテゴリ O: Autopilot Resilience 契約
+# 差分: 新規カテゴリ。autopilot の状態ファイル管理・チェックポイントリマインダー・
+#        自動再開ロジックの構造整合性を検証する。
+# =============================================================================
+echo "--- Cat O: autopilot resilience ---"
+
+# O-1: autopilot SKILL.md に autopilot-state.yaml の記述がある
+assert_file_contains \
+  "autopilot SKILL.md references autopilot-state.yaml" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "autopilot-state\\.yaml"
+
+# O-2: autopilot SKILL.md に PIPELINE CONTINUATION REQUIRED がある
+assert_file_contains \
+  "autopilot SKILL.md has pipeline continuation reminders" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "PIPELINE CONTINUATION REQUIRED"
+
+# O-3: autopilot SKILL.md に resume_mode の記述がある
+assert_file_contains \
+  "autopilot SKILL.md has resume_mode logic" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "resume_mode"
+
+# O-4: autopilot SKILL.md に State file cleanup の記述がある
+assert_file_contains \
+  "autopilot SKILL.md has state file cleanup" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "State file cleanup"
+
+# O-5: PIPELINE CONTINUATION REQUIRED が Single/Split 両方にある (最低8箇所: Single 4 + Split 4)
+CONTINUATION_COUNT=$(grep -c "PIPELINE CONTINUATION REQUIRED" "$REPO_DIR/skills/autopilot/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$CONTINUATION_COUNT" -ge 8 ]; then
+  echo -e "  ${GREEN}PASS${NC} autopilot has >= 8 PIPELINE CONTINUATION reminders ($CONTINUATION_COUNT found)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} autopilot has >= 8 PIPELINE CONTINUATION reminders ($CONTINUATION_COUNT found, expected >= 8)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# O-6: autopilot SKILL.md に状態ファイル初期化 (State file initialization) がある
+assert_file_contains \
+  "autopilot SKILL.md has state file initialization" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "State file initialization"
+
+# O-7: autopilot SKILL.md に7日間の stale 警告がある
+assert_file_contains \
+  "autopilot SKILL.md has stale state warning" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "7 days"
+
+echo ""
+
 # --- サマリー ---
 print_summary

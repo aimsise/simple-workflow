@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-04-14
+
+### Added
+- Autopilot pipeline resilience: checkpoint reminders, state file management, and automatic resume
+  - `autopilot-state.yaml` tracks per-ticket step progress (pending/in_progress/completed/failed) for crash recovery
+  - 8 `PIPELINE CONTINUATION REQUIRED` reminders (4 Single + 4 Split) prevent premature `end_turn` after deep skill nesting
+  - Automatic resume: re-running `/autopilot {slug}` detects interrupted state and continues from the last checkpoint
+  - State file deleted on successful completion; `autopilot-log.md` remains as permanent record
+  - 7-day stale state warning to prevent stale resume after codebase changes
+- Cat O contract tests — autopilot resilience verification (O-1 through O-7)
+
+### Fixed
+- `/impl` pre-computed context shell commands now use `|| true` to prevent exit code 1 when only autopilot-managed tickets exist in `.backlog/active/`
+
 ## [3.0.0] - 2026-04-14
 
 ### Breaking Changes
