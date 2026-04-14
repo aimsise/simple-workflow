@@ -118,7 +118,7 @@ Proceed to Phase 2.
 
 ## Phase 2: Create PR
 
-7. **Remote availability check**: Check the `Remote configured:` value from pre-computed context. If it is `no` (no remote origin configured), print "コミット完了。リモートが未設定のため、push/PR作成はスキップしました。" and stop. Do NOT attempt push, PR creation, or merge.
+7. **Remote availability check**: Check the `Remote configured:` value from pre-computed context. If it is `no` (no remote origin configured), print "Commit complete. No remote configured — skipping push and PR creation." and stop. Do NOT attempt push, PR creation, or merge.
 
 8. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
@@ -168,7 +168,7 @@ Proceed to Phase 2.
 ## Error Handling
 
 - **No changes**: Print "No changes to ship." and stop.
-- **No remote**: Print "コミット完了。リモートが未設定のため、push/PR作成はスキップしました。" and stop after Phase 1.
+- **No remote**: Print "Commit complete. No remote configured — skipping push and PR creation." and stop after Phase 1.
 - **No commits ahead**: Print "No commits ahead of target branch." and stop.
 - **gh auth failure**: Print `gh auth login` instructions and stop.
 - **Push failure**: Show the error and stop.
