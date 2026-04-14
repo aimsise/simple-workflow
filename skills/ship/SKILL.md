@@ -42,7 +42,7 @@ allowed-tools:
   - "shell(ls:*)"
   - "shell(mkdir:*)"
   - "shell(date:*)"
-argument-hint: "[target-branch] [merge=true]"
+argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 ---
 
 Ship the current changes: commit, create PR, and optionally merge.
@@ -53,6 +53,7 @@ User arguments: $ARGUMENTS
 Parse `$ARGUMENTS` for positional arguments:
 - First argument: target branch name (default: `<default-branch>` — see pre-computed context above). If the first argument is `true` or `merge=true`, treat it as the merge flag and use `<default-branch>` as target.
 - Second argument: `merge=true` or `true` to enable squash-merge after PR creation (default: no merge).
+- `ticket-dir=<dir-name>`: Optional key=value argument specifying the ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). Because this uses key=value syntax, it is position-independent and does not affect parsing of the positional arguments (target-branch, merge).
 
 Examples:
 - `/ship` -> commit + PR to `<default-branch>` (e.g. main, master, develop)
@@ -60,6 +61,7 @@ Examples:
 - `/ship merge=true` -> commit + PR to `<default-branch>` + squash-merge
 - `/ship <default-branch> true` -> commit + PR to `<default-branch>` + squash-merge
 - `/ship develop merge=true` -> commit + PR to develop + squash-merge
+- `/ship main ticket-dir=003-fix-login` -> commit + PR to main, using ticket directory `003-fix-login`
 
 ## Pre-computed Context
 
@@ -110,7 +112,12 @@ Commits ahead of default branch:
 
 4. **Post-commit verification**: Run `git status` to confirm a commit was actually created. If the working tree is still dirty or no new commit exists (`git log -1 --format=%H` is unchanged from before), report the failure and stop.
 
-5. **Ticket completion**: If `.backlog/active/` exists, list its contents. Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix), then run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`. If no match, skip silently.
+5. **Ticket completion**: If `.backlog/active/` exists, list its contents. Determine `ticket-dir` using the following priority:
+   - **Explicit `ticket-dir=` argument**: If `ticket-dir=<dir-name>` was provided in the arguments, check whether `.backlog/active/{dir-name}` exists. If it exists, set `ticket-dir` to that value and skip branch name matching. If it does **not** exist, print a WARNING: "ticket-dir '{dir-name}' not found in .backlog/active/ — falling back to branch name matching." and proceed to the fallback below.
+   - **Fallback — branch name matching**: For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix).
+   - If neither method finds a match, skip silently.
+
+   Once `ticket-dir` is determined, run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`.
 
 6. **Knowledge base tuning** (only after a ticket was moved in step 5): Invoke `/tune` via the Skill tool, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved.
 

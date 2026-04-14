@@ -704,4 +704,93 @@ fi
 
 echo ""
 
+# --- Category 22: ticket-dir= propagation contract ---
+echo "--- ticket-dir= propagation contract ---"
+
+assert_file_contains \
+  "audit/SKILL.md argument-hint includes ticket-dir=" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "argument-hint:.*ticket-dir="
+
+assert_file_contains \
+  "ship/SKILL.md argument-hint includes ticket-dir=" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "argument-hint:.*ticket-dir="
+
+assert_file_contains \
+  "impl/SKILL.md Step 17 passes ticket-dir= to /audit" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "pass.*ticket-dir=.*\/audit"
+
+assert_file_contains \
+  "refactor/SKILL.md argument-hint includes ticket-dir=" \
+  "$REPO_DIR/skills/refactor/SKILL.md" \
+  "argument-hint:.*ticket-dir="
+
+assert_file_contains \
+  "autopilot/SKILL.md passes ticket-dir={ticket-dir} to /ship" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ticket-dir=\{ticket-dir\}"
+
+assert_file_contains \
+  "autopilot/SKILL.md contains ARTIFACT-MISSING handling" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ARTIFACT-MISSING"
+
+echo ""
+
+# --- Category 23: ticket-dir= semantic verification ---
+echo "--- ticket-dir= semantic verification ---"
+
+# AC1: Both /audit and /ship argument-hint lines use <dir-name> format (not <path>)
+assert_file_contains \
+  "audit/SKILL.md argument-hint uses ticket-dir=<dir-name> format" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  'argument-hint:.*ticket-dir=<dir-name>'
+
+assert_file_contains \
+  "ship/SKILL.md argument-hint uses ticket-dir=<dir-name> format" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  'argument-hint:.*ticket-dir=<dir-name>'
+
+assert_file_contains \
+  "refactor/SKILL.md argument-hint uses ticket-dir=<dir-name> format" \
+  "$REPO_DIR/skills/refactor/SKILL.md" \
+  'argument-hint:.*ticket-dir=<dir-name>'
+
+# AC2: /impl's ticket-dir= pass to /audit uses bare name format (not full path)
+assert_file_not_contains \
+  "impl/SKILL.md does NOT pass ticket-dir=.backlog (no full path leak)" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  'ticket-dir=\.backlog'
+
+# AC3: Artifact verification ordering in /autopilot —
+# Each ARTIFACT-MISSING block must appear BEFORE the "State update (after)" for
+# that same pipeline step. We verify every ARTIFACT-MISSING line is followed by
+# a "State update (after)" line with a higher line number.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+autopilot_file="$REPO_DIR/skills/autopilot/SKILL.md"
+ordering_ok=1
+bad_ordering=""
+while IFS=: read -r artifact_lineno _rest; do
+  # Find the next "State update (after)" line AFTER this ARTIFACT-MISSING line
+  next_state_after=$(awk -v start="$artifact_lineno" 'NR > start && /State update \(after\)/ { print NR; exit }' "$autopilot_file")
+  if [ -z "$next_state_after" ]; then
+    ordering_ok=0
+    bad_ordering="ARTIFACT-MISSING at line $artifact_lineno has no subsequent State update (after)"
+    break
+  fi
+done < <(grep -n 'ARTIFACT-MISSING' "$autopilot_file")
+
+if [ "$ordering_ok" -eq 1 ]; then
+  artifact_count=$(grep -c 'ARTIFACT-MISSING' "$autopilot_file")
+  echo -e "  ${GREEN}PASS${NC} autopilot/SKILL.md all $artifact_count ARTIFACT-MISSING blocks appear before their State update (after)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} autopilot/SKILL.md ARTIFACT-MISSING ordering violation: $bad_ordering"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 print_summary

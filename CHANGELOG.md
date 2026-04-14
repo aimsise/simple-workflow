@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3] - 2026-04-14
+
+### Added
+- `ticket-dir=` argument for `/ship`, `/audit`, and `/refactor` — callers can now pass the ticket directory explicitly, eliminating dependency on branch-name matching (which fails on `main` branch)
+- Artifact verification in `/autopilot` — post-scout checks for `investigation.md` and `plan.md`, post-impl checks for `eval-round-*.md`, `audit-round-*.md`, and `quality-round-*.md`, post-ship checks that ticket was moved to `done/`
+- Category 22 contract tests for `ticket-dir=` propagation across skills
+
+### Changed
+- `/impl` Step 17 now passes `ticket-dir=` to `/audit` for reliable output path resolution
+- `/autopilot` now passes `ticket-dir=` to `/ship` in both single and split execution flows
+- Split Autopilot Log section strengthened: per-ticket `autopilot-log.md` is now a MUST requirement with explicit numbered steps
+
+### Fixed
+- Tickets not moved to `.backlog/done/` when autopilot commits directly on `main` branch
+- Audit artifacts (`quality-round-*.md`, `security-scan-*.md`, `audit-round-*.md`) written to wrong location when branch name doesn't match ticket slug
+- Autopilot reporting `completed` status when required artifacts are missing
+- Individual `autopilot-log.md` not written to ticket directories in split mode
+
 ## [3.1.2] - 2026-04-14
 
 ### Fixed
@@ -204,6 +222,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[3.1.3]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.3
 [3.1.2]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.2
 [3.1.1]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.1
 [3.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.0

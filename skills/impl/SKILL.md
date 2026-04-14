@@ -211,8 +211,8 @@ State updates occur at these 4 points within each round:
     - **Status: PASS** → continue to step 17
 
 17. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
-    - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 15). Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.
-    - `/audit` writes its reports to `{ticket-dir}/quality-round-{n}.md`, `{ticket-dir}/security-scan-{n}.md`, and `{ticket-dir}/audit-round-{n}.md` using the round number passed via `round={n}`. This guarantees `eval-round-{n}` and `quality-round-{n}` / `audit-round-{n}` stay aligned across retries and resumed sessions.
+    - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 15). Additionally, if the plan is in `.backlog/active/{ticket-dir}/plan.md` (i.e., `ticket-dir` is known), pass `ticket-dir={ticket-dir}` (bare directory name, e.g., `003-fix-login`) to `/audit`. Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.
+    - `/audit` constructs the full path `.backlog/active/{ticket-dir}` internally and writes its reports to `.backlog/active/{ticket-dir}/quality-round-{n}.md`, `.backlog/active/{ticket-dir}/security-scan-{n}.md`, and `.backlog/active/{ticket-dir}/audit-round-{n}.md`. The `ticket-dir=` argument explicitly tells `/audit` which ticket directory to write to (as a bare name; `/audit` resolves the full path). The `round={n}` parameter ensures `eval-round-{n}` and `quality-round-{n}` / `audit-round-{n}` stay aligned across retries and resumed sessions.
     - The `/audit` skill must NOT receive Generator's return value or AC Evaluator's return value (information firewall is preserved because `/audit` independently inspects `git diff` via its own pre-computed context).
     - Parse `/audit`'s structured return block:
       - `**Status**`: PASS | PASS_WITH_CONCERNS | FAIL

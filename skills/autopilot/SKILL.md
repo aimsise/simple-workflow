@@ -174,6 +174,7 @@ tickets:
     - Parse the response for success/failure status.
     - If `/scout` fails: Update autopilot-state.yaml: `tickets[0].steps.scout = "failed"`, `tickets[0].status = "failed"`. Log the error and go to Phase 3 (failure).
     - On success: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/` (scout moved the ticket directory including the policy). If missing, copy it from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
+    - **Artifact verification**: Verify that both `.backlog/active/{ticket-dir}/investigation.md` and `.backlog/active/{ticket-dir}/plan.md` exist. If either file is missing, record `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{ticket-dir}/`, update autopilot-state.yaml: `tickets[0].steps.scout = "failed"`, `tickets[0].status = "failed"`, and go to Phase 3 (failure).
     - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.scout = "completed"`.
     - Record: `[PIPELINE] scout: success`
 
@@ -189,6 +190,10 @@ tickets:
     - Invoke `/impl` via the Skill tool with argument: `.backlog/active/{ticket-dir}/plan.md`
     - Parse the response for the final status (PASS/FAIL/STOP).
     - If FAIL-CRITICAL or stopped: Update autopilot-state.yaml: `tickets[0].steps.impl = "failed"`, `tickets[0].status = "failed"`. Log the error and go to Phase 3 (failure).
+    - **Artifact verification**: Verify the following artifacts exist in `.backlog/active/{ticket-dir}/`:
+      1. At least one `eval-round-*.md` file (AC evaluation result).
+      2. If the final `/impl` status is PASS (AC evaluation passed and `/audit` was invoked): at least one `audit-round-*.md` file AND at least one `quality-round-*.md` file. If `/impl` ended with FAIL at the AC evaluator stage (all rounds failed AC), audit artifacts are not expected — skip this check.
+      If any expected artifact is missing, record `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .backlog/active/{ticket-dir}/`, update autopilot-state.yaml: `tickets[0].steps.impl = "failed"`, `tickets[0].status = "failed"`, and go to Phase 3 (failure).
     - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.impl = "completed"`.
     - Record: `[PIPELINE] impl: {status} | rounds={n}`
     - Note: Decision points within `/impl` (evaluator_dry_run_fail, audit_infrastructure_fail) are handled by the autopilot-policy.yaml already copied to the ticket dir.
@@ -203,9 +208,10 @@ tickets:
     - **State update (before)**: Update autopilot-state.yaml: `tickets[0].steps.ship = "in_progress"`.
     - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
     - Determine the target branch from Pre-computed Context (Default branch).
-    - Invoke `/ship` via the Skill tool with argument: `{target-branch}` (do NOT pass merge=true).
+    - Invoke `/ship` via the Skill tool with argument: `{target-branch} ticket-dir={ticket-dir}` (do NOT pass merge=true). The `ticket-dir` parameter ensures `/ship` moves the correct ticket to `done/` regardless of the current branch name.
     - Parse the response to extract the PR URL.
     - If `/ship` fails: Update autopilot-state.yaml: `tickets[0].steps.ship = "failed"`, `tickets[0].status = "failed"`. Log the error and go to Phase 3 (failure).
+    - **Artifact verification**: Verify that `.backlog/done/{ticket-dir}/` exists (ticket was moved from `active/` to `done/` by `/ship`). If this directory does not exist, record `[PIPELINE] ship: ARTIFACT-MISSING — .backlog/done/{ticket-dir}/ not found after ship`, update autopilot-state.yaml: `tickets[0].steps.ship = "failed"`, `tickets[0].status = "failed"`, and go to Phase 3 (failure).
     - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.ship = "completed"`, `tickets[0].status = "completed"`.
     - Record: `[PIPELINE] ship: success | pr={pr-url}`
     - Note: Decision points within `/ship` (ship_review_gate, ship_ci_pending) are handled by the autopilot-policy.yaml in the ticket dir.
@@ -298,6 +304,7 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
       - **State update (before)**: Update autopilot-state.yaml: `tickets[i].steps.scout = "in_progress"`.
       - **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/product_backlog/{ticket-dir}/`. If not found, log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
       - Invoke `/scout {ticket-dir}`. On success, verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If missing, copy from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
+      - **Artifact verification**: Verify that both `.backlog/active/{ticket-dir}/investigation.md` and `.backlog/active/{ticket-dir}/plan.md` exist. If either file is missing, record `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{ticket-dir}/`, update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
       - If `/scout` fails: Update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
       - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.scout = "completed"`.
 
@@ -312,6 +319,10 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
       - **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
       - Invoke `/impl .backlog/active/{ticket-dir}/plan.md`
       - If `/impl` fails: Update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
+      - **Artifact verification**: Verify the following artifacts exist in `.backlog/active/{ticket-dir}/`:
+        1. At least one `eval-round-*.md` file (AC evaluation result).
+        2. If the final `/impl` status is PASS (AC evaluation passed and `/audit` was invoked): at least one `audit-round-*.md` file AND at least one `quality-round-*.md` file. If `/impl` ended with FAIL at the AC evaluator stage (all rounds failed AC), audit artifacts are not expected — skip this check.
+        If any expected artifact is missing, record `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .backlog/active/{ticket-dir}/`, update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
       - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.impl = "completed"`.
 
       > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
@@ -323,8 +334,9 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
       If `resume_mode = true` and `tickets[i].steps.ship` is `completed`, skip to step 3f.
       - **State update (before)**: Update autopilot-state.yaml: `tickets[i].steps.ship = "in_progress"`.
       - **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, update state: `tickets[i].steps.ship = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
-      - Invoke `/ship {target-branch}` (no merge)
+      - Invoke `/ship {target-branch} ticket-dir={ticket-dir}` (no merge). The `ticket-dir` parameter ensures `/ship` moves the correct ticket to `done/` regardless of the current branch name.
       - If `/ship` fails: Update state: `tickets[i].steps.ship = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
+      - **Artifact verification**: Verify that `.backlog/done/{ticket-dir}/` exists (ticket was moved from `active/` to `done/` by `/ship`). If this directory does not exist, record `[PIPELINE] ship: ARTIFACT-MISSING — .backlog/done/{ticket-dir}/ not found after ship`, update state: `tickets[i].steps.ship = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
       - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.ship = "completed"`, `tickets[i].status = "completed"`.
 
    f. Record PR URL and status.
@@ -342,10 +354,15 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
 
 ### Split Autopilot Log
 
-For split execution, write the overall autopilot-log to `.backlog/briefs/active/{slug}/autopilot-log.md`. Additionally, each ticket's individual log is written to its ticket directory (`autopilot-log.md`). Determine each ticket's actual location by checking the filesystem in this order:
-1. Check `.backlog/done/{ticket-dir}/` first — the ticket is here if `/ship` completed or partially completed (ticket moves to `done/` at `/ship` Step 5, before PR creation).
-2. Check `.backlog/active/{ticket-dir}/` — the ticket is here if `/ship` was never invoked or did not reach Step 5.
-Write each ticket's individual `autopilot-log.md` to whichever path is found.
+For split execution, you MUST write both the overall autopilot-log and per-ticket individual logs. Follow these steps in order:
+
+1. **Overall log**: Write the overall `autopilot-log.md` to `.backlog/briefs/active/{slug}/autopilot-log.md` (or `.backlog/briefs/done/{slug}/autopilot-log.md` if the brief has already been moved).
+2. **Per-ticket logs**: For each ticket, you MUST write an individual `autopilot-log.md` to its ticket directory. To determine each ticket's actual directory location, search in this order:
+   1. Check `.backlog/done/{ticket-dir}/` first — the ticket is here if `/ship` completed or partially completed (ticket moves to `done/` at `/ship` Step 5, before PR creation).
+   2. Check `.backlog/active/{ticket-dir}/` — the ticket is here if `/ship` was never invoked or did not reach Step 5.
+   Write each ticket's individual `autopilot-log.md` to whichever path is found.
+
+IMPORTANT: Skipping per-ticket individual logs is not allowed. Every ticket that was processed (completed, failed, or skipped) MUST have its own `autopilot-log.md` written to its ticket directory.
 
 The overall autopilot-log.md includes additional fields:
 
