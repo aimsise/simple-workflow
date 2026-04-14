@@ -464,141 +464,8 @@ test_brief_fixture() {
   rm -rf "$test_repo"
 }
 
-# ============================================================
-# Test: /impl integration (ticket-dir → /audit propagation)
-# ============================================================
-
-test_impl_integration() {
-  echo "--- Integration: /impl ---"
-
-  local test_repo
-  test_repo=$(mktemp -d)
-
-  # Initialize git repo
-  (
-    cd "$test_repo"
-    git init -q
-    git config user.email "test@test.com"
-    git config user.name "Test"
-
-    cat > .gitignore <<'EOF'
-.docs/
-.simple-wf-knowledge/
-EOF
-    git add .gitignore
-    git commit -q -m "initial"
-  )
-
-  # Create ticket fixture with plan
-  local ticket_dir="$test_repo/.backlog/active/001-test-impl"
-  mkdir -p "$ticket_dir"
-
-  cat > "$ticket_dir/ticket.md" <<'MD'
-## T-001: Test Impl
-
-| Key | Value |
-|-----|-------|
-| Category | Feature |
-| Size | S |
-
-### Acceptance Criteria
-- [ ] AC1: A file named `greeter.sh` exists in the project root containing the text "echo Hello"
-MD
-
-  create_autopilot_policy "$ticket_dir"
-
-  cat > "$ticket_dir/plan.md" <<'MD'
-# Implementation Plan — T-001: Test Impl
-
-### Acceptance Criteria
-- [ ] AC1: A file named `greeter.sh` exists in the project root containing the text "echo Hello"
-
-## Steps
-1. Create `greeter.sh` with content: `#!/bin/bash` newline `echo Hello`
-
-## Verification
-- Verify `greeter.sh` exists and contains "echo Hello"
-MD
-
-  cat > "$ticket_dir/investigation.md" <<'MD'
-# Investigation — T-001: Test Impl
-
-**Status**: success
-
-## Findings
-- No existing greeter.sh found. Fresh creation needed.
-- Project root is the target directory.
-MD
-
-  echo "  Test repo: $test_repo"
-
-  # /impl spawns multiple subagents (Generator → Evaluator → Audit), which may
-  # not fully execute in a single claude -p invocation due to non-determinism.
-  # Retry up to 2 attempts before failing.
-  local impl_attempt=0
-  local impl_max_attempts=2
-
-  while [ "$impl_attempt" -lt "$impl_max_attempts" ]; do
-    impl_attempt=$((impl_attempt + 1))
-    echo "  Running: claude -p \"/impl ...\" (attempt $impl_attempt/$impl_max_attempts)"
-
-    cd "$REPO_DIR"
-    run_with_timeout 600 claude -p \
-      "Change to directory $test_repo and then run /impl .backlog/active/001-test-impl/plan.md" \
-      --add-dir "$test_repo" --permission-mode bypassPermissions --allowed-tools=all --max-turns 60
-    cd "$SCRIPT_DIR"
-
-    if [ "$TIMEOUT_EXIT_CODE" -eq 124 ]; then
-      echo -e "  ${YELLOW}WARN${NC} claude -p timed out (600s)"
-    fi
-
-    if echo "$TIMEOUT_OUTPUT" | grep -q "Unknown skill"; then
-      echo -e "  ${YELLOW}SKIP${NC} /impl skill not available via claude -p"
-      rm -rf "$test_repo"
-      return 0
-    fi
-
-    # Check if eval-round was created
-    if ls "$ticket_dir"/eval-round-*.md >/dev/null 2>&1; then
-      break
-    fi
-
-    if [ "$impl_attempt" -lt "$impl_max_attempts" ]; then
-      echo -e "  ${YELLOW}RETRY${NC} eval-round-*.md not found, retrying..."
-    fi
-  done
-
-  # Show what files exist in ticket dir after execution
-  echo "  Files in ticket dir after /impl:"
-  ls "$ticket_dir"/ 2>/dev/null | sed 's/^/    /' || echo "    (empty or missing)"
-
-  # Verify eval-round-*.md exists
-  assert_true \
-    "/impl: eval-round-*.md created" \
-    "ls '$ticket_dir'/eval-round-*.md >/dev/null 2>&1"
-
-  # Verify audit artifacts (only if eval passed — check eval status)
-  local eval_status=""
-  eval_status=$(grep -l 'PASS' "$ticket_dir"/eval-round-*.md 2>/dev/null | head -1 || true)
-  if [ -n "$eval_status" ]; then
-    assert_true \
-      "/impl: quality-round-*.md created (eval PASS → audit ran)" \
-      "ls '$ticket_dir'/quality-round-*.md >/dev/null 2>&1"
-
-    assert_true \
-      "/impl: audit-round-*.md created" \
-      "ls '$ticket_dir'/audit-round-*.md >/dev/null 2>&1"
-
-    assert_true \
-      "/impl: security-scan-*.md created" \
-      "ls '$ticket_dir'/security-scan-*.md >/dev/null 2>&1"
-  else
-    echo -e "  ${YELLOW}INFO${NC} eval did not PASS — audit artifacts not expected"
-  fi
-
-  # Cleanup
-  rm -rf "$test_repo"
-}
+# NOTE: /impl standalone test removed — covered by test_autopilot_integration
+# which exercises the full Generator→Evaluator→Audit pipeline more reliably.
 
 # ============================================================
 # Test: /autopilot full pipeline integration
@@ -735,8 +602,6 @@ echo ""
 test_ship_integration
 echo ""
 test_audit_integration
-echo ""
-test_impl_integration
 echo ""
 test_autopilot_integration
 echo ""
