@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-04-15
+
+### Added
+- `hooks/autopilot-continue.sh` — Stop hook that prevents premature `end_turn` during `/autopilot` pipeline by returning `decision: "block"` when `autopilot-state.yaml` has unfinished steps
+- Loop guard (environment variable + file-based counter) to prevent infinite continuation loops (threshold: 5 consecutive blocks)
+- `tests/test-autopilot-continue.sh` — 15 unit tests covering all acceptance criteria (AC-1 through AC-12)
+
+### Changed
+- `hooks/hooks.json` — registered `autopilot-continue.sh` in the `Stop` hook section (before `session-stop-log.sh`)
+- `/autopilot` SKILL.md — removed GitHub auth gate (step 4) and renumbered subsequent steps; removed `gh auth` pre-computed context block
+
 ## [3.2.2] - 2026-04-15
 
 ### Added
