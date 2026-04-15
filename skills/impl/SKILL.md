@@ -161,7 +161,7 @@ feedback_files:
 
 State updates occur at these 4 points within each round:
 - **Before Generator (step 13)**: Update `phase: generator-pending`, `next_action: start-round-{N}-generator`, `current_round: {N}`
-- **After Generator (step 14)**: Update `phase: generator-complete`, `next_action: start-evaluator`
+- **At start of step 14 — before `git diff --stat`**: Update `phase: generator-complete`, `next_action: start-evaluator`
 - **After Evaluator (step 16)**: Update `phase: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action: start-audit` (if PASS) or `next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `next_action: stop-critical` (if FAIL-CRITICAL)
 - **After /audit (step 18)**: Update `phase: audit-complete`, `last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `last_audit_critical: {count}`, `next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `feedback_files.eval: {eval-round-{N}.md path}`, `feedback_files.quality: {quality-round-{N}.md path}`
 
@@ -184,7 +184,15 @@ State updates occur at these 4 points within each round:
       i. Autopilot constraints: If `{ticket-dir}/autopilot-policy.yaml` exists, read `constraints.allow_breaking_changes`. If `false`, include in the Generator prompt: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." If `true` or if the policy file does not exist, omit this constraint.
     - Receive Generator's return value (changed files list + lint/test status)
 
-14. Run `git diff --stat` to capture change summary.
+14. **Immediately** update `{ticket-dir}/impl-state.yaml`:
+      phase: generator-complete
+      next_action: start-evaluator
+    Then run `git diff --stat` to capture change summary.
+
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `{ticket-dir}/impl-state.yaml`
+    > 2. Confirm `next_action: start-evaluator`.
+    > 3. Proceed to Step 15 — spawn the AC Evaluator now. Do NOT end your turn.
 
 15. Spawn **AC Evaluator** agent (`ac-evaluator`, always sonnet):
    - Prompt must include:
@@ -209,6 +217,19 @@ State updates occur at these 4 points within each round:
     - **Status: FAIL** → save ac-evaluator's **Feedback**, continue to next round (skip quality review for this round)
     - **Status: PASS-WITH-CAVEATS** → treat as PASS (continue to step 17), but record the Caveats field for inclusion in Phase 3 summary: "AC passed with caveats: {caveats}"
     - **Status: PASS** → continue to step 17
+
+    Update `{ticket-dir}/impl-state.yaml`:
+      phase: evaluator-complete
+      last_ac_status: {PASS|FAIL|FAIL-CRITICAL}
+      next_action: start-audit                    ← PASS / PASS-WITH-CAVEATS の場合
+               or: start-round-{N+1}-generator   ← FAIL の場合
+               or: stop-critical                  ← FAIL-CRITICAL の場合（この後停止済み）
+
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING** (skip if FAIL-CRITICAL — already stopped):
+    > 1. Read `{ticket-dir}/impl-state.yaml`
+    > 2. Execute `next_action` immediately:
+    >    - `start-audit` → invoke `/audit` now (Step 17). Do NOT end your turn.
+    >    - `start-round-{N+1}-generator` → proceed to next round (Step 13). Do NOT end your turn.
 
 17. **Invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning):
     - Call `/audit` with explicit `round={n}` matching the current Generator round counter (same `{n}` used for `eval-round-{n}.md` in Step 15). Additionally, if the plan is in `.backlog/active/{ticket-dir}/plan.md` (i.e., `ticket-dir` is known), pass `ticket-dir={ticket-dir}` (bare directory name, e.g., `003-fix-login`) to `/audit`. Do NOT pass `only_security_scan` so both code-reviewer and security-scanner run.

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash hooks/pre-level1-guard.sh",
+            "statusMessage": "Checking for claude -p integration tests..."
+          }
+        ]
+      }
+    ]
+  }
+}

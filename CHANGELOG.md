@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2026-04-15
+
+### Added
+- `hooks/pre-level1-guard.sh` — PreToolUse hook that blocks `test-integration.sh` and `spike-claude-p.sh` from running without `RUN_LEVEL1_TESTS=true`, preventing accidental Anthropic API charges
+- `.claude/settings.json` — registers the guard hook for the `Bash` tool
+- `RUN_LEVEL1_TESTS` opt-in guard in `test-integration.sh` — skips integration tests unless explicitly enabled (works in both manual and automated runs)
+
+### Fixed
+- `/impl` SKILL.md: add RE-ANCHOR checkpoints after Generator (Step 14) and Evaluator (Step 16) to ensure Evaluator always runs in `claude -p` headless mode
+- `/impl` SKILL.md: state management table clarified — `impl-state.yaml` is updated at the start of Step 14 (before `git diff --stat`) to minimize stale-state window
+
 ## [3.2.1] - 2026-04-15
 
 ### Fixed
