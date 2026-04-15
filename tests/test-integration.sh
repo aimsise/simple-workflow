@@ -15,6 +15,12 @@ if ! command -v claude &>/dev/null; then
   exit 0
 fi
 
+# --- opt-in guard (avoids accidental API charges) ---
+if [ "${RUN_LEVEL1_TESTS:-}" != "true" ]; then
+  echo "SKIP: RUN_LEVEL1_TESTS is not set (run with RUN_LEVEL1_TESTS=true to execute)"
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/test-helper.sh"
