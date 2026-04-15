@@ -26,6 +26,9 @@
     ],
     "Stop": [
       {
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/autopilot-continue.sh" }]
+      },
+      {
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-log.sh" }]
       }
     ]

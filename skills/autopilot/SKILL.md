@@ -58,9 +58,6 @@ Current branch:
 Default branch:
 !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
-GitHub auth:
-!`gh auth status 2>&1 | head -3`
-
 # /autopilot
 
 Target slug: $ARGUMENTS
@@ -76,9 +73,8 @@ Parse `$ARGUMENTS`:
 1. Verify `.backlog/briefs/active/{slug}/brief.md` exists. If not, print available briefs from Pre-computed Context and stop.
 2. Verify `.backlog/briefs/active/{slug}/autopilot-policy.yaml` exists. If not, print "ERROR: No autopilot-policy.yaml found. Run /brief {slug} first." and stop.
 3. Read brief.md. Verify frontmatter `status` is `confirmed`. If `draft`, print "ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with auto=true." and stop.
-4. Verify GitHub auth from Pre-computed Context. If not authenticated, print "ERROR: gh auth required. Run 'gh auth login'." and stop.
-5. Read autopilot-policy.yaml for use in decision logging.
-6. **Human override detection**: Compare each gate's action in the policy against the expected defaults for the declared `risk_tolerance` level:
+4. Read autopilot-policy.yaml for use in decision logging.
+5. **Human override detection**: Compare each gate's action in the policy against the expected defaults for the declared `risk_tolerance` level:
    - `conservative` defaults: `ticket_quality_fail.action: retry_with_feedback`, `evaluator_dry_run_fail.action: stop`, `ac_eval_fail.action: retry`, `audit_infrastructure_fail.action: stop`, `ship_review_gate.action: stop`, `ship_ci_pending.action: wait`, `ship_ci_pending.timeout_minutes: 30`, `constraints.max_total_rounds: 9`, `constraints.allow_breaking_changes: false`, `unexpected_error.action: stop`
    - `moderate` defaults: same as conservative except `evaluator_dry_run_fail.action: proceed_without`, `audit_infrastructure_fail.action: treat_as_fail`, `ship_review_gate.action: proceed_if_eval_passed`
    - `aggressive` defaults: same as moderate except `ship_ci_pending.timeout_minutes: 60`, `constraints.max_total_rounds: 12`, `constraints.allow_breaking_changes: true`
@@ -88,9 +84,9 @@ Parse `$ARGUMENTS`:
      - If `# kb-suggested` is absent → record it as a **human_override**.
      - Store each override as (gate name, expected action, actual action, type: `human_override` | `kb_override`) for inclusion in the autopilot-log.
    - If no differences are found, record "No human overrides detected."
-7. Check if `.backlog/briefs/active/{slug}/split-plan.md` exists. If it does, read it and parse the ticket list and dependency graph. If it does not exist, proceed with single-ticket flow.
+6. Check if `.backlog/briefs/active/{slug}/split-plan.md` exists. If it does, read it and parse the ticket list and dependency graph. If it does not exist, proceed with single-ticket flow.
 
-8. **Autopilot state recovery**: Check if `.backlog/briefs/active/{slug}/autopilot-state.yaml` exists.
+7. **Autopilot state recovery**: Check if `.backlog/briefs/active/{slug}/autopilot-state.yaml` exists.
    - If it does NOT exist: set `resume_mode = false` and proceed normally to Phase 2.
    - If it exists: set `resume_mode = true`. Read and parse the state file.
      - Print resume summary:
@@ -241,9 +237,9 @@ final_status: completed | stopped | failed
 
 Followed by:
 - ## Pipeline Execution section with each step's status
-- ## Human Overrides section: List only `human_override` type entries from step 6 as `| {gate} | {expected_action} | {actual_action} | human_override |`. Exclude `kb_override` entries from this section. If no human overrides, write "No human overrides detected."
-- ## KB Overrides section: List only `kb_override` type entries from step 6 as `| {gate} | {expected_action} | {actual_action} | kb_override |`. If no KB overrides, write "No KB overrides detected."
-- ## Decisions Made table (parse [AUTOPILOT-POLICY] prefixed output from skill invocations if available, or note "No policy decisions were triggered" if pipeline ran without hitting any gates). Include overrides from step 6 as entries, distinguishing type `human_override` from `kb_override` in the type column.
+- ## Human Overrides section: List only `human_override` type entries from step 5 as `| {gate} | {expected_action} | {actual_action} | human_override |`. Exclude `kb_override` entries from this section. If no human overrides, write "No human overrides detected."
+- ## KB Overrides section: List only `kb_override` type entries from step 5 as `| {gate} | {expected_action} | {actual_action} | kb_override |`. If no KB overrides, write "No KB overrides detected."
+- ## Decisions Made table (parse [AUTOPILOT-POLICY] prefixed output from skill invocations if available, or note "No policy decisions were triggered" if pipeline ran without hitting any gates). Include overrides from step 5 as entries, distinguishing type `human_override` from `kb_override` in the type column.
 - ## Stop Reason section (only if stopped/failed)
 
 15. **Update brief lifecycle**:
@@ -419,7 +415,6 @@ After the Split Brief Lifecycle step, delete `.backlog/briefs/active/{slug}/auto
 - **Brief not found**: List available briefs and stop.
 - **Policy not found**: Print instructions to run `/brief` first.
 - **Brief not confirmed**: Print instructions to update status.
-- **gh auth failure**: Print login instructions.
 - **Any pipeline step failure (single ticket flow)**: Check `autopilot-policy.yaml` `gates.unexpected_error.action`:
   - If `stop` (default): Log to autopilot-log.md, update brief status to stopped, print partial completion report. Do NOT attempt to continue to the next step.
   - If `action` is any value other than `stop` (e.g., user edited to an unsupported action): treat as `stop` (safety fallback). Print `[AUTOPILOT-POLICY] gate=unexpected_error action=stop (fallback from unsupported action={original_action})`.

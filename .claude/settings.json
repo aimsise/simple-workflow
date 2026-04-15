@@ -11,6 +11,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash hooks/autopilot-continue.sh"
+          }
+        ]
+      }
     ]
   }
 }
