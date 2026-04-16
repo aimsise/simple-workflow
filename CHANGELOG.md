@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - Unreleased
+
+### Added
+- `hooks/session-start.sh`: auto-inject initial commit on empty repository — detects an empty git repo (no `HEAD`) at session start and creates `Initial commit: project baseline` (staging `.gitignore` when present, otherwise `--allow-empty`), eliminating the `/ship` pre-compute shortcut that occurred when the pipeline ran against a freshly `git init`-ed project
+- `tests/test-session-start.sh`: Phase 0a scenarios A-D covering empty repo with `.gitignore`, empty repo without `.gitignore`, idempotency on existing commits, and non-git directory no-op
+
 ## [3.3.0] - 2026-04-15
 
 ### Added

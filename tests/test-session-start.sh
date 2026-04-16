@@ -309,4 +309,132 @@ rm -rf "$NON_GIT_DIR_GITIGNORE"
 
 echo ""
 
+echo "--- Initial commit auto-injection tests (Phase 0a) ---"
+
+# Helper: setup an empty git repo (init only, NO initial commit)
+setup_empty_repo() {
+  TEST_REPO=$(mktemp -d)
+  (
+    cd "$TEST_REPO"
+    git init -q
+    git config user.email "test@test.com"
+    git config user.name "Test"
+  )
+}
+
+# Scenario A: Empty repo + .gitignore present -> initial commit created with .gitignore staged
+setup_empty_repo
+printf 'node_modules/\n' > "$TEST_REPO/.gitignore"
+run_hook "$HOOK" "" "$TEST_REPO"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if (cd "$TEST_REPO" && git rev-parse HEAD >/dev/null 2>&1); then
+  echo -e "  ${GREEN}PASS${NC} Scenario A: Initial commit created in empty repo with .gitignore"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario A: Initial commit should exist after hook"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+FIRST_MSG=$(cd "$TEST_REPO" && git log -1 --format=%s 2>/dev/null || echo "")
+if [ "$FIRST_MSG" = "Initial commit: project baseline" ]; then
+  echo -e "  ${GREEN}PASS${NC} Scenario A: Initial commit message is 'Initial commit: project baseline'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario A: Unexpected commit message: '$FIRST_MSG'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if (cd "$TEST_REPO" && git ls-tree -r --name-only HEAD 2>/dev/null | grep -qxF '.gitignore'); then
+  echo -e "  ${GREEN}PASS${NC} Scenario A: .gitignore is tracked in the initial commit"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario A: .gitignore should be part of initial commit"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# Scenario B: Empty repo + no .gitignore -> empty initial commit created
+setup_empty_repo
+run_hook "$HOOK" "" "$TEST_REPO"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if (cd "$TEST_REPO" && git rev-parse HEAD >/dev/null 2>&1); then
+  echo -e "  ${GREEN}PASS${NC} Scenario B: Initial commit created in empty repo without .gitignore"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario B: Initial commit should exist after hook"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+FIRST_MSG_B=$(cd "$TEST_REPO" && git log -1 --format=%s 2>/dev/null || echo "")
+if [ "$FIRST_MSG_B" = "Initial commit: project baseline" ]; then
+  echo -e "  ${GREEN}PASS${NC} Scenario B: Initial commit message is 'Initial commit: project baseline'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario B: Unexpected commit message: '$FIRST_MSG_B'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+# The initial commit should be empty (no tree entries) because no .gitignore was present
+TREE_COUNT=$(cd "$TEST_REPO" && git ls-tree -r --name-only HEAD 2>/dev/null | wc -l | tr -d ' ')
+if [ "$TREE_COUNT" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} Scenario B: Initial commit is empty (no tracked files)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario B: Initial commit should be empty, found $TREE_COUNT tracked file(s)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# Scenario C: Repository already has 1 commit -> hook is a no-op (idempotency)
+setup_test_repo
+BEFORE_HEAD=$(cd "$TEST_REPO" && git rev-parse HEAD)
+BEFORE_COUNT=$(cd "$TEST_REPO" && git rev-list --count HEAD)
+run_hook "$HOOK" "" "$TEST_REPO"
+AFTER_HEAD=$(cd "$TEST_REPO" && git rev-parse HEAD)
+AFTER_COUNT=$(cd "$TEST_REPO" && git rev-list --count HEAD)
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$BEFORE_HEAD" = "$AFTER_HEAD" ] && [ "$BEFORE_COUNT" = "$AFTER_COUNT" ]; then
+  echo -e "  ${GREEN}PASS${NC} Scenario C: Existing commit preserved; no new initial commit created"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario C: HEAD or commit count changed (before=$BEFORE_HEAD/$BEFORE_COUNT, after=$AFTER_HEAD/$AFTER_COUNT)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# Scenario D: Non-git directory -> hook does nothing (no error, no commit)
+NON_GIT_DIR_PHASE0A=$(mktemp -d)
+run_hook "$HOOK" "" "$NON_GIT_DIR_PHASE0A"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} Scenario D: Non-git dir exits 0 (no error)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario D: Non-git dir should exit 0, got $LAST_EXIT_CODE"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ ! -d "$NON_GIT_DIR_PHASE0A/.git" ]; then
+  echo -e "  ${GREEN}PASS${NC} Scenario D: Non-git dir still has no .git directory"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Scenario D: .git directory was unexpectedly created in non-git dir"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$NON_GIT_DIR_PHASE0A"
+
+echo ""
+
 print_summary

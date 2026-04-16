@@ -11,6 +11,17 @@ if [ -d ".docs/session-log" ]; then
 fi
 
 if git rev-parse --git-dir >/dev/null 2>&1; then
+  # --- Ensure at least one commit exists (empty repository detection) ---
+  # Idempotent: if HEAD already resolves to a commit, this block is skipped.
+  if ! git rev-parse HEAD >/dev/null 2>&1; then
+    if [ -f .gitignore ]; then
+      git add .gitignore >/dev/null 2>&1 || true
+      git commit -q -m "Initial commit: project baseline" >/dev/null 2>&1 || true
+    else
+      git commit -q --allow-empty -m "Initial commit: project baseline" >/dev/null 2>&1 || true
+    fi
+  fi
+
   # --- Ensure .gitignore contains simple-workflow entries ---
   _sw_gitignore_entries=(.docs/ .backlog/ .simple-wf-knowledge/)
   _sw_needs_header=false
