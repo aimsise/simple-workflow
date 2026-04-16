@@ -63,31 +63,42 @@ Examples:
 - `/ship develop merge=true` -> commit + PR to develop + squash-merge
 - `/ship main ticket-dir=003-fix-login` -> commit + PR to main, using ticket directory `003-fix-login`
 
+## Pre-compute Resilience Contract
+
+All pre-compute bash commands below return fallback values on failure and never
+halt `/ship` execution. The orchestrating agent is responsible for reading each
+pre-compute result and deciding commit/push strategy from the reported state
+(e.g., `(detached HEAD)`, `[no commits yet]`, `[no remote — skipped]`). A
+failing pre-compute must never be treated as a reason to abandon `/ship` and
+fall back to ad-hoc git commands; instead, the agent interprets the fallback
+marker and routes the workflow accordingly (skip push when remote is absent,
+skip diff vs default branch when there is no commit history, etc.).
+
 ## Pre-computed Context
 
 Current branch:
-!`git branch --show-current`
+!`git branch --show-current 2>/dev/null | grep . || echo "(detached HEAD or no commits)"`
 
 Default branch:
 !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 Current state:
-!`git status --short`
+!`git status --short 2>/dev/null || echo "[git status unavailable]"`
 
 Staged diff:
-!`git diff --cached`
+!`git diff --cached 2>/dev/null || echo "[no commits yet — nothing staged]"`
 
 Unstaged diff summary:
-!`git diff --stat`
+!`git diff --stat 2>/dev/null || echo "[no commits yet — cannot diff against HEAD]"`
 
 Remote configured:
-!`git remote get-url origin 2>/dev/null && echo "yes" || echo "no"`
+!`git remote get-url origin >/dev/null 2>&1 && echo "yes" || echo "no"`
 
 Diff stats vs default branch:
 !`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main) --stat 2>/dev/null || echo "[no remote — skipped]"`
 
 Recent commits for style reference:
-!`git log --oneline -10`
+!`git log --oneline -10 2>/dev/null || echo "[no commit history]"`
 
 Commits ahead of default branch:
 !`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)..HEAD --oneline 2>/dev/null || echo "[no remote — skipped]"`
