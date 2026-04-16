@@ -23,6 +23,21 @@ argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>
 
 Audit current code changes. Args: $ARGUMENTS
 
+## Mandatory Skill Invocations
+
+The following agent invocations are **contractual** — `/audit` MUST delegate to each of these via the Agent tool (in parallel when both are requested). `/audit` itself performs no review work; its entire role is to spawn the review agents, aggregate their counts, and return a structured result block. Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
+
+| Invocation Target | When | Skip consequence |
+|---|---|---|
+| `security-scanner` agent (Agent tool) | Step 2 — **always**, regardless of `only_security_scan` flag | No security review; hardcoded secrets / injection vulnerabilities may reach `done/` undetected. Detected by absence of `security-scan-{n}.md` in ticket dir and absence of security-scanner trace in skill invocation audit |
+| `code-reviewer` agent (Agent tool) | Step 2 — in parallel with security-scanner when `only_security_scan=false` (default) | No code quality review; `/impl`'s retry loop has no feedback on style/maintainability/correctness concerns. Detected by absence of `quality-round-{n}.md` in ticket dir |
+
+**Binding rules**:
+- `MUST invoke security-scanner via the Agent tool` every time `/audit` runs — never skip security review even when changes look "obviously safe".
+- `MUST invoke code-reviewer via the Agent tool` unless `only_security_scan=true` was explicitly passed. Never substitute by having `/audit` itself read files and render a verdict.
+- `NEVER bypass these agents via direct file operations` — `/audit` must NOT read the changed files itself (Step 2 explicitly states: "Do NOT read files directly — delegate ALL review work to the agents").
+- `Fail this audit immediately if any required agent cannot be invoked via the Agent tool` — the Error Handling section treats agent failure as Critical = 1; **never silently treat a failed agent as PASS or PASS_WITH_CONCERNS**.
+
 Current branch:
 !`git branch --show-current`
 
@@ -76,12 +91,12 @@ Parse `$ARGUMENTS` for the following:
 
 ### 2. Spawn Agents
 
-**Always** spawn the **security-scanner** agent (`security-scanner`, sonnet):
+**MUST invoke the `security-scanner` agent via the Agent tool** (sonnet) — **NEVER bypass security-scanner** even when changes appear security-irrelevant; the agent itself decides what is in scope. Fail this audit immediately if security-scanner cannot be invoked.
 - Pass the changed files list and the security-scan output path determined in step 1.
 - Receive Critical / Warnings / Suggestions counts and a summary.
 - Note: security-scanner is always invoked regardless of whether sensitive files appear to be touched. The agent itself decides what is security-relevant.
 
-**If** `only_security_scan` is `false` (default), **also** spawn the **code-reviewer** agent (`code-reviewer`, sonnet) **in parallel** with security-scanner:
+**If** `only_security_scan` is `false` (default), you **MUST also invoke the `code-reviewer` agent via the Agent tool** (sonnet) **in parallel** with security-scanner. **NEVER bypass code-reviewer via direct file inspection** from within `/audit`. Fail this audit immediately if code-reviewer cannot be invoked (treat as Critical = 1 per the Error Handling section):
 - Pass the changed files list and the quality-round output path determined in step 1.
 - Receive Critical / Warnings / Suggestions counts and a summary.
 
