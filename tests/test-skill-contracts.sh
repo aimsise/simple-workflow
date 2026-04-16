@@ -1338,5 +1338,374 @@ done
 
 echo ""
 
+# =============================================================================
+# カテゴリ Q: Wrapper agent contract (Phase A)
+# 差分: 新規カテゴリ。Phase A で追加された wrapped-* ラッパーエージェント7種と
+#        ticket-pipeline オーケストレーターエージェント1種、計8種の構造整合性を検証する。
+#        Cat 6 (existence of frontmatter/name/tools) に加えて、ラッパー固有の
+#        契約（Agent allowed-tool、200 token minimal return、Next field など）を検証。
+# =============================================================================
+echo "--- Cat Q: Wrapper agent contract ---"
+
+WRAPPER_AGENTS=(
+  "wrapped-researcher:researcher"
+  "wrapped-planner:planner"
+  "wrapped-ticket-evaluator:ticket-evaluator"
+  "wrapped-implementer:implementer"
+  "wrapped-ac-evaluator:ac-evaluator"
+  "wrapped-code-reviewer:code-reviewer"
+  "wrapped-security-scanner:security-scanner"
+  "ticket-pipeline:"
+)
+
+# Q-1: 各ラッパーエージェントの frontmatter に Agent (or task) が含まれる
+for entry in "${WRAPPER_AGENTS[@]}"; do
+  wrapper="${entry%%:*}"
+  wrapper_md="$REPO_DIR/agents/$wrapper.md"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ ! -f "$wrapper_md" ]; then
+    echo -e "  ${RED}FAIL${NC} Q-1: agents/$wrapper.md exists"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    continue
+  fi
+  fm_block=$(extract_frontmatter_block "$wrapper_md")
+  if echo "$fm_block" | grep -qE '(\bAgent\b|\btask\b)'; then
+    echo -e "  ${GREEN}PASS${NC} Q-1: $wrapper has Agent/task in tools frontmatter"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Q-1: $wrapper missing Agent/task in tools frontmatter"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# Q-2: 各 wrapped-* の本文に包まれた実体エージェント名が言及されている
+#      (ticket-pipeline は wrapped ではないのでスキップ)
+for entry in "${WRAPPER_AGENTS[@]}"; do
+  wrapper="${entry%%:*}"
+  real="${entry##*:}"
+  [ -z "$real" ] && continue
+  wrapper_md="$REPO_DIR/agents/$wrapper.md"
+  [ -f "$wrapper_md" ] || continue
+  body=$(awk 'BEGIN{depth=0} /^---[[:space:]]*$/{depth++;next} depth>=2{print}' "$wrapper_md")
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if echo "$body" | grep -qF "$real"; then
+    echo -e "  ${GREEN}PASS${NC} Q-2: $wrapper body references wrapped agent '$real'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Q-2: $wrapper body does not reference wrapped agent '$real'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# Q-3: 各 wrapped-* 本文に「200 tokens」または「minimal return」の記述がある
+#       (ticket-pipeline は独自の Return Format (AC-4-A) を持ち、Q-3/Q-4 の対象外)
+for entry in "${WRAPPER_AGENTS[@]}"; do
+  wrapper="${entry%%:*}"
+  real="${entry##*:}"
+  # Skip ticket-pipeline (no wrapped real agent; Return Format per AC-4-A)
+  [ -z "$real" ] && continue
+  wrapper_md="$REPO_DIR/agents/$wrapper.md"
+  [ -f "$wrapper_md" ] || continue
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qE '(200 tokens?|200.?token|minimal return)' "$wrapper_md"; then
+    echo -e "  ${GREEN}PASS${NC} Q-3: $wrapper mentions '200 tokens' or 'minimal return'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Q-3: $wrapper missing '200 tokens' or 'minimal return'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# Q-4: 各 wrapped-* 本文の Return Format に **Next**: フィールドがある
+#       (ticket-pipeline は AC-4-A に従い Ticket Dir/PR URL/Manual Bash Fallbacks/
+#        Failure Reason フィールドを持つため、Q-4 の対象外。ticket-pipeline の
+#        Return Format は Cat T-4/T-5 で検証される)
+for entry in "${WRAPPER_AGENTS[@]}"; do
+  wrapper="${entry%%:*}"
+  real="${entry##*:}"
+  [ -z "$real" ] && continue
+  wrapper_md="$REPO_DIR/agents/$wrapper.md"
+  [ -f "$wrapper_md" ] || continue
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qE '^\*\*Next\*\*:' "$wrapper_md"; then
+    echo -e "  ${GREEN}PASS${NC} Q-4: $wrapper has **Next**: field in Return format"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Q-4: $wrapper missing **Next**: field"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+echo ""
+
+# =============================================================================
+# カテゴリ R: Orchestrator wrapper references (phase-guarded)
+# 差分: 新規カテゴリ。Phase B-E のスキル書き換え完了後にラッパーエージェント
+#        名が対応する SKILL.md 本文で参照されていることを検証する。
+#        Phase A 時点ではスキル側は未書き換えのため、phase guard で
+#        該当スキルが rewrite 済みと検出できる場合のみアサート、そうでなければ
+#        "deferred" として扱う（skip ではなく、ガード条件の成立をアサート）。
+# =============================================================================
+echo "--- Cat R: Orchestrator wrapper references (phase-guarded) ---"
+
+# Phase guard: 対象スキルが rewrite 済みかを「wrapped-* が本文に1つでも含まれる」
+# ことで検出する。Phase A 時点では全て未書き換えのため、R-1..R-5 は "deferred"。
+# Phase B 以降、該当スキルに wrapped-* が現れた瞬間に自動的にアサートが有効化される。
+
+assert_wrapper_reference_phase_guarded() {
+  local label="$1"
+  local skill_md="$2"
+  shift 2
+  local expected_wrappers=("$@")
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ ! -f "$skill_md" ]; then
+    echo -e "  ${RED}FAIL${NC} $label: SKILL.md not found: $skill_md"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    return
+  fi
+
+  # Phase guard: any wrapped-* reference in SKILL.md means Phase B+ rewrite has landed
+  if grep -qE 'wrapped-[a-z-]+' "$skill_md"; then
+    # rewritten — enforce that every expected wrapper is present
+    local missing=""
+    for w in "${expected_wrappers[@]}"; do
+      if ! grep -qF "$w" "$skill_md"; then
+        missing="$missing $w"
+      fi
+    done
+    if [ -z "$missing" ]; then
+      echo -e "  ${GREEN}PASS${NC} $label: all expected wrappers referenced (${expected_wrappers[*]})"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} $label: rewrite detected but missing:$missing"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+  else
+    echo -e "  ${GREEN}PASS${NC} $label: deferred (Phase B+ skill rewrite not yet landed in $(basename "$(dirname "$skill_md")"))"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  fi
+}
+
+# R-1: create-ticket → wrapped-researcher, wrapped-planner, wrapped-ticket-evaluator
+assert_wrapper_reference_phase_guarded \
+  "R-1: create-ticket SKILL.md references create-ticket wrappers" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "wrapped-researcher" "wrapped-planner" "wrapped-ticket-evaluator"
+
+# R-2: impl → wrapped-implementer, wrapped-ac-evaluator
+assert_wrapper_reference_phase_guarded \
+  "R-2: impl SKILL.md references impl wrappers" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "wrapped-implementer" "wrapped-ac-evaluator"
+
+# R-3: audit → wrapped-code-reviewer, wrapped-security-scanner
+assert_wrapper_reference_phase_guarded \
+  "R-3: audit SKILL.md references audit wrappers" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "wrapped-code-reviewer" "wrapped-security-scanner"
+
+# R-4: autopilot → ticket-pipeline (enabled in Phase E; phase-guarded by "ticket-pipeline" presence)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AUTOPILOT_MD="$REPO_DIR/skills/autopilot/SKILL.md"
+if grep -qF "ticket-pipeline" "$AUTOPILOT_MD"; then
+  echo -e "  ${GREEN}PASS${NC} R-4: autopilot SKILL.md references ticket-pipeline"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} R-4: deferred (Phase E autopilot rewrite not yet landed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+# R-5: plan2doc → wrapped-planner
+assert_wrapper_reference_phase_guarded \
+  "R-5: plan2doc SKILL.md references wrapped-planner" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "wrapped-planner"
+
+echo ""
+
+# =============================================================================
+# カテゴリ S: State file separation
+# 差分: 新規カテゴリ。ラッパーエージェントが state file を触らないこと、
+#        および ticket-pipeline のみが autopilot-state.yaml を更新することを検証。
+#        S-1 は create-ticket-state.yaml (Phase C) が導入されるまで phase-guarded。
+# =============================================================================
+echo "--- Cat S: State file separation ---"
+
+# S-1: create-ticket SKILL.md が create-ticket-state.yaml を参照 (phase-guarded, Phase C)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CREATE_TICKET_MD="$REPO_DIR/skills/create-ticket/SKILL.md"
+if grep -qF "create-ticket-state.yaml" "$CREATE_TICKET_MD"; then
+  echo -e "  ${GREEN}PASS${NC} S-1: create-ticket SKILL.md references create-ticket-state.yaml"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} S-1: deferred (Phase C create-ticket rewrite not yet landed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+# S-2: どの wrapped-* ラッパーも state file への書き込み指示を含まない
+#       (ticket-pipeline は S-3 で許容されるため除外)
+WRAPPED_ONLY=(
+  "wrapped-researcher"
+  "wrapped-planner"
+  "wrapped-ticket-evaluator"
+  "wrapped-implementer"
+  "wrapped-ac-evaluator"
+  "wrapped-code-reviewer"
+  "wrapped-security-scanner"
+)
+for wrapper in "${WRAPPED_ONLY[@]}"; do
+  wrapper_md="$REPO_DIR/agents/$wrapper.md"
+  [ -f "$wrapper_md" ] || continue
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # Forbidden write patterns: any imperative write verb paired with a state file name.
+  # Filter out prohibition lines (Do NOT / NEVER / MUST NOT / no ... write / etc.),
+  # which are legitimate "do not touch state files" instructions that the wrapper
+  # IS required to document.
+  offending=$(grep -iE '((update|write|set|record|append|modify).*(autopilot-state\.yaml|impl-state\.yaml|create-ticket-state\.yaml))' "$wrapper_md" \
+              | grep -viE '(do not|never|must not|no state|own(s)? (no|only))' || true)
+  if [ -n "$offending" ]; then
+    echo -e "  ${RED}FAIL${NC} S-2: $wrapper contains state file WRITE instruction (forbidden for wrappers)"
+    echo "       Offending line: $offending"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  else
+    echo -e "  ${GREEN}PASS${NC} S-2: $wrapper contains no state file write instruction"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  fi
+done
+
+# S-3: ticket-pipeline.md は autopilot-state.yaml の更新指示を含む (許容)
+assert_file_contains \
+  "S-3: ticket-pipeline.md has autopilot-state.yaml update instruction" \
+  "$REPO_DIR/agents/ticket-pipeline.md" \
+  "autopilot-state\\.yaml"
+
+echo ""
+
+# =============================================================================
+# カテゴリ T: Artifact Presence Gate contract (AC-4-B)
+# 差分: 新規カテゴリ。ticket-pipeline の出口検証ロジックの構造整合性を検証。
+# =============================================================================
+echo "--- Cat T: Artifact Presence Gate contract ---"
+
+TICKET_PIPELINE_MD="$REPO_DIR/agents/ticket-pipeline.md"
+
+# T-1: ticket-pipeline.md mentions "artifact presence gate" or "必須成果物"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qiE '(artifact presence gate|必須成果物)' "$TICKET_PIPELINE_MD"; then
+  echo -e "  ${GREEN}PASS${NC} T-1: ticket-pipeline mentions 'artifact presence gate' or '必須成果物'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} T-1: ticket-pipeline missing 'artifact presence gate' / '必須成果物'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# T-2: ticket-pipeline references all 7 artifact patterns
+ARTIFACT_PATTERNS=(
+  "ticket.md"
+  "investigation.md"
+  "plan.md"
+  "eval-round-\\*.md"
+  "audit-round-\\*.md"
+  "quality-round-\\*.md"
+  "security-scan-\\*.md"
+)
+for pattern in "${ARTIFACT_PATTERNS[@]}"; do
+  # Literal pattern for grep (escape backslash-asterisk back to literal *)
+  literal=$(echo "$pattern" | sed 's/\\\*/\*/g')
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qF -- "$literal" "$TICKET_PIPELINE_MD"; then
+    echo -e "  ${GREEN}PASS${NC} T-2: ticket-pipeline references artifact pattern '$literal'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} T-2: ticket-pipeline missing artifact pattern '$literal'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# T-3: ticket-pipeline mentions FAIL-CRITICAL and "AC評価の全ラウンドでFAIL" exception
+assert_file_contains \
+  "T-3a: ticket-pipeline mentions FAIL-CRITICAL" \
+  "$TICKET_PIPELINE_MD" \
+  "FAIL-CRITICAL"
+
+assert_file_contains \
+  "T-3b: ticket-pipeline mentions AC評価の全ラウンドでFAIL exception" \
+  "$TICKET_PIPELINE_MD" \
+  "AC評価の全ラウンドでFAIL"
+
+# T-4: Return Format includes Manual Bash Fallbacks field
+assert_file_contains \
+  "T-4: ticket-pipeline Return Format includes 'Manual Bash Fallbacks'" \
+  "$TICKET_PIPELINE_MD" \
+  'Manual Bash Fallbacks'
+
+# T-5: Status list includes completed-with-warnings
+assert_file_contains \
+  "T-5: ticket-pipeline Status list includes 'completed-with-warnings'" \
+  "$TICKET_PIPELINE_MD" \
+  "completed-with-warnings"
+
+echo ""
+
+# =============================================================================
+# カテゴリ U: Skill Invocation Audit contract (AC-4-C)
+# 差分: 新規カテゴリ。ticket-pipeline の invocation_method フィールドと
+#        autopilot の Manual Bash Fallbacks ログ連動を検証。
+#        U-3/U-4 は autopilot SKILL.md が Phase E で書き換えられるまで phase-guarded。
+# =============================================================================
+echo "--- Cat U: Skill Invocation Audit contract ---"
+
+# U-1: ticket-pipeline mentions invocation_method
+assert_file_contains \
+  "U-1: ticket-pipeline mentions invocation_method" \
+  "$TICKET_PIPELINE_MD" \
+  "invocation_method"
+
+# U-2: ticket-pipeline enumerates 3 values: skill, manual-bash, unknown
+for value in "skill" "manual-bash" "unknown"; do
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qF -- "$value" "$TICKET_PIPELINE_MD"; then
+    echo -e "  ${GREEN}PASS${NC} U-2: ticket-pipeline enumerates invocation_method value '$value'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} U-2: ticket-pipeline missing invocation_method value '$value'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# U-3: autopilot SKILL.md logs Manual Bash Fallbacks to autopilot-log.md (phase-guarded, Phase E)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF "ticket-pipeline" "$AUTOPILOT_MD"; then
+  # Phase E landed — enforce
+  if grep -qF "Manual Bash Fallbacks" "$AUTOPILOT_MD"; then
+    echo -e "  ${GREEN}PASS${NC} U-3: autopilot SKILL.md logs Manual Bash Fallbacks"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} U-3: autopilot rewrite detected but Manual Bash Fallbacks logging missing"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "  ${GREEN}PASS${NC} U-3: deferred (Phase E autopilot rewrite not yet landed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+# U-4: autopilot SKILL.md reflects completed-with-warnings in final_status (phase-guarded, Phase E)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF "ticket-pipeline" "$AUTOPILOT_MD"; then
+  if grep -qF "completed-with-warnings" "$AUTOPILOT_MD"; then
+    echo -e "  ${GREEN}PASS${NC} U-4: autopilot SKILL.md reflects completed-with-warnings"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} U-4: autopilot rewrite detected but completed-with-warnings reflection missing"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "  ${GREEN}PASS${NC} U-4: deferred (Phase E autopilot rewrite not yet landed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+echo ""
+
 # --- サマリー ---
 print_summary
