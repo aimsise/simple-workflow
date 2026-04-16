@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-04-15
+
+### Added
+- Phase A wrapper agent architecture — 8 new agents under `agents/` that provide isolated per-step contexts for Agent tool nesting (confirmed viable by the R1 verification report). This phase is **additive only**: no existing SKILL.md or agent file is modified, so all current flows keep their current behavior while the wrapper infrastructure becomes available for Phase B-E to wire up
+  - `agents/wrapped-researcher.md` (sonnet) — wraps `researcher`; used by `/investigate`, `/scout`, `/create-ticket` Phase 1, `/brief` Phase 1 once Phase C lands
+  - `agents/wrapped-planner.md` (opus) — wraps `planner`; used by `/plan2doc`, `/create-ticket` Phase 3, `/refactor` once Phase B/C land
+  - `agents/wrapped-ticket-evaluator.md` (sonnet) — wraps `ticket-evaluator`; used by `/create-ticket` Phase 4 once Phase C lands
+  - `agents/wrapped-implementer.md` (opus) — wraps `implementer`; used by `/impl` Generator step once Phase D lands
+  - `agents/wrapped-ac-evaluator.md` (sonnet) — wraps `ac-evaluator`; used by `/impl` Evaluator + Dry Run once Phase D lands
+  - `agents/wrapped-code-reviewer.md` (sonnet) — wraps `code-reviewer`; used by `/audit` Step 2 (parallel with security scanner) once Phase B lands
+  - `agents/wrapped-security-scanner.md` (sonnet) — wraps `security-scanner`; used by `/audit` Step 2 (parallel with code reviewer) once Phase B lands
+  - `agents/ticket-pipeline.md` (opus) — per-ticket pipeline orchestrator (`create-ticket → scout → impl → ship`) with Artifact Presence Gate (AC-4-B), Skill Invocation Audit (AC-4-C), and `completed-with-warnings` status (AC-4-D); used by `/autopilot` once Phase E lands
+- All 8 wrapper agents declare a strict ≤200 token Return Format with `**Status**`, `**Output**`, and `**Next**` fields per AC-2; `ticket-pipeline` additionally exposes `**Ticket Dir**`, `**PR URL**`, `**Manual Bash Fallbacks**`, `**Failure Reason**` per AC-4-A
+- `tests/test-skill-contracts.sh`: Cat Q (wrapper agent contract), Cat R (orchestrator wrapper references — phase-guarded and deferred until Phase B-E rewrites land), Cat S (state file separation — S-1 phase-guarded until Phase C), Cat T (Artifact Presence Gate contract), Cat U (Skill Invocation Audit contract — U-3/U-4 phase-guarded until Phase E)
+
+### Notes
+- Wrapper agents dispatch to their wrapped real agent by bare name (e.g., `subagent_type: "researcher"`), matching the existing convention. The naming-convention record lives at the top of `agents/wrapped-researcher.md`; if behavioral verification in Phase E-gate surfaces resolution issues, all wrappers can be revised globally in one follow-up commit (see `.docs/cost-analysis/agent-resolution-verification.md`)
+
 ## [3.4.0] - 2026-04-17
 
 ### Added
