@@ -328,6 +328,17 @@ MD
 test_ship_integration() {
   echo "--- Integration: /ship ---"
 
+  # TODO(Phase 0b follow-up, AC-P2-5): current setup_ship_fixture bootstraps
+  # the repo with a `.gitignore` commit AND a `skills/agents` commit before
+  # staging the code change — i.e. /ship runs against a repo that already
+  # has 2 commits and a `.gitignore` baseline. To fully exercise the
+  # pre-compute resilience contract, a future iteration should add a second
+  # variant of this test that drives /ship against a freshly `git init`-ed
+  # repository (no prior commits) following the full
+  # /brief -> /scout -> /impl -> /ship pipeline. For now this test verifies
+  # only that the common-case flow still works; Phase 0b pre-compute
+  # robustness for empty-repo states is covered directly by
+  # tests/test-ship-precompute.sh.
   local test_repo
   test_repo=$(setup_ship_fixture)
 

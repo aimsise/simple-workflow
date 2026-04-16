@@ -1090,10 +1090,11 @@ assert_file_contains \
   "counter.*N.*ticket-counter"
 
 # M-9: /autopilot は /create-ticket に委譲してチケット番号を割り当てる（共有カウンターメカニズム）
+# Note: Phase 0c strengthened "Invoke" to "MUST invoke" — regex made case-insensitive to match either form.
 assert_file_contains \
   "autopilot SKILL.md delegates to /create-ticket for ticket numbering" \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
-  "Invoke.*/create-ticket"
+  "[Ii]nvoke.*/create-ticket"
 
 echo ""
 
@@ -1267,6 +1268,73 @@ assert_file_contains \
   "P-10: impl SKILL.md has next_action references" \
   "$REPO_DIR/skills/impl/SKILL.md" \
   "next_action"
+
+echo ""
+
+# =============================================================================
+# カテゴリ V: SKILL.md 指示強度検証
+# 差分: 新規カテゴリ。Phase 0c で追加された「Mandatory Skill Invocations」節と
+#        MUST/NEVER/Fail 強制言語の存在を検証する。JSONL 解析で判明した
+#        「スキル呼び出しを推奨と解釈して省略する」パターンを防ぐための言語的拘束。
+# =============================================================================
+echo "--- Cat V: SKILL.md 指示強度検証 ---"
+
+ORCHESTRATOR_SKILLS=(autopilot create-ticket scout impl audit ship plan2doc)
+
+# V-1: 各オーケストレータースキル7種に「Mandatory Skill Invocations」節が存在
+for skill_name in "${ORCHESTRATOR_SKILLS[@]}"; do
+  assert_file_contains \
+    "V-1: $skill_name SKILL.md has 'Mandatory Skill Invocations' section" \
+    "$REPO_DIR/skills/$skill_name/SKILL.md" \
+    "^## Mandatory Skill Invocations"
+done
+
+# V-2: 各オーケストレータースキルに MUST/NEVER/Fail 強制言語が最低 3 回出現
+#      (Mandatory 節 + 本文中の重要呼び出し箇所での強化)
+for skill_name in "${ORCHESTRATOR_SKILLS[@]}"; do
+  skill_md="$REPO_DIR/skills/$skill_name/SKILL.md"
+  strong_count=$(grep -cE '(MUST invoke|NEVER bypass|Fail (the task|this ticket|this audit|the ship|the /tune))' "$skill_md" || true)
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ "$strong_count" -ge 3 ]; then
+    echo -e "  ${GREEN}PASS${NC} V-2: $skill_name has >= 3 strong-language markers ($strong_count found)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} V-2: $skill_name has >= 3 strong-language markers ($strong_count found, expected >= 3)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# V-3: Mandatory Skill Invocations 節の各表エントリに skip consequence の記述がある
+#      (節全体に "Skip consequence" ヘッダーが含まれ、かつ "consequence" に類する文言
+#       または実際の帰結記述 "detected by" / "triggers" / "marked failed" / "missing" が含まれる)
+for skill_name in "${ORCHESTRATOR_SKILLS[@]}"; do
+  skill_md="$REPO_DIR/skills/$skill_name/SKILL.md"
+  # Extract the Mandatory Skill Invocations section (from heading to next level-2 heading or EOF)
+  section=$(awk '
+    /^## Mandatory Skill Invocations/ { in_sec=1; next }
+    in_sec && /^## / { exit }
+    in_sec { print }
+  ' "$skill_md")
+
+  has_skip_header="false"
+  if echo "$section" | grep -qE 'Skip consequence'; then
+    has_skip_header="true"
+  fi
+
+  # Check for at least one consequence keyword in the section
+  has_consequence_language="false"
+  if echo "$section" | grep -qiE '(detected|trigger|missing|marked failed|bypass|violation|fails)'; then
+    has_consequence_language="true"
+  fi
+
+  result="false"
+  if [ "$has_skip_header" = "true" ] && [ "$has_consequence_language" = "true" ]; then
+    result="true"
+  fi
+  assert_true \
+    "V-3: $skill_name Mandatory Skill Invocations section has skip-consequence column with real consequence language" \
+    "$result"
+done
 
 echo ""
 

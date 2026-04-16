@@ -34,6 +34,23 @@ Workflow patterns:
 Ticket template:
 !`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/ticket-template.md" 2>/dev/null || echo "[WARNING: ticket-template.md not found]"`
 
+## Mandatory Skill Invocations
+
+The following agent invocations are **contractual** — `/create-ticket` MUST delegate to each of these via the Agent tool. Writing ticket content by direct model output without delegating to these agents is **never acceptable**, because it bypasses the independent research/planning/evaluation layers that guarantee ticket quality. Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
+
+| Invocation Target | When | Skip consequence |
+|---|---|---|
+| `researcher` agent (Agent tool) | Phase 1 Investigation — always, before drafting the ticket | No investigation findings captured; planner operates on `/create-ticket`'s model-internal assumptions instead of actual codebase evidence. Detected by absence of researcher trace in the skill invocation audit |
+| `planner` agent (Agent tool) | Phase 3 Ticket Draft — always, after Phase 1 (and optionally Phase 2) | No structured ticket draft; skill falls back to ad-hoc model output with no category/size/AC separation — ticket-evaluator will subsequently FAIL the quality gate |
+| `ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — always, after Phase 3 | No quality gate verification; ticket is written with status "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
+
+**Binding rules**:
+- `MUST invoke researcher via the Agent tool` — never substitute with direct `Grep`/`Read`/`Glob` from within `/create-ticket`. The researcher agent's independent findings are load-bearing for ticket scope definition.
+- `MUST invoke planner via the Agent tool` — never draft ticket content inline. The planner agent's output is the canonical draft.
+- `MUST invoke ticket-evaluator via the Agent tool` — never self-assess ticket quality based on model self-judgment. The ticket-evaluator is the independent quality gate.
+- `NEVER bypass any of these agents via direct file operations` — writing `ticket.md` without going through all three phases is a contract violation.
+- `Fail the task immediately if any mandatory agent invocation cannot be completed via the Agent tool` — print the failure reason and stop; do not fabricate a ticket.
+
 # /create-ticket
 
 Ticket description: $ARGUMENTS
@@ -50,6 +67,8 @@ Parse `$ARGUMENTS` for the optional `brief=<path>` parameter:
 Generate a structured ticket from the given ticket description.
 
 ### Phase 1: Investigation (researcher agent)
+
+**MUST invoke the `researcher` agent via the Agent tool.** **NEVER bypass the researcher by using `Grep`/`Read`/`Glob` directly from within `/create-ticket`** — the researcher's independent findings are required for Phase 3 planner input. Fail the task immediately if the researcher agent cannot be invoked.
 
 Use the researcher agent to investigate:
 
@@ -79,6 +98,8 @@ Note: If the investigation results provide sufficient clarity (e.g., a simple S-
 
 ### Phase 3: Ticket Draft (planner agent)
 
+**MUST invoke the `planner` agent via the Agent tool.** **NEVER draft the ticket inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft consumed by Phase 4. Fail the task immediately if the planner agent cannot be invoked.
+
 Use the planner agent to design:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes)
@@ -104,6 +125,8 @@ Instruct the planner agent to evaluate whether the ticket should be split into m
 - **When not splitting (N = 1)**: The planner outputs a single ticket draft exactly as before (no change from existing behavior).
 
 ### Phase 4: Ticket Evaluation
+
+**MUST invoke the `ticket-evaluator` agent via the Agent tool.** **NEVER self-assess ticket quality** based on model self-judgment — the ticket-evaluator is the independent quality gate that verifies AC Testability/Unambiguity. Fail the task immediately if the ticket-evaluator agent cannot be invoked.
 
 Evaluate the ticket quality using the ticket-evaluator agent.
 

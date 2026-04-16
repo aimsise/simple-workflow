@@ -48,6 +48,19 @@ argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 Ship the current changes: commit, create PR, and optionally merge.
 User arguments: $ARGUMENTS
 
+## Mandatory Skill Invocations
+
+The following skill invocation is **contractual** — `/ship` MUST delegate to `/tune` via the Skill tool once a ticket has been moved to `.backlog/done/`. The rest of `/ship` (commit, push, PR creation) is performed directly via `git`/`gh` commands and is not a skill delegation contract; those are the skill's own implementation, not mandatory sub-skill calls. Any bypass of `/tune` is a contract violation and will be detected by the skill invocation audit (Phase A+).
+
+| Invocation Target | When | Skip consequence |
+|---|---|---|
+| `/tune` (Skill) | Phase 1 step 6 — only after a ticket was moved to `.backlog/done/` in step 5 | No knowledge-base pattern extraction from the completed ticket's `eval-round-*.md` / `quality-round-*.md`. The `/impl` Generator for the next ticket runs without updated `.simple-wf-knowledge/index.yaml` — degraded learning over time. Detected by absence of `/tune` invocation trace after a ticket-move in the skill invocation audit |
+
+**Binding rules**:
+- `MUST invoke /tune via the Skill tool` whenever a ticket was moved in step 5. Pass the ticket-dir name as the argument.
+- `NEVER bypass /tune via direct manipulation` of `.simple-wf-knowledge/candidates.yaml` or `entries.yaml` from within `/ship`.
+- If `/tune` itself fails, **do NOT stop the ship workflow** (the commit is already made and the ticket is already moved) — but the invocation MUST have been attempted. `Fail the /tune invocation attempt only if the Skill tool is unreachable; log the failure and continue.`
+
 ## Argument Parsing
 
 Parse `$ARGUMENTS` for positional arguments:
@@ -63,31 +76,42 @@ Examples:
 - `/ship develop merge=true` -> commit + PR to develop + squash-merge
 - `/ship main ticket-dir=003-fix-login` -> commit + PR to main, using ticket directory `003-fix-login`
 
+## Pre-compute Resilience Contract
+
+All pre-compute bash commands below return fallback values on failure and never
+halt `/ship` execution. The orchestrating agent is responsible for reading each
+pre-compute result and deciding commit/push strategy from the reported state
+(e.g., `(detached HEAD)`, `[no commits yet]`, `[no remote — skipped]`). A
+failing pre-compute must never be treated as a reason to abandon `/ship` and
+fall back to ad-hoc git commands; instead, the agent interprets the fallback
+marker and routes the workflow accordingly (skip push when remote is absent,
+skip diff vs default branch when there is no commit history, etc.).
+
 ## Pre-computed Context
 
 Current branch:
-!`git branch --show-current`
+!`git branch --show-current 2>/dev/null | grep . || echo "(detached HEAD or no commits)"`
 
 Default branch:
 !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 Current state:
-!`git status --short`
+!`git status --short 2>/dev/null || echo "[git status unavailable]"`
 
 Staged diff:
-!`git diff --cached`
+!`git diff --cached 2>/dev/null || echo "[no commits yet — nothing staged]"`
 
 Unstaged diff summary:
-!`git diff --stat`
+!`git diff --stat 2>/dev/null || echo "[no commits yet — cannot diff against HEAD]"`
 
 Remote configured:
-!`git remote get-url origin 2>/dev/null && echo "yes" || echo "no"`
+!`git remote get-url origin >/dev/null 2>&1 && echo "yes" || echo "no"`
 
 Diff stats vs default branch:
 !`git diff origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main) --stat 2>/dev/null || echo "[no remote — skipped]"`
 
 Recent commits for style reference:
-!`git log --oneline -10`
+!`git log --oneline -10 2>/dev/null || echo "[no commit history]"`
 
 Commits ahead of default branch:
 !`git log origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)..HEAD --oneline 2>/dev/null || echo "[no remote — skipped]"`
@@ -119,7 +143,7 @@ Commits ahead of default branch:
 
    Once `ticket-dir` is determined, run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`.
 
-6. **Knowledge base tuning** (only after a ticket was moved in step 5): Invoke `/tune` via the Skill tool, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. If `/tune` fails, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved.
+6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml` from within `/ship`. If `/tune` itself fails during execution, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved. Fail the ship workflow only if the Skill tool itself is unreachable (contract-level bypass).
 
 Proceed to Phase 2.
 
