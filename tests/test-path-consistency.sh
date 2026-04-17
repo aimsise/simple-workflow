@@ -727,41 +727,15 @@ assert_file_contains \
   "$REPO_DIR/skills/refactor/SKILL.md" \
   "argument-hint:.*ticket-dir="
 
-# Phase E phase-guard: when ticket-pipeline is referenced, ticket-dir= and ARTIFACT-MISSING
-# are handled by ticket-pipeline.md, not autopilot SKILL.md
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qF "ticket-pipeline" "$REPO_DIR/skills/autopilot/SKILL.md"; then
-  # Phase E landed — check ticket-pipeline.md instead
-  if grep -qE "ticket-dir=" "$REPO_DIR/agents/ticket-pipeline.md"; then
-    echo -e "  ${GREEN}PASS${NC} ticket-pipeline.md passes ticket-dir to sub-skills (Phase E: delegated from autopilot)"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} Phase E landed but ticket-pipeline.md missing ticket-dir= propagation"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
-else
-  assert_file_contains \
-    "autopilot/SKILL.md passes ticket-dir={ticket-dir} to /ship" \
-    "$REPO_DIR/skills/autopilot/SKILL.md" \
-    "ticket-dir=\{ticket-dir\}"
-fi
+assert_file_contains \
+  "autopilot/SKILL.md passes ticket-dir={ticket-dir} to /ship" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ticket-dir=\{ticket-dir\}"
 
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qF "ticket-pipeline" "$REPO_DIR/skills/autopilot/SKILL.md"; then
-  # Phase E — ARTIFACT-MISSING handling is in ticket-pipeline (Artifact Presence Gate)
-  if grep -qE "ARTIFACT-MISSING|artifact presence gate" "$REPO_DIR/agents/ticket-pipeline.md"; then
-    echo -e "  ${GREEN}PASS${NC} ticket-pipeline.md contains artifact verification (Phase E: delegated from autopilot)"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} Phase E landed but ticket-pipeline.md missing artifact verification"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
-else
-  assert_file_contains \
-    "autopilot/SKILL.md contains ARTIFACT-MISSING handling" \
-    "$REPO_DIR/skills/autopilot/SKILL.md" \
-    "ARTIFACT-MISSING"
-fi
+assert_file_contains \
+  "autopilot/SKILL.md contains ARTIFACT-MISSING handling" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  "ARTIFACT-MISSING"
 
 echo ""
 
@@ -791,40 +765,27 @@ assert_file_not_contains \
   'ticket-dir=\.backlog'
 
 # AC3: Artifact verification ordering — phase-guarded for Phase E
-# When ticket-pipeline handles artifact verification, this ordering check is no longer
-# applicable to autopilot SKILL.md. Instead verify that ticket-pipeline has the
-# Artifact Presence Gate section.
+# AC3: Artifact verification ordering — ARTIFACT-MISSING appears before State update (after)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 autopilot_file="$REPO_DIR/skills/autopilot/SKILL.md"
-if grep -qF "ticket-pipeline" "$autopilot_file"; then
-  # Phase E — artifact verification ordering is ticket-pipeline's responsibility
-  if grep -qE "Artifact Presence Gate" "$REPO_DIR/agents/ticket-pipeline.md"; then
-    echo -e "  ${GREEN}PASS${NC} ticket-pipeline.md has Artifact Presence Gate (Phase E: delegated from autopilot)"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} Phase E landed but ticket-pipeline.md missing Artifact Presence Gate"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
+ordering_ok=1
+bad_ordering=""
+while IFS=: read -r artifact_lineno _rest; do
+  next_state_after=$(awk -v start="$artifact_lineno" 'NR > start && /State update \(after\)/ { print NR; exit }' "$autopilot_file")
+  if [ -z "$next_state_after" ]; then
+    ordering_ok=0
+    bad_ordering="ARTIFACT-MISSING at line $artifact_lineno has no subsequent State update (after)"
+    break
   fi
-else
-  ordering_ok=1
-  bad_ordering=""
-  while IFS=: read -r artifact_lineno _rest; do
-    next_state_after=$(awk -v start="$artifact_lineno" 'NR > start && /State update \(after\)/ { print NR; exit }' "$autopilot_file")
-    if [ -z "$next_state_after" ]; then
-      ordering_ok=0
-      bad_ordering="ARTIFACT-MISSING at line $artifact_lineno has no subsequent State update (after)"
-      break
-    fi
-  done < <(grep -n 'ARTIFACT-MISSING' "$autopilot_file")
+done < <(grep -n 'ARTIFACT-MISSING' "$autopilot_file")
 
-  if [ "$ordering_ok" -eq 1 ]; then
-    artifact_count=$(grep -c 'ARTIFACT-MISSING' "$autopilot_file")
-    echo -e "  ${GREEN}PASS${NC} autopilot/SKILL.md all $artifact_count ARTIFACT-MISSING blocks appear before their State update (after)"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} autopilot/SKILL.md ARTIFACT-MISSING ordering violation: $bad_ordering"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
+if [ "$ordering_ok" -eq 1 ]; then
+  artifact_count=$(grep -c 'ARTIFACT-MISSING' "$autopilot_file")
+  echo -e "  ${GREEN}PASS${NC} autopilot/SKILL.md all $artifact_count ARTIFACT-MISSING blocks appear before their State update (after)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} autopilot/SKILL.md ARTIFACT-MISSING ordering violation: $bad_ordering"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 echo ""

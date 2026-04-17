@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] - 2026-04-17
+
+### Reverted
+- Wrapper agent nesting (Phase A-E, v3.5.0-v3.5.4) — removed due to permission mode not inherited by sub-agents (Claude Code platform limitation) and ticket-pipeline not completing in 1 dispatch (3-4 retries needed)
+- Deleted 8 wrapper agents: `wrapped-researcher`, `wrapped-planner`, `wrapped-ticket-evaluator`, `wrapped-implementer`, `wrapped-ac-evaluator`, `wrapped-code-reviewer`, `wrapped-security-scanner`, `ticket-pipeline`
+- 4 skills restored to bare agent names: `/audit` (security-scanner, code-reviewer), `/plan2doc` (planner), `/create-ticket` (researcher, planner, ticket-evaluator), `/impl` (implementer, ac-evaluator)
+- `/autopilot` SKILL.md restored to pre-Phase-E structure: `Skill` in allowed-tools (not `Agent`), 4 individual skill entries in Mandatory Skill Invocations table (`/create-ticket`, `/scout`, `/impl`, `/ship`), per-step Skill tool calls with CHECKPOINT blocks restored to 8+
+
+### Added (absorbed from wrapper architecture)
+- Artifact Presence Gate in `/autopilot`: after each ticket's `/ship` step, verifies 7 artifact patterns exist (`ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`); FAIL-CRITICAL/AC全ラウンドFAIL exception skips audit/quality/security checks
+- Skill Invocation Audit in `/autopilot`: tracks `invocation_method` per step (`skill` | `manual-bash` | `unknown`) in `autopilot-state.yaml`
+- `completed-with-warnings` status in `autopilot-log.md` `final_status` enum — triggered when all tickets completed but at least one step used manual-bash fallback
+- `## Warnings` section in `autopilot-log.md` listing manual-bash fallback steps
+
+### Kept (Phase 0 measures, unrelated to wrapper)
+- Phase 0a: auto-inject initial commit on empty repository
+- Phase 0b: `/ship` pre-compute resilience for all initial git states
+- Phase 0c: Mandatory Skill Invocations + MUST/NEVER/Fail enforcement language in all 7 orchestrator skills
+
+### Changed
+- Cat Q/R/S (wrapper agent contract tests) removed from `test-skill-contracts.sh`
+- Cat O-5b (ticket-pipeline CHECKPOINT) removed from `test-skill-contracts.sh`
+- Cat T adapted to T' (artifact presence gate targets `autopilot/SKILL.md` instead of `ticket-pipeline.md`)
+- Cat U adapted to U' (skill invocation audit targets `autopilot/SKILL.md` instead of `ticket-pipeline.md`)
+- Cat O-5 CHECKPOINT threshold restored from 2 to 8
+- Cat M-4/M-5/M-6/M-7 Phase E phase-guards removed (autopilot checked directly again)
+- Cat 6/7/10/11 agent counts reflect 9 original agents (not 17)
+- Cat 22 Phase E phase-guards removed (autopilot checked directly again)
+
 ## [3.5.4] - 2026-04-17
 
 ### Changed
