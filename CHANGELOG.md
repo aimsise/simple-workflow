@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.2] - 2026-04-17
+
+### Changed
+- Phase C wrapper wiring: `/create-ticket` SKILL.md now delegates to `wrapped-researcher`, `wrapped-planner`, and `wrapped-ticket-evaluator` instead of bare `researcher`, `planner`, and `ticket-evaluator` agents — all Agent tool invocations in Phase 1, Phase 3, Phase 4 (including retry loop re-spawns), the Mandatory Skill Invocations table, and Binding rules reference the wrapped versions
+- Cat R phase-guard test R-1 (create-ticket) auto-activates now that `wrapped-*` references are present in `create-ticket/SKILL.md`
+
 ## [3.5.1] - 2026-04-17
 
 ### Changed
