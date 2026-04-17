@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.4] - 2026-04-17
+
+### Changed
+- Phase E wrapper wiring: `/autopilot` SKILL.md now dispatches `ticket-pipeline` agent via the Agent tool instead of calling `/create-ticket`, `/scout`, `/impl`, `/ship` individually via Skill tool — Phase 2 per-ticket execution (Single Ticket Flow steps 10-13 and Split Execution Flow steps 3a-3e) replaced with a single `ticket-pipeline` dispatch per ticket, reducing autopilot from ~445 lines to ~365 lines
+- `/autopilot` allowed-tools: replaced `Skill` with `Agent` (Claude Code) and `skill` with `task` (Copilot CLI) to enable Agent tool dispatch of `ticket-pipeline`
+- Mandatory Skill Invocations table: replaced 4 individual skill entries (`/create-ticket`, `/scout`, `/impl`, `/ship`) with single `ticket-pipeline` agent entry
+- `autopilot-log.md` now includes a `## Warnings` section when any ticket returned `completed-with-warnings` or had non-empty `Manual Bash Fallbacks`
+- `final_status` in autopilot-log.md now supports `completed-with-warnings` for tickets where skill invocation fell back to manual bash
+- Cat O-5 CHECKPOINT threshold changed from 8 to 2 (per-ticket checkpoints moved to ticket-pipeline)
+- Cat M-4/M-5/M-6/M-7 tests phase-guarded for Phase E: per-step policy guards and /impl plan paths now checked in ticket-pipeline.md instead of autopilot SKILL.md
+- Cat P-8 CHECKPOINT threshold aligned with O-5 (8 → 2)
+- Cat R-4, U-3, U-4 phase-guard tests auto-activate now that `ticket-pipeline` is referenced in autopilot SKILL.md
+
+### Added
+- Cat O-5b: ticket-pipeline.md CHECKPOINT count >= 4
+
 ## [3.5.3] - 2026-04-17
 
 ### Changed
