@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.1] - 2026-04-17
+
+### Changed
+- Phase B wrapper wiring: `/audit` SKILL.md now delegates to `wrapped-security-scanner` and `wrapped-code-reviewer` instead of bare `security-scanner` and `code-reviewer` agents — all Agent tool invocations in Step 2 and the Mandatory Skill Invocations table reference the wrapped versions
+- Phase B wrapper wiring: `/plan2doc` SKILL.md now delegates to `wrapped-planner` instead of bare `planner` agent — Step 4 Agent tool invocation, `subagent_type`, Mandatory Skill Invocations table, and Binding rules all reference the wrapped version
+- Cat R phase-guard tests R-3 (audit) and R-5 (plan2doc) auto-activate now that `wrapped-*` references are present in the corresponding SKILL.md files
+
 ## [3.5.0] - 2026-04-15
 
 ### Added

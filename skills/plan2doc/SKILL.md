@@ -44,16 +44,16 @@ Existing research (if any):
 
 ## Mandatory Skill Invocations
 
-The following agent invocation is **contractual** — `/plan2doc` MUST delegate to the `planner` agent via the Agent tool. `/plan2doc` itself writes no plan content; its entire role is to detect Size, resolve the output destination, and spawn the `planner` agent with the appropriate model (sonnet for S, opus for M/L/XL). Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
+The following agent invocation is **contractual** — `/plan2doc` MUST delegate to the `wrapped-planner` agent via the Agent tool. `/plan2doc` itself writes no plan content; its entire role is to detect Size, resolve the output destination, and spawn the `wrapped-planner` agent with the appropriate model (sonnet for S, opus for M/L/XL). Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `planner` agent (Agent tool) | Step 4 — always, after Size detection and output-path resolution | No structured plan written to the output path; `/impl` has no `### Acceptance Criteria` section to drive the Generator → Evaluator loop and will stop at Phase 1 step 6 with "ERROR: Plan has no Acceptance Criteria". Detected by absence of `plan.md` in the ticket dir (or `.docs/plans/`) and absence of planner trace in skill invocation audit |
+| `wrapped-planner` agent (Agent tool) | Step 4 — always, after Size detection and output-path resolution | No structured plan written to the output path; `/impl` has no `### Acceptance Criteria` section to drive the Generator → Evaluator loop and will stop at Phase 1 step 6 with "ERROR: Plan has no Acceptance Criteria". Detected by absence of `plan.md` in the ticket dir (or `.docs/plans/`) and absence of planner trace in skill invocation audit |
 
 **Binding rules**:
-- `MUST invoke the planner agent via the Agent tool` with the correct `model` parameter (`sonnet` for Size S, `opus` otherwise). Never substitute by writing `plan.md` directly from `/plan2doc`.
-- `NEVER bypass the planner via direct file operations` — `/plan2doc` must NOT write the plan content itself; the planner agent is the sole author.
-- `Fail the task immediately if the planner agent cannot be invoked via the Agent tool` — print the failure reason and the resolved output path so the user can retry.
+- `MUST invoke the wrapped-planner agent via the Agent tool` with the correct `model` parameter (`sonnet` for Size S, `opus` otherwise). Never substitute by writing `plan.md` directly from `/plan2doc`.
+- `NEVER bypass the wrapped-planner via direct file operations` — `/plan2doc` must NOT write the plan content itself; the wrapped-planner agent is the sole author.
+- `Fail the task immediately if the wrapped-planner agent cannot be invoked via the Agent tool` — print the failure reason and the resolved output path so the user can retry.
 
 ## Instructions
 
@@ -70,8 +70,8 @@ The following agent invocation is **contractual** — `/plan2doc` MUST delegate 
 
 3. **Scan available tooling**. Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present), and listing installed plugin skills/agents. Read frontmatter only (not full file contents). This list will be passed to the planner agent so it can reference them in the `### Claude Code Workflow` section.
 
-4. **MUST invoke the `planner` agent via the Agent tool**. **NEVER bypass the planner** by writing `plan.md` directly from `/plan2doc` — the planner agent is the sole author of plan content. Fail the task immediately if the planner agent cannot be invoked. Set the `Agent` tool call as follows:
-   - `subagent_type`: `planner`
+4. **MUST invoke the `wrapped-planner` agent via the Agent tool**. **NEVER bypass the planner** by writing `plan.md` directly from `/plan2doc` — the wrapped-planner agent is the sole author of plan content. Fail the task immediately if the wrapped-planner agent cannot be invoked. Set the `Agent` tool call as follows:
+   - `subagent_type`: `wrapped-planner`
    - `model`:
      - If `Size == S` → `"sonnet"`
      - If `Size` is `M`, `L`, `XL`, or unknown → `"opus"`
