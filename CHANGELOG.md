@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.3] - 2026-04-17
+
+### Changed
+- Phase D wrapper wiring: `/impl` SKILL.md now delegates to `wrapped-implementer` and `wrapped-ac-evaluator` instead of bare `implementer` and `ac-evaluator` agents — all Agent tool invocations in Step 13 (Generator), Step 15 (AC Evaluator), Phase 1 Step 8 (Evaluator Dry Run), the Mandatory Skill Invocations table, and Binding rules reference the wrapped versions
+- Cat R phase-guard test R-2 (impl) auto-activates now that `wrapped-*` references are present in `impl/SKILL.md`
+
 ## [3.5.2] - 2026-04-17
 
 ### Changed
