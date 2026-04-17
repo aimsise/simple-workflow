@@ -41,14 +41,14 @@ The following agent/skill invocations are **contractual** — `/impl` MUST deleg
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `wrapped-implementer` agent (Agent tool, "Generator") | Phase 2 step 13 — once per round | No actual code changes produced by a dedicated Generator; `/impl` is tempted to self-write edits (breaks firewall). Detected by absence of implementer trace in skill invocation audit |
-| `wrapped-ac-evaluator` agent (Agent tool, "Evaluator", Dry Run) | Phase 1 step 8 — round 1 only, L/XL size only | No verification plan for the Generator; the Evaluator's later PASS/FAIL lacks a pre-committed rubric. Detected by absence of evaluator trace for L/XL tickets in round 1 |
-| `wrapped-ac-evaluator` agent (Agent tool, "Evaluator", main gate) | Phase 2 step 15 — once per round, always | No independent AC verdict; `/impl` would self-assess PASS based on Generator's return value (exactly the Ticket 002 failure mode). Missing `eval-round-{n}.md` — `/autopilot` artifact verification triggers `[PIPELINE] impl: ARTIFACT-MISSING`, ticket marked failed |
+| `implementer` agent (Agent tool, "Generator") | Phase 2 step 13 — once per round | No actual code changes produced by a dedicated Generator; `/impl` is tempted to self-write edits (breaks firewall). Detected by absence of implementer trace in skill invocation audit |
+| `ac-evaluator` agent (Agent tool, "Evaluator", Dry Run) | Phase 1 step 8 — round 1 only, L/XL size only | No verification plan for the Generator; the Evaluator's later PASS/FAIL lacks a pre-committed rubric. Detected by absence of evaluator trace for L/XL tickets in round 1 |
+| `ac-evaluator` agent (Agent tool, "Evaluator", main gate) | Phase 2 step 15 — once per round, always | No independent AC verdict; `/impl` would self-assess PASS based on Generator's return value (exactly the Ticket 002 failure mode). Missing `eval-round-{n}.md` — `/autopilot` artifact verification triggers `[PIPELINE] impl: ARTIFACT-MISSING`, ticket marked failed |
 | `/audit` (Skill tool) | Phase 2 step 17 — once per round when AC gate returns PASS / PASS-WITH-CAVEATS | No code-reviewer + security-scanner review; `/impl` would return PASS without quality/security verification. Missing `audit-round-{n}.md` / `quality-round-{n}.md` / `security-scan-{n}.md` — `/autopilot` artifact verification triggers `[PIPELINE] impl: ARTIFACT-MISSING`, ticket marked failed |
 
 **Binding rules**:
-- `MUST invoke wrapped-implementer via the Agent tool` — never substitute by having `/impl` write code directly via `Edit`/`Write`. The firewall between orchestrator and Generator is load-bearing for AC independence.
-- `MUST invoke wrapped-ac-evaluator via the Agent tool` — never self-assess AC compliance based on build/test results alone. The Evaluator must read the code independently via `git diff`.
+- `MUST invoke implementer via the Agent tool` — never substitute by having `/impl` write code directly via `Edit`/`Write`. The firewall between orchestrator and Generator is load-bearing for AC independence.
+- `MUST invoke ac-evaluator via the Agent tool` — never self-assess AC compliance based on build/test results alone. The Evaluator must read the code independently via `git diff`.
 - `MUST invoke /audit via the Skill tool` — never substitute by spawning `code-reviewer` / `security-scanner` agents directly from `/impl`. `/audit` aggregates both and enforces the "single agent failure = FAIL" invariant.
 - `NEVER bypass any of these via direct file operations` — writing `eval-round-{n}.md`, `quality-round-{n}.md`, or `audit-round-{n}.md` by `/impl` itself is a contract violation (the evaluating agent is the only acceptable author).
 - `Fail the task immediately if any mandatory invocation cannot be completed via the prescribed Agent/Skill tool` — print the failure reason, update `impl-state.yaml`, and stop; do not fabricate a PASS.
@@ -104,7 +104,7 @@ Current state:
 7. **AC Sanity Check** (round 1 only, M/L/XL size only): Include in the Generator prompt: "Before implementing, review each AC. If any AC is ambiguous or technically infeasible, flag it in your **Next Steps** field." If Generator flags ambiguous AC, report to user and stop.
 
 8. **Evaluator Dry Run** (round 1 only, **L/XL size only**):
-   **MUST invoke the `wrapped-ac-evaluator` agent via the Agent tool** with a verification planning prompt. **NEVER bypass the Evaluator** by having `/impl` self-draft the verification plan. Fail the task immediately if the Evaluator agent cannot be invoked.
+   **MUST invoke the `ac-evaluator` agent via the Agent tool** with a verification planning prompt. **NEVER bypass the Evaluator** by having `/impl` self-draft the verification plan. Fail the task immediately if the Evaluator agent cannot be invoked.
    - Prompt: "You are preparing a verification plan. For each Acceptance Criterion below, describe HOW you will verify it (what commands to run, what to check in the code, what edge cases to test). Do NOT evaluate any implementation — no code has been written yet. Return only the verification plan."
    - Include: Full plan content, Acceptance Criteria
    - Receive: Evaluator's verification plan
@@ -183,8 +183,8 @@ State updates occur at these 4 points within each round:
 - **After Evaluator (step 16)**: Update `phase: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action: start-audit` (if PASS) or `next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `next_action: stop-critical` (if FAIL-CRITICAL)
 - **After /audit (step 18)**: Update `phase: audit-complete`, `last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `last_audit_critical: {count}`, `next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `feedback_files.eval: {eval-round-{N}.md path}`, `feedback_files.quality: {quality-round-{N}.md path}`
 
-13. **MUST invoke the Generator (`wrapped-implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from within `/impl` — the Generator → Evaluator information firewall depends on the orchestrator producing no code changes itself. Fail the task immediately if the Generator agent cannot be invoked.
-    - subagent_type: `wrapped-implementer` (always; no -light variant)
+13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from within `/impl` — the Generator → Evaluator information firewall depends on the orchestrator producing no code changes itself. Fail the task immediately if the Generator agent cannot be invoked.
+    - subagent_type: `implementer` (always; no -light variant)
     - model: `sonnet` if Size == S, otherwise `opus` (M/L/XL/unknown)
     - description: "Implement plan for <feature>"
     - Prompt must include:
@@ -212,7 +212,7 @@ State updates occur at these 4 points within each round:
     > 2. Confirm `next_action: start-evaluator`.
     > 3. Proceed to Step 15 — spawn the AC Evaluator now. Do NOT end your turn.
 
-15. **MUST invoke the AC Evaluator (`wrapped-ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** based on the Generator's return value, build status, or test output alone — the Evaluator must read the code independently via `git diff` and render its own PASS/FAIL. This is the exact failure mode observed in JSONL Ticket 002 (L554-L559): the orchestrator self-judged PASS without invoking the Evaluator, bypassing the firewall. Fail the task immediately if the Evaluator agent cannot be invoked.
+15. **MUST invoke the AC Evaluator (`ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** based on the Generator's return value, build status, or test output alone — the Evaluator must read the code independently via `git diff` and render its own PASS/FAIL. This is the exact failure mode observed in JSONL Ticket 002 (L554-L559): the orchestrator self-judged PASS without invoking the Evaluator, bypassing the firewall. Fail the task immediately if the Evaluator agent cannot be invoked.
    - Prompt must include:
      a. Full plan content
      b. Acceptance Criteria

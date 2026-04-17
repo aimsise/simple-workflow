@@ -3,11 +3,12 @@ name: autopilot
 description: >-
   Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Execute the full development pipeline automatically from a brief document.
-  Dispatches the ticket-pipeline agent per ticket for context-isolated execution.
+  Chains create-ticket, scout, impl, and ship with policy-based autonomous
+  decision making at each gate.
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
-  - Agent
+  - Skill
   - Read
   - Write
   - Edit
@@ -24,7 +25,7 @@ allowed-tools:
   - "Bash(date:*)"
   - "Bash(cp:*)"
   # Copilot CLI
-  - task
+  - skill
   - view
   - create
   - edit
@@ -59,16 +60,22 @@ Default branch:
 
 ## Mandatory Skill Invocations
 
-The following invocation is **contractual** — `/autopilot` MUST dispatch the `ticket-pipeline` agent via the Agent tool for each ticket. Direct file operations, ad-hoc bash commands, or model self-judgment are **never acceptable substitutes**. The `ticket-pipeline` agent internally invokes `/create-ticket`, `/scout`, `/impl`, and `/ship` in its own isolated context and returns a minimal Result block.
+The following skill invocations are **contractual** — `/autopilot` MUST delegate to each of these via the Skill tool. Direct file operations, ad-hoc bash commands, or model self-judgment are **never acceptable substitutes**. Any bypass is a pipeline defect and will be detected by the artifact presence gate and the skill invocation audit (Phase A+).
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `ticket-pipeline` agent (Agent tool) | Phase 2 — once per ticket (single or split flow) | All per-ticket artifacts missing (ticket.md, investigation.md, plan.md, eval-round-*.md, audit-round-*.md, quality-round-*.md), ticket marked failed, no PR created |
+| `/create-ticket` (Skill) | Phase 2 step 10 (single flow) and step 3a (split flow), once per ticket | No `ticket.md` written with the shared `.ticket-counter` slot — artifact presence gate fails; autopilot-state.yaml records `steps.create-ticket: failed` and the ticket is marked failed |
+| `/scout` (Skill) | Phase 2 step 11 (single) / step 3c (split), after create-ticket succeeds | Missing `investigation.md` + `plan.md` in `.backlog/active/{ticket-dir}/` — Phase 2 artifact verification triggers `[PIPELINE] scout: ARTIFACT-MISSING`, ticket marked failed |
+| `/impl` (Skill) | Phase 2 step 12 (single) / step 3d (split), after scout succeeds | Missing `eval-round-*.md` (and `audit-round-*.md` / `quality-round-*.md` on PASS) — artifact verification triggers `[PIPELINE] impl: ARTIFACT-MISSING`, ticket marked failed |
+| `/ship` (Skill) | Phase 2 step 13 (single) / step 3e (split), after impl succeeds | Ticket not moved from `.backlog/active/` to `.backlog/done/` — artifact verification triggers `[PIPELINE] ship: ARTIFACT-MISSING`; no PR is created |
 
 **Binding rules**:
-- `MUST invoke ticket-pipeline via the Agent tool for each ticket` — never call `/create-ticket`, `/scout`, `/impl`, `/ship` directly from `/autopilot`.
-- `NEVER bypass ticket-pipeline via direct file operations or direct skill invocations` — ticket-pipeline handles all per-ticket state management, artifact verification (Artifact Presence Gate), and skill invocation auditing internally.
-- `Fail this ticket immediately if ticket-pipeline cannot be dispatched via the Agent tool` — record the failure in `autopilot-state.yaml` and proceed to Phase 3 (single) or the next ticket (split). Do NOT fabricate artifacts to appear to satisfy the artifact presence gate.
+- `MUST invoke /create-ticket via the Skill tool` — never substitute by writing `ticket.md` directly or by bumping `.ticket-counter` manually.
+- `MUST invoke /scout via the Skill tool` — never substitute by calling `/investigate` or `/plan2doc` standalone; `/scout` is the only contract-compliant entry point.
+- `MUST invoke /impl via the Skill tool` — never substitute by spawning `implementer` or `ac-evaluator` agents directly from `/autopilot`.
+- `MUST invoke /ship via the Skill tool` — never substitute by running `git commit`, `gh pr create`, or `mv` commands directly.
+- `NEVER bypass these skills via direct file operations` — even if a step appears trivial, the pipeline's correctness depends on each skill's internal state-management and artifact-writing side effects.
+- `Fail this ticket immediately if any mandatory invocation cannot be completed via the prescribed Skill tool` — record the failure in `autopilot-state.yaml` and proceed to Phase 3 (single) or the next ticket (split). Do NOT fabricate artifacts to appear to satisfy the artifact presence gate.
 
 # /autopilot
 
@@ -152,43 +159,96 @@ tickets:
       scout: pending
       impl: pending
       ship: pending
+    invocation_method:
+      create-ticket: unknown
+      scout: unknown
+      impl: unknown
+      ship: unknown
 ```
 
 ### Single Ticket Flow
 
 9. Update brief.md frontmatter status from `confirmed` to `in-progress`.
 
-10. **Dispatch ticket-pipeline agent**:
-    - **State update (before)**: Update autopilot-state.yaml: `tickets[0].status = "in_progress"`.
-    - Copy `autopilot-policy.yaml` from `.backlog/briefs/active/{slug}/` to the brief directory if not already there (ticket-pipeline reads it from there).
-    - **MUST invoke `ticket-pipeline` via the Agent tool** with the following inputs:
-      - `brief_slug`: `{slug}`
-      - `ticket_index`: `0`
-      - `logical_id`: `{slug}`
-      - `state_file`: `.backlog/briefs/active/{slug}/autopilot-state.yaml`
-      - `policy_file`: `.backlog/briefs/active/{slug}/autopilot-policy.yaml`
-      - `brief_path`: `.backlog/briefs/active/{slug}/brief.md`
-    - If `resume_mode = true` and the ticket is `in_progress` or `failed`, ticket-pipeline will read `autopilot-state.yaml` and resume from the appropriate step internally.
-    - **NEVER call `/create-ticket`, `/scout`, `/impl`, or `/ship` directly from `/autopilot`** — ticket-pipeline handles all four steps internally.
-    - Fail this ticket immediately if `ticket-pipeline` cannot be dispatched via the Agent tool.
-
-11. **Process ticket-pipeline result**:
-    - Parse the Result block returned by ticket-pipeline:
-      - `Status`: `completed` | `completed-with-warnings` | `failed` | `stopped`
-      - `Ticket Dir`: the ticket directory path
-      - `PR URL`: the PR URL or `null`
-      - `Manual Bash Fallbacks`: list of steps that fell back to manual bash, or `none`
-      - `Failure Reason`: present only when Status is `failed` or `stopped`
-    - Re-read `.backlog/briefs/active/{slug}/autopilot-state.yaml` to get the final ticket state (ticket-pipeline writes step completion status internally).
-    - **Result handling**:
-      - `Status: completed` → record `[PIPELINE] ticket-pipeline: completed | ticket={ticket-dir} | pr={pr-url}`, proceed to Phase 3.
-      - `Status: completed-with-warnings` → record `[PIPELINE] ticket-pipeline: completed-with-warnings | ticket={ticket-dir} | pr={pr-url} | fallbacks={Manual Bash Fallbacks}`, store warnings for Phase 3 autopilot-log.
-      - `Status: failed` → record `[PIPELINE] ticket-pipeline: failed | ticket={ticket-dir} | reason={Failure Reason}`, go to Phase 3 (failure).
-      - `Status: stopped` → record `[PIPELINE] ticket-pipeline: stopped | ticket={ticket-dir} | reason={Failure Reason}`, go to Phase 3 (failure).
+10. **Step: create-ticket**
+    If `resume_mode = true` and this step is already `completed` in the state file, skip to step 11 using `ticket_dir` from the state file.
+    - **State update (before)**: Update autopilot-state.yaml: `tickets[0].steps.create-ticket = "in_progress"`, `tickets[0].status = "in_progress"`, `tickets[0].invocation_method.create-ticket = "skill"`.
+    - **MUST invoke `/create-ticket` via the Skill tool** with argument: `{brief-title} brief=.backlog/briefs/active/{slug}/brief.md`
+      where {brief-title} is extracted from the brief's ## Vision section (first sentence).
+      **NEVER bypass /create-ticket by writing `ticket.md` directly or mutating `.ticket-counter` from within `/autopilot`.** Fail this ticket immediately if `/create-ticket` cannot be invoked via the Skill tool.
+    - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[0].invocation_method.create-ticket = "manual-bash"`.
+    - Parse the response to extract the created ticket slug and path (from the summary output: "Ticket file path: .backlog/product_backlog/{ticket-dir}/ticket.md").
+    - If `/create-ticket` fails: Update autopilot-state.yaml: `tickets[0].steps.create-ticket = "failed"`, `tickets[0].status = "failed"`. Log the error to autopilot-log and go to Phase 3 (failure).
+    - On success: copy `autopilot-policy.yaml` from `.backlog/briefs/active/{slug}/` to `.backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (so that when `/scout` moves the ticket directory from product_backlog to active, the policy file moves with it).
+    - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.create-ticket = "completed"`, `tickets[0].ticket_dir = {ticket-dir}`, `ticket_mapping.{slug} = {ticket-dir}`.
+    - Record: `[PIPELINE] create-ticket: success | ticket={ticket-dir}`
 
     > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
     > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
-    > 2. Proceed directly to Phase 3. Do NOT end your turn. Do NOT summarize.
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
+
+11. **Step: scout**
+    If `resume_mode = true` and this step is already `completed` in the state file, skip to step 12. The ticket is already in `.backlog/active/{ticket-dir}/` with investigation.md and plan.md.
+    - **State update (before)**: Update autopilot-state.yaml: `tickets[0].steps.scout = "in_progress"`, `tickets[0].invocation_method.scout = "skill"`.
+    - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/product_backlog/{ticket-dir}/` (copied in step 10). If not found, log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
+    - **MUST invoke `/scout` via the Skill tool** with argument: `{ticket-dir}`. **NEVER bypass /scout via direct `/investigate` or `/plan2doc` calls** — the contract requires /scout as the single entry point. Fail this ticket immediately if `/scout` cannot be invoked.
+    - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[0].invocation_method.scout = "manual-bash"`.
+    - Parse the response for success/failure status.
+    - If `/scout` fails: Update autopilot-state.yaml: `tickets[0].steps.scout = "failed"`, `tickets[0].status = "failed"`. Log the error and go to Phase 3 (failure).
+    - On success: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/` (scout moved the ticket directory including the policy). If missing, copy it from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
+    - **Artifact verification**: Verify that both `.backlog/active/{ticket-dir}/investigation.md` and `.backlog/active/{ticket-dir}/plan.md` exist. If either file is missing, record `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{ticket-dir}/`, update autopilot-state.yaml: `tickets[0].steps.scout = "failed"`, `tickets[0].status = "failed"`, and go to Phase 3 (failure).
+    - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.scout = "completed"`.
+    - Record: `[PIPELINE] scout: success`
+
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
+
+12. **Step: impl**
+    If `resume_mode = true` and this step is already `completed` in the state file, skip to step 13.
+    - **State update (before)**: Update autopilot-state.yaml: `tickets[0].steps.impl = "in_progress"`, `tickets[0].invocation_method.impl = "skill"`.
+    - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
+    - **MUST invoke `/impl` via the Skill tool** with argument: `.backlog/active/{ticket-dir}/plan.md`. **NEVER bypass /impl by spawning `implementer` or `ac-evaluator` agents directly** — /impl enforces the Generator → AC Evaluator → /audit loop and must be the single orchestrator. Fail this ticket immediately if `/impl` cannot be invoked.
+    - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[0].invocation_method.impl = "manual-bash"`.
+    - Parse the response for the final status (PASS/FAIL/STOP).
+    - If FAIL-CRITICAL or stopped: Update autopilot-state.yaml: `tickets[0].steps.impl = "failed"`, `tickets[0].status = "failed"`. Log the error and go to Phase 3 (failure).
+    - **Artifact verification**: Verify the following artifacts exist in `.backlog/active/{ticket-dir}/`:
+      1. At least one `eval-round-*.md` file (AC evaluation result).
+      2. If the final `/impl` status is PASS (AC evaluation passed and `/audit` was invoked): at least one `audit-round-*.md` file AND at least one `quality-round-*.md` file. If `/impl` ended with FAIL at the AC evaluator stage (all rounds failed AC), audit artifacts are not expected — skip this check.
+      If any expected artifact is missing, record `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .backlog/active/{ticket-dir}/`, update autopilot-state.yaml: `tickets[0].steps.impl = "failed"`, `tickets[0].status = "failed"`, and go to Phase 3 (failure).
+    - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.impl = "completed"`.
+    - Record: `[PIPELINE] impl: {status} | rounds={n}`
+    - Note: Decision points within `/impl` (evaluator_dry_run_fail, audit_infrastructure_fail) are handled by the autopilot-policy.yaml already copied to the ticket dir.
+
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
+
+13. **Step: ship**
+    If `resume_mode = true` and this step is already `completed` in the state file, skip to Phase 3.
+    - **State update (before)**: Update autopilot-state.yaml: `tickets[0].steps.ship = "in_progress"`, `tickets[0].invocation_method.ship = "skill"`.
+    - **Policy guard**: Verify that `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir` and go to Phase 3 (failure). Do NOT proceed without the policy file.
+    - Determine the target branch from Pre-computed Context (Default branch).
+    - **MUST invoke `/ship` via the Skill tool** with argument: `{target-branch} ticket-dir={ticket-dir}` (do NOT pass merge=true). **NEVER bypass /ship with direct `git commit` / `gh pr create` / `mv` commands** — /ship is responsible for moving the ticket to `done/`, invoking `/tune`, and creating the PR in a single atomic sequence. Fail this ticket immediately if `/ship` cannot be invoked. The `ticket-dir` parameter ensures `/ship` moves the correct ticket to `done/` regardless of the current branch name.
+    - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[0].invocation_method.ship = "manual-bash"`.
+    - Parse the response to extract the PR URL.
+    - If `/ship` fails: Update autopilot-state.yaml: `tickets[0].steps.ship = "failed"`, `tickets[0].status = "failed"`. Log the error and go to Phase 3 (failure).
+    - **Artifact verification**: Verify that `.backlog/done/{ticket-dir}/` exists (ticket was moved from `active/` to `done/` by `/ship`). If this directory does not exist, record `[PIPELINE] ship: ARTIFACT-MISSING — .backlog/done/{ticket-dir}/ not found after ship`, update autopilot-state.yaml: `tickets[0].steps.ship = "failed"`, `tickets[0].status = "failed"`, and go to Phase 3 (failure).
+    - **Artifact Presence Gate**: After `/ship` completes successfully, verify that the following 7 artifact patterns exist in the ticket directory (check `.backlog/done/{ticket-dir}/` first, then `.backlog/active/{ticket-dir}/`):
+      - `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`
+      - If any artifact is missing: record `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}` and mark the ticket as failed.
+      - **Exception**: If the last `eval-round-*.md` status is FAIL or FAIL-CRITICAL (AC評価の全ラウンドでFAIL), the absence of `audit-round-*.md`, `quality-round-*.md`, and `security-scan-*.md` is expected — skip checking those 3 patterns.
+    - **State update (after)**: Update autopilot-state.yaml: `tickets[0].steps.ship = "completed"`, `tickets[0].status = "completed"`.
+    - Record: `[PIPELINE] ship: success | pr={pr-url}`
+    - Note: Decision points within `/ship` (ship_review_gate, ship_ci_pending) are handled by the autopilot-policy.yaml in the ticket dir.
+
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+    > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+    > 2. The state file shows the next pending step. Execute it immediately.
+    > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
 ## Phase 3: Completion
 
@@ -210,11 +270,13 @@ final_status: completed | completed-with-warnings | stopped | failed
 
 Followed by:
 - ## Pipeline Execution section with each step's status
-- ## Warnings section: Present when any ticket returned `completed-with-warnings` or had non-empty `Manual Bash Fallbacks`. List each warning with the step name and fallback method used. If no warnings, omit this section entirely.
+- ## Warnings section: Present when `final_status` is `completed-with-warnings` (at least one `invocation_method` is `manual-bash`). List each manual-bash fallback step with the step name and fallback method used. If no warnings, omit this section entirely.
 - ## Human Overrides section: List only `human_override` type entries from step 5 as `| {gate} | {expected_action} | {actual_action} | human_override |`. Exclude `kb_override` entries from this section. If no human overrides, write "No human overrides detected."
 - ## KB Overrides section: List only `kb_override` type entries from step 5 as `| {gate} | {expected_action} | {actual_action} | kb_override |`. If no KB overrides, write "No KB overrides detected."
 - ## Decisions Made table (parse [AUTOPILOT-POLICY] prefixed output from skill invocations if available, or note "No policy decisions were triggered" if pipeline ran without hitting any gates). Include overrides from step 5 as entries, distinguishing type `human_override` from `kb_override` in the type column.
 - ## Stop Reason section (only if stopped/failed)
+
+**`completed-with-warnings` determination**: Set `final_status = completed-with-warnings` when all tickets completed successfully AND at least one `invocation_method` across any ticket's steps is `manual-bash`. This indicates the pipeline completed but used a Bash fallback instead of the Skill tool for at least one step. Log the manual-bash fallback steps in the `## Warnings` section of autopilot-log.md.
 
 15. **Update brief lifecycle**:
     - If all steps succeeded (final_status = completed):
@@ -246,42 +308,86 @@ For each ticket in topological order (let `i` be the 0-based index of the curren
 1. **Resume skip check** (only when `resume_mode = true`):
    - If `tickets[i].status` is `completed` in the state file → skip entirely. Print `[RESUME] Skipping ticket {logical_id}: already completed`. Continue to the next ticket.
    - If `tickets[i].status` is `skipped` → re-evaluate dependencies (they may now be satisfied in a resumed run).
-   - If `tickets[i].status` is `failed` or `in_progress` → ticket-pipeline will resume from the appropriate step internally.
+   - If `tickets[i].status` is `failed` or `in_progress` → resume from the first non-completed step within this ticket.
 
 2. **Dependency check**: Verify all tickets in `depends_on` have status `completed` (PR created successfully).
    - If any dependency has status `failed` or `skipped` → mark this ticket as `skipped` with reason "dependency {dep-slug} {status}". Update autopilot-state.yaml: `tickets[i].status = "skipped"`. Record `[PIPELINE] {ticket-part}: skipped | reason=dependency_{dep-slug}_{status} | ticket-dir={ticket-dir-if-known}` and continue to the next ticket. Use the `ticket_mapping` table to resolve `{ticket-dir-if-known}` for the dependency (or `unknown` if not yet mapped).
    - If all dependencies are `completed` → proceed.
 
-3. **Dispatch ticket-pipeline agent**:
-   - **State update (before)**: Update autopilot-state.yaml: `tickets[i].status = "in_progress"`.
-   - **MUST invoke `ticket-pipeline` via the Agent tool** with the following inputs:
-     - `brief_slug`: `{slug}`
-     - `ticket_index`: `{i}`
-     - `logical_id`: `{slug}-part-{N}`
-     - `state_file`: `.backlog/briefs/active/{slug}/autopilot-state.yaml`
-     - `policy_file`: `.backlog/briefs/active/{slug}/autopilot-policy.yaml`
-     - `brief_path`: `.backlog/briefs/active/{slug}/brief.md`
-     - `split_plan_path`: `.backlog/briefs/active/{slug}/split-plan.md`
-   - **NEVER call `/create-ticket`, `/scout`, `/impl`, or `/ship` directly from `/autopilot`** — ticket-pipeline handles all four steps internally.
-   - Fail this ticket immediately if `ticket-pipeline` cannot be dispatched via the Agent tool.
+3. **Execute pipeline for this ticket**:
+   a. **Step: create-ticket**
+      If `resume_mode = true` and `tickets[i].steps.create-ticket` is `completed`, skip to step 3b using `ticket_dir` from the state file.
+      - **State update (before)**: Update autopilot-state.yaml: `tickets[i].steps.create-ticket = "in_progress"`, `tickets[i].status = "in_progress"`, `tickets[i].invocation_method.create-ticket = "skill"`.
+      - **MUST invoke `/create-ticket` via the Skill tool** with the brief content + the relevant scope section from split-plan.md. Use argument: `{ticket-title} brief=.backlog/briefs/active/{slug}/brief.md`. **NEVER bypass /create-ticket** by writing `ticket.md` or updating `.ticket-counter` directly. Fail this ticket immediately if /create-ticket cannot be invoked.
+      - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[i].invocation_method.create-ticket = "manual-bash"`.
+        - Include in the brief argument context: "This is part {N} of {total}. Scope for this ticket: {scope from split-plan}. Overall vision and constraints from the brief apply."
+        - Parse the `/create-ticket` response to extract `{ticket-dir}` (from the summary output: "Ticket file path: .backlog/product_backlog/{ticket-dir}/ticket.md").
+      - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.create-ticket = "completed"`, `tickets[i].ticket_dir = {ticket-dir}`, `ticket_mapping.{slug}-part-{N} = {ticket-dir}`.
+      - **Register mapping**: Add entry `{slug}-part-{N}` → `{ticket-dir}` to `ticket_mapping`.
 
-4. **Process ticket-pipeline result**:
-   - Parse the Result block returned by ticket-pipeline (same format as Single Ticket Flow step 11).
-   - Re-read `.backlog/briefs/active/{slug}/autopilot-state.yaml` to get the final ticket state.
-   - Update `ticket_mapping` from the state file (ticket-pipeline writes `ticket_mapping.{logical_id} = {ticket_dir}` internally).
-   - **Result handling**:
-     - `Status: completed` → record `[PIPELINE] {logical_id}: completed | ticket={ticket-dir} | pr={pr-url}`, continue to the next ticket.
-     - `Status: completed-with-warnings` → record `[PIPELINE] {logical_id}: completed-with-warnings | ticket={ticket-dir} | pr={pr-url} | fallbacks={Manual Bash Fallbacks}`, store warnings for autopilot-log, continue to the next ticket.
-     - `Status: failed` → record `[PIPELINE] {logical_id}: failed | ticket={ticket-dir} | reason={Failure Reason}`, continue to the next ticket. Dependent tickets will be skipped at step 2.
-     - `Status: stopped` → record `[PIPELINE] {logical_id}: stopped | ticket={ticket-dir} | reason={Failure Reason}`, continue to the next ticket.
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
 
-   > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
-   > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
-   > 2. The state file shows the next pending ticket. Execute it immediately.
-   > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next ticket.
+   b. Copy `autopilot-policy.yaml` from `.backlog/briefs/active/{slug}/` to `.backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (so `/scout` moves it to active with the ticket).
 
-5. **Error handling per ticket**:
-   - If ticket-pipeline returns `failed` or `stopped` → the ticket is already marked in the state file, log the error.
+   c. **Step: scout**
+      If `resume_mode = true` and `tickets[i].steps.scout` is `completed`, skip to step 3d. The ticket is already in `.backlog/active/{ticket-dir}/`.
+      - **State update (before)**: Update autopilot-state.yaml: `tickets[i].steps.scout = "in_progress"`, `tickets[i].invocation_method.scout = "skill"`.
+      - **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/product_backlog/{ticket-dir}/`. If not found, log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
+      - **MUST invoke `/scout {ticket-dir}` via the Skill tool**. **NEVER bypass /scout** by calling `/investigate` or `/plan2doc` directly. Fail this ticket immediately if /scout cannot be invoked.
+      - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[i].invocation_method.scout = "manual-bash"`. On success, verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If missing, copy from `.backlog/briefs/active/{slug}/autopilot-policy.yaml` as a safety net.
+      - **Artifact verification**: Verify that both `.backlog/active/{ticket-dir}/investigation.md` and `.backlog/active/{ticket-dir}/plan.md` exist. If either file is missing, record `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{ticket-dir}/`, update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
+      - If `/scout` fails: Update state: `tickets[i].steps.scout = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
+      - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.scout = "completed"`.
+
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
+
+   d. **Step: impl**
+      If `resume_mode = true` and `tickets[i].steps.impl` is `completed`, skip to step 3e.
+      - **State update (before)**: Update autopilot-state.yaml: `tickets[i].steps.impl = "in_progress"`, `tickets[i].invocation_method.impl = "skill"`.
+      - **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
+      - **MUST invoke `/impl .backlog/active/{ticket-dir}/plan.md` via the Skill tool**. **NEVER bypass /impl** by spawning `implementer` or `ac-evaluator` agents directly. Fail this ticket immediately if /impl cannot be invoked.
+      - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[i].invocation_method.impl = "manual-bash"`.
+      - If `/impl` fails: Update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
+      - **Artifact verification**: Verify the following artifacts exist in `.backlog/active/{ticket-dir}/`:
+        1. At least one `eval-round-*.md` file (AC evaluation result).
+        2. If the final `/impl` status is PASS (AC evaluation passed and `/audit` was invoked): at least one `audit-round-*.md` file AND at least one `quality-round-*.md` file. If `/impl` ended with FAIL at the AC evaluator stage (all rounds failed AC), audit artifacts are not expected — skip this check.
+        If any expected artifact is missing, record `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .backlog/active/{ticket-dir}/`, update state: `tickets[i].steps.impl = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
+      - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.impl = "completed"`.
+
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
+
+   e. **Step: ship**
+      If `resume_mode = true` and `tickets[i].steps.ship` is `completed`, skip to step 3f.
+      - **State update (before)**: Update autopilot-state.yaml: `tickets[i].steps.ship = "in_progress"`, `tickets[i].invocation_method.ship = "skill"`.
+      - **Policy guard**: Verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`. If not found, log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as `failed`, update state: `tickets[i].steps.ship = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
+      - **MUST invoke `/ship {target-branch} ticket-dir={ticket-dir}` via the Skill tool** (no merge). **NEVER bypass /ship** with direct `git commit` / `gh pr create` / `mv` — /ship is the single atomic orchestrator for commit + ticket move + /tune + PR. Fail this ticket immediately if /ship cannot be invoked. The `ticket-dir` parameter ensures `/ship` moves the correct ticket to `done/` regardless of the current branch name.
+      - If Skill tool invocation fails and a Bash fallback is used, update: `tickets[i].invocation_method.ship = "manual-bash"`.
+      - If `/ship` fails: Update state: `tickets[i].steps.ship = "failed"`, `tickets[i].status = "failed"`. Continue to the next ticket.
+      - **Artifact verification**: Verify that `.backlog/done/{ticket-dir}/` exists (ticket was moved from `active/` to `done/` by `/ship`). If this directory does not exist, record `[PIPELINE] ship: ARTIFACT-MISSING — .backlog/done/{ticket-dir}/ not found after ship`, update state: `tickets[i].steps.ship = "failed"`, `tickets[i].status = "failed"`, and continue to the next ticket.
+      - **Artifact Presence Gate**: After `/ship` completes successfully, verify that the following 7 artifact patterns exist in the ticket directory (check `.backlog/done/{ticket-dir}/` first, then `.backlog/active/{ticket-dir}/`):
+        - `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`
+        - If any artifact is missing: record `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}` and mark the ticket as failed.
+        - **Exception**: If the last `eval-round-*.md` status is FAIL or FAIL-CRITICAL (AC評価の全ラウンドでFAIL), the absence of `audit-round-*.md`, `quality-round-*.md`, and `security-scan-*.md` is expected — skip checking those 3 patterns.
+      - **State update (after)**: Update autopilot-state.yaml: `tickets[i].steps.ship = "completed"`, `tickets[i].status = "completed"`.
+
+   f. Record PR URL and status.
+
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
+      > 1. Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`
+      > 2. The state file shows the next pending step. Execute it immediately.
+      > 3. Do NOT end your turn. Do NOT summarize. Proceed directly to the next step.
+
+4. **Error handling per ticket**:
+   - If any step fails → mark this ticket as `failed` (state file already updated above), log the error.
    - Continue to the next ticket (do NOT stop the entire pipeline).
    - Tickets that depend on a failed ticket will be skipped (step 2 above).
    - Tickets with no dependency on the failed ticket will still execute.
@@ -320,12 +426,14 @@ Each ticket gets its own subsection in ## Pipeline Execution:
 
 ```markdown
 ### Ticket: {slug}-part-{N} → {ticket-dir} ({status})
-- ticket-pipeline: {status}
-- PR: {url}
-- Manual Bash Fallbacks: {fallbacks or "none"}
+- create-ticket: {status}
+- scout: {status}
+- impl: {status} ({rounds} rounds)
+- ship: {status} → PR: {url}
+- Manual Bash Fallbacks: {list of steps with manual-bash invocation_method, or "none"}
 ```
 
-Include a ## Warnings section when any ticket returned `completed-with-warnings` or had non-empty `Manual Bash Fallbacks`. List each warning with the ticket identifier and the fallback steps. If no warnings, omit this section.
+Include a ## Warnings section when any ticket has at least one `invocation_method` of `manual-bash`. List each warning with the ticket identifier and the fallback steps. If no warnings, omit this section.
 
 ### Split Completion Report
 
@@ -337,11 +445,11 @@ Print:
 
 ### Split Brief Lifecycle
 
-- All tickets completed (or completed-with-warnings) → brief status = `completed`, move to briefs/done/
+- All tickets completed → brief status = `completed`, move to briefs/done/
 - Any ticket failed or skipped → brief status = `stopped`, stay in briefs/active/
 - final_status determination:
-  - All completed (no warnings) → `completed`
-  - All completed but some had warnings → `completed-with-warnings`
+  - All completed (no manual-bash fallbacks) → `completed`
+  - All completed but some had manual-bash invocation_method → `completed-with-warnings`
   - Some completed + some failed/skipped → `partial`
   - First ticket failed → `failed`
 
