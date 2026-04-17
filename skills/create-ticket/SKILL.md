@@ -40,14 +40,14 @@ The following agent invocations are **contractual** — `/create-ticket` MUST de
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `researcher` agent (Agent tool) | Phase 1 Investigation — always, before drafting the ticket | No investigation findings captured; planner operates on `/create-ticket`'s model-internal assumptions instead of actual codebase evidence. Detected by absence of researcher trace in the skill invocation audit |
-| `planner` agent (Agent tool) | Phase 3 Ticket Draft — always, after Phase 1 (and optionally Phase 2) | No structured ticket draft; skill falls back to ad-hoc model output with no category/size/AC separation — ticket-evaluator will subsequently FAIL the quality gate |
-| `ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — always, after Phase 3 | No quality gate verification; ticket is written with status "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
+| `wrapped-researcher` agent (Agent tool) | Phase 1 Investigation — always, before drafting the ticket | No investigation findings captured; planner operates on `/create-ticket`'s model-internal assumptions instead of actual codebase evidence. Detected by absence of researcher trace in the skill invocation audit |
+| `wrapped-planner` agent (Agent tool) | Phase 3 Ticket Draft — always, after Phase 1 (and optionally Phase 2) | No structured ticket draft; skill falls back to ad-hoc model output with no category/size/AC separation — ticket-evaluator will subsequently FAIL the quality gate |
+| `wrapped-ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — always, after Phase 3 | No quality gate verification; ticket is written with status "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
 
 **Binding rules**:
-- `MUST invoke researcher via the Agent tool` — never substitute with direct `Grep`/`Read`/`Glob` from within `/create-ticket`. The researcher agent's independent findings are load-bearing for ticket scope definition.
-- `MUST invoke planner via the Agent tool` — never draft ticket content inline. The planner agent's output is the canonical draft.
-- `MUST invoke ticket-evaluator via the Agent tool` — never self-assess ticket quality based on model self-judgment. The ticket-evaluator is the independent quality gate.
+- `MUST invoke wrapped-researcher via the Agent tool` — never substitute with direct `Grep`/`Read`/`Glob` from within `/create-ticket`. The researcher agent's independent findings are load-bearing for ticket scope definition.
+- `MUST invoke wrapped-planner via the Agent tool` — never draft ticket content inline. The planner agent's output is the canonical draft.
+- `MUST invoke wrapped-ticket-evaluator via the Agent tool` — never self-assess ticket quality based on model self-judgment. The ticket-evaluator is the independent quality gate.
 - `NEVER bypass any of these agents via direct file operations` — writing `ticket.md` without going through all three phases is a contract violation.
 - `Fail the task immediately if any mandatory agent invocation cannot be completed via the Agent tool` — print the failure reason and stop; do not fabricate a ticket.
 
@@ -66,11 +66,11 @@ Parse `$ARGUMENTS` for the optional `brief=<path>` parameter:
 
 Generate a structured ticket from the given ticket description.
 
-### Phase 1: Investigation (researcher agent)
+### Phase 1: Investigation (wrapped-researcher agent)
 
-**MUST invoke the `researcher` agent via the Agent tool.** **NEVER bypass the researcher by using `Grep`/`Read`/`Glob` directly from within `/create-ticket`** — the researcher's independent findings are required for Phase 3 planner input. Fail the task immediately if the researcher agent cannot be invoked.
+**MUST invoke the `wrapped-researcher` agent via the Agent tool.** **NEVER bypass the researcher by using `Grep`/`Read`/`Glob` directly from within `/create-ticket`** — the researcher's independent findings are required for Phase 3 planner input. Fail the task immediately if the wrapped-researcher agent cannot be invoked.
 
-Use the researcher agent to investigate:
+Use the wrapped-researcher agent to investigate:
 
 1. Source code related to the ticket description
 2. Affected files and line ranges
@@ -96,24 +96,24 @@ Before drafting the ticket, refine the scope through targeted questions.
 
 Note: If the investigation results provide sufficient clarity (e.g., a simple S-size change with obvious scope), skip questioning and proceed directly to Phase 3.
 
-### Phase 3: Ticket Draft (planner agent)
+### Phase 3: Ticket Draft (wrapped-planner agent)
 
-**MUST invoke the `planner` agent via the Agent tool.** **NEVER draft the ticket inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft consumed by Phase 4. Fail the task immediately if the planner agent cannot be invoked.
+**MUST invoke the `wrapped-planner` agent via the Agent tool.** **NEVER draft the ticket inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft consumed by Phase 4. Fail the task immediately if the wrapped-planner agent cannot be invoked.
 
-Use the planner agent to design:
+Use the wrapped-planner agent to design:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes)
 2. Appropriate category (Security / CodeQuality / Doc / DevOps / Community) and size (S/M/L/XL)
 3. Workflow recommendations based on category x size, using the workflow patterns from Pre-computed Context above
 
-Provide the planner agent with the following additional context:
+Provide the wrapped-planner agent with the following additional context:
 - User's answers from Phase 2 (scope decisions, priority, edge cases, constraints)
 - If brief was provided: Full brief document content (replaces user's answers from Phase 2)
 - "Each Acceptance Criterion will be evaluated by an independent evaluator against these quality gates: Testability (objectively verifiable with PASS/FAIL), Unambiguity (only one interpretation possible). AC that are not testable or ambiguous will be rejected."
 
 #### Split Judgment
 
-Instruct the planner agent to evaluate whether the ticket should be split into multiple tickets:
+Instruct the wrapped-planner agent to evaluate whether the ticket should be split into multiple tickets:
 
 - **Split criteria**: Size >= M **and** the Acceptance Criteria can be grouped into 2 or more independent work units (no inter-AC dependencies within the same group).
 - **Split quality guardrails**:
@@ -126,9 +126,9 @@ Instruct the planner agent to evaluate whether the ticket should be split into m
 
 ### Phase 4: Ticket Evaluation
 
-**MUST invoke the `ticket-evaluator` agent via the Agent tool.** **NEVER self-assess ticket quality** based on model self-judgment — the ticket-evaluator is the independent quality gate that verifies AC Testability/Unambiguity. Fail the task immediately if the ticket-evaluator agent cannot be invoked.
+**MUST invoke the `wrapped-ticket-evaluator` agent via the Agent tool.** **NEVER self-assess ticket quality** based on model self-judgment — the ticket-evaluator is the independent quality gate that verifies AC Testability/Unambiguity. Fail the task immediately if the wrapped-ticket-evaluator agent cannot be invoked.
 
-Evaluate the ticket quality using the ticket-evaluator agent.
+Evaluate the ticket quality using the wrapped-ticket-evaluator agent.
 
 **When split (N > 1)**: Execute the evaluation process below **independently for each sub-ticket**. Each sub-ticket is evaluated on its own merits. If any single sub-ticket FAILs after exhausting the retry/escalation flow, the entire create-ticket process stops (all sub-tickets are affected).
 
@@ -137,16 +137,16 @@ Evaluate the ticket quality using the ticket-evaluator agent.
 #### Per-ticket evaluation process
 
 1. Read the ticket content generated in Phase 3
-2. Spawn the **ticket-evaluator** agent with the ticket content
+2. Spawn the **wrapped-ticket-evaluator** agent with the ticket content
 3. Decision:
    - **Status: PASS** → proceed to Phase 5
    - **Status: FAIL** →
      a. Save the evaluator's Feedback
-     b. Re-spawn the **planner** agent with:
+     b. Re-spawn the **wrapped-planner** agent with:
         - Original ticket content
         - Evaluator's Feedback (all FAIL items with specific improvement suggestions)
         - Instruction: "For each FAIL item you revise, prepend a 'Change rationale: [why this revision addresses the feedback]' comment above the revised section. This rationale will be reviewed by the evaluator to verify the fix is intentional and correct."
-     c. Re-spawn the **ticket-evaluator** agent to evaluate the revised ticket
+     c. Re-spawn the **wrapped-ticket-evaluator** agent to evaluate the revised ticket
      d. Max 2 rounds (initial evaluation + 1 revision). If still FAIL after 2 rounds:
         - **Autopilot policy check**: Check if `{ticket-dir}/autopilot-policy.yaml` exists (where ticket-dir is `.backlog/product_backlog/{ticket-dir}/`). If not found **and** a `brief=<path>` parameter was provided, also check `{brief-parent-dir}/autopilot-policy.yaml` (where brief-parent-dir is the parent directory of the brief file path, e.g., `.backlog/briefs/active/{slug}/`).
           - If it exists (in either location), read `gates.ticket_quality_fail`:
