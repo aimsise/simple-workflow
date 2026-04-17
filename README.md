@@ -46,6 +46,7 @@ Structurally separates "writing code" from "judging code" to guarantee quality b
 
 - A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 3 rounds. See [`/impl`](#4-impl--implement) for the full pipeline
 - **Information firewall (asymmetric)**: Evaluators never see the Generator's self-assessment — they judge solely from `git diff` and test results. The reverse is intentionally open: on retry, the Generator receives Evaluator feedback. Even though both sides run the same model, **weights × context = output**: by excluding the Generator's trial-and-error history and implicit knowledge of shortcuts from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt
+- **Mandatory Skill Invocations**: Orchestrator skills enforce that sub-agent dispatch uses the `Skill` tool rather than manual bash fallbacks. MUST/NEVER/Fail language in skill definitions makes this a structural contract, not a suggestion — ensuring sub-agents always launch with proper context isolation
 - **FAIL-CRITICAL** violations halt execution immediately — no rationalization, no retry
 - After ticket completion, evaluation logs feed into the [Knowledge Base](#knowledge-base-cross-session-learning), creating a cross-session feedback loop
 
@@ -130,9 +131,11 @@ Guardrails that fire automatically on tool execution to protect your project.
 
 - **pre-bash-safety** — **Best-effort** blocking of common destructive commands (`rm -rf`, `git push --force`, `git reset --hard`, `git clean -f`, `DROP TABLE/DATABASE`, and bulk-staging of sensitive files). Does NOT catch arbitrary destructive commands from cloud / orchestration CLIs (`gh repo delete`, `aws s3 rm`, `kubectl delete`, `terraform destroy`, etc.) or shell-string indirection (`sh -c '...'`, `python -c '...'`). Treat this hook as a guardrail for common slip-ups, **not** as a security boundary.
 - **pre-write-safety / pre-edit-safety** — Blocks writes to sensitive files (`.env`, private keys, credentials)
-- **session-start** — Loads branch info and changed file count at session start
+- **session-start** — Initializes the session environment: loads branch info and changed file count, auto-injects an initial commit on empty repositories, auto-appends `.gitignore` entries for plugin-managed directories, and cleans old session logs
 - **pre-compact-save** — Auto-saves work state before context compaction as a YAML-frontmatter snapshot (active tickets, plans, latest evaluation rounds, in-progress phase). `/catchup` parses this to resume mid-loop work after compaction.
 - **session-stop-log** — Records a work log (branch, last commit, status, recent commits) on session end as a YAML-frontmatter file. Used by `/catchup` as a fallback state source when no compact-state file exists.
+- **autopilot-continue** — Stop hook that prevents premature `end_turn` during `/autopilot` pipeline execution. Returns `decision: "block"` when `autopilot-state.yaml` has unfinished steps, keeping the pipeline running until all steps complete.
+- **pre-level1-guard** — PreToolUse hook that blocks integration test scripts from running without `RUN_LEVEL1_TESTS=true`, preventing accidental API charges from expensive test suites.
 
 ## Prerequisites
 
@@ -243,7 +246,7 @@ Ships the current changes through up to three phases:
 2. **Create PR** — Pushes to GitHub and creates a pull request
 3. **Merge** (optional, `merge=true`) — Squash-merges, deletes the branch, and syncs local
 
-If no prior review via `/audit` is detected, a review gate recommends running one first. After a successful commit, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
+If no prior review via `/audit` is detected, a review gate recommends running one first. Pre-computed context (branch name, diff stats, commit log) is gathered with a resilience contract that ensures `/ship` never fails due to unexpected git state — missing remotes, empty diffs, or detached HEAD are all handled gracefully. After a successful commit, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
 
 ### Full Automation with /brief + /autopilot
 
@@ -251,7 +254,7 @@ For a fully automated pipeline from idea to PR:
 
 1. **`/brief <what-to-build>`** — Investigates the codebase and conducts a structured interview to gather all requirements. Generates a brief document and an autopilot-policy.yaml defining autonomous decision rules.
 
-2. **`/autopilot <slug>`** — Reads the brief and executes the full pipeline (`create-ticket → scout → impl → ship`) with zero human intervention. Decision points are resolved by the autopilot-policy. Large scopes are automatically split into multiple tickets and executed in dependency order.
+2. **`/autopilot <slug>`** — Reads the brief and executes the full pipeline (`create-ticket → scout → impl → ship`) with zero human intervention. Decision points are resolved by the autopilot-policy. Large scopes are automatically split into multiple tickets and executed in dependency order. Quality safeguards run at each pipeline step: an **Artifact Presence Gate** validates that all expected artifacts (investigation, plan, evaluation logs, etc.) exist before marking a step complete, and a **Skill Invocation Audit** tracks whether each step used proper Skill tool dispatch. Steps that fell back to manual bash invocation are flagged as `completed-with-warnings`.
 
 > **Note**: Workflow isolation is bidirectional. `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `product_backlog/`. Conversely, manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO). To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
 
