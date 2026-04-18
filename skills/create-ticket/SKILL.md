@@ -34,6 +34,21 @@ Workflow patterns:
 Ticket template:
 !`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/ticket-template.md" 2>/dev/null || echo "[WARNING: ticket-template.md not found]"`
 
+`phase-state.yaml` schema (canonical reference for all writers):
+!`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/phase-state-schema.md" 2>/dev/null || echo "[WARNING: phase-state-schema.md not found]"`
+
+## phase-state.yaml write ownership
+
+This skill writes the **whole** `phase-state.yaml` template at ticket creation time
+and then transitions `phases.create_ticket` through `in-progress` → `completed`
+within the same invocation. It MUST NOT write to any other phase's section
+beyond the initial pending template. The top-level status fields
+(`current_phase`, `last_completed_phase`, `overall_status`) are also owned by
+this skill on initial write; subsequent writers update them as they transition
+through their own phase.
+
+Reference: `skills/create-ticket/references/phase-state-schema.md`.
+
 ## Mandatory Skill Invocations
 
 The following agent invocations are **contractual** — `/create-ticket` MUST delegate to each of these via the Agent tool. Writing ticket content by direct model output without delegating to these agents is **never acceptable**, because it bypasses the independent research/planning/evaluation layers that guarantee ticket quality. Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
@@ -178,6 +193,78 @@ After generating the ticket content:
 2. For each ticket `i`, create the directory `.backlog/product_backlog/{ticket-dir_i}/` if it does not exist.
 3. For each ticket `i`, write the ticket to `.backlog/product_backlog/{ticket-dir_i}/ticket.md`.
 4. After **all** tickets are successfully written, write `counter + N` to `.backlog/.ticket-counter` (e.g., if `counter` was `5` and `N` is `3`, write `8`).
+
+4a. **Initialize `phase-state.yaml`** for each ticket `i` (always, unconditional — even when `/create-ticket` is invoked standalone outside `/autopilot`):
+
+   a. Compute `now` = current timestamp in ISO-8601 UTC (e.g. via `date -u +%Y-%m-%dT%H:%M:%SZ`).
+   b. Let `size_i` be the Size value assigned to ticket `i` in Phase 3 (S/M/L/XL).
+   c. Let `ticket_dir_path_i` = `.backlog/product_backlog/{ticket-dir_i}` (the directory just created in step 2 — note: the phase-state file stays here until `/scout` moves the ticket to `.backlog/active/`; `/scout` is responsible for rewriting the `ticket_dir` field to reflect the new path).
+   d. Write `{ticket_dir_path_i}/phase-state.yaml` with the full pending template populated as follows. The schema is the canonical one documented in `skills/create-ticket/references/phase-state-schema.md`:
+
+      ```yaml
+      version: 1
+      ticket_dir: .backlog/product_backlog/{ticket-dir_i}
+      size: {size_i}
+      created: {now}
+
+      current_phase: create_ticket
+      last_completed_phase: null
+      overall_status: in-progress
+
+      phases:
+        create_ticket:
+          status: in-progress
+          started_at: {now}
+          completed_at: null
+          artifacts:
+            ticket: null
+
+        scout:
+          status: pending
+          started_at: null
+          completed_at: null
+          artifacts:
+            investigation: null
+            plan: null
+
+        impl:
+          status: pending
+          started_at: null
+          completed_at: null
+          current_round: null
+          max_rounds: null
+          phase_sub: null
+          last_ac_status: null
+          last_audit_status: null
+          last_audit_critical: 0
+          next_action: null
+          feedback_files:
+            eval: null
+            quality: null
+          artifacts:
+            eval_rounds: []
+            quality_rounds: []
+            audit_rounds: []
+            security_scans: []
+
+        ship:
+          status: pending
+          started_at: null
+          completed_at: null
+          artifacts:
+            pr_url: null
+      ```
+
+   e. **Immediately** transition `phases.create_ticket` to `completed` in the same invocation (before the skill returns): rewrite the file (read-modify-write) setting:
+      - `phases.create_ticket.status: completed`
+      - `phases.create_ticket.completed_at: {now}` (recomputed immediately before the write so it reflects actual completion time)
+      - `phases.create_ticket.artifacts.ticket: {ticket_dir_path_i}/ticket.md`
+      - `last_completed_phase: create_ticket`
+      - `current_phase: scout`  (next phase to run)
+
+   f. Do NOT modify any other `phases.*` section beyond the `create_ticket` block described above. The `scout`, `impl`, and `ship` sections remain in the pending template state for the skills that own them.
+
+   **Atomicity**: If the write fails for any ticket, report the error but do NOT delete already-created `ticket.md` files — the caller can retry `/create-ticket` (the state file will be overwritten idempotently on retry) or re-initialize the state file manually.
 
 5. **Brief metadata injection**: If `brief=<path>` was provided:
    a. Read the brief file's YAML frontmatter and extract the `slug` field value → `{brief_slug}`.

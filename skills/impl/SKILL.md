@@ -12,23 +12,31 @@ allowed-tools:
   - AskUserQuestion
   - Skill
   - Read
+  - Write
+  - Edit
   - Glob
   - "Bash(git diff:*)"
   - "Bash(git status:*)"
   - "Bash(git log:*)"
   - "Bash(git branch:*)"
   - "Bash(git stash:*)"
+  - "Bash(date:*)"
+  - "Bash(rm:*)"
   # Copilot CLI
   - task
   - ask_user
   - skill
   - view
+  - create
+  - edit
   - glob
   - "shell(git diff:*)"
   - "shell(git status:*)"
   - "shell(git log:*)"
   - "shell(git branch:*)"
   - "shell(git stash:*)"
+  - "shell(date:*)"
+  - "shell(rm:*)"
 argument-hint: "[plan file path or additional instructions]"
 ---
 
@@ -51,7 +59,29 @@ The following agent/skill invocations are **contractual** — `/impl` MUST deleg
 - `MUST invoke ac-evaluator via the Agent tool` — never self-assess AC compliance based on build/test results alone. The Evaluator must read the code independently via `git diff`.
 - `MUST invoke /audit via the Skill tool` — never substitute by spawning `code-reviewer` / `security-scanner` agents directly from `/impl`. `/audit` aggregates both and enforces the "single agent failure = FAIL" invariant.
 - `NEVER bypass any of these via direct file operations` — writing `eval-round-{n}.md`, `quality-round-{n}.md`, or `audit-round-{n}.md` by `/impl` itself is a contract violation (the evaluating agent is the only acceptable author).
-- `Fail the task immediately if any mandatory invocation cannot be completed via the prescribed Agent/Skill tool` — print the failure reason, update `impl-state.yaml`, and stop; do not fabricate a PASS.
+- `Fail the task immediately if any mandatory invocation cannot be completed via the prescribed Agent/Skill tool` — print the failure reason, update `phase-state.yaml` (`phases.impl.status: failed`, `overall_status: failed`), and stop; do not fabricate a PASS.
+
+## phase-state.yaml write ownership
+
+This skill writes ONLY to `phases.impl` plus the top-level status fields
+(`current_phase`, `last_completed_phase`, `overall_status`). It MUST NOT
+modify any other phase's section (`phases.create_ticket`, `phases.scout`,
+`phases.ship`). The legacy `impl-state.yaml` is retired; all intra-impl
+loop state now lives under `phases.impl.*`.
+
+`/impl` is also responsible for two one-shot migrations at start time:
+- If a legacy `impl-state.yaml` exists and no `phase-state.yaml` exists,
+  migrate it (see "Legacy migration" below).
+- If neither file exists but a `plan.md` is given, bootstrap a fresh
+  `phase-state.yaml` with prior phases backfilled as completed (see
+  "Bootstrap" below).
+
+Neither migration nor any other step in this skill ever deletes
+`phase-state.yaml`. On final completion, `/impl` sets
+`phases.impl.status: completed` and keeps the file in place so `/ship` and
+downstream tools can read it.
+
+Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Pre-computed Context
 
@@ -124,23 +154,62 @@ Current state:
 
 10. If working tree has uncommitted changes unrelated to the plan, warn user.
 
-11. **Resume check**: Check if `{ticket-dir}/impl-state.yaml` exists (where `{ticket-dir}` is the directory containing the plan file, e.g. `.backlog/active/{ticket-dir}/`).
-    - If it does NOT exist: set `impl_resume_mode = false` and proceed normally to step 12.
-    - If it exists: set `impl_resume_mode = true`. Read and parse the state file.
-      - Print resume summary:
-        ```
-        [IMPL-RESUME] 前回の /impl 実行が途中で停止しています。途中から再開します。
-        [IMPL-RESUME] Round: {current_round}/{max_rounds}
-        [IMPL-RESUME] Phase: {phase}
-        [IMPL-RESUME] Next action: {next_action}
-        ```
-      - Carry forward `feedback_files` from the state file.
-      - Skip to the step corresponding to `next_action`:
-        - `start-round-{N}-generator` → skip to Step 13 (Generator) with `current_round = N`. If `feedback_files.eval` and/or `feedback_files.quality` exist from a prior round, pass them to the Generator prompt (step 13e).
-        - `start-evaluator` → skip to Step 15 (AC Evaluator) with the current round from the state file.
-        - `start-audit` → skip to Step 17 (/audit) with the current round from the state file.
-        - `proceed-to-phase-3` → skip directly to Phase 3 (Step 19).
-        - `stop-critical` → print "Previous run stopped due to CRITICAL issues. Delete impl-state.yaml to re-run from scratch." and stop.
+11. **State file resolution, legacy migration, and bootstrap**. Let `{ticket-dir}` be the directory containing the plan file (e.g. `.backlog/active/{ticket-dir}/`). Determine which state file is present and set `impl_resume_mode` accordingly.
+
+    **11a. Legacy migration (one-shot)**: If `{ticket-dir}/impl-state.yaml` exists and `{ticket-dir}/phase-state.yaml` does NOT exist:
+    1. Read `{ticket-dir}/impl-state.yaml`.
+    2. Create `{ticket-dir}/phase-state.yaml` with the canonical schema (see `skills/create-ticket/references/phase-state-schema.md`). Populate fields as follows:
+       - Top-level: `version: 1`; `ticket_dir: .backlog/active/{ticket-dir}`; `size:` = legacy `size`; `created:` = legacy `started` (fallback to `{now}` if missing); `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`.
+       - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .backlog/active/{ticket-dir}/ticket.md` (if the file exists; otherwise `null`).
+       - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation: .backlog/active/{ticket-dir}/investigation.md` (only if the file exists; otherwise `null`), `artifacts.plan: .backlog/active/{ticket-dir}/plan.md` (only if the file exists; otherwise `null`).
+       - `phases.impl.status: in-progress`, `started_at:` = legacy `started`. Copy every legacy field 1:1 under `phases.impl.*` using the rename table:
+         - legacy `phase` → `phases.impl.phase_sub`
+         - legacy `current_round` → `phases.impl.current_round`
+         - legacy `max_rounds` → `phases.impl.max_rounds`
+         - legacy `last_ac_status` → `phases.impl.last_ac_status`
+         - legacy `last_audit_status` → `phases.impl.last_audit_status`
+         - legacy `last_audit_critical` → `phases.impl.last_audit_critical`
+         - legacy `next_action` → `phases.impl.next_action`
+         - legacy `feedback_files.eval` → `phases.impl.feedback_files.eval`
+         - legacy `feedback_files.quality` → `phases.impl.feedback_files.quality`
+       - `phases.impl.artifacts.{eval_rounds,quality_rounds,audit_rounds,security_scans}` = empty lists (the round artifacts can be re-discovered by Glob on the next round update).
+       - `phases.ship.status: pending` with all fields `null`.
+    3. Delete the legacy `impl-state.yaml` with `rm` in the same step, AFTER the new unified state file is written successfully. If that write fails, do NOT delete the legacy file — the migration is all-or-nothing.
+    4. Print `[PHASE-STATE-MIGRATION] impl-state.yaml → phase-state.yaml migrated for {ticket-dir}`.
+    5. Set `impl_resume_mode = true` and proceed to step 11c (Resume dispatch) with the newly-written state.
+
+    **11b. Bootstrap (one-shot)**: If NEITHER `{ticket-dir}/impl-state.yaml` NOR `{ticket-dir}/phase-state.yaml` exists, but a `plan.md` is present in `{ticket-dir}` (or the plan path is `.docs/plans/...`):
+    - If the plan path is under `.backlog/active/{ticket-dir}/`:
+      1. Create `{ticket-dir}/phase-state.yaml` with the canonical schema:
+         - Top-level: `version: 1`; `ticket_dir: .backlog/active/{ticket-dir}`; `size:` = detected Size (S/M/L/XL from Step 3); `created: {now}`; `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`.
+         - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .backlog/active/{ticket-dir}/ticket.md` if the file exists (else `null`).
+         - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation: .backlog/active/{ticket-dir}/investigation.md` if the file exists (else `null`), `artifacts.plan: .backlog/active/{ticket-dir}/plan.md` if the file exists (else `null`).
+         - `phases.impl.status: in-progress`, `started_at: {now}`, all other `phases.impl.*` fields at their pending defaults.
+         - `phases.ship.status: pending` with all fields `null`.
+      2. Print `[PHASE-STATE-BOOTSTRAP] phase-state.yaml bootstrapped for {ticket-dir} (no prior state found)`.
+      3. Set `impl_resume_mode = false` and proceed to Step 12.
+    - If the plan is in `.docs/plans/` (non-ticket flow), skip state-file creation entirely and proceed to Step 12 without any state tracking. The state-update steps (before/after Generator, Evaluator, Audit; Step 21 cleanup) become no-ops for non-ticket flows.
+
+    **11c. Resume dispatch**: If `{ticket-dir}/phase-state.yaml` exists (either pre-existing or just migrated) AND `phases.impl.status` is `in-progress` AND `phases.impl.next_action` is non-null:
+    - Set `impl_resume_mode = true`. Read `phases.impl.*` from the file.
+    - Print resume summary:
+      ```
+      [IMPL-RESUME] 前回の /impl 実行が途中で停止しています。途中から再開します。
+      [IMPL-RESUME] Round: {phases.impl.current_round}/{phases.impl.max_rounds}
+      [IMPL-RESUME] Phase: {phases.impl.phase_sub}
+      [IMPL-RESUME] Next action: {phases.impl.next_action}
+      ```
+    - Carry forward `phases.impl.feedback_files` from the state file.
+    - Skip to the step corresponding to `phases.impl.next_action`:
+      - `start-round-{N}-generator` → skip to Step 13 (Generator) with `current_round = N`. If `phases.impl.feedback_files.eval` and/or `phases.impl.feedback_files.quality` exist from a prior round, pass them to the Generator prompt (step 13e).
+      - `start-evaluator` → skip to Step 15 (AC Evaluator) with the current round from the state file.
+      - `start-audit` → skip to Step 17 (/audit) with the current round from the state file.
+      - `proceed-to-phase-3` → skip directly to Phase 3 (Step 19).
+      - `stop-critical` → print "Previous run stopped due to CRITICAL issues. Reset `phases.impl` in phase-state.yaml (status: pending, next_action: null) to re-run from scratch." and stop.
+
+    **11d. Fresh-start (create phase-state.yaml if missing, else just begin)**: If `{ticket-dir}/phase-state.yaml` exists but `phases.impl.status` is `pending` (the typical post-`/scout` case): set `impl_resume_mode = false` and proceed to Step 12. The state file is already correct; `/impl` will update `phases.impl` at Step 13+ as described in the "phase-state.yaml phases.impl state management" section below.
+
+    If the plan file path lies outside any active ticket directory (e.g. `.docs/plans/...`), skip all state-file resolution and proceed to Step 12 with `impl_resume_mode = false`.
 
 12. **Safety checkpoint**: Before starting implementation, create a rollback point:
    - Run `git stash push -m "impl-checkpoint" --include-untracked -- ':!.backlog' ':!.docs' ':!.simple-wf-knowledge'` to save current working state while preserving plugin artifacts
@@ -151,37 +220,54 @@ Current state:
 
 **Autopilot round limit**: If `{ticket-dir}/autopilot-policy.yaml` exists and `constraints.max_total_rounds` is defined, use that value as the maximum number of rounds for this loop (replacing the default of 3). If the policy does not exist or the field is not defined, use the default of 3 rounds.
 
-### impl-state.yaml Management
+### phase-state.yaml phases.impl state management
 
-If `impl_resume_mode = false` (no existing state file), initialize `{ticket-dir}/impl-state.yaml` before entering the loop:
+All intra-impl loop state lives under `phases.impl.*` in the unified
+`{ticket-dir}/phase-state.yaml` file. The legacy `{ticket-dir}/impl-state.yaml`
+is retired; step 11a migrates it on first encounter. See
+`skills/create-ticket/references/phase-state-schema.md` for the canonical
+schema.
+
+If `impl_resume_mode = false` and `phase-state.yaml` exists (the typical
+post-`/scout` case, or a just-bootstrapped file from step 11b), initialize
+`phases.impl` to the in-progress state **before entering the loop** via a
+read-modify-write. Update ONLY the fields listed below (all other sections
+and top-level fields stay untouched unless explicitly listed):
 
 ```yaml
-version: 1
-plan_file: .backlog/active/{ticket-dir}/plan.md
-ticket_dir: .backlog/active/{ticket-dir}
-size: {S|M|L|XL}
-started: {ISO-8601 timestamp via `date -u +%Y-%m-%dT%H:%M:%SZ`}
-current_round: 1
-max_rounds: {3 or autopilot policy value}
-phase: generator-pending
-last_ac_status: null
-last_audit_status: null
-last_audit_critical: 0
-next_action: start-round-1-generator
-feedback_files:
-  eval: null
-  quality: null
+# (under phases.impl — read-modify-write, preserve all other sections)
+phases:
+  impl:
+    status: in-progress
+    started_at: {ISO-8601 timestamp via `date -u +%Y-%m-%dT%H:%M:%SZ`}
+    current_round: 1
+    max_rounds: {3 or autopilot policy value}
+    phase_sub: generator-pending
+    last_ac_status: null
+    last_audit_status: null
+    last_audit_critical: 0
+    next_action: start-round-1-generator
+    feedback_files:
+      eval: null
+      quality: null
+# plus top-level:
+current_phase: impl
 ```
 
-**phase** values: `generator-pending`, `generator-complete`, `evaluator-complete`, `audit-complete`, `round-complete`, `done`
+**`phases.impl.phase_sub`** values: `generator-pending`, `generator-complete`, `evaluator-complete`, `audit-complete`, `round-complete`, `done`
 
-**next_action** values: `start-round-{N}-generator`, `start-evaluator`, `start-audit`, `proceed-to-phase-3`, `stop-critical`
+**`phases.impl.next_action`** values: `start-round-{N}-generator`, `start-evaluator`, `start-audit`, `proceed-to-phase-3`, `stop-critical`
 
-State updates occur at these 4 points within each round:
-- **Before Generator (step 13)**: Update `phase: generator-pending`, `next_action: start-round-{N}-generator`, `current_round: {N}`
-- **At start of step 14 — before `git diff --stat`**: Update `phase: generator-complete`, `next_action: start-evaluator`
-- **After Evaluator (step 16)**: Update `phase: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action: start-audit` (if PASS) or `next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `next_action: stop-critical` (if FAIL-CRITICAL)
-- **After /audit (step 18)**: Update `phase: audit-complete`, `last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `last_audit_critical: {count}`, `next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `feedback_files.eval: {eval-round-{N}.md path}`, `feedback_files.quality: {quality-round-{N}.md path}`
+State updates occur at these 4 points within each round. Each update is a
+read-modify-write on `phase-state.yaml` that touches ONLY the listed fields
+under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
+`phases.ship`:
+- **Before Generator (step 13)**: Update `phases.impl.phase_sub: generator-pending`, `phases.impl.next_action: start-round-{N}-generator`, `phases.impl.current_round: {N}`.
+- **At start of step 14 — before `git diff --stat`**: Update `phases.impl.phase_sub: generator-complete`, `phases.impl.next_action: start-evaluator`.
+- **After Evaluator (step 16)**: Update `phases.impl.phase_sub: evaluator-complete`, `phases.impl.last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `phases.impl.next_action: start-audit` (if PASS) or `phases.impl.next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `phases.impl.next_action: stop-critical` (if FAIL-CRITICAL).
+- **After /audit (step 18)**: Update `phases.impl.phase_sub: audit-complete`, `phases.impl.last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `phases.impl.last_audit_critical: {count}`, `phases.impl.next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `phases.impl.feedback_files.eval: {eval-round-{N}.md path}`, `phases.impl.feedback_files.quality: {quality-round-{N}.md path}`. Also append the round's artifact path to `phases.impl.artifacts.eval_rounds[]`, `phases.impl.artifacts.quality_rounds[]`, `phases.impl.artifacts.audit_rounds[]`, and (if produced) `phases.impl.artifacts.security_scans[]`.
+
+**Non-ticket flow note**: When the plan is in `.docs/plans/` (not under a ticket directory), there is no `phase-state.yaml` and all state updates in this section are no-ops. The Generator → Evaluator → Audit loop still runs normally; resume/migration do not apply.
 
 13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from within `/impl` — the Generator → Evaluator information firewall depends on the orchestrator producing no code changes itself. Fail the task immediately if the Generator agent cannot be invoked.
     - subagent_type: `implementer` (always; no -light variant)
@@ -202,14 +288,14 @@ State updates occur at these 4 points within each round:
       i. Autopilot constraints: If `{ticket-dir}/autopilot-policy.yaml` exists, read `constraints.allow_breaking_changes`. If `false`, include in the Generator prompt: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." If `true` or if the policy file does not exist, omit this constraint.
     - Receive Generator's return value (changed files list + lint/test status)
 
-14. **Immediately** update `{ticket-dir}/impl-state.yaml`:
-      phase: generator-complete
-      next_action: start-evaluator
+14. **Immediately** update `{ticket-dir}/phase-state.yaml` (read-modify-write; touch only the listed fields under `phases.impl.*`):
+      phases.impl.phase_sub: generator-complete
+      phases.impl.next_action: start-evaluator
     Then run `git diff --stat` to capture change summary.
 
     > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
-    > 1. Read `{ticket-dir}/impl-state.yaml`
-    > 2. Confirm `next_action: start-evaluator`.
+    > 1. Read `{ticket-dir}/phase-state.yaml`
+    > 2. Confirm `phases.impl.next_action: start-evaluator`.
     > 3. Proceed to Step 15 — spawn the AC Evaluator now. Do NOT end your turn.
 
 15. **MUST invoke the AC Evaluator (`ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** based on the Generator's return value, build status, or test output alone — the Evaluator must read the code independently via `git diff` and render its own PASS/FAIL. This is the exact failure mode observed in JSONL Ticket 002 (L554-L559): the orchestrator self-judged PASS without invoking the Evaluator, bypassing the firewall. Fail the task immediately if the Evaluator agent cannot be invoked.
@@ -236,16 +322,16 @@ State updates occur at these 4 points within each round:
     - **Status: PASS-WITH-CAVEATS** → treat as PASS (continue to step 17), but record the Caveats field for inclusion in Phase 3 summary: "AC passed with caveats: {caveats}"
     - **Status: PASS** → continue to step 17
 
-    Update `{ticket-dir}/impl-state.yaml`:
-      phase: evaluator-complete
-      last_ac_status: {PASS|FAIL|FAIL-CRITICAL}
-      next_action: start-audit                    ← PASS / PASS-WITH-CAVEATS の場合
-               or: start-round-{N+1}-generator   ← FAIL の場合
-               or: stop-critical                  ← FAIL-CRITICAL の場合（この後停止済み）
+    Update `{ticket-dir}/phase-state.yaml` (read-modify-write; touch only the listed fields under `phases.impl.*`):
+      phases.impl.phase_sub: evaluator-complete
+      phases.impl.last_ac_status: {PASS|FAIL|FAIL-CRITICAL}
+      phases.impl.next_action: start-audit                    ← PASS / PASS-WITH-CAVEATS の場合
+                           or: start-round-{N+1}-generator   ← FAIL の場合
+                           or: stop-critical                  ← FAIL-CRITICAL の場合（この後停止済み）
 
     > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING** (skip if FAIL-CRITICAL — already stopped):
-    > 1. Read `{ticket-dir}/impl-state.yaml`
-    > 2. Execute `next_action` immediately:
+    > 1. Read `{ticket-dir}/phase-state.yaml`
+    > 2. Execute `phases.impl.next_action` immediately:
     >    - `start-audit` → invoke `/audit` now (Step 17). Do NOT end your turn.
     >    - `start-round-{N+1}-generator` → proceed to next round (Step 13). Do NOT end your turn.
 
@@ -273,8 +359,8 @@ State updates occur at these 4 points within each round:
       - **Never** silently treat audit failure as PASS or PASS_WITH_CONCERNS — that would let Critical/security issues slip through unverified.
 
     > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
-    > 1. Read `{ticket-dir}/impl-state.yaml`
-    > 2. The state file shows `next_action`. Execute it immediately.
+    > 1. Read `{ticket-dir}/phase-state.yaml`
+    > 2. The state file shows `phases.impl.next_action`. Execute it immediately.
     > 3. Do NOT end your turn. Do NOT summarize the audit results to the user. Proceed directly to the next action.
 
 18. Combined Decision (based on `/audit` structured return):
@@ -295,7 +381,19 @@ State updates occur at these 4 points within each round:
     - Evaluation reports: [list of saved eval-round-*.md and quality-round-*.md file paths]
     - "Review the changes above, then run `/ship` to commit and create PR"
 
-21. **impl-state.yaml cleanup**: Delete `{ticket-dir}/impl-state.yaml`. The `eval-round-*.md` and `quality-round-*.md` files serve as the permanent record of each round's results.
+21. **phase-state.yaml finalization (impl phase completion)**: When `/impl` reaches Phase 3 with `phases.impl.next_action` resolved to `proceed-to-phase-3` (i.e. the loop finished successfully, possibly with PASS_WITH_CONCERNS), update `{ticket-dir}/phase-state.yaml` via read-modify-write, touching ONLY the following fields:
+    - `phases.impl.status: completed`
+    - `phases.impl.completed_at: {now}` (ISO-8601 UTC)
+    - `phases.impl.phase_sub: done`
+    - `phases.impl.next_action: null` (cleared — volatile resume state is no longer needed)
+    - `last_completed_phase: impl`
+    - `current_phase: ship`
+
+    Do NOT delete `phase-state.yaml` — it is the permanent record for the ticket and is consumed by `/ship` and by `/catchup`. The `eval-round-*.md`, `quality-round-*.md`, and `audit-round-*.md` artifact paths are already recorded under `phases.impl.artifacts.*` for downstream use. `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `feedback_files.*` remain in place as a historical trace of the final round.
+
+    **Non-ticket flow**: When the plan is in `.docs/plans/` with no ticket dir, there is no `phase-state.yaml` and this step is a no-op.
+
+    **Failure case**: If `/impl` exits with remaining AC/quality issues after the max-rounds cap (typically 3 rounds), set `phases.impl.status: completed` (the loop terminated normally) but leave `overall_status: in-progress` — the user must decide whether to re-run or abandon; do NOT set `overall_status: failed` based on Round-N FAIL alone. Only set `phases.impl.status: failed` and `overall_status: failed` when the skill itself cannot complete (e.g. Generator or Evaluator invocation failure, or FAIL-CRITICAL early stop).
 
 ## Error Handling
 

@@ -10,9 +10,19 @@ allowed-tools:
   # Claude Code
   - Skill
   - Read
+  - Write
+  - Edit
+  - "Bash(date:*)"
+  - "Bash(mv:*)"
+  - "Bash(mkdir:*)"
   # Copilot CLI
   - skill
   - view
+  - create
+  - edit
+  - "shell(date:*)"
+  - "shell(mv:*)"
+  - "shell(mkdir:*)"
 argument-hint: "<topic or ticket to investigate and plan>"
 ---
 
@@ -33,18 +43,36 @@ The following skill invocations are **contractual** — `/scout` MUST delegate t
 - `NEVER bypass these skills via direct file operations` — `/scout` must not write to `investigation.md` or `plan.md` itself.
 - `Fail the task immediately if /investigate or /plan2doc cannot be invoked via the Skill tool` — print the failure reason and stop.
 
+## phase-state.yaml write ownership
+
+This skill writes ONLY to `phases.scout` plus the top-level status fields
+(`current_phase`, `last_completed_phase`, `overall_status`). It MUST NOT
+modify any other phase's section (`phases.create_ticket`, `phases.impl`,
+`phases.ship`). The internal delegates (`/investigate`, `/plan2doc`) MUST
+NOT write to `phase-state.yaml` at all — only `/scout` writes, so the
+"only one section per writer" rule holds.
+
+Reference: `skills/create-ticket/references/phase-state-schema.md`.
+
 ## Instructions
 
 1. Before calling /investigate, attempt to read the ticket file directly:
    - Search `.backlog/product_backlog/` and `.backlog/active/` for ticket files matching `$ARGUMENTS` keyword using Glob (e.g., `.backlog/product_backlog/*<keyword>*/ticket.md` and `.backlog/active/*<keyword>*/ticket.md`).
    - If multiple matches, use the first. If zero matches or the directories do not exist, skip to step 3 (Size stays unset, non-ticket flow).
    - If found, read the `| Size |` table row to extract the Size value (S/M/L/XL).
-2. If the matched ticket is in `.backlog/product_backlog/{ticket-dir}`, move it to active: `mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`. If already in `.backlog/active/{ticket-dir}`, use it as-is. Record the ticket directory as `ticket-dir` (`.backlog/active/{ticket-dir}`).
+2. If the matched ticket is in `.backlog/product_backlog/{ticket-dir}`, move it to active: `mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`. If already in `.backlog/active/{ticket-dir}`, use it as-is. Record the ticket directory as `ticket-dir` (`.backlog/active/{ticket-dir}`). Because `phase-state.yaml` (if present) lives inside the ticket directory, the `mv` moves it along with `ticket.md`.
+2a. **Begin scout phase (state update — only when `ticket-dir` is set and `phase-state.yaml` exists in the ticket dir)**: Read `.backlog/active/{ticket-dir}/phase-state.yaml`. Update ONLY the following fields (read-modify-write; leave every other field untouched):
+    - `phases.scout.status: in-progress`
+    - `phases.scout.started_at: {now}` (ISO-8601 UTC, e.g. via `date -u +%Y-%m-%dT%H:%M:%SZ`)
+    - `current_phase: scout`
+    - `ticket_dir: .backlog/active/{ticket-dir}` (re-anchor the path field to match the new location; required **only** when step 2 actually performed a `mv` from `product_backlog` to `active`. When the ticket was already in `active`, this field is already correct and MUST NOT be rewritten.)
+    If `phase-state.yaml` does NOT exist (e.g. the ticket was created outside `/create-ticket` or in a pre-schema legacy state), skip this step silently — `/impl` will bootstrap the state file later.
 3. **MUST invoke `/investigate` via the Skill tool** with the topic to run codebase research via the researcher agent (sonnet). **NEVER bypass /investigate** with direct `Grep`/`Glob`/`Read` from within `/scout`. Fail the task immediately if `/investigate` cannot be invoked.
    - If `ticket-dir` is set, append `(ticket-dir: .backlog/active/{ticket-dir})` to the arguments.
+   - `/investigate` MUST NOT write to `phase-state.yaml`; only `/scout` updates `phases.scout`.
 4. Check the investigate response for failure conditions:
-   - If the response contains `**Status**: failed` or `**Status**: partial`, print the error and stop.
-   - If the response does not contain a research file path (e.g., no `.docs/research/` or `.backlog/active/` path), print an error and stop.
+   - If the response contains `**Status**: failed` or `**Status**: partial`, print the error and stop. **Before stopping**, if `phase-state.yaml` exists, read-modify-write `phases.scout.status: failed` and `overall_status: failed`. Leave all other sections untouched.
+   - If the response does not contain a research file path (e.g., no `.docs/research/` or `.backlog/active/` path), print an error and stop (same failure-state update as above).
    - Only proceed if `**Status**: success` and a research file path is present.
 5. Print the research summary and file path returned by investigate.
 6. Determine the final Size (informational only — `/plan2doc` will re-detect):
@@ -54,7 +82,16 @@ The following skill invocations are **contractual** — `/scout` MUST delegate t
    - If `ticket-dir` is set, append `(ticket-dir: .backlog/active/{ticket-dir})` and `(research: .backlog/active/{ticket-dir}/investigation.md)` to the arguments.
    - If `ticket-dir` is not set, use `(research: <research-file-path>)` as before.
    - `/plan2doc` will internally select the planner model based on the Size in `ticket.md` (sonnet for S, opus for M/L/XL).
+   - `/plan2doc` MUST NOT write to `phase-state.yaml`; only `/scout` updates `phases.scout`.
 8. Print the plan summary and file path returned by plan2doc.
+8a. **Complete scout phase (state update — only when `ticket-dir` is set and `phase-state.yaml` exists)**: After both `investigation.md` and `plan.md` are successfully written, read `.backlog/active/{ticket-dir}/phase-state.yaml` and update ONLY the following fields (read-modify-write):
+    - `phases.scout.status: completed`
+    - `phases.scout.completed_at: {now}` (ISO-8601 UTC, recomputed at this step)
+    - `phases.scout.artifacts.investigation: .backlog/active/{ticket-dir}/investigation.md`
+    - `phases.scout.artifacts.plan: .backlog/active/{ticket-dir}/plan.md`
+    - `last_completed_phase: scout`
+    - `current_phase: impl`
+    Do NOT modify `phases.create_ticket`, `phases.impl`, or `phases.ship`. Do NOT modify `overall_status` (it remains `in-progress`).
 9. Print a final summary with both file paths and the detected size.
 
 ## Error Handling
