@@ -74,6 +74,14 @@ Build an ordered per-ticket record list `phase_state_records = [{dir, location, 
 
 **Freshness flag**: If any `phase-state.yaml` was modified within the last hour, set `phase_state_fresh = true`. Determine freshness by comparing the file's mtime (via `Bash(stat:*)` if available, or by inspecting the Glob result ordering as a best-effort fallback) with the current time. If mtime cannot be determined, leave `phase_state_fresh = false`.
 
+**Dual-state precedence check (autopilot-state.yaml)**: After building `phase_state_records`, additionally `Glob` for `autopilot-state.yaml` under `.backlog/briefs/active/*/` and `.backlog/active/*/`. For each hit, compare its mtime (via `Bash(stat:*)` when available; best-effort by Glob ordering otherwise) to the mtime of any matching `phase-state.yaml` discovered above. The precedence rule documented in `skills/create-ticket/references/phase-state-schema.md` §5 ("Dual-state precedence") is:
+
+- During `/autopilot` execution, `autopilot-state.yaml` is authoritative for pipeline orchestration; `phase-state.yaml` is maintained in parallel.
+- Outside autopilot, `phase-state.yaml` is authoritative.
+- On conflict with both files present, prefer the file with the more recent mtime.
+
+When an `autopilot-state.yaml` is found AND its mtime is newer than the matching `phase-state.yaml`, annotate the corresponding record (or add a new record when no `phase-state.yaml` exists for that ticket) with `source: autopilot-state` and prefer it for Rule 0 guidance. Emit a warning line `autopilot-state.yaml is newer than phase-state.yaml for {ticket-dir}; deferring to autopilot-state per dual-state precedence.` The full fold-in of `autopilot-state.yaml` into `phase-state.yaml` is deferred — see `skills/create-ticket/references/autopilot-foldin.md`.
+
 **If no `phase-state.yaml` file exists anywhere in `.backlog/active/` OR `.backlog/product_backlog/`**, set `phase_state_records = []` and fall through to Step 1 unchanged (AC 4.5 — existing compact-state + artifact-discovery behavior is preserved).
 
 ### 1. Compact-State and Session-Log Recovery
