@@ -113,10 +113,10 @@ Current state:
    - If no plan file exists in either location, print "No plan found in .backlog/active/ or .docs/plans/. Run /scout or /plan2doc first." and stop.
    - If `.backlog/active/` contains only autopilot-managed tickets (all have `autopilot-policy.yaml`), print "All active tickets are managed by /autopilot. To implement manually, specify the plan path explicitly: /impl .backlog/active/{ticket-dir}/plan.md" and fall back to `.docs/plans/*.md`.
 
-2. Read the plan file.
+2. Confirm the plan file exists (via Glob or a minimal `Read(limit=5)`). Do NOT read the plan content in full — the implementer agent receives the path and reads it itself in Phase 2.
 
 3. Size detection:
-   - If plan is in `.backlog/active/{ticket-dir}/plan.md` -> read `.backlog/active/{ticket-dir}/ticket.md`, extract Size from `| Size |` row.
+   - If plan is in `.backlog/active/{ticket-dir}/plan.md` -> `Read(.backlog/active/{ticket-dir}/ticket.md, limit=30)` and extract Size from `| Size |` row. If the `| Size |` row is not found in the first 30 lines, fall back to `Read(.backlog/active/{ticket-dir}/ticket.md, limit=80)` once. If still not found, default to `M`.
    - If plan is in `.docs/plans/` -> default to M.
 
 4. **Worktree recommendation** (L/XL size only):
@@ -127,16 +127,19 @@ Current state:
    Where `{slug}` is the slug portion of the ticket directory name (strip the leading `NNN-` prefix, e.g., `001-add-search-feature` -> `add-search-feature`).
    This is a non-blocking suggestion — proceed regardless.
 
-5. Identify Acceptance Criteria section in the plan (`### Acceptance Criteria` or equivalent).
+5. **Locate and extract the Acceptance Criteria section** — bounded read only, do NOT read the plan in full:
+   a. Use `Grep -n "^### Acceptance Criteria" <plan-path>` (or the equivalent heading `^## Acceptance Criteria` / `^#### Acceptance Criteria` as a fallback) to locate the header line number.
+   b. If a match is found at line `L`, run `Read(<plan-path>, offset=L, limit=80)` to load only the AC section body. Ignore content outside that window.
+   c. Extract the AC bullet list from the returned window. Keep the extracted text in a variable for use in the Generator prompt (§13 field b) and Evaluator prompts (§8, §15 field b).
 
-6. If Acceptance Criteria section is NOT found in the plan, print "ERROR: Plan has no Acceptance Criteria. Add an '### Acceptance Criteria' section to the plan before running /impl." and stop.
+6. If step 5 Grep returns no header line, print "ERROR: Plan has no Acceptance Criteria. Add an '### Acceptance Criteria' section to the plan before running /impl." and stop.
 
 7. **AC Sanity Check** (round 1 only, M/L/XL size only): Include in the Generator prompt: "Before implementing, review each AC. If any AC is ambiguous or technically infeasible, flag it in your **Next Steps** field." If Generator flags ambiguous AC, report to user and stop.
 
 8. **Evaluator Dry Run** (round 1 only, **L/XL size only**):
    **MUST invoke the `ac-evaluator` agent via the Agent tool** with a verification planning prompt. **NEVER bypass the Evaluator** by having `/impl` self-draft the verification plan. Fail the task immediately if the Evaluator agent cannot be invoked.
    - Prompt: "You are preparing a verification plan. For each Acceptance Criterion below, describe HOW you will verify it (what commands to run, what to check in the code, what edge cases to test). Do NOT evaluate any implementation — no code has been written yet. Return only the verification plan."
-   - Include: Full plan content, Acceptance Criteria
+   - Include: Plan path: `<path>`. Acceptance Criteria: <text>. Append to the prompt body: "Read the plan file at the given path before drafting the verification plan. The Acceptance Criteria text above is the fixed rubric — do not re-derive it from the plan."
    - Receive: Evaluator's verification plan
    - **If Evaluator fails or returns partial**:
      - **Autopilot policy check**: Before asking the user, check if `{ticket-dir}/autopilot-policy.yaml` exists (where ticket-dir is the directory containing the plan file, e.g. `.backlog/active/{ticket-dir}/`).
@@ -150,7 +153,7 @@ Current state:
    - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to "no" (stop the skill). Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure. Re-run in interactive mode." and exit. Do NOT hang waiting for input.
    - **If Evaluator succeeds**: Save the verification plan for inclusion in Generator prompt (step 13g).
 
-9. If related investigation file exists (same directory `investigation.md` or latest in `.docs/research/`), read it.
+9. If related investigation file exists (same directory `investigation.md` or latest in `.docs/research/`), locate its path via Glob. Pass the path to the Generator prompt as field c — the implementer will read it if needed.
 
 10. If working tree has uncommitted changes unrelated to the plan, warn user.
 
@@ -263,7 +266,7 @@ read-modify-write on `phase-state.yaml` that touches ONLY the listed fields
 under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
 `phases.ship`:
 - **Before Generator (step 13)**: Update `phases.impl.phase_sub: generator-pending`, `phases.impl.next_action: start-round-{N}-generator`, `phases.impl.current_round: {N}`.
-- **At start of step 14 — before `git diff --stat`**: Update `phases.impl.phase_sub: generator-complete`, `phases.impl.next_action: start-evaluator`.
+- **At start of step 14 — before `git diff --shortstat`**: Update `phases.impl.phase_sub: generator-complete`, `phases.impl.next_action: start-evaluator`.
 - **After Evaluator (step 16)**: Update `phases.impl.phase_sub: evaluator-complete`, `phases.impl.last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `phases.impl.next_action: start-audit` (if PASS) or `phases.impl.next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `phases.impl.next_action: stop-critical` (if FAIL-CRITICAL).
 - **After /audit (step 18)**: Update `phases.impl.phase_sub: audit-complete`, `phases.impl.last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `phases.impl.last_audit_critical: {count}`, `phases.impl.next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `phases.impl.feedback_files.eval: {eval-round-{N}.md path}`, `phases.impl.feedback_files.quality: {quality-round-{N}.md path}`. Also append the round's artifact path to `phases.impl.artifacts.eval_rounds[]`, `phases.impl.artifacts.quality_rounds[]`, `phases.impl.artifacts.audit_rounds[]`, and (if produced) `phases.impl.artifacts.security_scans[]`.
 
@@ -274,9 +277,9 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
     - model: `sonnet` if Size is S or M, otherwise `opus` (L/XL/unknown)
     - description: "Implement plan for <feature>"
     - Prompt must include:
-      a. Full plan content
+      a. Plan path: `<path>`. The implementer MUST read the full plan file at this path before implementing.
       b. Acceptance Criteria (highlighted: "You will be evaluated by an independent evaluator against these criteria")
-      c. Investigation file content (if exists)
+      c. Investigation path (if exists): `<path>`. The implementer SHOULD read it for background context if the plan references it.
       d. User's additional instructions (if any)
       e. Round 2+: Pass the previous round's feedback file paths to the Generator:
          "Read the following feedback files from the previous evaluation round before implementing:
@@ -291,7 +294,7 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
 14. **Immediately** update `{ticket-dir}/phase-state.yaml` (read-modify-write; touch only the listed fields under `phases.impl.*`):
       phases.impl.phase_sub: generator-complete
       phases.impl.next_action: start-evaluator
-    Then run `git diff --stat` to capture change summary.
+    Then run `git diff --shortstat` to capture a single-line change summary (e.g., `N files changed, +M -K`). Do NOT run `git diff --stat` in the main session — the ac-evaluator can invoke it independently via its `Bash(git diff:*)` permission if per-file detail is needed.
 
     > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**:
     > 1. Read `{ticket-dir}/phase-state.yaml`
@@ -300,9 +303,9 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
 
 15. **MUST invoke the AC Evaluator (`ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** based on the Generator's return value, build status, or test output alone — the Evaluator must read the code independently via `git diff` and render its own PASS/FAIL. This is the exact failure mode observed in JSONL Ticket 002 (L554-L559): the orchestrator self-judged PASS without invoking the Evaluator, bypassing the firewall. Fail the task immediately if the Evaluator agent cannot be invoked.
    - Prompt must include:
-     a. Full plan content
+     a. Plan path: `<path>`. Read it in full before evaluating.
      b. Acceptance Criteria
-     c. Output of `git diff --stat` from step 14
+     c. Output of `git diff --shortstat` from step 14
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
      e. Report save path:
         - If plan is in `.backlog/active/{ticket-dir}/` -> "Save your evaluation report to `.backlog/active/{ticket-dir}/eval-round-{n}.md`"
