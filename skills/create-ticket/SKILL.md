@@ -120,6 +120,19 @@ Additional context for the planner:
 - If brief was provided: full brief content (replaces Phase 2 answers)
 - "Each AC will be evaluated by an independent evaluator for Testability (objectively verifiable PASS/FAIL) and Unambiguity (single interpretation). ACs that fail either gate will be rejected."
 
+#### AC Quality Criteria
+
+Every AC must pass both gates. Match the GOOD pattern; the evaluator rejects the BAD pattern.
+
+- **Gate 1 — Testability**: each AC must be objectively verifiable with a clear PASS/FAIL outcome. Replace vague adjectives with concrete thresholds.
+  - BAD: "Improve performance" (no threshold)
+  - GOOD: "Response time under 200ms for 95th percentile"
+- **Gate 2 — Unambiguity**: each AC must have exactly one interpretation. Define any term open to multiple readings.
+  - BAD: "Support large files" ("large" undefined)
+  - GOOD: "Stream files over 100MB without loading into memory"
+
+Pattern: vague threshold → concrete threshold (Gate 1); undefined term → defined term (Gate 2).
+
 #### Split Judgment
 
 Instruct the planner to evaluate whether the ticket should be split:
