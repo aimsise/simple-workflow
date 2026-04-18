@@ -37,10 +37,10 @@ for heading in \
   "## 1. Canonical schema" \
   "## 2. Write ownership" \
   "## 3. Lifecycle rules" \
-  "## 4. Legacy migration path" \
-  "## 5. Field renames from legacy" \
+  "## 4. Readers" \
+  "## 5. Dual-state precedence" \
   "## 6. Contractual invariants" \
-  "## 7. Readers"; do
+  "## 7. Legacy migration path"; do
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   if grep -qF "$heading" "$SCHEMA_DOC" 2>/dev/null; then
     echo -e "  ${GREEN}PASS${NC} schema doc has heading: $heading"

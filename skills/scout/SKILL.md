@@ -89,7 +89,7 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
     - `phases.scout.status: in-progress`
     - `phases.scout.started_at: {now}` (ISO-8601 UTC, e.g. via `date -u +%Y-%m-%dT%H:%M:%SZ`)
     - `current_phase: scout`
-    - `ticket_dir: .backlog/active/{ticket-dir}` (re-anchor the path field to match the new location; required **only** when step 2 actually performed a `mv` from `product_backlog` to `active`. When the ticket was already in `active`, this field is already correct and MUST NOT be rewritten.)
+    - (No `ticket_dir:` field is rewritten — the schema no longer stores a top-level `ticket_dir:`; the file's own path encodes its location and `mv` in step 2 already put it at the correct path.)
     - **Failure recovery (only when pre-state `overall_status == failed`)**: additionally set `overall_status: in-progress` (reset from `failed`). When pre-state `overall_status` is already `in-progress` or any other non-`failed` value, do NOT rewrite this field. This lets `/scout` recover cleanly from a prior `/scout` failure without the user editing the state file by hand.
     If `phase-state.yaml` does NOT exist (e.g. the ticket was created outside `/create-ticket` or in a pre-schema legacy state), skip this step silently — `/impl` will bootstrap the state file later.
 3. **MUST invoke `/investigate` via the Skill tool** with the topic to run codebase research via the researcher agent (sonnet). **NEVER bypass /investigate** with direct `Grep`/`Glob`/`Read` from within `/scout`. Fail the task immediately if `/investigate` cannot be invoked.
@@ -119,27 +119,7 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
     Do NOT modify `phases.create_ticket`, `phases.impl`, or `phases.ship`. Do NOT modify `overall_status` (it remains `in-progress`).
 9. Print a final summary with both file paths and the detected size.
 
-10. **Emit SW-CHECKPOINT block**. After the final summary in step 9 (and after any error messages on failure paths), append the following `## [SW-CHECKPOINT]` block as the **final** section of the skill's response. This block MUST be the last thing shown to the user — it MUST appear after the investigate/plan summaries and any error output. Do NOT omit it on failure paths (e.g., if `/investigate` or `/plan2doc` returned a failure). Emit `artifacts: []` on a single line when no artifacts were produced.
-
-    Rendering rules:
-
-    - Use the literal fenced block below. Replace only the placeholders inside `{...}`.
-    - `phase:` is always the literal string `scout`.
-    - `ticket:` is `.backlog/active/{ticket-dir}` when a ticket was resolved in steps 1–2, otherwise the bare string `none` (no quotes).
-    - `artifacts:` lists the files `/scout` caused to be created/updated in this invocation, as repo-relative paths. On the success path (both `/investigate` and `/plan2doc` succeeded), this MUST include both `investigation.md` and `plan.md` (and `phase-state.yaml` if a ticket was resolved). On a failure path with no artifacts, emit `artifacts: []` on a single line.
-    - `next_recommended:` is `/impl .backlog/active/{ticket-dir}/plan.md` on success. If no `plan.md` was produced, use empty string `""`.
-    - `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit — include it even on failure paths.
-
-    ```
-    ## [SW-CHECKPOINT]
-    phase: scout
-    ticket: {ticket-dir or "none"}
-    artifacts:
-      - {relative path to investigation.md}
-      - {relative path to plan.md}
-    next_recommended: /impl {plan-path}
-    context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
-    ```
+10. **Emit SW-CHECKPOINT block**. Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the skill's response, after the final summary in step 9 and after any error output. Fill: `phase=scout`, `ticket=.backlog/active/{ticket-dir}` when a ticket was resolved in steps 1–2 (otherwise `none`), `artifacts=[<repo-relative paths to investigation.md and plan.md, plus phase-state.yaml if present>]`, `next_recommended=/impl .backlog/active/{ticket-dir}/plan.md` on success (or `""` if no `plan.md` was produced). Emit on failure paths with `artifacts: []`.
 
 ## Error Handling
 

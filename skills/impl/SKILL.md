@@ -177,7 +177,7 @@ Current state:
 
     and stop immediately. The user must explicitly acknowledge the failure by editing the state file before re-entering the loop; automatic retry would mask recurring infrastructure issues.
 
-    **11a. Legacy migration**: Before applying the migration, read `skills/create-ticket/references/phase-state-schema.md` §4 (legacy migration path) and §5 (field rename table) — the rename table, the `legacy_extras` preservation rule, and the canonical section defaults are all defined there. The three branches below cover every legacy / partial-migration state combination.
+    **11a. Legacy migration**: Before applying the migration, **read `skills/create-ticket/references/phase-state-migration.md`** — it is the authoritative source for the field rename table, the `legacy_extras` preservation rule, the `.bak` cleanup convention, and the sunset timeline. The three branches below summarize how `/impl` dispatches over every legacy / partial-migration state combination; the rename table and preservation rule are defined in the migration doc, not repeated here.
 
     **§11a.0 — Both files exist (partial-migration or test state)**: If `{ticket-dir}/impl-state.yaml` AND `{ticket-dir}/phase-state.yaml` both exist:
     - Read `{ticket-dir}/phase-state.yaml`.
@@ -186,32 +186,22 @@ Current state:
 
     **§11a.1 — Clean legacy migration**: If ONLY `{ticket-dir}/impl-state.yaml` exists (no `phase-state.yaml`):
     1. Read `{ticket-dir}/impl-state.yaml`.
-    2. **Before rename**: identify any top-level keys in `impl-state.yaml` that are NOT listed in the canonical rename table (see `skills/create-ticket/references/phase-state-schema.md` §5). The known legacy fields are: `phase`, `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`, plus the 4 artifact lists (`eval_rounds`, `quality_rounds`, `audit_rounds`, `security_scans`), plus `plan_file`, `ticket_dir`, `size`, and `started`. Any other top-level key is preserved — see step 3 for the destination.
+    2. **Before rename**: identify any top-level keys in `impl-state.yaml` that are NOT listed in the rename table (see `skills/create-ticket/references/phase-state-migration.md` §2). The known legacy fields are: `phase`, `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`, `plan_file`, `ticket_dir`, `size`, `started`. Any other top-level key is **unknown** and preserved per the `legacy_extras` rule (migration doc §3).
     3. Write `{ticket-dir}/phase-state.yaml` with the canonical schema (see `skills/create-ticket/references/phase-state-schema.md`). Populate fields as follows:
-       - Top-level: `version: 1`; `ticket_dir: .backlog/active/{ticket-dir}`; `size:` = legacy `size`; `created:` = legacy `started` (fallback to `{now}` if missing); `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`.
+       - Top-level: `version: 1`; `size:` = legacy `size`; `created:` = legacy `started` (fallback to `{now}` if missing); `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`. (No top-level `ticket_dir:` is written — the file path itself encodes location.)
        - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .backlog/active/{ticket-dir}/ticket.md` (if the file exists; otherwise `null`).
        - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation: .backlog/active/{ticket-dir}/investigation.md` (only if the file exists; otherwise `null`), `artifacts.plan: .backlog/active/{ticket-dir}/plan.md` (only if the file exists; otherwise `null`).
-       - `phases.impl.status: in-progress`, `started_at:` = legacy `started`. Copy every legacy field 1:1 under `phases.impl.*` using the rename table:
-         - legacy `phase` → `phases.impl.phase_sub`
-         - legacy `current_round` → `phases.impl.current_round`
-         - legacy `max_rounds` → `phases.impl.max_rounds`
-         - legacy `last_ac_status` → `phases.impl.last_ac_status`
-         - legacy `last_audit_status` → `phases.impl.last_audit_status`
-         - legacy `last_audit_critical` → `phases.impl.last_audit_critical`
-         - legacy `next_action` → `phases.impl.next_action`
-         - legacy `feedback_files.eval` → `phases.impl.feedback_files.eval`
-         - legacy `feedback_files.quality` → `phases.impl.feedback_files.quality`
-       - `phases.impl.artifacts.{eval_rounds,quality_rounds,audit_rounds,security_scans}` = empty lists (the round artifacts can be re-discovered by Glob on the next round update).
-       - `phases.impl.legacy_extras:` — preserve every unknown legacy top-level key (identified in step 2) as a YAML map under this field (e.g. `legacy_extras: {custom_flag: true}`). This keeps forward compatibility with experimental state from upstream branches. If no unknown keys exist, omit the `legacy_extras` field entirely rather than writing an empty map.
+       - `phases.impl.status: in-progress`, `started_at:` = legacy `started`. Copy every legacy field 1:1 under `phases.impl.*` using the rename table documented in `phase-state-migration.md` §2 (summary: legacy `phase → phase_sub`; `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*` keep the same name under `phases.impl.*`; `plan_file` and `ticket_dir` are dropped; `started → started_at`).
+       - `phases.impl.legacy_extras:` — preserve every unknown legacy top-level key (identified in step 2) as a YAML map under this field (e.g. `legacy_extras: {custom_flag: true}`). If no unknown keys exist, omit the `legacy_extras` field entirely rather than writing an empty map. (See migration doc §3.)
        - `phases.ship.status: pending` with all fields `null`.
-    4. **After the write succeeds**, rename the legacy file out of the way rather than deleting it: `mv {ticket-dir}/impl-state.yaml {ticket-dir}/impl-state.yaml.migrated-{YYYYMMDD}.bak`. NEVER use `rm` here — the `.bak` file is preserved for audit / rollback and is removed by a later cleanup pass once the migration is confirmed stable across a full release. If the `phase-state.yaml` write in step 3 failed, do NOT rename the legacy file — the migration is all-or-nothing.
+    4. **After the write succeeds**, rename the legacy file out of the way rather than deleting it: `mv {ticket-dir}/impl-state.yaml {ticket-dir}/impl-state.yaml.migrated-{YYYYMMDD}.bak` (see migration doc §4). NEVER use `rm` here — the `.bak` file is preserved for audit / rollback. If the `phase-state.yaml` write in step 3 failed, do NOT rename the legacy file — the migration is all-or-nothing.
     5. Print `[PHASE-STATE-MIGRATION] impl-state.yaml → phase-state.yaml migrated for {ticket-dir}; legacy file preserved at impl-state.yaml.migrated-{YYYYMMDD}.bak`.
     6. Set `impl_resume_mode = true` and proceed to step 11c (Resume dispatch) with the newly-written state.
 
     **11b. Bootstrap (one-shot)**: If NEITHER `{ticket-dir}/impl-state.yaml` NOR `{ticket-dir}/phase-state.yaml` exists, but a `plan.md` is present in `{ticket-dir}` (or the plan path is `.docs/plans/...`):
     - If the plan path is under `.backlog/active/{ticket-dir}/`:
       1. Create `{ticket-dir}/phase-state.yaml` with the canonical schema:
-         - Top-level: `version: 1`; `ticket_dir: .backlog/active/{ticket-dir}`; `size:` = detected Size (S/M/L/XL from Step 3); `created: {now}`; `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`.
+         - Top-level: `version: 1`; `size:` = detected Size (S/M/L/XL from Step 3); `created: {now}`; `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`. (No top-level `ticket_dir:` is written.)
          - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .backlog/active/{ticket-dir}/ticket.md` if the file exists (else `null`).
          - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation: .backlog/active/{ticket-dir}/investigation.md` if the file exists (else `null`), `artifacts.plan: .backlog/active/{ticket-dir}/plan.md` if the file exists (else `null`).
          - `phases.impl.status: in-progress`, `started_at: {now}`, all other `phases.impl.*` fields at their pending defaults.
@@ -295,7 +285,7 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
 - **Before Generator (step 13)**: Update `phases.impl.phase_sub: generator-pending`, `phases.impl.next_action: start-round-{N}-generator`, `phases.impl.current_round: {N}`.
 - **At start of step 14 — before `git diff --shortstat`**: Update `phases.impl.phase_sub: generator-complete`, `phases.impl.next_action: start-evaluator`.
 - **After Evaluator (step 16)**: Update `phases.impl.phase_sub: evaluator-complete`, `phases.impl.last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `phases.impl.next_action: start-audit` (if PASS) or `phases.impl.next_action: start-round-{N+1}-generator` (if FAIL and rounds remain) or `phases.impl.next_action: stop-critical` (if FAIL-CRITICAL).
-- **After /audit (step 18)**: Update `phases.impl.phase_sub: audit-complete`, `phases.impl.last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `phases.impl.last_audit_critical: {count}`, `phases.impl.next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `phases.impl.feedback_files.eval: {eval-round-{N}.md path}`, `phases.impl.feedback_files.quality: {quality-round-{N}.md path}`. Also append the round's artifact path to `phases.impl.artifacts.eval_rounds[]`, `phases.impl.artifacts.quality_rounds[]`, `phases.impl.artifacts.audit_rounds[]`, and (if produced) `phases.impl.artifacts.security_scans[]`.
+- **After /audit (step 18)**: Update `phases.impl.phase_sub: audit-complete`, `phases.impl.last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `phases.impl.last_audit_critical: {count}`, `phases.impl.next_action` based on decision (e.g. `proceed-to-phase-3` if PASS, `start-round-{N+1}-generator` if FAIL), `phases.impl.feedback_files.eval: {eval-round-{N}.md path}`, `phases.impl.feedback_files.quality: {quality-round-{N}.md path}`. (Per-round artifact filenames are NOT appended to the state file — they are discoverable by Glob under the ticket directory.)
 
 **Non-ticket flow note**: When the plan is in `.docs/plans/` (not under a ticket directory), there is no `phase-state.yaml` and all state updates in this section are no-ops. The Generator → Evaluator → Audit loop still runs normally; resume/migration do not apply.
 
@@ -422,40 +412,18 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
     - `phases.impl.status: completed`
     - `phases.impl.completed_at: {now}` (ISO-8601 UTC)
     - `phases.impl.phase_sub: done`
+    - `phases.impl.last_round: {final round number N}`
     - `phases.impl.next_action: null` (cleared — volatile resume state is no longer needed)
     - `last_completed_phase: impl`
     - `current_phase: ship`
 
-    Do NOT delete `phase-state.yaml` — it is the permanent record for the ticket and is consumed by `/ship` and by `/catchup`. The `eval-round-*.md`, `quality-round-*.md`, and `audit-round-*.md` artifact paths are already recorded under `phases.impl.artifacts.*` for downstream use. `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `feedback_files.*` remain in place as a historical trace of the final round.
+    Do NOT delete `phase-state.yaml` — it is the permanent record for the ticket and is consumed by `/ship` and by `/catchup`. The `eval-round-*.md`, `quality-round-*.md`, `audit-round-*.md`, and `security-scan-*.md` files remain in the ticket directory and are discoverable by Glob. Also set `phases.impl.last_round: {final round number}` as a scalar terminal marker. `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `feedback_files.*` remain in place as a historical trace of the final round.
 
     **Non-ticket flow**: When the plan is in `.docs/plans/` with no ticket dir, there is no `phase-state.yaml` and this step is a no-op.
 
     **Failure case**: If `/impl` exits with remaining AC/quality issues after the max-rounds cap (typically 3 rounds), set `phases.impl.status: completed` (the loop terminated normally) but leave `overall_status: in-progress` — the user must decide whether to re-run or abandon; do NOT set `overall_status: failed` based on Round-N FAIL alone. Only set `phases.impl.status: failed` and `overall_status: failed` when the skill itself cannot complete (e.g. Generator or Evaluator invocation failure, or FAIL-CRITICAL early stop).
 
-22. **Emit SW-CHECKPOINT block (Phase 3 final output only)**. After the Phase 3 summary (step 20) and the state-file finalization (step 21) have completed, append the following `## [SW-CHECKPOINT]` block as the **final** section of the `/impl` response. This block MUST be the last thing shown to the user — it MUST appear after the `git status -s` output, the summary bullets, and any "remaining issues" notes. Emit this block **only once per `/impl` invocation**, at the very end — NOT after each Generator/Evaluator/audit round, and NOT inside the Phase 2 loop. Do NOT omit it on failure paths (FAIL-CRITICAL early stop, Generator/Evaluator invocation failure, or max-rounds cap with remaining issues); emit `artifacts: []` on a single line when no artifacts were produced (e.g., Generator failed before writing any files).
-
-    Rendering rules:
-
-    - Use the literal fenced block below. Replace only the placeholders inside `{...}`.
-    - `phase:` is always the literal string `impl` (the emitting skill's canonical name — NOT `phases.impl.phase_sub`, NOT the ticket's `current_phase`).
-    - `ticket:` is `.backlog/active/{ticket-dir}` when the plan is under a ticket directory; otherwise the bare string `none` (no quotes) for the `.docs/plans/` non-ticket flow.
-    - `artifacts:` lists the files `/impl` caused to be created/updated in this invocation, as repo-relative paths. On the success path this includes every `eval-round-*.md`, `quality-round-*.md`, `audit-round-*.md`, and `security-scan-*.md` produced across all rounds, plus the changed source files (from `git diff --name-only`). On a failure path with no artifacts, emit `artifacts: []` on a single line.
-    - `next_recommended:` is `/ship` when Phase 3 was reached with `proceed-to-phase-3` (success / PASS_WITH_CONCERNS). Use empty string `""` when the skill stopped without producing a shippable state (FAIL-CRITICAL early stop, infrastructure failure).
-    - `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit — include it even on failure paths.
-
-    ```
-    ## [SW-CHECKPOINT]
-    phase: impl
-    ticket: {ticket-dir or "none"}
-    artifacts:
-      - {relative path to eval-round-N.md}
-      - {relative path to quality-round-N.md}
-      - {relative path to audit-round-N.md}
-      - {relative path to security-scan-N.md}
-      - {relative path to each changed source file}
-    next_recommended: /ship
-    context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
-    ```
+22. **Emit SW-CHECKPOINT block (Phase 3 final output only)**. Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the `/impl` response, after the Phase 3 summary (step 20) and the state-file finalization (step 21). Emit the block **only once per `/impl` invocation**, at the very end — NOT after each Generator/Evaluator/audit round and NOT inside the Phase 2 loop. Fill: `phase=impl`, `ticket=.backlog/active/{ticket-dir}` when the plan is under a ticket directory (otherwise `none`), `artifacts=[<repo-relative paths to every eval-round-*.md, quality-round-*.md, audit-round-*.md, security-scan-*.md produced across all rounds, plus changed source files from `git diff --name-only`>]`, `next_recommended=/ship` when Phase 3 was reached with `proceed-to-phase-3` (success / PASS_WITH_CONCERNS) or `""` when the skill stopped without producing a shippable state (FAIL-CRITICAL early stop, infrastructure failure). Emit on failure paths with `artifacts: []`.
 
 ## Error Handling
 

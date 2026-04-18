@@ -158,7 +158,7 @@ Detect the current development phase by checking these conditions **in order**. 
      The `{ticket-dir}` carries its full location prefix — for a product_backlog ticket use the full path (e.g. `.backlog/product_backlog/001-foo`), not just the bare directory name. Step 1-pre records the `location` field per record specifically so this mapping can emit the correct prefix.
 
    - **Single in-progress ticket**: recommend the mapped command using that ticket's `{ticket-dir}` (and `plan.md` path for the `scout → /impl` case).
-   - **Multiple in-progress tickets** (AC 4.3): list ALL matching tickets in the guidance, then recommend resuming the one with the **most recent `latest_started_at`** (computed in Step 1-pre as the max `phases.{phase}.started_at` across that ticket's phase sections, with `created` as fallback). Ties are broken by lexicographic `{ticket-dir}` order. Surface the selected ticket in the `[SW-RESUME]` block's `Run:` line.
+   - **Multiple in-progress tickets** (AC 4.3): list ALL matching tickets in the guidance, then recommend resuming the one with the **most recent `latest_started_at`** (computed in Step 1-pre as the max `phases.{phase}.started_at` across that ticket's phase sections, with `created` as fallback). Ties are broken by lexicographic `{ticket-dir}` order. Name the selected ticket in the recommendation line so the user can see which one was chosen.
 
    - **Inconsistency warning (Rule 0 vs Rule 0-legacy)**: If Rule 0 fires AND a YAML-frontmatter compact-state was also parsed in Step 1 AND the compact-state's aggregate suggestion (from Rule 0-legacy below) would recommend a different action than Rule 0 AND `phase-state.yaml` mtime (from Step 1-pre) is newer than the compact-state's `date` field, emit a single warning line **before** the Rule 0 guidance:
 
@@ -220,19 +220,7 @@ Print a concise summary:
   /<next-command>
   ```
 
-**`[SW-RESUME]` block (AC 4.4)** — terminate the summary with the following English-only block. It is the structural counterpart to `[SW-CHECKPOINT]` emitted by phase-terminating skills; tooling can use either marker to locate the suggested next step.
-
-```
-[SW-RESUME]
-Active: {ticket-dir} @ {last_completed_phase}
-Run: {recommended next command}
-```
-
-Rules for populating the block:
-- When Rule 0 (phase-state.yaml) fired with a **single** in-progress ticket, emit one `Active:` line (`{ticket-dir} @ {last_completed_phase}`) and one `Run:` line with the mapped command.
-- When Rule 0 (phase-state.yaml) fired with **multiple** in-progress tickets, emit one `Active:` line per matching ticket, followed by a **single** `Run:` line whose command corresponds to the ticket with the most recent `latest_started_at` (see Rule 0 tie-break).
-- When Rule 0 did not fire but another rule (0-legacy through 6) recommended a command, emit a best-effort block: `Active: {ticket-dir or "none"} @ {detected phase}` and `Run: {recommended command}`.
-- When no recommendation can be made (e.g. no tickets, no recognizable phase), omit the `[SW-RESUME]` block entirely.
+`/catchup` does NOT emit a `[SW-RESUME]` or `[SW-CHECKPOINT]` block. It is recovery tooling, not a phase terminator — the Summary Output above already states the recommended next command plainly, and `/catchup`-specific tooling should read the "Exact command sequence" line rather than a structured marker. See `skills/create-ticket/references/sw-checkpoint-template.md` for the CHECKPOINT contract and the list of skills that DO emit it.
 
 ## Error Handling
 

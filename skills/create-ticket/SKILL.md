@@ -198,12 +198,11 @@ After generating the ticket content:
 
    a. Compute `now` = current timestamp in ISO-8601 UTC (e.g. via `date -u +%Y-%m-%dT%H:%M:%SZ`).
    b. Let `size_i` be the Size value assigned to ticket `i` in Phase 3 (S/M/L/XL).
-   c. Let `ticket_dir_path_i` = `.backlog/product_backlog/{ticket-dir_i}` (the directory just created in step 2 — note: the phase-state file stays here until `/scout` moves the ticket to `.backlog/active/`; `/scout` is responsible for rewriting the `ticket_dir` field to reflect the new path).
+   c. Let `ticket_dir_path_i` = `.backlog/product_backlog/{ticket-dir_i}` (the directory just created in step 2 — the phase-state file stays here until `/scout` moves the ticket to `.backlog/active/`). No top-level `ticket_dir:` field is serialized inside the state file; the file's own path encodes location.
    d. Write `{ticket_dir_path_i}/phase-state.yaml` with the full pending template populated as follows. The schema is the canonical one documented in `skills/create-ticket/references/phase-state-schema.md`:
 
       ```yaml
       version: 1
-      ticket_dir: .backlog/product_backlog/{ticket-dir_i}
       size: {size_i}
       created: {now}
 
@@ -237,15 +236,11 @@ After generating the ticket content:
           last_ac_status: null
           last_audit_status: null
           last_audit_critical: 0
+          last_round: null
           next_action: null
           feedback_files:
             eval: null
             quality: null
-          artifacts:
-            eval_rounds: []
-            quality_rounds: []
-            audit_rounds: []
-            security_scans: []
 
         ship:
           status: pending
@@ -300,26 +295,7 @@ Recommended workflow per ticket: `/scout → /impl → /ship`
 
 ### Phase 6: Emit SW-CHECKPOINT block
 
-After **all** prior output sections (summary table / per-ticket details) have been printed, append the following `## [SW-CHECKPOINT]` block as the **final** section of the skill's response. This block MUST be the last thing shown to the user — it MUST appear after `### Created Tickets` and any other summary/result content. Do NOT omit it on failure paths (e.g., if Phase 4 evaluation stopped or if ticket-evaluator was unavailable, still emit the block; use an empty `artifacts: []` list when no ticket files were written).
-
-Rendering rules:
-
-- Use the literal fenced block below. Replace only the placeholders inside `{...}`.
-- `phase:` is always the literal string `create-ticket` (hyphen, matching the skill name).
-- `ticket:` is the created ticket directory path (for N=1: `.backlog/product_backlog/{ticket-dir}`; for N>1: the first created ticket directory, or `"none"` if no ticket was written). Use the bare string `none` (no quotes) only when no ticket was created.
-- `artifacts:` lists every `ticket.md` file written in this invocation as repo-relative paths. If no ticket file was written (failure before Phase 5), emit `artifacts: []` on a single line instead of a bullet list.
-- `next_recommended:` is `/scout {ticket-dir}` for the primary/first created ticket. If no ticket was created, use empty string `""`.
-- `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit.
-
-```
-## [SW-CHECKPOINT]
-phase: create-ticket
-ticket: {ticket-dir or "none"}
-artifacts:
-  - {relative path to ticket.md}
-next_recommended: /scout {ticket-dir}
-context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
-```
+Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the skill's output, after `### Created Tickets` and any other summary/result content. Fill: `phase=create_ticket`, `ticket=<first created ticket-dir or "none">` (for N>1 use the first created ticket's directory), `artifacts=[<repo-relative paths to every `ticket.md` written>]`, `next_recommended=/scout {ticket-dir}` (or `""` if no ticket was created). Emit on failure paths with `artifacts: []`.
 
 ### Workflow selection guide
 

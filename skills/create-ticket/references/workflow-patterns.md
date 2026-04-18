@@ -17,9 +17,9 @@
 | `/refactor` | skill | Refactoring with safety checks |
 | `/test` | skill | Create and run tests |
 | `/audit` | skill | Multi-agent code quality + security audit. Always runs security-scanner; use `only_security_scan=true` for security-only mode |
-| `/catchup` | skill | Context recovery, phase detection, and next action guidance. Primary state source is `phase-state.yaml`; ends its summary with a `[SW-RESUME]` block |
+| `/catchup` | skill | Context recovery, phase detection, and next action guidance. Primary state source is `phase-state.yaml` |
 | `phase-state.yaml` | state file | Unified per-ticket lifecycle state (`create_ticket → scout → impl → ship → done`). Created by `/create-ticket`, updated in place by each phase-owner skill, moved to `.backlog/done/` by `/ship`, **never deleted**. Consumed by `hooks/session-start.sh` and `/catchup`. See `skills/create-ticket/references/phase-state-schema.md` |
-| `[SW-CHECKPOINT]` | output block | English-only YAML-parseable block emitted by phase-terminating skills (`/create-ticket`, `/scout`, `/plan2doc`, `/impl`, `/ship`) as the last section of their output. Signals that `/clear` is safe and that `/catchup` can recover from `phase-state.yaml`. NOT emitted by `/audit` |
+| `[SW-CHECKPOINT]` | output block | English-only YAML-parseable block emitted by phase-terminating skills (`/create-ticket`, `/scout`, `/impl`, `/ship`) as the last section of their output. Signals that `/clear` is safe and that `/catchup` can recover from `phase-state.yaml`. NOT emitted by `/audit`, `/plan2doc`, or `/catchup`. Canonical template: `skills/create-ticket/references/sw-checkpoint-template.md` |
 | planner | agent | Implementation plan design (opus for M/L/XL, sonnet for S) |
 | researcher | agent | Code research and analysis |
 | ticket-evaluator | agent | Ticket quality evaluation with 5 quality gates (sonnet) |
