@@ -14,7 +14,13 @@
 
 ```yaml
 version: 1
-ticket_dir: .backlog/active/{ticket-dir}
+ticket_dir: .backlog/active/{ticket-dir}   # or .backlog/product_backlog/{ticket-dir}
+                                           # for tickets that have not yet entered /scout.
+                                           # /scout rewrites this to .backlog/active/...
+                                           # when it moves the ticket into active/.
+                                           # /ship rewrites it again to .backlog/done/...
+                                           # after the ticket ships. Both active/ and
+                                           # product_backlog/ forms are valid in-flight.
 size: {S|M|L|XL}
 created: {ISO-8601 UTC}
 

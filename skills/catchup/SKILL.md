@@ -56,21 +56,25 @@ If `$ARGUMENTS` is empty, proceed with full recovery (Steps 1-pre and 1-4).
 
 `phase-state.yaml` is the **primary** source of truth for ticket lifecycle state, read **before** the compact-state / session-log sources in Step 1. See `skills/create-ticket/references/phase-state-schema.md` for the canonical schema.
 
-Use the `Glob` tool to enumerate `.backlog/active/*/phase-state.yaml`. For each match, use the `Read` tool to load the file, then use `Grep` on the in-memory content (via line-prefix matching — NOT shell pipelines; the allowed-tools of this skill do not include shell piping, consistent with AC 4.7) to extract per-ticket records:
+Use the `Glob` tool to enumerate state files across **both** ticket locations:
+- `.backlog/active/*/phase-state.yaml`
+- `.backlog/product_backlog/*/phase-state.yaml`
+
+Product-backlog tickets sit at `last_completed_phase: create_ticket` with `overall_status: in-progress` — they are real in-progress records that Rule 0 must be able to recommend `/scout` for. Missing this location caused the pre-PR-E discovery gap (Reviewer B Findings 3, 4). For each match, use the `Read` tool to load the file, then use `Grep` on the in-memory content (via line-prefix matching — NOT shell pipelines; the allowed-tools of this skill do not include shell piping, consistent with AC 4.7) to extract per-ticket records:
 
 - `current_phase` (top-level scalar: `create_ticket | scout | impl | ship | done`)
 - `last_completed_phase` (top-level scalar: `create_ticket | scout | impl | ship | null`)
 - `overall_status` (top-level scalar: `in-progress | blocked | done | failed`)
 - `created` (top-level ISO-8601 scalar)
-- For each phase section under `phases:` where present, its `started_at` scalar (used to resolve the "most recent" tie-break in Rule 0.5)
+- For each phase section under `phases:` where present, its `started_at` scalar (used to resolve the "most recent" tie-break in Rule 0 — formerly Rule 0.5 before the precedence flip in Task 7)
 
 Match only **top-level** scalars for `current_phase`, `last_completed_phase`, `overall_status` (lines whose content starts at column 0). Do not confuse them with identically-named nested keys under `phases:` which are indented.
 
-Build an ordered per-ticket record list `phase_state_records = [{dir, current_phase, last_completed_phase, overall_status, created, latest_started_at}, ...]`. The `latest_started_at` field is the maximum `phases.{phase}.started_at` across that ticket's phase sections; when no `started_at` is present, fall back to `created`. Carry this list forward to Steps 2, 4, and 5.
+Build an ordered per-ticket record list `phase_state_records = [{dir, location, current_phase, last_completed_phase, overall_status, created, latest_started_at}, ...]`. The `location` field is `active` when the file path matches `.backlog/active/` and `product_backlog` when it matches `.backlog/product_backlog/` — Rule 0's `{ticket-dir}` output includes the full prefix (e.g. `.backlog/product_backlog/001-foo`) so the recommended command resolves correctly without the user having to guess the location. The `latest_started_at` field is the maximum `phases.{phase}.started_at` across that ticket's phase sections; when no `started_at` is present, fall back to `created`. Carry this list forward to Steps 2, 4, and 5.
 
 **Freshness flag**: If any `phase-state.yaml` was modified within the last hour, set `phase_state_fresh = true`. Determine freshness by comparing the file's mtime (via `Bash(stat:*)` if available, or by inspecting the Glob result ordering as a best-effort fallback) with the current time. If mtime cannot be determined, leave `phase_state_fresh = false`.
 
-**If no `phase-state.yaml` file exists anywhere in `.backlog/active/`**, set `phase_state_records = []` and fall through to Step 1 unchanged (AC 4.5 — existing compact-state + artifact-discovery behavior is preserved).
+**If no `phase-state.yaml` file exists anywhere in `.backlog/active/` OR `.backlog/product_backlog/`**, set `phase_state_records = []` and fall through to Step 1 unchanged (AC 4.5 — existing compact-state + artifact-discovery behavior is preserved).
 
 ### 1. Compact-State and Session-Log Recovery
 
@@ -125,32 +129,44 @@ Check for existing docs (regardless of whether researcher was spawned):
 
 ### 4. Phase Auto-Detection and Guidance
 
-Detect the current development phase by checking these conditions **in order**. Check both `.docs/` and `.backlog/active/` for artifacts. Use the **first matching** phase:
+Detect the current development phase by checking these conditions **in order**. Check both `.docs/` and `.backlog/active/` for artifacts. Use the **first matching** phase.
 
-0. **Compact-state indicates an in-progress `/impl` loop** → suggest **resume `/impl`**
+**Rule precedence note**: `phase-state.yaml` is the authoritative lifecycle state source. Rule 0 below therefore evaluates `phase_state_records` (from Step 1-pre) **strictly before** the legacy compact-state rule (now Rule 0-legacy). The legacy rule only fires when Rule 0 did not match (typically on repositories that have no `phase-state.yaml` yet, or where every record has `overall_status != in-progress`).
+
+0. **`phase-state.yaml` indicates an in-progress ticket with a completed phase** → suggest `next_recommended` command based on `last_completed_phase` mapping
+
+   - **Precedence**: this rule is evaluated **strictly before Rule 0-legacy** and before Rule 1. `phase-state.yaml` is the authoritative state source; only when it yields no match do the legacy compact-state / artifact-discovery rules apply.
+   - **Fire condition**: at least one record in `phase_state_records` (from Step 1-pre) has `overall_status: in-progress` AND `last_completed_phase != ship` AND `last_completed_phase != null`. If none match, fall through to Rule 0-legacy.
+   - **Mapping from `last_completed_phase` to next recommended command**:
+
+     | `last_completed_phase` | ticket location | next command |
+     |---|---|---|
+     | `create_ticket` | `.backlog/active/` or `.backlog/product_backlog/` | `/scout {ticket-dir}` |
+     | `scout` | `.backlog/active/` | `/impl {plan-path}` |
+     | `impl` | `.backlog/active/` | `/ship` |
+
+     (`last_completed_phase == ship` means the ticket should have moved to `.backlog/done/`; skip.)
+
+     The `{ticket-dir}` carries its full location prefix — for a product_backlog ticket use the full path (e.g. `.backlog/product_backlog/001-foo`), not just the bare directory name. Step 1-pre records the `location` field per record specifically so this mapping can emit the correct prefix.
+
+   - **Single in-progress ticket**: recommend the mapped command using that ticket's `{ticket-dir}` (and `plan.md` path for the `scout → /impl` case).
+   - **Multiple in-progress tickets** (AC 4.3): list ALL matching tickets in the guidance, then recommend resuming the one with the **most recent `latest_started_at`** (computed in Step 1-pre as the max `phases.{phase}.started_at` across that ticket's phase sections, with `created` as fallback). Ties are broken by lexicographic `{ticket-dir}` order. Surface the selected ticket in the `[SW-RESUME]` block's `Run:` line.
+
+   - **Inconsistency warning (Rule 0 vs Rule 0-legacy)**: If Rule 0 fires AND a YAML-frontmatter compact-state was also parsed in Step 1 AND the compact-state's aggregate suggestion (from Rule 0-legacy below) would recommend a different action than Rule 0 AND `phase-state.yaml` mtime (from Step 1-pre) is newer than the compact-state's `date` field, emit a single warning line **before** the Rule 0 guidance:
+
+     ```
+     Inconsistency detected between phase-state.yaml and older compact-state. Preferring phase-state.yaml (newer).
+     ```
+
+     Then proceed with the Rule 0 recommendation. This surfaces — rather than silently hides — state drift between the two files, so users can investigate whether the compact-state snapshot is stale.
+
+0-legacy. **Compact-state indicates an in-progress `/impl` loop** → suggest **resume `/impl`** *(only when Rule 0 did not fire)*
    - Check: a YAML-frontmatter compact-state file was parsed in Step 1 AND `in_progress_phase == impl-loop` (aggregate field)
-   - Check: no new git commit has been made since the compact-state's `date` (compare against `git log -1 --format=%cI` for the most recent commit). If a newer commit exists, the user has already moved on — skip Rule 0 and fall through to the rules below.
+   - Check: no new git commit has been made since the compact-state's `date` (compare against `git log -1 --format=%cI` for the most recent commit). If a newer commit exists, the user has already moved on — skip Rule 0-legacy and fall through to the rules below.
    - **Per-ticket guidance** (when `tickets:` array is present): identify ticket(s) with `in_progress_phase == impl-loop` from the per-ticket array. For each such ticket, include its directory, round number, and outcome in the guidance.
      - Single impl-loop ticket: "You were in the middle of `/impl` for `{dir}` (round `{latest_eval_round}` evaluated, last outcome: `{last_round_outcome}`). Re-run `/impl` to resume."
      - Multiple impl-loop tickets: List all looping tickets with their round/outcome, then recommend resuming the one with the highest `latest_eval_round`.
    - **Fallback** (when `tickets:` array is absent — legacy compact-state): use the aggregate `latest_eval_round` and `last_round_outcome` as before. If `active_tickets` is non-empty, name the ticket directory in the guidance.
-
-0.5. **`phase-state.yaml` indicates an in-progress ticket with a completed phase** → suggest `next_recommended` command based on `last_completed_phase` mapping
-
-   - **Precedence**: this rule is evaluated **after Rule 0** (which handles in-progress `/impl` loop recovery from compact-state) and **before Rule 1**. `phase-state.yaml` is the authoritative state source; the mapping below only fires when no Rule 0 match was found.
-   - **Fire condition**: at least one record in `phase_state_records` (from Step 1-pre) has `overall_status: in-progress` AND `last_completed_phase != ship` AND `last_completed_phase != null`. If none match, fall through to Rule 1.
-   - **Mapping from `last_completed_phase` to next recommended command**:
-
-     | `last_completed_phase` | next command |
-     |---|---|
-     | `create_ticket` | `/scout {ticket-dir}` |
-     | `scout` | `/impl {plan-path}` |
-     | `impl` | `/ship` |
-
-     (`last_completed_phase == ship` means the ticket should have moved to `.backlog/done/`; skip.)
-
-   - **Single in-progress ticket**: recommend the mapped command using that ticket's `{ticket-dir}` (and `plan.md` path for the `scout → /impl` case).
-   - **Multiple in-progress tickets** (AC 4.3): list ALL matching tickets in the guidance, then recommend resuming the one with the **most recent `latest_started_at`** (computed in Step 1-pre as the max `phases.{phase}.started_at` across that ticket's phase sections, with `created` as fallback). Ties are broken by lexicographic `{ticket-dir}` order. Surface the selected ticket in the `[SW-RESUME]` block's `Run:` line.
 
 1. **No research files for current topic** → suggest **investigate**
    - Check: `.docs/research/` is empty or has no files related to current branch
@@ -205,9 +221,9 @@ Run: {recommended next command}
 ```
 
 Rules for populating the block:
-- When Rule 0.5 fired with a **single** in-progress ticket, emit one `Active:` line (`{ticket-dir} @ {last_completed_phase}`) and one `Run:` line with the mapped command.
-- When Rule 0.5 fired with **multiple** in-progress tickets, emit one `Active:` line per matching ticket, followed by a **single** `Run:` line whose command corresponds to the ticket with the most recent `latest_started_at` (see Rule 0.5 tie-break).
-- When Rule 0.5 did not fire but another rule recommended a command, emit a best-effort block: `Active: {ticket-dir or "none"} @ {detected phase}` and `Run: {recommended command}`.
+- When Rule 0 (phase-state.yaml) fired with a **single** in-progress ticket, emit one `Active:` line (`{ticket-dir} @ {last_completed_phase}`) and one `Run:` line with the mapped command.
+- When Rule 0 (phase-state.yaml) fired with **multiple** in-progress tickets, emit one `Active:` line per matching ticket, followed by a **single** `Run:` line whose command corresponds to the ticket with the most recent `latest_started_at` (see Rule 0 tie-break).
+- When Rule 0 did not fire but another rule (0-legacy through 6) recommended a command, emit a best-effort block: `Active: {ticket-dir or "none"} @ {detected phase}` and `Run: {recommended command}`.
 - When no recommendation can be made (e.g. no tickets, no recognizable phase), omit the `[SW-RESUME]` block entirely.
 
 ## Error Handling

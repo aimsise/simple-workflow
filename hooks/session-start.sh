@@ -67,7 +67,13 @@ _sw_extract_scalar() {
 }
 
 shopt -s nullglob
-_sw_state_files=(.backlog/active/*/phase-state.yaml)
+# Scan BOTH active and product_backlog locations. /create-ticket writes the
+# initial phase-state.yaml into .backlog/product_backlog/ for tickets that
+# have not yet entered /scout. Readers that skip that directory miss every
+# ticket sitting at last_completed_phase: create_ticket (Reviewer B Findings
+# 3, 4). Each location is tagged in the output so users can distinguish
+# not-yet-scouted backlog tickets from in-progress active ones at a glance.
+_sw_state_files=(.backlog/active/*/phase-state.yaml .backlog/product_backlog/*/phase-state.yaml)
 shopt -u nullglob
 
 _sw_ticket_lines=""
@@ -87,9 +93,17 @@ for _sw_sf in "${_sw_state_files[@]}"; do
   [ -z "$_sw_cur" ] && _sw_cur="unknown"
   [ -z "$_sw_last" ] && _sw_last="null"
   [ -z "$_sw_status" ] && _sw_status="unknown"
-  _sw_ticket_lines+=$'\n'"  - ${_sw_ticket_dir}: phase=${_sw_cur} last_completed=${_sw_last} status=${_sw_status}"
+  # Append a location marker so users can tell at a glance whether a ticket
+  # is in active/ (ready for /scout continuation or later) or product_backlog/
+  # (awaits initial /scout invocation).
+  _sw_location_marker=""
+  case "$_sw_ticket_dir" in
+    .backlog/product_backlog/*) _sw_location_marker=" (product_backlog)" ;;
+    .backlog/active/*)          _sw_location_marker=" (active)" ;;
+  esac
+  _sw_ticket_lines+=$'\n'"  - ${_sw_ticket_dir}: phase=${_sw_cur} last_completed=${_sw_last} status=${_sw_status}${_sw_location_marker}"
 done
-unset _sw_state_files _sw_sf _sw_ticket_dir _sw_cur _sw_last _sw_status
+unset _sw_state_files _sw_sf _sw_ticket_dir _sw_cur _sw_last _sw_status _sw_location_marker
 
 if [ -n "$_sw_ticket_lines" ]; then
   CONTEXT+=$'\n'"Active tickets:${_sw_ticket_lines}"$'\n'"Tip: run /catchup for full recovery."
