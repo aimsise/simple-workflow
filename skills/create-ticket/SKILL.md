@@ -39,32 +39,26 @@ Ticket template:
 
 ## phase-state.yaml write ownership
 
-This skill writes the **whole** `phase-state.yaml` template at ticket creation time
-and then transitions `phases.create_ticket` through `in-progress` → `completed`
-within the same invocation. It MUST NOT write to any other phase's section
-beyond the initial pending template. The top-level status fields
-(`current_phase`, `last_completed_phase`, `overall_status`) are also owned by
-this skill on initial write; subsequent writers update them as they transition
-through their own phase.
+Writes the **whole** `phase-state.yaml` template at creation and transitions `phases.create_ticket` through `in-progress` → `completed` in the same invocation. Never writes other phase sections beyond the initial pending template. Top-level `current_phase` / `last_completed_phase` / `overall_status` are owned on initial write; subsequent writers update them per their own phase.
 
 Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Mandatory Skill Invocations
 
-The following agent invocations are **contractual** — `/create-ticket` MUST delegate to each of these via the Agent tool. Writing ticket content by direct model output without delegating to these agents is **never acceptable**, because it bypasses the independent research/planning/evaluation layers that guarantee ticket quality. Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
+`/create-ticket` MUST delegate to each agent below via the Agent tool. Direct model output without delegation bypasses the independent research/planning/evaluation layers and is a contract violation detected by the skill invocation audit (Phase A+).
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `researcher` agent (Agent tool) | Phase 1 Investigation — always, before drafting the ticket | No investigation findings captured; planner operates on `/create-ticket`'s model-internal assumptions instead of actual codebase evidence. Detected by absence of researcher trace in the skill invocation audit |
-| `planner` agent (Agent tool) | Phase 3 Ticket Draft — always, after Phase 1 (and optionally Phase 2) | No structured ticket draft; skill falls back to ad-hoc model output with no category/size/AC separation — ticket-evaluator will subsequently FAIL the quality gate |
-| `ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — always, after Phase 3 | No quality gate verification; ticket is written with status "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
+| `researcher` agent (Agent tool) | Phase 1 Investigation — before drafting | No investigation findings; planner operates on model-internal assumptions rather than codebase evidence. Detected by missing researcher trace in skill invocation audit |
+| `planner` agent (Agent tool) | Phase 3 Ticket Draft — after Phase 1 (+ optional Phase 2) | No structured draft; skill falls back to ad-hoc output with no category/size/AC separation — ticket-evaluator will FAIL the quality gate |
+| `ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — after Phase 3 | No quality gate; ticket marked "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
 
 **Binding rules**:
-- `MUST invoke researcher via the Agent tool` — never substitute with direct `Grep`/`Read`/`Glob` from within `/create-ticket`. The researcher agent's independent findings are load-bearing for ticket scope definition.
-- `MUST invoke planner via the Agent tool` — never draft ticket content inline. The planner agent's output is the canonical draft.
-- `MUST invoke ticket-evaluator via the Agent tool` — never self-assess ticket quality based on model self-judgment. The ticket-evaluator is the independent quality gate.
+- `MUST invoke researcher via the Agent tool` — the researcher's independent findings are load-bearing for ticket scope definition.
+- `MUST invoke planner via the Agent tool` — never draft ticket content inline; the planner's output is the canonical draft.
+- `MUST invoke ticket-evaluator via the Agent tool` — never self-assess ticket quality; the ticket-evaluator is the independent quality gate.
 - `NEVER bypass any of these agents via direct file operations` — writing `ticket.md` without going through all three phases is a contract violation.
-- `Fail the task immediately if any mandatory agent invocation cannot be completed via the Agent tool` — print the failure reason and stop; do not fabricate a ticket.
+- `Fail the task immediately if any mandatory agent invocation cannot be completed` — print the reason and stop; do not fabricate a ticket.
 
 # /create-ticket
 
@@ -72,20 +66,20 @@ Ticket description: $ARGUMENTS
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for the optional `brief=<path>` parameter:
-- If `brief=<path>` is present, extract the path and remove it from the ticket description.
-- If the brief file path does not exist, print "ERROR: Brief file not found at <path>" and stop.
-- If `brief=<path>` is not present, proceed with the ticket description as-is.
+Parse `$ARGUMENTS` for the optional `brief=<path>`:
+- If present, extract the path and remove from the ticket description.
+- If the path does not exist, print "ERROR: Brief file not found at <path>" and stop.
+- If absent, proceed with the ticket description as-is.
 
 ## Instructions
 
-Generate a structured ticket from the given ticket description.
+Generate a structured ticket from the given description.
 
 ### Phase 1: Investigation (researcher agent)
 
-**MUST invoke the `researcher` agent via the Agent tool.** **NEVER bypass the researcher by using `Grep`/`Read`/`Glob` directly from within `/create-ticket`** — the researcher's independent findings are required for Phase 3 planner input. Fail the task immediately if the researcher agent cannot be invoked.
+**MUST invoke the `researcher` via the Agent tool.** **NEVER bypass** via direct `Grep`/`Read`/`Glob` — independent findings are required for Phase 3. Fail the task immediately if the researcher cannot be invoked.
 
-Use the researcher agent to investigate:
+Researcher scope:
 
 1. Source code related to the ticket description
 2. Affected files and line ranges
@@ -95,111 +89,102 @@ Use the researcher agent to investigate:
 
 ### Phase 2: Socratic Refinement
 
-**Brief mode**: If a `brief=<path>` parameter was provided, skip Phase 2 entirely. The brief document contains all necessary context gathered through a prior structured interview. Proceed directly to Phase 3 with the brief content.
+**Brief mode**: If `brief=<path>` was provided, skip Phase 2 — the brief already contains structured-interview context. Proceed to Phase 3.
 
-Before drafting the ticket, refine the scope through targeted questions.
+Otherwise, refine scope through targeted questions:
 
-1. Analyze the researcher's findings from Phase 1
-2. Identify unclear points in the following areas:
+1. Analyze the researcher's findings.
+2. Identify unclear points across:
    - **Scope boundaries**: Related functionality that may or may not be included
-   - **Priority**: When multiple concerns exist, which takes precedence
-   - **Edge cases**: Boundary conditions or error cases discovered during investigation
-   - **Constraints**: Performance, security, or backward compatibility requirements
-3. Use AskUserQuestion to ask up to 3 targeted questions (multiple questions in a single call)
-   - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), skip Phase 2 entirely and proceed directly to Phase 3 with the researcher's findings only. Note "Phase 2 skipped (non-interactive mode)" in the final summary so the user knows refinement did not happen. Do NOT hang waiting for input.
-4. Save the user's answers for inclusion in the Phase 3 planner prompt
+   - **Priority**: Which concern takes precedence when multiple exist
+   - **Edge cases**: Boundary / error cases from investigation
+   - **Constraints**: Performance, security, backward-compat requirements
+3. Use `AskUserQuestion` for up to 3 targeted questions (single call).
+   - **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors (typical in `claude -p` / CI where stdin is not a TTY), skip Phase 2 and proceed to Phase 3 with researcher findings only. Note "Phase 2 skipped (non-interactive mode)" in the final summary. Do NOT hang.
+4. Save the answers for the Phase 3 planner prompt.
 
-Note: If the investigation results provide sufficient clarity (e.g., a simple S-size change with obvious scope), skip questioning and proceed directly to Phase 3.
+If investigation yields sufficient clarity (e.g., simple S-size with obvious scope), skip questioning and proceed to Phase 3.
 
 ### Phase 3: Ticket Draft (planner agent)
 
-**MUST invoke the `planner` agent via the Agent tool.** **NEVER draft the ticket inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft consumed by Phase 4. Fail the task immediately if the planner agent cannot be invoked.
+**MUST invoke the `planner` via the Agent tool.** **NEVER draft inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft for Phase 4. Fail the task immediately if the planner cannot be invoked.
 
-Use the planner agent to design:
+Planner scope:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes)
-2. Appropriate category (Security / CodeQuality / Doc / DevOps / Community) and size (S/M/L/XL)
-3. Workflow recommendations based on category x size, using the workflow patterns from Pre-computed Context above
+2. Category (Security / CodeQuality / Doc / DevOps / Community) and size (S/M/L/XL)
+3. Workflow recommendations based on category × size, using workflow patterns from Pre-computed Context above
 
-Provide the planner agent with the following additional context:
-- User's answers from Phase 2 (scope decisions, priority, edge cases, constraints)
-- If brief was provided: Full brief document content (replaces user's answers from Phase 2)
-- "Each Acceptance Criterion will be evaluated by an independent evaluator against these quality gates: Testability (objectively verifiable with PASS/FAIL), Unambiguity (only one interpretation possible). AC that are not testable or ambiguous will be rejected."
+Additional context for the planner:
+- Phase 2 answers (scope, priority, edge cases, constraints)
+- If brief was provided: full brief content (replaces Phase 2 answers)
+- "Each AC will be evaluated by an independent evaluator for Testability (objectively verifiable PASS/FAIL) and Unambiguity (single interpretation). ACs that fail either gate will be rejected."
 
 #### Split Judgment
 
-Instruct the planner agent to evaluate whether the ticket should be split into multiple tickets:
+Instruct the planner to evaluate whether the ticket should be split:
 
-- **Split criteria**: Size >= M **and** the Acceptance Criteria can be grouped into 2 or more independent work units (no inter-AC dependencies within the same group).
+- **Split criteria**: Size ≥ M **and** ACs group into 2+ independent work units (no inter-AC deps within a group).
 - **Split quality guardrails**:
-  - Each sub-ticket must be at least Size S with 2 or more Acceptance Criteria. Do not create a ticket with only 1 AC.
-  - The purpose of splitting is to create **independently deployable and verifiable work units**, not to mechanically distribute ACs. Each sub-ticket must represent a coherent piece of functionality.
-  - The planner must output a **Split Rationale** explaining why the split is justified (e.g., "These ACs form an independent feature boundary" or "This group can be deployed and tested without the others").
-  - If no split candidate satisfies all of the above guardrails, fall back to **N = 1** (do not split). Forcing an invalid split is worse than keeping a larger single ticket.
-- **When splitting (N > 1)**: The planner outputs each sub-ticket draft individually, each with its own title, category, size, scope, and Acceptance Criteria. Each sub-ticket must be self-contained and independently implementable.
-- **When not splitting (N = 1)**: The planner outputs a single ticket draft exactly as before (no change from existing behavior).
+  - Each sub-ticket must be at least Size S with 2 or more Acceptance Criteria. Never create a ticket with only 1 AC.
+  - Splits must produce **independently deployable and verifiable work units**, not mechanical AC distribution — each sub-ticket represents coherent functionality.
+  - The planner must emit a **Split Rationale** justifying the split (e.g., "These ACs form an independent feature boundary" or "This group can be deployed/tested in isolation").
+  - If no candidate satisfies all guardrails, fall back to **N = 1** (invalid split is worse than one larger ticket).
+- **N > 1**: Planner outputs each sub-ticket individually with its own title, category, size, scope, ACs. Each must be self-contained and independently implementable.
+- **N = 1**: Planner outputs a single ticket draft (existing behavior).
 
 ### Phase 4: Ticket Evaluation
 
-**MUST invoke the `ticket-evaluator` agent via the Agent tool.** **NEVER self-assess ticket quality** based on model self-judgment — the ticket-evaluator is the independent quality gate that verifies AC Testability/Unambiguity. Fail the task immediately if the ticket-evaluator agent cannot be invoked.
+**MUST invoke the `ticket-evaluator` via the Agent tool.** **NEVER self-assess** — the ticket-evaluator is the independent gate verifying AC Testability/Unambiguity. Fail immediately if it cannot be invoked.
 
-Evaluate the ticket quality using the ticket-evaluator agent.
+**When split (N > 1)**: Run the evaluation process below **independently per sub-ticket**. If any sub-ticket FAILs after exhausting retry/escalation, the entire create-ticket stops (all sub-tickets affected).
 
-**When split (N > 1)**: Execute the evaluation process below **independently for each sub-ticket**. Each sub-ticket is evaluated on its own merits. If any single sub-ticket FAILs after exhausting the retry/escalation flow, the entire create-ticket process stops (all sub-tickets are affected).
-
-**When not split (N = 1)**: Execute the evaluation process below for the single ticket (no change from existing behavior).
+**When not split (N = 1)**: Run the evaluation for the single ticket (existing behavior).
 
 #### Per-ticket evaluation process
 
-1. Read the ticket content generated in Phase 3
-2. Spawn the **ticket-evaluator** agent with the ticket content
+1. Read the ticket content from Phase 3.
+2. Spawn the **ticket-evaluator** with the ticket content.
 3. Decision:
-   - **Status: PASS** → proceed to Phase 5
-   - **Status: FAIL** →
-     a. Save the evaluator's Feedback
-     b. Re-spawn the **planner** agent with:
-        - Original ticket content
-        - Evaluator's Feedback (all FAIL items with specific improvement suggestions)
-        - Instruction: "For each FAIL item you revise, prepend a 'Change rationale: [why this revision addresses the feedback]' comment above the revised section. This rationale will be reviewed by the evaluator to verify the fix is intentional and correct."
-     c. Re-spawn the **ticket-evaluator** agent to evaluate the revised ticket
-     d. Max 2 rounds (initial evaluation + 1 revision). If still FAIL after 2 rounds:
-        - **Autopilot policy check**: Check if `{ticket-dir}/autopilot-policy.yaml` exists (where ticket-dir is `.backlog/product_backlog/{ticket-dir}/`). If not found **and** a `brief=<path>` parameter was provided, also check `{brief-parent-dir}/autopilot-policy.yaml` (where brief-parent-dir is the parent directory of the brief file path, e.g., `.backlog/briefs/active/{slug}/`).
-          - If it exists (in either location), read `gates.ticket_quality_fail`:
-            - If `action` is `retry_with_feedback` and current retry count < `max_retries`: continue retrying with the evaluator's feedback. Print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=retry_with_feedback round={n}`.
-            - Otherwise: stop. Print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=stop`.
-          - If it does not exist, proceed with the existing interactive flow below.
-        - Use AskUserQuestion to present the remaining FAIL gates to the user
-        - Ask: "The ticket has unresolved quality issues: [list FAIL gates and their issues]. Proceed with this ticket anyway, or stop to revise manually?"
-        - If user chooses to proceed → continue to Phase 5 with remaining issues noted in the summary
-        - If user chooses to stop → print the ticket file path and remaining issues, then stop
-        - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to **stop**. Print "Stopped: /create-ticket cannot resolve unresolved quality FAIL gates without interactive confirmation. Ticket saved at <path>. Re-run in interactive mode to decide whether to proceed." and exit. The ticket file remains on disk for manual editing. Do NOT hang waiting for input.
+   - **PASS** → proceed to Phase 5.
+   - **FAIL** →
+     a. Save the evaluator's Feedback.
+     b. Re-spawn the **planner** with: original ticket content; evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
+     c. Re-spawn the **ticket-evaluator** on the revised ticket.
+     d. Max 2 rounds (initial + 1 revision). If still FAIL:
+        - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.backlog/product_backlog/{ticket-dir}/`. If missing **and** `brief=<path>` was given, also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.backlog/briefs/active/{slug}/`).
+          - If present, read `gates.ticket_quality_fail`: `retry_with_feedback` + retry count < `max_retries` → continue retrying (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=retry_with_feedback round={n}`); else stop (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=stop`).
+          - Else interactive flow below.
+        - `AskUserQuestion`: "The ticket has unresolved quality issues: [list]. Proceed anyway or stop to revise manually?"
+        - Proceed → Phase 5 with issues noted; Stop → print ticket path + issues.
+        - **Non-interactive fallback**: If `AskUserQuestion` unavailable / errors, default to **stop**. Print "Stopped: /create-ticket cannot resolve FAIL gates non-interactively. Ticket saved at <path>. Re-run interactively." and exit. Do NOT hang.
 
 ### Phase 5: Output
 
-Use the ticket template from Pre-computed Context above for the output format.
+Use the ticket template from Pre-computed Context for the output format.
 
 After generating the ticket content:
 
 1. **Counter read & ticket-dir derivation**:
-   a. Read `.backlog/.ticket-counter`. If the file does not exist, initialize the counter value to `1`.
-   b. If the file exists but contains non-numeric content, print "ERROR: .backlog/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry." and stop.
-   c. Let `counter` = the current counter value. Let `N` = number of tickets (1 if not split, >1 if split).
+   a. Read `.backlog/.ticket-counter`. If missing, initialize counter to `1`.
+   b. If non-numeric, print "ERROR: .backlog/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry." and stop.
+   c. Let `counter` = current value, `N` = ticket count (1 or >1 if split).
    d. For each ticket `i` (0-indexed, `i = 0 … N-1`):
-      - Compute `number_i` = `counter + i`.
-      - Zero-pad `number_i` to 3 digits → `{NNN}` (e.g., `1` → `001`, `12` → `012`).
-      - Derive `{slug_i}` from the ticket's title using kebab-case.
-      - Define `{ticket-dir_i}` = `{NNN}-{slug_i}`.
-      - In the ticket template, replace the `{NNN}` placeholder in `## T-{NNN}:` with the actual number (e.g., `## T-005: Add User Auth`).
-2. For each ticket `i`, create the directory `.backlog/product_backlog/{ticket-dir_i}/` if it does not exist.
-3. For each ticket `i`, write the ticket to `.backlog/product_backlog/{ticket-dir_i}/ticket.md`.
-4. After **all** tickets are successfully written, write `counter + N` to `.backlog/.ticket-counter` (e.g., if `counter` was `5` and `N` is `3`, write `8`).
+      - `number_i` = `counter + i`.
+      - Zero-pad `number_i` to 3 digits → `{NNN}` (e.g., `1` → `001`).
+      - Derive `{slug_i}` from the title in kebab-case.
+      - `{ticket-dir_i}` = `{NNN}-{slug_i}`.
+      - Replace `{NNN}` in the `## T-{NNN}:` placeholder with the actual number (e.g. `## T-005: Add User Auth`).
+2. For each ticket `i`, create `.backlog/product_backlog/{ticket-dir_i}/` if absent.
+3. For each ticket `i`, write to `.backlog/product_backlog/{ticket-dir_i}/ticket.md`.
+4. After **all** writes succeed, write `counter + N` to `.backlog/.ticket-counter`.
 
-4a. **Initialize `phase-state.yaml`** for each ticket `i` (always, unconditional — even when `/create-ticket` is invoked standalone outside `/autopilot`):
+4a. **Initialize `phase-state.yaml`** for each ticket `i` (always, even when `/create-ticket` is invoked standalone):
 
-   a. Compute `now` = current timestamp in ISO-8601 UTC (e.g. via `date -u +%Y-%m-%dT%H:%M:%SZ`).
-   b. Let `size_i` be the Size value assigned to ticket `i` in Phase 3 (S/M/L/XL).
-   c. Let `ticket_dir_path_i` = `.backlog/product_backlog/{ticket-dir_i}` (the directory just created in step 2 — the phase-state file stays here until `/scout` moves the ticket to `.backlog/active/`). No top-level `ticket_dir:` field is serialized inside the state file; the file's own path encodes location.
-   d. Write `{ticket_dir_path_i}/phase-state.yaml` with the full pending template populated as follows. The schema is the canonical one documented in `skills/create-ticket/references/phase-state-schema.md`:
+   a. `now` = ISO-8601 UTC (`date -u +%Y-%m-%dT%H:%M:%SZ`).
+   b. `size_i` = Size from Phase 3 (S/M/L/XL).
+   c. `ticket_dir_path_i` = `.backlog/product_backlog/{ticket-dir_i}` (stays here until `/scout` moves to `.backlog/active/`). No top-level `ticket_dir:` field — the path encodes location.
+   d. Write `{ticket_dir_path_i}/phase-state.yaml` with the pending template below. Canonical schema: `skills/create-ticket/references/phase-state-schema.md`:
 
       ```yaml
       version: 1
@@ -250,33 +235,33 @@ After generating the ticket content:
             pr_url: null
       ```
 
-   e. **Immediately** transition `phases.create_ticket` to `completed` in the same invocation (before the skill returns): rewrite the file (read-modify-write) setting:
+   e. **Immediately** transition `phases.create_ticket` to `completed` in the same invocation (before returning) via read-modify-write:
       - `phases.create_ticket.status: completed`
-      - `phases.create_ticket.completed_at: {now}` (recomputed immediately before the write so it reflects actual completion time)
+      - `phases.create_ticket.completed_at: {now}` (recomputed immediately before write)
       - `phases.create_ticket.artifacts.ticket: {ticket_dir_path_i}/ticket.md`
       - `last_completed_phase: create_ticket`
-      - `current_phase: scout`  (next phase to run)
+      - `current_phase: scout`
 
-   f. Do NOT modify any other `phases.*` section beyond the `create_ticket` block described above. The `scout`, `impl`, and `ship` sections remain in the pending template state for the skills that own them.
+   f. Do NOT modify other `phases.*` sections. The `scout`, `impl`, `ship` sections remain in the pending template for their owning skills.
 
-   **Atomicity**: If the write fails for any ticket, report the error but do NOT delete already-created `ticket.md` files — the caller can retry `/create-ticket` (the state file will be overwritten idempotently on retry) or re-initialize the state file manually.
+   **Atomicity**: On write failure, report the error but do NOT delete already-created `ticket.md` files — retry is idempotent on the state file.
 
 5. **Brief metadata injection**: If `brief=<path>` was provided:
-   a. Read the brief file's YAML frontmatter and extract the `slug` field value → `{brief_slug}`.
-   b. If the ticket creation context includes a part indicator (e.g., "This is part {N} of {total}" passed by `/autopilot` for split briefs), extract the part number → `{brief_part}`.
-   c. In each generated ticket.md, add the following fields to the metadata table (the `| Key | Value |` table in the ticket template):
+   a. Read the brief's YAML frontmatter; extract `slug` → `{brief_slug}`.
+   b. If the creation context includes a part indicator (e.g., "This is part {N} of {total}" from `/autopilot` for split briefs), extract → `{brief_part}`.
+   c. In each ticket.md, add to the metadata table:
       - `| Brief Slug | {brief_slug} |`
-      - `| Brief Part | {brief_part} |` (only if `{brief_part}` was extracted; omit this row entirely if not a split ticket)
+      - `| Brief Part | {brief_part} |` (only if extracted; omit otherwise)
 
-**Non-split (N = 1)**: The above steps reduce to the same behavior as creating a single ticket and incrementing the counter by 1.
+**Non-split (N = 1)**: Equivalent to creating a single ticket and incrementing the counter by 1.
 
-After writing the ticket(s), print a summary:
+After writing, print a summary:
 
 **Non-split (N = 1)**:
 - Ticket file path
 - Category, Size
-- Number of Acceptance Criteria
-- Quality evaluation result (PASS / FAIL with remaining issues if any)
+- Number of ACs
+- Quality evaluation result (PASS / FAIL + remaining issues)
 - Recommended workflow: `/scout → /impl → /ship`
 
 **Split (N > 1)**: Print a ticket list table followed by per-ticket details:
@@ -295,31 +280,30 @@ Recommended workflow per ticket: `/scout → /impl → /ship`
 
 ### Phase 6: Emit SW-CHECKPOINT block
 
-Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the skill's output, after `### Created Tickets` and any other summary/result content. Fill: `phase=create_ticket`, `ticket=<first created ticket-dir or "none">` (for N>1 use the first created ticket's directory), `artifacts=[<repo-relative paths to every `ticket.md` written>]`, `next_recommended=/scout {ticket-dir}` (or `""` if no ticket was created). Emit on failure paths with `artifacts: []`.
+Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the skill's output, after `### Created Tickets` and any other summary content. Fill: `phase=create_ticket`, `ticket=<first created ticket-dir or "none">` (for N>1 use the first), `artifacts=[<repo-relative paths to every `ticket.md` written>]`, `next_recommended=/scout {ticket-dir}` (or `""` if none created). Emit on failure paths with `artifacts: []`.
 
 ### Workflow selection guide
 
-Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present),
-listing installed plugin skills/agents, and using the workflow patterns from Pre-computed Context above to design the workflow.
+Identify available skills/agents by scanning `.claude/skills/` and `.claude/agents/`, listing installed plugin skills/agents, and using the workflow patterns from Pre-computed Context.
 
-**Category-specific guidelines**:
-- **Security**: Wrap with `/audit only_security_scan=true` before and after. Spec-first with documentation leading.
-- **CodeQuality**: Use `/refactor` skill. Guarantee no behavior changes.
+**Category guidelines**:
+- **Security**: Wrap with `/audit only_security_scan=true` before and after. Spec-first; documentation leads.
+- **CodeQuality**: Use `/refactor`. Guarantee no behavior changes.
 - **Doc**: Use `/impl` with a doc-focused plan.
-- **DevOps**: CI/CD configs are hard to test; design carefully with `/plan2doc`.
+- **DevOps**: CI/CD configs are hard to test; design with `/plan2doc`.
 - **Community**: Reference industry-standard templates.
 
-**Size-specific guidelines**:
+**Size guidelines**:
 - **S**: `/plan2doc` optional. Direct implementation.
 - **M**: `/plan2doc` recommended.
 - **L/XL**: `/plan2doc` required. Incremental implementation recommended.
 
 ## Error Handling
 
-- **Counter file invalid**: If `.backlog/.ticket-counter` contains non-numeric content, print error with the invalid value and stop. Do not create any ticket.
+- **Counter file invalid**: Non-numeric `.backlog/.ticket-counter` → print error with the invalid value and stop; create no ticket.
 - **Empty arguments**: Print "Usage: /create-ticket <ticket description>" and stop.
 - **Researcher failure**: Report error and stop.
 - **Planner failure**: Report error and stop.
-- **Ticket-evaluator failure**: Output ticket without evaluation. Display "Quality: NOT EVALUATED" in summary.
-- **2 rounds FAIL**: Present remaining issues to user via AskUserQuestion. Proceed only with user confirmation. If user declines, stop and print ticket path for manual editing. **In non-interactive mode** (when `AskUserQuestion` is unavailable / errors, typical in `claude -p` / CI automation), default to stop and print the ticket path with remaining issues. Do NOT hang waiting for input.
-- **Split ticket partial failure**: If any sub-ticket FAILs evaluation and the process stops, no tickets are written and the counter is not updated (atomic: all-or-nothing).
+- **Ticket-evaluator failure**: Output ticket without evaluation; display "Quality: NOT EVALUATED" in summary.
+- **2 rounds FAIL**: Present remaining issues via `AskUserQuestion`. Proceed only with user confirmation. Decline → stop + print ticket path. **Non-interactive fallback**: default to stop + print ticket path with issues. Do NOT hang.
+- **Split ticket partial failure**: If any sub-ticket FAILs evaluation and stops, no tickets are written and the counter is not updated (atomic).

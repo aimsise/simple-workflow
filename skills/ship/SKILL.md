@@ -56,57 +56,43 @@ User arguments: $ARGUMENTS
 
 ## Mandatory Skill Invocations
 
-The following skill invocation is **contractual** — `/ship` MUST delegate to `/tune` via the Skill tool once a ticket has been moved to `.backlog/done/`. The rest of `/ship` (commit, push, PR creation) is performed directly via `git`/`gh` commands and is not a skill delegation contract; those are the skill's own implementation, not mandatory sub-skill calls. Any bypass of `/tune` is a contract violation and will be detected by the skill invocation audit (Phase A+).
+`/ship` MUST delegate to `/tune` via the Skill tool once a ticket has been moved to `.backlog/done/`. The rest of `/ship` (commit, push, PR creation) is direct `git`/`gh` work, not a sub-skill contract. Any `/tune` bypass is a contract violation detected by the skill invocation audit (Phase A+).
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `/tune` (Skill) | Phase 1 step 6 — only after a ticket was moved to `.backlog/done/` in step 5 | No knowledge-base pattern extraction from the completed ticket's `eval-round-*.md` / `quality-round-*.md`. The `/impl` Generator for the next ticket runs without updated `.simple-wf-knowledge/index.yaml` — degraded learning over time. Detected by absence of `/tune` invocation trace after a ticket-move in the skill invocation audit |
+| `/tune` (Skill) | Phase 1 step 6 — only after a ticket was moved to `.backlog/done/` in step 5 | No knowledge-base pattern extraction from the ticket's `eval-round-*.md` / `quality-round-*.md`. Next `/impl` Generator runs without updated `.simple-wf-knowledge/index.yaml` — learning degrades. Detected by missing `/tune` trace after a ticket-move in the skill invocation audit |
 
 **Binding rules**:
-- `MUST invoke /tune via the Skill tool` whenever a ticket was moved in step 5. Pass the ticket-dir name as the argument.
-- `NEVER bypass /tune via direct manipulation` of `.simple-wf-knowledge/candidates.yaml` or `entries.yaml` from within `/ship`.
-- If `/tune` itself fails, **do NOT stop the ship workflow** (the commit is already made and the ticket is already moved) — but the invocation MUST have been attempted. `Fail the /tune invocation attempt only if the Skill tool is unreachable; log the failure and continue.`
+- `MUST invoke /tune via the Skill tool` whenever a ticket was moved in step 5. Pass the ticket-dir name as argument.
+- `NEVER bypass /tune` via direct manipulation of `.simple-wf-knowledge/candidates.yaml` or `entries.yaml` from within `/ship`.
+- If `/tune` itself fails, **do NOT stop the ship workflow** (commit made, ticket moved) — but the invocation MUST have been attempted. `Fail the /tune invocation attempt only if the Skill tool is unreachable; log and continue.`
 
 ## phase-state.yaml write ownership
 
-This skill writes ONLY to `phases.ship` plus the top-level status fields
-(`current_phase`, `last_completed_phase`, `overall_status`). It MUST NOT
-modify any other phase's section (`phases.create_ticket`, `phases.scout`,
-`phases.impl`).
+Writes ONLY `phases.ship` plus top-level `current_phase` / `last_completed_phase` / `overall_status`. Never modify `phases.create_ticket` / `phases.scout` / `phases.impl`.
 
-`phase-state.yaml` lives inside the ticket directory. When `/ship` moves
-`.backlog/active/{ticket-dir}` to `.backlog/done/{ticket-dir}` via `mv`, the
-state file moves with it. `/ship` MUST NOT delete `phase-state.yaml` at any
-point — it is the permanent historical record that stays in
-`.backlog/done/{ticket-dir}/` forever.
+`phase-state.yaml` lives inside the ticket directory. When `/ship` moves `.backlog/active/{ticket-dir}` → `.backlog/done/{ticket-dir}` via `mv`, the state file moves with it. NEVER delete `phase-state.yaml` — it is the permanent historical record that stays in `.backlog/done/{ticket-dir}/` forever.
 
 Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Argument Parsing
 
 Parse `$ARGUMENTS` for positional arguments:
-- First argument: target branch name (default: `<default-branch>` — see pre-computed context above). If the first argument is `true` or `merge=true`, treat it as the merge flag and use `<default-branch>` as target.
-- Second argument: `merge=true` or `true` to enable squash-merge after PR creation (default: no merge).
-- `ticket-dir=<dir-name>`: Optional key=value argument specifying the ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). Because this uses key=value syntax, it is position-independent and does not affect parsing of the positional arguments (target-branch, merge).
+- First: target branch (default `<default-branch>` — see pre-computed context). If `true` or `merge=true`, treat as merge flag with `<default-branch>` target.
+- Second: `merge=true` or `true` to enable squash-merge after PR (default: no merge).
+- `ticket-dir=<dir-name>`: Optional key=value; directory name only (e.g. `003-fix-login`), not a full path. Position-independent; does not affect the positional arguments.
 
 Examples:
-- `/ship` -> commit + PR to `<default-branch>` (e.g. main, master, develop)
-- `/ship develop` -> commit + PR to develop
-- `/ship merge=true` -> commit + PR to `<default-branch>` + squash-merge
-- `/ship <default-branch> true` -> commit + PR to `<default-branch>` + squash-merge
-- `/ship develop merge=true` -> commit + PR to develop + squash-merge
-- `/ship main ticket-dir=003-fix-login` -> commit + PR to main, using ticket directory `003-fix-login`
+- `/ship` → commit + PR to `<default-branch>`
+- `/ship develop` → commit + PR to develop
+- `/ship merge=true` → commit + PR to `<default-branch>` + squash-merge
+- `/ship <default-branch> true` → commit + PR to `<default-branch>` + squash-merge
+- `/ship develop merge=true` → commit + PR to develop + squash-merge
+- `/ship main ticket-dir=003-fix-login` → commit + PR to main, using ticket-dir `003-fix-login`
 
 ## Pre-compute Resilience Contract
 
-All pre-compute bash commands below return fallback values on failure and never
-halt `/ship` execution. The orchestrating agent is responsible for reading each
-pre-compute result and deciding commit/push strategy from the reported state
-(e.g., `(detached HEAD)`, `[no commits yet]`, `[no remote — skipped]`). A
-failing pre-compute must never be treated as a reason to abandon `/ship` and
-fall back to ad-hoc git commands; instead, the agent interprets the fallback
-marker and routes the workflow accordingly (skip push when remote is absent,
-skip diff vs default branch when there is no commit history, etc.).
+All pre-compute bash commands return fallback values on failure and never halt `/ship`. The agent reads each pre-compute result and routes commit/push strategy from the reported state (e.g., `(detached HEAD)`, `[no commits yet]`, `[no remote — skipped]`). A failing pre-compute never justifies abandoning `/ship` for ad-hoc git commands; interpret the fallback marker and skip push when no remote, skip default-branch diff when no history, etc.
 
 ## Pre-computed Context
 
@@ -139,107 +125,99 @@ Commits ahead of default branch:
 
 ## Instructions
 
-**Note**: Throughout this skill, `<default-branch>` denotes the repository's default branch, taken from the `Default branch:` value in the pre-computed context above (which resolves `git symbolic-ref refs/remotes/origin/HEAD` and falls back to `main` when `origin/HEAD` is not set). Use this resolved value wherever the rules below mention `<default-branch>` — never hardcode `main`.
+**Note**: `<default-branch>` denotes the repo default branch from `Default branch:` in the pre-computed context (resolves `git symbolic-ref refs/remotes/origin/HEAD`; falls back to `main` if unset). Use this value wherever `<default-branch>` appears — never hardcode `main`.
 
 ## Phase 1: Commit
 
-1. **Pre-flight check**: Run `git status --short` to detect any changes. If there are no changes at all (nothing staged, nothing unstaged, no untracked files), print "No changes to ship." and stop immediately.
+1. **Pre-flight check**: `git status --short`. If nothing staged/unstaged/untracked, print "No changes to ship." and stop.
 
-2. **Sensitive file warning**: Inspect the working tree for files matching `.env*`, `*credentials*`, `*secret*`, `*.key`, `*.pem`. If any such files are present (staged, unstaged, or untracked), warn the user explicitly before proceeding. The user may then decide whether to abort or continue.
+2. **Sensitive file warning**: Inspect the working tree for `.env*`, `*credentials*`, `*secret*`, `*.key`, `*.pem`. If any are present (staged/unstaged/untracked), warn the user explicitly before proceeding; the user decides whether to abort or continue.
 
-3. **Create commit**: Handle staging and conventional commit creation directly:
-   a. Run `git diff --stat` and `git diff --cached --stat` to understand the changes.
-   b. If there are unstaged changes, determine which files to stage based on the implementation context. In autopilot mode (autopilot-policy.yaml exists), stage all modified/new files relevant to the ticket, **except** files under `.backlog/briefs/` (e.g., `autopilot-state.yaml`, `brief.md`, `split-plan.md`) — these are pipeline management files, not ticket artifacts and must not be committed as part of ticket work. This exclusion is defense-in-depth: normally `.gitignore` prevents these files from being tracked, but if `.gitignore` is missing or misconfigured, they should still never be staged. In interactive mode, use `AskUserQuestion` to ask which files to stage. **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error, stage all modified/new files (same as autopilot mode, including the same `.backlog/briefs/` exclusion).
-   c. Stage the selected files with `git add`.
-   d. Generate a conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why", using `git log --oneline -5` for style reference.
-   e. Create the commit using a HEREDOC.
-   f. Run `git status` to verify the commit succeeded.
+3. **Create commit**:
+   a. `git diff --stat` and `git diff --cached --stat`.
+   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new files relevant to the ticket **except** files under `.backlog/briefs/` (e.g. `autopilot-state.yaml`, `brief.md`, `split-plan.md`) — pipeline management files, never ticket artifacts. Defense-in-depth: `.gitignore` normally excludes them, but if misconfigured they must still never be staged. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files with the same `.backlog/briefs/` exclusion.
+   c. `git add` selected files.
+   d. Conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"; `git log --oneline -5` for style.
+   e. Commit via HEREDOC.
+   f. `git status` to verify.
 
-4. **Post-commit verification**: Run `git status` to confirm a commit was actually created. If the working tree is still dirty or no new commit exists (`git log -1 --format=%H` is unchanged from before), report the failure and stop.
+4. **Post-commit verification**: `git status`. If tree still dirty or `git log -1 --format=%H` unchanged, report and stop.
 
-5. **Ticket completion**: If `.backlog/active/` exists, list its contents. Determine `ticket-dir` using the following priority:
-   - **Explicit `ticket-dir=` argument**: If `ticket-dir=<dir-name>` was provided in the arguments, check whether `.backlog/active/{dir-name}` exists. If it exists, set `ticket-dir` to that value and skip branch name matching. If it does **not** exist, print a WARNING: "ticket-dir '{dir-name}' not found in .backlog/active/ — falling back to branch name matching." and proceed to the fallback below.
-   - **Fallback — branch name matching**: For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix).
-   - If neither method finds a match, skip silently.
+5. **Ticket completion** (moves the ticket to `.backlog/done/`): If `.backlog/active/` exists, list it. Determine `ticket-dir`:
+   - **Explicit `ticket-dir=`**: If provided, check `.backlog/active/{dir-name}`. Exists → use it (skip branch matching). Else print WARNING "ticket-dir '{dir-name}' not found in .backlog/active/ — falling back to branch name matching." and fall through.
+   - **Fallback — branch matching**: For each dir in `.backlog/active/`, strip the leading `NNN-` (e.g. `001-add-search-feature` → `add-search-feature`). If branch contains this slug, set `ticket-dir` to the full dir name.
+   - No match → skip silently.
 
-   Once `ticket-dir` is determined:
+   Once determined:
 
-   a. **Begin ship phase (state update — only when `.backlog/active/{ticket-dir}/phase-state.yaml` exists)**: Read the state file and update ONLY the following fields (read-modify-write; leave every other section untouched):
+   a. **Begin ship phase (only if `.backlog/active/{ticket-dir}/phase-state.yaml` exists)**: read-modify-write ONLY these fields:
       - `phases.ship.status: in-progress`
-      - `phases.ship.started_at: {now}` (ISO-8601 UTC, via `date -u +%Y-%m-%dT%H:%M:%SZ`)
+      - `phases.ship.started_at: {now}` (ISO-8601 UTC via `date -u +%Y-%m-%dT%H:%M:%SZ`)
       - `current_phase: ship`
-   b. **Write destination-anchored phase-state.yaml FIRST, then move remaining contents** — this ordering closes the race window where an interruption after the `mv` would strand state in a half-moved directory (Reviewer B Finding 7). The schema no longer stores a top-level `ticket_dir:` field, so the mitigation is purely ordering: the destination-path state file exists before any other content moves.
-      1. Ensure the destination directory exists: `mkdir -p .backlog/done/{ticket-dir}`.
-      2. Write the updated phase-state.yaml (with the `phases.ship.status: in-progress` update from sub-step 5a already applied) directly to `.backlog/done/{ticket-dir}/phase-state.yaml`. All other fields from 5a remain as-is. **At the end of this sub-step the destination-path state file exists and is self-consistent, even if the process is interrupted before sub-step 4.**
-      3. Move the remaining contents of the source directory: for each file in `.backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` it to `.backlog/done/{ticket-dir}/`. Do NOT copy or re-write `phase-state.yaml` here — it was already written in sub-step 2 above.
-      4. Remove the now-empty source directory: `rmdir .backlog/active/{ticket-dir}` (or `mv`-then-`rmdir` equivalent). If `rmdir` fails because the directory is not empty, list the unexpected remaining files and stop — the state is recoverable but needs manual attention.
-   c. Because phase-state.yaml was serialized to its destination path in sub-step 5.b.2 before any other file move, the skill does NOT need any post-move state-file rewrite. The ordering in 5b is the mitigation for the pre-PR-E race.
+   b. **Write destination-anchored phase-state.yaml FIRST, then move remaining contents** — ordering closes the race where an interruption after `mv` strands state mid-move (Reviewer B Finding 7). The schema has no top-level `ticket_dir:`, so ordering is the entire mitigation.
+      1. `mkdir -p .backlog/done/{ticket-dir}`.
+      2. Write the updated phase-state.yaml (with the 5a `in-progress` update) directly to `.backlog/done/{ticket-dir}/phase-state.yaml`. **After this sub-step the destination state file is self-consistent even if interrupted.**
+      3. For each file in `.backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` to `.backlog/done/{ticket-dir}/`. Do NOT re-write `phase-state.yaml` — already written in sub-step 2.
+      4. `rmdir .backlog/active/{ticket-dir}`. If non-empty, list remaining files and stop (recoverable; needs manual attention).
+   c. No post-move rewrite needed — 5.b.2 serialized phase-state.yaml to its destination before any other move.
 
-6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml` from within `/ship`. If `/tune` itself fails during execution, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved. Fail the ship workflow only if the Skill tool itself is unreachable (contract-level bypass).
+6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the ticket-dir name as argument. Extracts reusable patterns from the ticket's evaluation logs into the project KB. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml`. If `/tune` execution fails, log but do **not** stop the ship workflow — commit made, ticket moved. Fail only if the Skill tool itself is unreachable (contract bypass).
 
 Proceed to Phase 2.
 
 ## Phase 2: Create PR
 
-7. **Remote availability check**: Check the `Remote configured:` value from pre-computed context. If it is `no` (no remote origin configured), print "Commit complete. No remote configured — skipping push and PR creation." and stop. Do NOT attempt push, PR creation, or merge.
+7. **Remote availability check**: Check `Remote configured:` in pre-computed context. If `no`, print "Commit complete. No remote configured — skipping push and PR creation." and stop. Do NOT push, create PR, or merge.
 
-8. Run `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
+8. `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
 9. **Review gate**: Check for recent code review:
-    - If there is a completed ticket (`{ticket-dir}` — now in `.backlog/done/` after step 5), run `ls -t .backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` to find the most recent review file
-    - If there is no ticket, skip the review gate (no check needed)
-    - If a review file exists, compare its modification time with the last commit time
-    - If NO review file exists, or the review predates the last code-changing commit:
-      - **Autopilot policy check**: Check if `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists.
-        - If it exists, read `gates.ship_review_gate.action`:
-          - If `proceed_if_eval_passed`: Check the latest `eval-round-*.md` in the ticket directory. Read its Status line.
-            - If Status is PASS or PASS-WITH-CAVEATS: proceed automatically. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to the PR body.
-            - If Status is FAIL or no eval-round exists: stop (safety valve — do not ship code that failed AC evaluation). Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop reason=eval_status_not_pass`.
-          - If `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop`.
-        - If it does not exist, proceed with the existing interactive flow below.
-      Print "No recent code review found. Recommended: run /audit before shipping."
-      Ask the user: "Proceed without review? (yes/no)"
-      - If "no" → stop
-      - If "yes" → proceed, and append "[shipped without /audit]" to the PR body in step 14
+    - If a ticket completed (`{ticket-dir}` now in `.backlog/done/` after step 5), run `ls -t .backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` for the latest review.
+    - No ticket → skip the review gate.
+    - Review file exists → compare its mtime with the last commit time.
+    - NO review file, or review predates last code-changing commit:
+      - **Autopilot policy check**: If `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_review_gate.action`:
+        - `proceed_if_eval_passed`: Check latest `eval-round-*.md` Status:
+          - PASS / PASS-WITH-CAVEATS → proceed. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to PR body.
+          - FAIL or no eval-round → stop (safety valve; never ship code that failed AC). Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop reason=eval_status_not_pass`.
+        - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop`.
+      - Else interactive flow: Print "No recent code review found. Recommended: run /audit before shipping." Ask "Proceed without review? (yes/no)". "no" → stop; "yes" → proceed and append "[shipped without /audit]" to the PR body in step 14.
 
-10. Determine the target branch from arguments (default: `<default-branch>` — obtained from the `Default branch:` pre-computed context above). If the target is not `<default-branch>`, re-run `git log` and `git diff` against the actual target branch (the pre-computed context above is always against `<default-branch>`).
-11. Check commits ahead of target: `git log origin/<target>..HEAD --oneline`. If there are no commits ahead, print "No commits ahead of target branch." and stop.
-12. Run `gh pr list --head <current-branch> --state open` to check for an existing PR. If one exists, capture the PR URL, print it, and skip to Phase 3 (if merge is enabled) or stop.
-13. Push with `git push origin HEAD`. On failure, show the error and stop.
-14. Generate PR title (conventional commit style, single line) and body (summarize changes and scope) from the commit log and diff.
-15. Create the PR with `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
-15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read the state file at `.backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY the following fields (read-modify-write; leave every other section untouched):
+10. Determine target branch from arguments (default `<default-branch>` from pre-computed context). If target ≠ `<default-branch>`, re-run `git log` / `git diff` against the actual target (pre-computed context is always vs `<default-branch>`).
+11. `git log origin/<target>..HEAD --oneline`. If no commits ahead, print "No commits ahead of target branch." and stop.
+12. `gh pr list --head <current-branch> --state open`. If a PR exists, capture URL, print it, and skip to Phase 3 (if merge enabled) or stop.
+13. `git push origin HEAD`. On failure, show the error and stop.
+14. Generate PR title (conventional commit, single line) and body (summary of changes + scope) from commit log and diff.
+15. `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
+15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read `.backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY (read-modify-write):
      - `phases.ship.status: completed`
-     - `phases.ship.completed_at: {now}` (ISO-8601 UTC, recomputed at this step)
-     - `phases.ship.artifacts.pr_url: <pr-url>` (the URL returned by `gh pr create` in step 15, or the URL of the existing PR captured in step 12 if one was found)
+     - `phases.ship.completed_at: {now}` (ISO-8601 UTC, recomputed)
+     - `phases.ship.artifacts.pr_url: <pr-url>` (URL from step 15, or existing PR URL captured in step 12)
      - `last_completed_phase: ship`
      - `current_phase: done`
      - `overall_status: done`
 
-     Do NOT modify `phases.create_ticket`, `phases.scout`, or `phases.impl`. The state file remains in place inside `.backlog/done/{ticket-dir}/phase-state.yaml` as the permanent record — NEVER delete it.
+     Do NOT modify `phases.create_ticket` / `phases.scout` / `phases.impl`. The state file stays at `.backlog/done/{ticket-dir}/phase-state.yaml` as the permanent record — NEVER delete.
 
-     If an existing PR was captured in step 12 (Phase 2 gate), run this state update at that point too, so the ticket is correctly finalized even on re-runs.
-16. Print the PR URL. If merge is not enabled, stop here. Note: when squash-merged, the PR title becomes the commit message on the target branch.
+     If an existing PR was captured in step 12, run this state update there too, so re-runs finalize correctly.
+16. Print the PR URL. If merge is not enabled, stop. Note: on squash-merge the PR title becomes the commit message on the target branch.
 
 ## Phase 3: Merge (only when merge=true)
 
-17. Attempt `gh pr merge <pr-url> --squash --delete-branch`.
-18. If merge fails due to pending CI checks,
-    - **Autopilot policy check**: Check if `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists.
-      - If it exists, read `gates.ship_ci_pending`:
-        - If `action` is `wait`: Run `gh pr checks <pr-number> --watch` with a timeout of `timeout_minutes` minutes. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
-          - If checks pass within timeout: retry the merge.
-          - If timeout expires: follow `on_timeout` action (`stop` by default). Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=on_timeout`.
-        - If `action` is `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=stop`.
-      - If it does not exist, proceed with the existing interactive flow below.
-    ask the user to choose one of:
-    - **Wait**: Run `gh pr checks <pr-number> --watch`, then retry the merge.
-    - **Force**: Run `gh pr merge <pr-url> --squash --delete-branch --admin` to bypass checks. **WARNING: This bypasses CI checks and risks merging untested code. Confirm with the user before proceeding.** Note: requires admin permissions on the repository.
-    - **Skip**: Stop without merging. Print the PR URL for manual follow-up.
+17. `gh pr merge <pr-url> --squash --delete-branch`.
+18. If merge fails due to pending CI:
+    - **Autopilot policy check**: If `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_ci_pending`:
+      - `wait`: `gh pr checks <pr-number> --watch` with `timeout_minutes`. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
+        - Pass within timeout → retry merge. Timeout → `on_timeout` (`stop` by default). Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=on_timeout`.
+      - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=stop`.
+    - Else interactive, ask the user:
+      - **Wait**: `gh pr checks <pr-number> --watch`, then retry merge.
+      - **Force**: `gh pr merge <pr-url> --squash --delete-branch --admin`. **WARNING: bypasses CI; risks merging untested code. Confirm before proceeding.** Requires admin permissions.
+      - **Skip**: Stop without merging. Print PR URL for manual follow-up.
 19. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
-20. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 5, also include "Ticket moved to .backlog/done/{ticket-dir}".
+20. Print summary: merged PR URL, deleted branch, local state. If a ticket moved in step 5, include "Ticket moved to .backlog/done/{ticket-dir}".
 
-21. **Emit SW-CHECKPOINT block**. Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the `/ship` response, after step 20 (Phase 3), or after step 16 (Phase 2 completion when `merge=true` is not set), or after any early-stop point (`No changes to ship.`, `No remote configured`, `gh auth` failure, push failure, `No commits ahead`, `Existing PR`, etc.). Emit exactly once per invocation, at the very end — after the PR URL print, merge summary, and any error/stop messages. Fill: `phase=ship`, `ticket=.backlog/done/{ticket-dir}` when a ticket was moved in step 5 (otherwise `.backlog/active/{ticket-dir}` if detected but not moved, otherwise `none`), `artifacts=[<repo-relative paths to phase-state.yaml and the PR URL / commit SHA>]`, `next_recommended=""` (always empty for `/ship` — the ticket is complete). Emit on failure paths with `artifacts: []`.
+21. **Emit SW-CHECKPOINT block**. Emit `## [SW-CHECKPOINT]` per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section — after step 20 (Phase 3), or step 16 (Phase 2 when `merge=true` unset), or any early-stop (`No changes`, `No remote`, auth / push failure, `No commits ahead`, `Existing PR`, etc.). Emit exactly once at the very end, after PR URL / summary / errors. Fill: `phase=ship`, `ticket=.backlog/done/{ticket-dir}` if moved in step 5 (else `.backlog/active/{ticket-dir}` if detected-not-moved, else `none`), `artifacts=[<repo-relative paths to phase-state.yaml and PR URL / commit SHA>]`, `next_recommended=""` (the ticket is complete). Failure paths use `artifacts: []`.
 
 ## Error Handling
 
@@ -249,8 +227,8 @@ Proceed to Phase 2.
 - **gh auth failure**: Print `gh auth login` instructions and stop.
 - **Push failure**: Show the error and stop.
 - **Existing PR (merge disabled)**: Show the PR URL and stop.
-- **Existing PR (merge enabled)**: Capture the PR URL and proceed to Phase 3.
-- **CI checks pending**: Ask user to choose Wait / Force / Skip (Phase 3 step 18).
+- **Existing PR (merge enabled)**: Capture PR URL and proceed to Phase 3.
+- **CI checks pending**: Wait / Force / Skip (Phase 3 step 18).
 - **Force merge failure (no admin)**: Inform user, keep PR open, print URL.
 - **Merge conflict**: Print details, keep PR open, stop.
 - **Merge failure (any reason)**: Keep PR open, print PR URL for manual follow-up.
