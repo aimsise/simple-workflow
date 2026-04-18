@@ -95,6 +95,27 @@ The following agent invocation is **contractual** — `/plan2doc` MUST delegate 
    - The plan file path
    - A one-line synopsis from the planner's return value
 
+6. **Emit SW-CHECKPOINT block**. After the summary in step 5 (and after any error messages on failure paths), append the following `## [SW-CHECKPOINT]` block as the **final** section of the skill's response. This block MUST be the last thing shown to the user — it MUST appear after the plan summary and any error output. Do NOT omit it on failure paths (e.g., if the planner agent failed); emit `artifacts: []` on a single line when no `plan.md` was produced.
+
+   Rendering rules:
+
+   - Use the literal fenced block below. Replace only the placeholders inside `{...}`.
+   - `phase:` is always the literal string `plan2doc`.
+   - `ticket:` is the ticket directory path (`.backlog/active/{ticket-dir}` or `.backlog/product_backlog/{ticket-dir}`) when `ticket-dir` was resolved in step 0b; otherwise the bare string `none` (no quotes) for the `.docs/plans/` non-ticket flow.
+   - `artifacts:` lists the plan file written by the planner agent in this invocation as a repo-relative path. On the success path this is exactly one entry (the resolved output path from step 0b). On a failure path with no artifact, emit `artifacts: []` on a single line.
+   - `next_recommended:` is `/impl {plan-path}` where `{plan-path}` is the resolved output path from step 0b. If no plan was produced, use empty string `""`.
+   - `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit — include it even on failure paths.
+
+   ```
+   ## [SW-CHECKPOINT]
+   phase: plan2doc
+   ticket: {ticket-dir or "none"}
+   artifacts:
+     - {relative path to plan.md}
+   next_recommended: /impl {plan-path}
+   context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
+   ```
+
 ## Error Handling
 
 - **Empty arguments**: Print `Usage: /plan2doc <feature or change to plan>` and stop.

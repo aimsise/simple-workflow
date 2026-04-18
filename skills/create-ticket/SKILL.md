@@ -298,6 +298,29 @@ After writing the ticket(s), print a summary:
 Recommended workflow per ticket: `/scout → /impl → /ship`
 ```
 
+### Phase 6: Emit SW-CHECKPOINT block
+
+After **all** prior output sections (summary table / per-ticket details) have been printed, append the following `## [SW-CHECKPOINT]` block as the **final** section of the skill's response. This block MUST be the last thing shown to the user — it MUST appear after `### Created Tickets` and any other summary/result content. Do NOT omit it on failure paths (e.g., if Phase 4 evaluation stopped or if ticket-evaluator was unavailable, still emit the block; use an empty `artifacts: []` list when no ticket files were written).
+
+Rendering rules:
+
+- Use the literal fenced block below. Replace only the placeholders inside `{...}`.
+- `phase:` is always the literal string `create-ticket` (hyphen, matching the skill name).
+- `ticket:` is the created ticket directory path (for N=1: `.backlog/product_backlog/{ticket-dir}`; for N>1: the first created ticket directory, or `"none"` if no ticket was written). Use the bare string `none` (no quotes) only when no ticket was created.
+- `artifacts:` lists every `ticket.md` file written in this invocation as repo-relative paths. If no ticket file was written (failure before Phase 5), emit `artifacts: []` on a single line instead of a bullet list.
+- `next_recommended:` is `/scout {ticket-dir}` for the primary/first created ticket. If no ticket was created, use empty string `""`.
+- `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit.
+
+```
+## [SW-CHECKPOINT]
+phase: create-ticket
+ticket: {ticket-dir or "none"}
+artifacts:
+  - {relative path to ticket.md}
+next_recommended: /scout {ticket-dir}
+context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
+```
+
 ### Workflow selection guide
 
 Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present),

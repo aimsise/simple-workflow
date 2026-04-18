@@ -395,6 +395,31 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
 
     **Failure case**: If `/impl` exits with remaining AC/quality issues after the max-rounds cap (typically 3 rounds), set `phases.impl.status: completed` (the loop terminated normally) but leave `overall_status: in-progress` — the user must decide whether to re-run or abandon; do NOT set `overall_status: failed` based on Round-N FAIL alone. Only set `phases.impl.status: failed` and `overall_status: failed` when the skill itself cannot complete (e.g. Generator or Evaluator invocation failure, or FAIL-CRITICAL early stop).
 
+22. **Emit SW-CHECKPOINT block (Phase 3 final output only)**. After the Phase 3 summary (step 20) and the state-file finalization (step 21) have completed, append the following `## [SW-CHECKPOINT]` block as the **final** section of the `/impl` response. This block MUST be the last thing shown to the user — it MUST appear after the `git status -s` output, the summary bullets, and any "remaining issues" notes. Emit this block **only once per `/impl` invocation**, at the very end — NOT after each Generator/Evaluator/audit round, and NOT inside the Phase 2 loop. Do NOT omit it on failure paths (FAIL-CRITICAL early stop, Generator/Evaluator invocation failure, or max-rounds cap with remaining issues); emit `artifacts: []` on a single line when no artifacts were produced (e.g., Generator failed before writing any files).
+
+    Rendering rules:
+
+    - Use the literal fenced block below. Replace only the placeholders inside `{...}`.
+    - `phase:` is always the literal string `impl` (the emitting skill's canonical name — NOT `phases.impl.phase_sub`, NOT the ticket's `current_phase`).
+    - `ticket:` is `.backlog/active/{ticket-dir}` when the plan is under a ticket directory; otherwise the bare string `none` (no quotes) for the `.docs/plans/` non-ticket flow.
+    - `artifacts:` lists the files `/impl` caused to be created/updated in this invocation, as repo-relative paths. On the success path this includes every `eval-round-*.md`, `quality-round-*.md`, `audit-round-*.md`, and `security-scan-*.md` produced across all rounds, plus the changed source files (from `git diff --name-only`). On a failure path with no artifacts, emit `artifacts: []` on a single line.
+    - `next_recommended:` is `/ship` when Phase 3 was reached with `proceed-to-phase-3` (success / PASS_WITH_CONCERNS). Use empty string `""` when the skill stopped without producing a shippable state (FAIL-CRITICAL early stop, infrastructure failure).
+    - `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit — include it even on failure paths.
+
+    ```
+    ## [SW-CHECKPOINT]
+    phase: impl
+    ticket: {ticket-dir or "none"}
+    artifacts:
+      - {relative path to eval-round-N.md}
+      - {relative path to quality-round-N.md}
+      - {relative path to audit-round-N.md}
+      - {relative path to security-scan-N.md}
+      - {relative path to each changed source file}
+    next_recommended: /ship
+    context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
+    ```
+
 ## Error Handling
 
 - **No plan**: Print "No plan found in .backlog/active/ or .docs/plans/. Run /scout or /plan2doc first." and stop.

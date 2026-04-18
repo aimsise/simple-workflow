@@ -233,6 +233,34 @@ Proceed to Phase 2.
 19. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
 20. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 5, also include "Ticket moved to .backlog/done/{ticket-dir}".
 
+21. **Emit SW-CHECKPOINT block**. After the final summary in step 20 (Phase 3), or after step 16 (Phase 2 completion when `merge=true` is not set), or after any early-stop point (Phase 1 `No changes to ship.`, Phase 2 `No remote configured`, `gh auth` failure, push failure, `No commits ahead`, `Existing PR`, etc.), append the following `## [SW-CHECKPOINT]` block as the **final** section of the `/ship` response.
+
+    Output ordering requirements:
+
+    - The block MUST be the last thing shown to the user. It MUST come AFTER the PR URL print, the merge summary, and any error / stop messages.
+    - Emit this block exactly once per `/ship` invocation, at the very end — regardless of which stop point was reached.
+    - Do NOT omit it on failure paths. On `No changes to ship.`, push failure, `gh auth` failure, etc., still emit the block with `artifacts: []` on a single line and `next_recommended: ""`.
+
+    Rendering rules:
+
+    - Use the literal fenced block below. Replace only the placeholders inside `{...}`.
+    - `phase:` is always the literal string `ship`.
+    - `ticket:` is `.backlog/done/{ticket-dir}` when a ticket was moved in step 5 (and is now in `done/`); otherwise `.backlog/active/{ticket-dir}` when a ticket was detected but not yet moved (early failure before step 5); otherwise the bare string `none` (no quotes) when no ticket was matched.
+    - `artifacts:` lists repo-relative paths to files `/ship` caused to be created/updated in this invocation. On the success path this is typically the PR URL (recorded under `phases.ship.artifacts.pr_url`) plus the `phase-state.yaml` (now at `.backlog/done/{ticket-dir}/phase-state.yaml`). The commit SHA / PR URL may appear as an entry (e.g., `- {pr-url}`). On a failure path with no artifacts, emit `artifacts: []` on a single line.
+    - `next_recommended:` is always the empty string `""` for `/ship` because the ticket is complete (there is no next phase).
+    - `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit — include it even on failure paths.
+
+    ```
+    ## [SW-CHECKPOINT]
+    phase: ship
+    ticket: {ticket-dir or "none"}
+    artifacts:
+      - {relative path to phase-state.yaml}
+      - {PR URL or commit SHA}
+    next_recommended: ""
+    context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
+    ```
+
 ## Error Handling
 
 - **No changes**: Print "No changes to ship." and stop.

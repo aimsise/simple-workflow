@@ -94,6 +94,28 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
     Do NOT modify `phases.create_ticket`, `phases.impl`, or `phases.ship`. Do NOT modify `overall_status` (it remains `in-progress`).
 9. Print a final summary with both file paths and the detected size.
 
+10. **Emit SW-CHECKPOINT block**. After the final summary in step 9 (and after any error messages on failure paths), append the following `## [SW-CHECKPOINT]` block as the **final** section of the skill's response. This block MUST be the last thing shown to the user — it MUST appear after the investigate/plan summaries and any error output. Do NOT omit it on failure paths (e.g., if `/investigate` or `/plan2doc` returned a failure). Emit `artifacts: []` on a single line when no artifacts were produced.
+
+    Rendering rules:
+
+    - Use the literal fenced block below. Replace only the placeholders inside `{...}`.
+    - `phase:` is always the literal string `scout`.
+    - `ticket:` is `.backlog/active/{ticket-dir}` when a ticket was resolved in steps 1–2, otherwise the bare string `none` (no quotes).
+    - `artifacts:` lists the files `/scout` caused to be created/updated in this invocation, as repo-relative paths. On the success path (both `/investigate` and `/plan2doc` succeeded), this MUST include both `investigation.md` and `plan.md` (and `phase-state.yaml` if a ticket was resolved). On a failure path with no artifacts, emit `artifacts: []` on a single line.
+    - `next_recommended:` is `/impl .backlog/active/{ticket-dir}/plan.md` on success. If no `plan.md` was produced, use empty string `""`.
+    - `context_advice:` is the literal English sentence shown below, verbatim. Never translate, never paraphrase, never omit — include it even on failure paths.
+
+    ```
+    ## [SW-CHECKPOINT]
+    phase: scout
+    ticket: {ticket-dir or "none"}
+    artifacts:
+      - {relative path to investigation.md}
+      - {relative path to plan.md}
+    next_recommended: /impl {plan-path}
+    context_advice: "Intermediate tool outputs from this phase remain in the main session context. If you plan to run the next phase manually, run `/clear` first and then `/catchup` to recover position with minimal token spend."
+    ```
+
 ## Error Handling
 
 - **Empty arguments**: Print "Usage: /scout <topic or ticket>" and stop.
