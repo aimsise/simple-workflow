@@ -533,6 +533,12 @@ done
 echo ""
 
 # --- Category 17: Step number continuity ---
+# NOTE (PR E Task 3): NNa/NNb branch steps are accepted as valid
+# continuations of step NN. /ship and /impl use them to insert inline
+# sub-steps (e.g. 15a "Complete ship phase state update") without shifting
+# every subsequent step's number. Only the primary numbered sequence
+# (1, 2, 3, ...) must remain sequential with no gaps; branch steps are
+# skipped during the gap scan.
 echo "--- Step number continuity ---"
 
 for skill_md in \
@@ -549,17 +555,16 @@ for skill_md in \
     continue
   fi
 
-  has_branch=0
   has_gap=0
   bad_detail=""
   prev_num=0
   for entry in "${steps[@]}"; do
     line_no="${entry%%:*}"
     step_id="${entry##*:}"
+    # Branch steps (e.g. 15a, 15b) annotate step 15 inline; accept them and
+    # skip the gap scan for that entry. They do not advance prev_num.
     if echo "$step_id" | grep -qE '[a-z]$'; then
-      has_branch=1
-      bad_detail="branch step '${step_id}' at line $line_no"
-      break
+      continue
     fi
     num="$step_id"
     if [ "$prev_num" -gt 0 ] && [ "$num" -ne $((prev_num + 1)) ] && [ "$num" -ne 1 ]; then
@@ -570,8 +575,8 @@ for skill_md in \
     prev_num=$num
   done
 
-  if [ "$has_branch" -eq 0 ] && [ "$has_gap" -eq 0 ]; then
-    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md steps are sequential (1..$prev_num)"
+  if [ "$has_gap" -eq 0 ]; then
+    echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md steps are sequential (1..$prev_num; NNa/NNb branch steps accepted)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "  ${RED}FAIL${NC} skills/$skill_slug/SKILL.md step numbering issue: $bad_detail"
