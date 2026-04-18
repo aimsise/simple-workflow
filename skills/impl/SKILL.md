@@ -129,8 +129,10 @@ Current state:
 
 5. **Locate and extract the Acceptance Criteria section** — bounded read only, do NOT read the plan in full:
    a. Use `Grep -n "^### Acceptance Criteria" <plan-path>` (or the equivalent heading `^## Acceptance Criteria` / `^#### Acceptance Criteria` as a fallback) to locate the header line number.
-   b. If a match is found at line `L`, run `Read(<plan-path>, offset=L, limit=80)` to load only the AC section body. Ignore content outside that window.
-   c. Extract the AC bullet list from the returned window. Keep the extracted text in a variable for use in the Generator prompt (§13 field b) and Evaluator prompts (§8, §15 field b).
+   b. If a match is found at line `L`, **read from line `L` onward with a 200-line hard cap**: `Read(<plan-path>, offset=L, limit=200)`. The 200-line cap is an upper bound — the AC section is almost always far shorter.
+   c. **Terminate at the next header or EOF**: after the Read, scan the returned content for the first line matching `^#{1,6} ` (any markdown header at any depth) **AFTER** the initial `### Acceptance Criteria` header line. Keep only the content from line `L` up to (but not including) that terminator line. If no subsequent header is found within the returned window, the terminator is end-of-content (whichever comes first — subsequent header OR end of the 200-line window OR EOF).
+   d. **200-line cap warning**: If the 200-line window was fully consumed AND no subsequent header was found AND the returned window did not reach EOF of the plan file (i.e. the cap truncated a larger AC section), emit the warning `"AC section exceeds 200 lines; using the first 200 lines"` and proceed with the full 200-line window as the AC body. Plans with >200 lines of AC are pathological and should be redesigned, but the skill must not silently truncate them.
+   e. Extract the AC bullet list from the bounded window. Keep the extracted text in a variable for use in the Generator prompt (§13 field b) and Evaluator prompts (§8, §15 field b).
 
 6. If step 5 Grep returns no header line, print "ERROR: Plan has no Acceptance Criteria. Add an '### Acceptance Criteria' section to the plan before running /impl." and stop.
 
@@ -159,9 +161,33 @@ Current state:
 
 11. **State file resolution, legacy migration, and bootstrap**. Let `{ticket-dir}` be the directory containing the plan file (e.g. `.backlog/active/{ticket-dir}/`). Determine which state file is present and set `impl_resume_mode` accordingly.
 
-    **11a. Legacy migration (one-shot)**: If `{ticket-dir}/impl-state.yaml` exists and `{ticket-dir}/phase-state.yaml` does NOT exist:
+    **§11-completed — Already-completed ticket**: If `{ticket-dir}/phase-state.yaml` exists and `phases.impl.status == completed`, print:
+
+    ```
+    Ticket already completed: phases.impl.completed_at = {timestamp}. Run /ship next, or specify a different plan path to /impl.
+    ```
+
+    and stop immediately. Do NOT re-run the Generator / Evaluator / Audit loop on a completed ticket — doing so would silently re-open a closed state file and invalidate downstream `/ship` assumptions.
+
+    **§11-failed — Previously-failed run**: If `{ticket-dir}/phase-state.yaml` exists and `phases.impl.status == failed`, print:
+
+    ```
+    Previous /impl run marked phases.impl.status: failed. To retry: manually reset phases.impl.status to 'pending' and next_action to null in phase-state.yaml, then re-run /impl. Alternatively, specify a different plan path.
+    ```
+
+    and stop immediately. The user must explicitly acknowledge the failure by editing the state file before re-entering the loop; automatic retry would mask recurring infrastructure issues.
+
+    **11a. Legacy migration**: Before applying the migration, read `skills/create-ticket/references/phase-state-schema.md` §4 (legacy migration path) and §5 (field rename table) — the rename table, the `legacy_extras` preservation rule, and the canonical section defaults are all defined there. The three branches below cover every legacy / partial-migration state combination.
+
+    **§11a.0 — Both files exist (partial-migration or test state)**: If `{ticket-dir}/impl-state.yaml` AND `{ticket-dir}/phase-state.yaml` both exist:
+    - Read `{ticket-dir}/phase-state.yaml`.
+    - **Sub-case A (migration already complete)**: If `phases.impl.status != null` OR `phases.impl.current_round != null`, treat migration as already complete — the presence of `impl-state.yaml` is a stale leftover. Skip to §11c (Resume dispatch). Do NOT re-migrate and do NOT touch the legacy file (a later run can rename it once it is confirmed untouched for a full release).
+    - **Sub-case B (empty / pending phase-state skeleton)**: Otherwise (phase-state.yaml exists but `phases.impl.status == null` AND `phases.impl.current_round == null` — e.g. a just-bootstrapped empty skeleton left by a crashed earlier migration attempt), treat as partial migration. Proceed to §11a.1 with the following modification: instead of creating a new `phase-state.yaml`, re-populate the existing file's `phases.impl.*` section from the legacy `impl-state.yaml` (other sections of the existing phase-state.yaml remain intact). The cleanup step (§11a.1 step 4) still runs.
+
+    **§11a.1 — Clean legacy migration**: If ONLY `{ticket-dir}/impl-state.yaml` exists (no `phase-state.yaml`):
     1. Read `{ticket-dir}/impl-state.yaml`.
-    2. Create `{ticket-dir}/phase-state.yaml` with the canonical schema (see `skills/create-ticket/references/phase-state-schema.md`). Populate fields as follows:
+    2. **Before rename**: identify any top-level keys in `impl-state.yaml` that are NOT listed in the canonical rename table (see `skills/create-ticket/references/phase-state-schema.md` §5). The known legacy fields are: `phase`, `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`, plus the 4 artifact lists (`eval_rounds`, `quality_rounds`, `audit_rounds`, `security_scans`), plus `plan_file`, `ticket_dir`, `size`, and `started`. Any other top-level key is preserved — see step 3 for the destination.
+    3. Write `{ticket-dir}/phase-state.yaml` with the canonical schema (see `skills/create-ticket/references/phase-state-schema.md`). Populate fields as follows:
        - Top-level: `version: 1`; `ticket_dir: .backlog/active/{ticket-dir}`; `size:` = legacy `size`; `created:` = legacy `started` (fallback to `{now}` if missing); `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`.
        - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .backlog/active/{ticket-dir}/ticket.md` (if the file exists; otherwise `null`).
        - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation: .backlog/active/{ticket-dir}/investigation.md` (only if the file exists; otherwise `null`), `artifacts.plan: .backlog/active/{ticket-dir}/plan.md` (only if the file exists; otherwise `null`).
@@ -176,10 +202,11 @@ Current state:
          - legacy `feedback_files.eval` → `phases.impl.feedback_files.eval`
          - legacy `feedback_files.quality` → `phases.impl.feedback_files.quality`
        - `phases.impl.artifacts.{eval_rounds,quality_rounds,audit_rounds,security_scans}` = empty lists (the round artifacts can be re-discovered by Glob on the next round update).
+       - `phases.impl.legacy_extras:` — preserve every unknown legacy top-level key (identified in step 2) as a YAML map under this field (e.g. `legacy_extras: {custom_flag: true}`). This keeps forward compatibility with experimental state from upstream branches. If no unknown keys exist, omit the `legacy_extras` field entirely rather than writing an empty map.
        - `phases.ship.status: pending` with all fields `null`.
-    3. Delete the legacy `impl-state.yaml` with `rm` in the same step, AFTER the new unified state file is written successfully. If that write fails, do NOT delete the legacy file — the migration is all-or-nothing.
-    4. Print `[PHASE-STATE-MIGRATION] impl-state.yaml → phase-state.yaml migrated for {ticket-dir}`.
-    5. Set `impl_resume_mode = true` and proceed to step 11c (Resume dispatch) with the newly-written state.
+    4. **After the write succeeds**, rename the legacy file out of the way rather than deleting it: `mv {ticket-dir}/impl-state.yaml {ticket-dir}/impl-state.yaml.migrated-{YYYYMMDD}.bak`. NEVER use `rm` here — the `.bak` file is preserved for audit / rollback and is removed by a later cleanup pass once the migration is confirmed stable across a full release. If the `phase-state.yaml` write in step 3 failed, do NOT rename the legacy file — the migration is all-or-nothing.
+    5. Print `[PHASE-STATE-MIGRATION] impl-state.yaml → phase-state.yaml migrated for {ticket-dir}; legacy file preserved at impl-state.yaml.migrated-{YYYYMMDD}.bak`.
+    6. Set `impl_resume_mode = true` and proceed to step 11c (Resume dispatch) with the newly-written state.
 
     **11b. Bootstrap (one-shot)**: If NEITHER `{ticket-dir}/impl-state.yaml` NOR `{ticket-dir}/phase-state.yaml` exists, but a `plan.md` is present in `{ticket-dir}` (or the plan path is `.docs/plans/...`):
     - If the plan path is under `.backlog/active/{ticket-dir}/`:
@@ -289,6 +316,7 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
       g. Round 1 with Dry Run: AC Evaluator's verification plan ("The AC evaluator will verify your implementation against the acceptance criteria using this plan:")
       h. Knowledge-base injection: Read `.simple-wf-knowledge/index.yaml`. If the file exists, filter entries where the role is `implementer` and `confidence >= 0.8`. Collect up to 20 lines of summaries and include them in the prompt under a heading "## Known Project Patterns". If `.simple-wf-knowledge/index.yaml` does not exist, skip this injection silently. **Note: Acceptance Criteria always take precedence over KB patterns. If a KB pattern conflicts with an AC, the AC wins.**
       i. Autopilot constraints: If `{ticket-dir}/autopilot-policy.yaml` exists, read `constraints.allow_breaking_changes`. If `false`, include in the Generator prompt: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." If `true` or if the policy file does not exist, omit this constraint.
+      j. **CONSTRAINT — Input immutability**: Include verbatim in the Generator prompt: "Do NOT modify `plan.md`, `ticket.md`, or `investigation.md` at any point. These are read-only inputs. Source code changes and new files (test files, eval reports are produced separately) are fine. If you believe the plan needs revision, flag it in your Next Steps field — the orchestrator will invoke `/plan2doc` separately." This firewall constraint prevents Generator / Evaluator contamination via input-artifact mutation.
     - Receive Generator's return value (changed files list + lint/test status)
 
 14. **Immediately** update `{ticket-dir}/phase-state.yaml` (read-modify-write; touch only the listed fields under `phases.impl.*`):
@@ -311,6 +339,7 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
         - If plan is in `.backlog/active/{ticket-dir}/` -> "Save your evaluation report to `.backlog/active/{ticket-dir}/eval-round-{n}.md`"
         - Otherwise -> Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix) and use `{ticket-dir}/eval-round-{n}.md`. If no match, use `.docs/eval-round/{topic}-eval-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
         Where {n} is the current round number (1, 2, or 3).
+     f. Append the following clarifying line to the Evaluator prompt body (verbatim): "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran)." This mirrors the §8 Dry Run wording and is required to keep Evaluator verdicts anchored to a rubric that predates any Generator edits.
    - Prompt must NOT include: Generator's return value (bias elimination)
    - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback)
 
