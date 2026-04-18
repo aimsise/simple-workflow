@@ -88,6 +88,8 @@ From creation to completion, every intermediate artifact is confined within its 
 
 Every ticket carries a `phase-state.yaml` file that declares its full lifecycle state (`create_ticket → scout → impl → ship → done`). `/create-ticket` creates it, each subsequent phase-owner skill updates only its own section, and `/ship` moves it alongside the ticket directory to `.backlog/done/`. **`phase-state.yaml` is never deleted** — it is the permanent lifecycle record for the ticket. The `SessionStart` hook and `/catchup` both read this file to recover active-ticket context in one step, without walking every artifact. The canonical schema, field enums, and per-skill write-ownership rules live in [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md).
 
+> **Scope note**: `phase-state.yaml` tracks the manual workflow (`/create-ticket` → `/scout` → `/impl` → `/ship`). Cost accounting and orchestration state for `/autopilot` are tracked in `autopilot-state.yaml`, a separate schema. See [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md) §5 "Dual-state precedence" for how `/catchup` reconciles the two.
+
 Phase-terminating skills (`/create-ticket`, `/scout`, `/plan2doc`, `/impl`, `/ship`) close their output with a standardized `[SW-CHECKPOINT]` block that lists the phase, ticket, artifacts, and recommended next command — a signal that running `/clear` is safe and that `/catchup` can recover from `phase-state.yaml` with minimal token spend.
 
 ### Knowledge Base (Cross-Session Learning)

@@ -12,7 +12,6 @@ allowed-tools:
   - Grep
   - "Bash(git:*)"
   - "Bash(ls:*)"
-  - "Bash(stat:*)"
   # Copilot CLI
   - task
   - view
@@ -20,7 +19,6 @@ allowed-tools:
   - grep
   - "shell(git:*)"
   - "shell(ls:*)"
-  - "shell(stat:*)"
 argument-hint: "[phase: investigate|plan|implement|test|review|commit]"
 ---
 
@@ -72,15 +70,16 @@ Match only **top-level** scalars for `current_phase`, `last_completed_phase`, `o
 
 Build an ordered per-ticket record list `phase_state_records = [{dir, location, current_phase, last_completed_phase, overall_status, created, latest_started_at}, ...]`. The `location` field is `active` when the file path matches `.backlog/active/` and `product_backlog` when it matches `.backlog/product_backlog/` — Rule 0's `{ticket-dir}` output includes the full prefix (e.g. `.backlog/product_backlog/001-foo`) so the recommended command resolves correctly without the user having to guess the location. The `latest_started_at` field is the maximum `phases.{phase}.started_at` across that ticket's phase sections; when no `started_at` is present, fall back to `created`. Carry this list forward to Steps 2, 4, and 5.
 
-**Freshness flag**: If any `phase-state.yaml` was modified within the last hour, set `phase_state_fresh = true`. Determine freshness by comparing the file's mtime (via `Bash(stat:*)` if available, or by inspecting the Glob result ordering as a best-effort fallback) with the current time. If mtime cannot be determined, leave `phase_state_fresh = false`.
+**Freshness flag**: If `phase_state_records` is non-empty (i.e. the `Glob` above found at least one valid `phase-state.yaml`), set `phase_state_fresh = true`; otherwise `phase_state_fresh = false`. The flag is consumed in Step 2 to decide whether to skip the researcher subagent — when the unified state file is present it already carries the per-phase records forward, so there is nothing a deep research pass would add. This simpler rule (presence, not mtime) replaces the prior 1-hour mtime check; it removes the need for the `Bash(stat:*)` permission without weakening the researcher-skip guarantee, because every state-file update is accompanied by a CHECKPOINT emission that is already the strongest "recently touched" signal available in the catchup flow.
 
-**Dual-state precedence check (autopilot-state.yaml)**: After building `phase_state_records`, additionally `Glob` for `autopilot-state.yaml` under `.backlog/briefs/active/*/` and `.backlog/active/*/`. For each hit, compare its mtime (via `Bash(stat:*)` when available; best-effort by Glob ordering otherwise) to the mtime of any matching `phase-state.yaml` discovered above. The precedence rule documented in `skills/create-ticket/references/phase-state-schema.md` §5 ("Dual-state precedence") is:
+**Dual-state precedence check (autopilot-state.yaml)**: After building `phase_state_records`, additionally `Glob` for `autopilot-state.yaml` under `.backlog/briefs/active/*/` and `.backlog/active/*/`. For each hit, apply the precedence rule documented in `skills/create-ticket/references/phase-state-schema.md` §5 ("Dual-state precedence"):
 
 - During `/autopilot` execution, `autopilot-state.yaml` is authoritative for pipeline orchestration; `phase-state.yaml` is maintained in parallel.
 - Outside autopilot, `phase-state.yaml` is authoritative.
-- On conflict with both files present, prefer the file with the more recent mtime.
 
-When an `autopilot-state.yaml` is found AND its mtime is newer than the matching `phase-state.yaml`, annotate the corresponding record (or add a new record when no `phase-state.yaml` exists for that ticket) with `source: autopilot-state` and prefer it for Rule 0 guidance. Emit a warning line `autopilot-state.yaml is newer than phase-state.yaml for {ticket-dir}; deferring to autopilot-state per dual-state precedence.` The full fold-in of `autopilot-state.yaml` into `phase-state.yaml` is deferred — see `skills/create-ticket/references/autopilot-foldin.md`.
+Concretely, when both `autopilot-state.yaml` and `phase-state.yaml` exist for the same ticket, prefer `autopilot-state.yaml` when the ticket is under `.backlog/briefs/active/` (i.e. an autopilot-managed brief currently being orchestrated); otherwise prefer `phase-state.yaml`. This drops the prior mtime-based tiebreak (and the `Bash(stat:*)` permission that enabled it) but preserves the important rule: autopilot-driven tickets defer to `autopilot-state.yaml` because it is the orchestration source-of-truth while the pipeline is running.
+
+When `autopilot-state.yaml` wins precedence, annotate the corresponding record (or add a new record when no `phase-state.yaml` exists for that ticket) with `source: autopilot-state` and prefer it for Rule 0 guidance. Emit a warning line `autopilot-state.yaml is authoritative for {ticket-dir} (autopilot-managed brief); deferring to autopilot-state per dual-state precedence.` The full fold-in of `autopilot-state.yaml` into `phase-state.yaml` is deferred — see `skills/create-ticket/references/autopilot-foldin.md`.
 
 **If no `phase-state.yaml` file exists anywhere in `.backlog/active/` OR `.backlog/product_backlog/`**, set `phase_state_records = []` and fall through to Step 1 unchanged (AC 4.5 — existing compact-state + artifact-discovery behavior is preserved).
 
@@ -119,7 +118,7 @@ Determine whether the **researcher** agent is needed:
   - A compact-state file was found in Step 1 that is less than 1 hour old
   (State is already available from the file — no need for deep analysis.)
 
-- **Skip researcher** if `phase_state_fresh = true` (set in Step 1-pre — at least one `phase-state.yaml` was modified within the last hour). The unified state file already carries the per-phase records forward, so there is nothing a deep research pass would add (AC 4.6).
+- **Skip researcher** if `phase_state_fresh = true` (set in Step 1-pre — at least one valid `phase-state.yaml` record exists). The unified state file already carries the per-phase records forward, so there is nothing a deep research pass would add (AC 4.6).
 
 - **Otherwise**: Spawn the **researcher** agent to analyze:
   - What has changed on this branch vs `<default-branch>`

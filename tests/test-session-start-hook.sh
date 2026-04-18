@@ -189,5 +189,35 @@ else
 fi
 cleanup_test_repo
 
+# --- Fixture F: subdirectory cwd (AC 15.4) ---
+# Hook must work when invoked from a subdirectory of the repo. Prior
+# behavior broke because `.backlog/active/*/phase-state.yaml` was resolved
+# relative to $PWD rather than the repo root. After the cwd anchor, the
+# hook must still surface the ticket even when pwd sits deep in the tree.
+setup_test_repo
+mkdir -p "$TEST_REPO/.backlog/active/001-foo"
+write_valid_phase_state "$TEST_REPO/.backlog/active/001-foo" "scout" "create_ticket" "in-progress"
+# Create a nested subdirectory and invoke the hook from there.
+mkdir -p "$TEST_REPO/src/foo"
+run_hook "$HOOK" "" "$TEST_REPO/src/foo"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
+if [ "$LAST_EXIT_CODE" -eq 0 ] && \
+   echo "$CONTEXT" | grep -qF "Active tickets:" && \
+   echo "$CONTEXT" | grep -qF "001-foo" && \
+   echo "$CONTEXT" | grep -qF ".backlog/active/001-foo" && \
+   ! echo "$CONTEXT" | grep -qE "/(tmp|private)/"; then
+  # The ticket must appear, and its path must be rendered relative to the
+  # repo root (not as an absolute path leaking the tmpdir prefix).
+  echo -e "  ${GREEN}PASS${NC} Fixture F: hook invoked from src/foo/ still sees .backlog/active/ (AC 15.4)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Fixture F: subdirectory cwd regressed"
+  echo -e "       Exit code: $LAST_EXIT_CODE"
+  echo -e "       Context:   $CONTEXT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
 echo ""
 print_summary

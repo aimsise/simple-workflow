@@ -73,14 +73,33 @@ shopt -s nullglob
 # ticket sitting at last_completed_phase: create_ticket (Reviewer B Findings
 # 3, 4). Each location is tagged in the output so users can distinguish
 # not-yet-scouted backlog tickets from in-progress active ones at a glance.
-_sw_state_files=(.backlog/active/*/phase-state.yaml .backlog/product_backlog/*/phase-state.yaml)
+#
+# The globs are anchored at the repo root (via `git rev-parse`) so that the
+# hook still finds `.backlog/` when a session opens in a subdirectory of the
+# repo (Reviewer A Finding 11). When we are not inside a git worktree the
+# anchor falls back to $PWD, preserving the prior repo-root-equals-cwd
+# behavior for non-git directories.
+_sw_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+_sw_state_files=(
+  "${_sw_repo_root}"/.backlog/active/*/phase-state.yaml
+  "${_sw_repo_root}"/.backlog/product_backlog/*/phase-state.yaml
+)
 shopt -u nullglob
 
 _sw_ticket_lines=""
 for _sw_sf in "${_sw_state_files[@]}"; do
   # Skip unreadable files silently.
   [ -r "$_sw_sf" ] || continue
-  _sw_ticket_dir=$(dirname "$_sw_sf")
+  _sw_ticket_dir_abs=$(dirname "$_sw_sf")
+  # Present the ticket path relative to the repo root so the output stays
+  # identical across `pwd == repo root` and `pwd == some/subdir/` invocations.
+  # When the absolute path begins with the repo root, strip that prefix;
+  # otherwise fall back to the absolute form (defensive — should not occur
+  # after the anchor above).
+  case "$_sw_ticket_dir_abs" in
+    "${_sw_repo_root}/"*) _sw_ticket_dir="${_sw_ticket_dir_abs#${_sw_repo_root}/}" ;;
+    *)                    _sw_ticket_dir="$_sw_ticket_dir_abs" ;;
+  esac
   _sw_cur=$(_sw_extract_scalar "$_sw_sf" "current_phase")
   _sw_last=$(_sw_extract_scalar "$_sw_sf" "last_completed_phase")
   _sw_status=$(_sw_extract_scalar "$_sw_sf" "overall_status")
@@ -103,7 +122,7 @@ for _sw_sf in "${_sw_state_files[@]}"; do
   esac
   _sw_ticket_lines+=$'\n'"  - ${_sw_ticket_dir}: phase=${_sw_cur} last_completed=${_sw_last} status=${_sw_status}${_sw_location_marker}"
 done
-unset _sw_state_files _sw_sf _sw_ticket_dir _sw_cur _sw_last _sw_status _sw_location_marker
+unset _sw_state_files _sw_sf _sw_ticket_dir _sw_ticket_dir_abs _sw_cur _sw_last _sw_status _sw_location_marker _sw_repo_root
 
 if [ -n "$_sw_ticket_lines" ]; then
   CONTEXT+=$'\n'"Active tickets:${_sw_ticket_lines}"$'\n'"Tip: run /catchup for full recovery."

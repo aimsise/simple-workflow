@@ -67,6 +67,15 @@ by §11a.0 Sub-case B on the next `/impl` run.
 ## 5. Sunset
 
 Legacy `impl-state.yaml` migration support is retained through
-plugin v4.0 / 2026-10 (roughly 6 months post-merge of the unified
-schema). After that window, `/impl` will reject legacy files with an
-error pointing at this document and the rename table.
+**plugin v4.0 OR 2026-10-18 (6 months post-merge of the unified
+schema), whichever comes later**. After that window, the migration
+branch in `/impl` §11a MAY be removed and the legacy-rename table
+above MAY be archived. Concretely:
+
+- When all active tickets in a repository no longer contain
+  `impl-state.yaml`, the §11a code path is dead for that repository.
+- When every supported consumer of the plugin is past v4.0 AND the
+  6-month window has elapsed, the §11a migration code may be deleted
+  from `/impl`, and this document can be moved to an `archive/`
+  subdirectory. `/impl` will then reject any remaining legacy files
+  with an error pointing at the archived rename table.
