@@ -301,7 +301,12 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
 
 13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from within `/impl` — the Generator → Evaluator information firewall depends on the orchestrator producing no code changes itself. Fail the task immediately if the Generator agent cannot be invoked.
     - subagent_type: `implementer` (always; no -light variant)
-    - model: `sonnet` if Size is S or M, otherwise `opus` (L/XL/unknown)
+    - model: determined by the Size → model routing rule below. Read `constraints.sonnet_size_threshold` from `{ticket-dir}/autopilot-policy.yaml` if the file is present (where `{ticket-dir}` is the directory containing the plan file, e.g. `.backlog/active/{ticket-dir}/`). Accepted values: `S`, `M`, `L`, `off`. The default — applied when the policy file is absent OR the field is absent — is `M`, which preserves the current shipped behavior (Size S and M use sonnet; L/XL/unknown use opus). Mapping:
+      - threshold `S` → sonnet only when detected Size is S; otherwise opus.
+      - threshold `M` (default) → sonnet when Size is S or M; otherwise opus.
+      - threshold `L` → sonnet when Size is S, M, or L; otherwise opus (Size XL or unknown).
+      - threshold `off` → always opus (never sonnet).
+      See `skills/create-ticket/references/autopilot-policy-reference.md` for the knob reference.
     - description: "Implement plan for <feature>"
     - Prompt must include:
       a. Plan path: `<path>`. The implementer MUST read the full plan file at this path before implementing.
