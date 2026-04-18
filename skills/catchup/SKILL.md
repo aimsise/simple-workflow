@@ -31,13 +31,13 @@ Current branch:
 !`git branch --show-current`
 
 Recent history:
-!`git log --oneline -20`
+!`git log --oneline -5`
 
 Default branch:
 !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 Changes from default branch:
-!`git diff --stat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)`
+!`git diff --shortstat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)`
 
 Working tree:
 !`git status --short`
