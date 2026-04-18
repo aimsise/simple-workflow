@@ -60,6 +60,7 @@ The following agent/skill invocations are **contractual** — `/impl` MUST deleg
 - `MUST invoke /audit via the Skill tool` — never substitute by spawning `code-reviewer` / `security-scanner` agents directly from `/impl`. `/audit` aggregates both and enforces the "single agent failure = FAIL" invariant.
 - `NEVER bypass any of these via direct file operations` — writing `eval-round-{n}.md`, `quality-round-{n}.md`, or `audit-round-{n}.md` by `/impl` itself is a contract violation (the evaluating agent is the only acceptable author).
 - `Fail the task immediately if any mandatory invocation cannot be completed via the prescribed Agent/Skill tool` — print the failure reason, update `phase-state.yaml` (`phases.impl.status: failed`, `overall_status: failed`), and stop; do not fabricate a PASS.
+- `MUST include the eval-report save path in the FIRST ac-evaluator invocation — NEVER call ac-evaluator a second time solely to persist the report` — re-invocation for persistence is a contract violation (detected by consecutive ac-evaluator calls with identical AC scope in the skill invocation audit).
 
 ## phase-state.yaml write ownership
 
@@ -330,13 +331,25 @@ under `phases.impl.*`; never touch `phases.create_ticket`, `phases.scout`, or
      b. Acceptance Criteria
      c. Output of `git diff --shortstat` from step 14
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
-     e. Report save path:
-        - If plan is in `.backlog/active/{ticket-dir}/` -> "Save your evaluation report to `.backlog/active/{ticket-dir}/eval-round-{n}.md`"
-        - Otherwise -> Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix) and use `{ticket-dir}/eval-round-{n}.md`. If no match, use `.docs/eval-round/{topic}-eval-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
+     e. Report save path — **`{eval-report-path}` MUST be resolved by the orchestrator before invoking the agent and substituted into the template below**. Resolution logic:
+        - If plan is in `.backlog/active/{ticket-dir}/` -> `{eval-report-path}` = `.backlog/active/{ticket-dir}/eval-round-{n}.md`.
+        - Otherwise -> Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix) and `{eval-report-path}` = `{ticket-dir}/eval-round-{n}.md`. If no match, `{eval-report-path}` = `.docs/eval-round/{topic}-eval-round-{n}.md` where {topic} is derived from the plan filename (e.g., `.docs/plans/add-search.md` -> `add-search`).
         Where {n} is the current round number (1, 2, or 3).
      f. Append the following clarifying line to the Evaluator prompt body (verbatim): "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran)." This mirrors the §8 Dry Run wording and is required to keep Evaluator verdicts anchored to a rubric that predates any Generator edits.
-   - Prompt must NOT include: Generator's return value (bias elimination)
+   - Prompt must NOT include: Generator's return value (bias elimination); a second invocation whose sole purpose is to persist the report (the save path is always included in THIS first call — see Binding rules).
    - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback)
+
+   **Copy-pasteable Evaluator prompt template** (orchestrator MUST substitute `{plan-path}`, `{acceptance-criteria}`, `{git-diff-shortstat}`, `{eval-report-path}`, and `{n}` before invoking the agent; `{eval-report-path}` is resolved by the orchestrator per the logic in 15.e above):
+
+   ```
+   Plan path: {plan-path}. Read it in full before evaluating.
+   Acceptance Criteria:
+   {acceptance-criteria}
+   git diff --shortstat: {git-diff-shortstat}
+   The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC.
+   Save your evaluation report to: {eval-report-path}
+   The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran).
+   ```
 
 16. AC Gate:
     - **Status: FAIL-CRITICAL** → stop immediately. Report CRITICAL issues to the user. Do NOT continue to further rounds.
