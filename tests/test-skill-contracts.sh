@@ -299,6 +299,16 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
     if [ "$target" = "$skill_slug" ]; then
       continue
     fi
+    # Claude Code built-in slash commands (not skills shipped by this
+    # plugin): they legitimately appear in backticks inside context_advice
+    # text and similar prose ("run `/clear` first and then `/catchup`")
+    # but are NOT skill delegations. Skip them from the delegation
+    # existence check.
+    case "$target" in
+      clear|compact|exit|help|model|login|logout|quit|status|tree|init)
+        continue
+        ;;
+    esac
     target_md="$REPO_DIR/skills/$target/SKILL.md"
     result="false"
     if [ -f "$target_md" ]; then

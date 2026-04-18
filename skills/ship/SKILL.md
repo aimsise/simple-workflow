@@ -11,6 +11,8 @@ allowed-tools:
   - Skill
   - AskUserQuestion
   - Read
+  - Write
+  - Edit
   - "Bash(git add:*)"
   - "Bash(git commit:*)"
   - "Bash(git status:*)"
@@ -24,10 +26,13 @@ allowed-tools:
   - "Bash(mv:*)"
   - "Bash(ls:*)"
   - "Bash(mkdir:*)"
+  - "Bash(rmdir:*)"
   - "Bash(date:*)"
   # Copilot CLI
   - skill
   - view
+  - create
+  - edit
   - "shell(git add:*)"
   - "shell(git commit:*)"
   - "shell(git status:*)"
@@ -41,6 +46,7 @@ allowed-tools:
   - "shell(mv:*)"
   - "shell(ls:*)"
   - "shell(mkdir:*)"
+  - "shell(rmdir:*)"
   - "shell(date:*)"
 argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 ---
@@ -60,6 +66,21 @@ The following skill invocation is **contractual** — `/ship` MUST delegate to `
 - `MUST invoke /tune via the Skill tool` whenever a ticket was moved in step 5. Pass the ticket-dir name as the argument.
 - `NEVER bypass /tune via direct manipulation` of `.simple-wf-knowledge/candidates.yaml` or `entries.yaml` from within `/ship`.
 - If `/tune` itself fails, **do NOT stop the ship workflow** (the commit is already made and the ticket is already moved) — but the invocation MUST have been attempted. `Fail the /tune invocation attempt only if the Skill tool is unreachable; log the failure and continue.`
+
+## phase-state.yaml write ownership
+
+This skill writes ONLY to `phases.ship` plus the top-level status fields
+(`current_phase`, `last_completed_phase`, `overall_status`). It MUST NOT
+modify any other phase's section (`phases.create_ticket`, `phases.scout`,
+`phases.impl`).
+
+`phase-state.yaml` lives inside the ticket directory. When `/ship` moves
+`.backlog/active/{ticket-dir}` to `.backlog/done/{ticket-dir}` via `mv`, the
+state file moves with it. `/ship` MUST NOT delete `phase-state.yaml` at any
+point — it is the permanent historical record that stays in
+`.backlog/done/{ticket-dir}/` forever.
+
+Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Argument Parsing
 
@@ -141,7 +162,18 @@ Commits ahead of default branch:
    - **Fallback — branch name matching**: For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to the full directory name (including the numeric prefix).
    - If neither method finds a match, skip silently.
 
-   Once `ticket-dir` is determined, run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`.
+   Once `ticket-dir` is determined:
+
+   a. **Begin ship phase (state update — only when `.backlog/active/{ticket-dir}/phase-state.yaml` exists)**: Read the state file and update ONLY the following fields (read-modify-write; leave every other section untouched):
+      - `phases.ship.status: in-progress`
+      - `phases.ship.started_at: {now}` (ISO-8601 UTC, via `date -u +%Y-%m-%dT%H:%M:%SZ`)
+      - `current_phase: ship`
+   b. **Write destination-anchored phase-state.yaml FIRST, then move remaining contents** — this ordering closes the race window where an interruption after the `mv` would strand state in a half-moved directory (Reviewer B Finding 7). The schema no longer stores a top-level `ticket_dir:` field, so the mitigation is purely ordering: the destination-path state file exists before any other content moves.
+      1. Ensure the destination directory exists: `mkdir -p .backlog/done/{ticket-dir}`.
+      2. Write the updated phase-state.yaml (with the `phases.ship.status: in-progress` update from sub-step 5a already applied) directly to `.backlog/done/{ticket-dir}/phase-state.yaml`. All other fields from 5a remain as-is. **At the end of this sub-step the destination-path state file exists and is self-consistent, even if the process is interrupted before sub-step 4.**
+      3. Move the remaining contents of the source directory: for each file in `.backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` it to `.backlog/done/{ticket-dir}/`. Do NOT copy or re-write `phase-state.yaml` here — it was already written in sub-step 2 above.
+      4. Remove the now-empty source directory: `rmdir .backlog/active/{ticket-dir}` (or `mv`-then-`rmdir` equivalent). If `rmdir` fails because the directory is not empty, list the unexpected remaining files and stop — the state is recoverable but needs manual attention.
+   c. Because phase-state.yaml was serialized to its destination path in sub-step 5.b.2 before any other file move, the skill does NOT need any post-move state-file rewrite. The ordering in 5b is the mitigation for the pre-PR-E race.
 
 6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml` from within `/ship`. If `/tune` itself fails during execution, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved. Fail the ship workflow only if the Skill tool itself is unreachable (contract-level bypass).
 
@@ -176,6 +208,17 @@ Proceed to Phase 2.
 13. Push with `git push origin HEAD`. On failure, show the error and stop.
 14. Generate PR title (conventional commit style, single line) and body (summarize changes and scope) from the commit log and diff.
 15. Create the PR with `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
+15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read the state file at `.backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY the following fields (read-modify-write; leave every other section untouched):
+     - `phases.ship.status: completed`
+     - `phases.ship.completed_at: {now}` (ISO-8601 UTC, recomputed at this step)
+     - `phases.ship.artifacts.pr_url: <pr-url>` (the URL returned by `gh pr create` in step 15, or the URL of the existing PR captured in step 12 if one was found)
+     - `last_completed_phase: ship`
+     - `current_phase: done`
+     - `overall_status: done`
+
+     Do NOT modify `phases.create_ticket`, `phases.scout`, or `phases.impl`. The state file remains in place inside `.backlog/done/{ticket-dir}/phase-state.yaml` as the permanent record — NEVER delete it.
+
+     If an existing PR was captured in step 12 (Phase 2 gate), run this state update at that point too, so the ticket is correctly finalized even on re-runs.
 16. Print the PR URL. If merge is not enabled, stop here. Note: when squash-merged, the PR title becomes the commit message on the target branch.
 
 ## Phase 3: Merge (only when merge=true)
@@ -195,6 +238,8 @@ Proceed to Phase 2.
     - **Skip**: Stop without merging. Print the PR URL for manual follow-up.
 19. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
 20. Print summary: merged PR URL, deleted branch name, current local state. If a ticket was moved in step 5, also include "Ticket moved to .backlog/done/{ticket-dir}".
+
+21. **Emit SW-CHECKPOINT block**. Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the `/ship` response, after step 20 (Phase 3), or after step 16 (Phase 2 completion when `merge=true` is not set), or after any early-stop point (`No changes to ship.`, `No remote configured`, `gh auth` failure, push failure, `No commits ahead`, `Existing PR`, etc.). Emit exactly once per invocation, at the very end — after the PR URL print, merge summary, and any error/stop messages. Fill: `phase=ship`, `ticket=.backlog/done/{ticket-dir}` when a ticket was moved in step 5 (otherwise `.backlog/active/{ticket-dir}` if detected but not moved, otherwise `none`), `artifacts=[<repo-relative paths to phase-state.yaml and the PR URL / commit SHA>]`, `next_recommended=""` (always empty for `/ship` — the ticket is complete). Emit on failure paths with `artifacts: []`.
 
 ## Error Handling
 

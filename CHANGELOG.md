@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [3.7.0] - 2026-04-17
+
+### Added
+- Unified ticket-lifecycle state file `phase-state.yaml` (PR A): created once by `/create-ticket` at the moment a ticket directory is created, updated in place by each phase-owner skill (`/scout`, `/impl`, `/ship`), and **never deleted** — moved alongside the ticket to `.backlog/done/` as a permanent record. Replaces the legacy round-scoped `impl-state.yaml`, absorbing all intra-impl loop state (`current_round`, `phase_sub`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`) under `phases.impl.*`. Canonical schema, field enums, status transitions, and per-skill write-ownership rules are documented in `skills/create-ticket/references/phase-state-schema.md`.
+- Legacy migration in `/impl` (PR A): on first run, a legacy `{ticket-dir}/impl-state.yaml` is converted to `phase-state.yaml` with every field mapped 1:1 (top-level `phase` becomes `phases.impl.phase_sub`; all others keep their names under `phases.impl.*`), then the legacy file is deleted only after the unified file is written successfully. A bootstrap path also generates a fresh `phase-state.yaml` when `/impl` is invoked on a plan-only ticket authored without `/create-ticket`.
+- `[SW-CHECKPOINT]` convention (PR B): every phase-terminating skill (`/create-ticket`, `/scout`, `/plan2doc`, `/impl`, `/ship`) appends an English-only YAML-parseable `## [SW-CHECKPOINT]` block as the last section of its output, with fields `phase`, `ticket`, `artifacts`, `next_recommended`, and a literal `context_advice` line telling the user that `/clear` followed by `/catchup` is safe. `/audit` deliberately does NOT emit a CHECKPOINT to keep the `/impl` loop presentation intact. Autopilot ignores the block and continues to parse the pre-existing `## Result` / `## Summary` structured returns.
+- `hooks/session-start.sh` now scans `.backlog/active/*/phase-state.yaml` and appends a compact per-ticket summary (`phase=… last_completed=… status=…`) to `additionalContext` along with a `Tip: run /catchup for full recovery.` line. YAML extraction uses `grep` + `sed` only (no `yq`), matching the pattern already in `pre-compact-save.sh`. Corrupt or unreadable files are skipped silently so that session start is never blocked. On a repository with no `phase-state.yaml` files, output is byte-identical to the prior hook (branch + changed-file count).
+- `/catchup` Step 1-pre reads `phase-state.yaml` as the **primary** state source (before the compact-state / session-log sources). Step 4 adds Rule 0.5 which fires when a ticket has `overall_status: in-progress` and `last_completed_phase != ship`, mapping the completed phase to a recommended next command (`create_ticket → /scout`, `scout → /impl`, `impl → /ship`). When multiple tickets are in-progress, all are listed and the one with the most recent `started_at` is highlighted. Step 5 appends a `[SW-RESUME]` block (`Active: {dir} @ {phase}` / `Run: {command}`) mirroring the CHECKPOINT shape emitted by phase-terminating skills. The `researcher` agent is additionally skipped when `phase-state.yaml` was modified within the last hour.
+- `skills/create-ticket/references/phase-state-schema.md` — canonical schema reference with field enums, status transitions, write-ownership table, reader table, legacy migration path, and the full legacy `impl-state.yaml → phase-state.yaml` rename table.
+
+### Changed
+- `/impl` Size → Generator-model routing is now configurable via `constraints.sonnet_size_threshold` in `{ticket-dir}/autopilot-policy.yaml`. Accepted values: `S`, `M`, `L`, `off`. The default — applied when the field or the policy file is absent — is `M`, preserving the prior shipped behavior (Size S and M use sonnet; L/XL/unknown use opus). Briefs that want to force every ticket to opus can set the threshold to `off`; briefs that want a sonnet-only mode for a scoped experiment can set it to `L`. The knob is documented in `skills/create-ticket/references/autopilot-policy-reference.md`.
+- `README.md` — "Built-in Ticket Management" section now describes `phase-state.yaml` as the unified lifecycle file (with explicit "never deleted" statement) and links to `skills/create-ticket/references/phase-state-schema.md`. A one-line note about the `[SW-CHECKPOINT]` convention also added.
+- `skills/create-ticket/references/workflow-patterns.md` — tool reference table now mentions `phase-state.yaml` as the unified per-ticket state file and notes that `[SW-CHECKPOINT]` blocks are emitted by phase-terminating skills.
+- `skills/catchup/SKILL.md`: freshness check simplified to "if `phase_state_records` is non-empty, set `phase_state_fresh = true`" — dropping the prior mtime-based rule and the `Bash(stat:*)` / `shell(stat:*)` permissions it required. The dual-state precedence check (autopilot-state vs phase-state) likewise drops the mtime tiebreak in favor of a simpler location-based rule: prefer `autopilot-state.yaml` only when the ticket is under `.backlog/briefs/active/` (an autopilot-managed brief); otherwise prefer `phase-state.yaml`. YAML parsing itself remains `Read` + `Grep` only (AC 4.7).
+- `/impl`: `plan.md` and `investigation.md` content is no longer held in the main session — the implementer agent receives paths and reads the files in its own isolated context, reducing main-session cache accumulation. Ticket Size extraction uses a bounded `Read(limit=30)` with a `limit=80` fallback.
+- `/impl`: Evaluator prompts (Dry Run at §8 and the main AC gate at §15) now receive the plan path instead of the full plan content — each prompt carries an explicit read instruction so the ac-evaluator loads the plan in its own isolated context.
+- `/impl`: Acceptance Criteria extraction in §5 uses a bounded `Grep -n "^### Acceptance Criteria"` to locate the header line `L`, followed by `Read(offset=L, limit=80)` to load only the AC section body, instead of a full-file `Read`.
+- `/impl`: Main-session change-summary in step 14 is replaced with `git diff --shortstat` (single summary line) to stay consistent with `/catchup`'s `--shortstat` and avoid large per-file diffstats in main context; the ac-evaluator can still invoke `git diff --stat` independently via its `Bash(git diff:*)` permission if per-file detail is needed.
+- `/catchup`: pre-computed `git log` bounded to 5 commits (was 20), to prevent long-history output from saturating the main session.
+- `/catchup`: pre-computed diff uses `git diff --shortstat` (was unbounded `--stat`), emitting a single summary line instead of a per-file diffstat.
+
+### Removed
+- Legacy active-mechanism references to `impl-state.yaml` in skill bodies. Remaining mentions (in `/impl`'s one-shot migration step and in the legacy-rename table of `phase-state-schema.md`) are explicitly marked as legacy and kept to document the migration contract.
+- `skills/catchup/SKILL.md`: `Bash(stat:*)` / `shell(stat:*)` from `allowed-tools` — no longer needed after the freshness-flag and dual-state precedence simplifications (see the corresponding `### Changed` entry above).
+
 ## [3.6.0] - 2026-04-17
 
 ### Reverted
@@ -361,6 +389,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[3.7.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.7.0
+[3.6.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.6.0
+[3.5.4]: https://github.com/aimsise/simple-workflow/releases/tag/v3.5.4
+[3.5.3]: https://github.com/aimsise/simple-workflow/releases/tag/v3.5.3
+[3.5.2]: https://github.com/aimsise/simple-workflow/releases/tag/v3.5.2
+[3.5.1]: https://github.com/aimsise/simple-workflow/releases/tag/v3.5.1
+[3.5.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.5.0
+[3.4.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.4.0
+[3.3.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.3.0
+[3.2.2]: https://github.com/aimsise/simple-workflow/releases/tag/v3.2.2
+[3.2.1]: https://github.com/aimsise/simple-workflow/releases/tag/v3.2.1
+[3.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.2.0
 [3.1.4]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.4
 [3.1.3]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.3
 [3.1.2]: https://github.com/aimsise/simple-workflow/releases/tag/v3.1.2

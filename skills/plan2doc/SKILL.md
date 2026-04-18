@@ -95,6 +95,8 @@ The following agent invocation is **contractual** — `/plan2doc` MUST delegate 
    - The plan file path
    - A one-line synopsis from the planner's return value
 
+`/plan2doc` does NOT emit a checkpoint block. It is a delegate of `/scout` (analogous to `/audit`, which also does not emit). Standalone `/plan2doc` usage is rare and `/scout` already emits a checkpoint that covers the plan2doc work. See `skills/create-ticket/references/sw-checkpoint-template.md` for the canonical block contract and the list of skills that DO emit it.
+
 ## Error Handling
 
 - **Empty arguments**: Print `Usage: /plan2doc <feature or change to plan>` and stop.
