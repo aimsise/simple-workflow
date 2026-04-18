@@ -26,6 +26,7 @@ allowed-tools:
   - "Bash(mv:*)"
   - "Bash(ls:*)"
   - "Bash(mkdir:*)"
+  - "Bash(rmdir:*)"
   - "Bash(date:*)"
   # Copilot CLI
   - skill
@@ -45,6 +46,7 @@ allowed-tools:
   - "shell(mv:*)"
   - "shell(ls:*)"
   - "shell(mkdir:*)"
+  - "shell(rmdir:*)"
   - "shell(date:*)"
 argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 ---
@@ -166,8 +168,13 @@ Commits ahead of default branch:
       - `phases.ship.status: in-progress`
       - `phases.ship.started_at: {now}` (ISO-8601 UTC, via `date -u +%Y-%m-%dT%H:%M:%SZ`)
       - `current_phase: ship`
-   b. Run `mkdir -p .backlog/done && mv .backlog/active/{ticket-dir} .backlog/done/{ticket-dir}`. Because `phase-state.yaml` lives inside the ticket directory, the `mv` preserves it automatically — do NOT copy or delete the state file separately.
-   c. After the move, the ticket's state file path is `.backlog/done/{ticket-dir}/phase-state.yaml`. Update its top-level `ticket_dir:` field to `.backlog/done/{ticket-dir}` (read-modify-write, leaving all other fields untouched). This keeps the state file self-consistent so downstream tools (e.g. archived ticket lookups) can resolve paths correctly.
+   b. **Write destination-anchored phase-state.yaml FIRST, then move remaining contents** — this ordering closes the race window where an interruption between the `mv` and the `ticket_dir:` rewrite would strand the state file at the wrong self-reference (Reviewer B Finding 7). Concretely:
+      1. Compute the new `ticket_dir: .backlog/done/{ticket-dir}` value in memory from the state file loaded in 5a.
+      2. Ensure the destination directory exists: `mkdir -p .backlog/done/{ticket-dir}`.
+      3. Write the updated phase-state.yaml directly to `.backlog/done/{ticket-dir}/phase-state.yaml` with the new `ticket_dir:` value already serialized inside. All other fields from step 5a remain as they were in the source file. **At the end of this sub-step the destination-path state file exists and is self-consistent, even if the process is interrupted before sub-step 5.**
+      4. Move the remaining contents of the source directory: for each file in `.backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` it to `.backlog/done/{ticket-dir}/`. Do NOT copy or re-write `phase-state.yaml` here — it was already written in sub-step 3 above.
+      5. Remove the now-empty source directory: `rmdir .backlog/active/{ticket-dir}` (or `mv`-then-`rmdir` equivalent). If `rmdir` fails because the directory is not empty, list the unexpected remaining files and stop — the state is recoverable but needs manual attention.
+   c. Because phase-state.yaml was serialized to its destination path in sub-step 5.b.3 before any other file move, the skill does NOT need a separate post-move `ticket_dir:` rewrite step. The ordering in 5b is the mitigation for the pre-PR-E race where `mv`-then-rewrite left a half-migrated state file on interruption.
 
 6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the completed ticket-dir name as the argument. This extracts reusable patterns from the ticket's evaluation logs into the project knowledge base. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml` from within `/ship`. If `/tune` itself fails during execution, log the failure but do **not** stop the ship workflow — the commit is already created and the ticket is already moved. Fail the ship workflow only if the Skill tool itself is unreachable (contract-level bypass).
 

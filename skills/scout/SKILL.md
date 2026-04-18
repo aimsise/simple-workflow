@@ -52,6 +52,22 @@ modify any other phase's section (`phases.create_ticket`, `phases.impl`,
 NOT write to `phase-state.yaml` at all — only `/scout` writes, so the
 "only one section per writer" rule holds.
 
+**Idempotency guard (see Step 2a)**: Before advancing scout state on a
+ticket that already has a `phase-state.yaml`, `/scout` MUST check whether
+`phases.scout.status == completed` AND `current_phase in {impl, ship, done}`.
+If so, re-running scout would regenerate `plan.md` / `investigation.md`
+and invalidate any `/impl` progress already accumulated. Step 2a aborts
+(or, in interactive mode, prompts) in that situation. The guard does NOT
+fire when `current_phase == scout` / `create_ticket` or when
+`phases.scout.status != completed` — a fresh retry of a failed / in-progress
+scout is always safe and skips the guard.
+
+**Failure recovery**: When `phase-state.yaml` exists with
+`overall_status: failed` (from a prior /scout failure), Step 2a
+additionally resets `overall_status: in-progress` and
+`phases.scout.status: pending` before proceeding, so the skill can
+re-enter from a failed state without manual file editing.
+
 Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Instructions
@@ -61,11 +77,20 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
    - If multiple matches, use the first. If zero matches or the directories do not exist, skip to step 3 (Size stays unset, non-ticket flow).
    - If found, read the `| Size |` table row to extract the Size value (S/M/L/XL).
 2. If the matched ticket is in `.backlog/product_backlog/{ticket-dir}`, move it to active: `mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`. If already in `.backlog/active/{ticket-dir}`, use it as-is. Record the ticket directory as `ticket-dir` (`.backlog/active/{ticket-dir}`). Because `phase-state.yaml` (if present) lives inside the ticket directory, the `mv` moves it along with `ticket.md`.
-2a. **Begin scout phase (state update — only when `ticket-dir` is set and `phase-state.yaml` exists in the ticket dir)**: Read `.backlog/active/{ticket-dir}/phase-state.yaml`. Update ONLY the following fields (read-modify-write; leave every other field untouched):
+2a. **Idempotency guard + begin scout phase (state update — only when `ticket-dir` is set and `phase-state.yaml` exists in the ticket dir)**:
+
+    **Idempotency guard (runs first)**: Before beginning the scout phase, read `.backlog/active/{ticket-dir}/phase-state.yaml` and check whether scout has already completed with downstream work started:
+    - If `phases.scout.status == completed` AND `current_phase` is in `{impl, ship, done}`:
+      - **Interactive path** (AskUserQuestion available): ask the user `"Scout phase already completed and /impl or later phase has begun. Re-running scout will regenerate plan.md and can invalidate /impl progress. Continue? (yes/no)"`. On `no`, abort with `"Stopped by user after scout idempotency guard."` and exit. On `yes`, fall through to the state update below (the user has accepted that `/impl` progress may be invalidated).
+      - **Non-interactive path** (AskUserQuestion unavailable, typical in `claude -p` or CI): abort with `"Scout phase already completed. To regenerate, delete plan.md and investigation.md manually, then rerun /scout in interactive mode."` and exit. Do NOT hang waiting for input.
+    - Otherwise (scout `pending` / `in-progress` / `failed`, OR `current_phase` is still `scout` / `create_ticket`), the guard does NOT fire — proceed to the state update below. Fresh scout retries and first-time runs are always safe.
+
+    **Begin scout phase (state update)**: Update ONLY the following fields (read-modify-write; leave every other field untouched):
     - `phases.scout.status: in-progress`
     - `phases.scout.started_at: {now}` (ISO-8601 UTC, e.g. via `date -u +%Y-%m-%dT%H:%M:%SZ`)
     - `current_phase: scout`
     - `ticket_dir: .backlog/active/{ticket-dir}` (re-anchor the path field to match the new location; required **only** when step 2 actually performed a `mv` from `product_backlog` to `active`. When the ticket was already in `active`, this field is already correct and MUST NOT be rewritten.)
+    - **Failure recovery (only when pre-state `overall_status == failed`)**: additionally set `overall_status: in-progress` (reset from `failed`). When pre-state `overall_status` is already `in-progress` or any other non-`failed` value, do NOT rewrite this field. This lets `/scout` recover cleanly from a prior `/scout` failure without the user editing the state file by hand.
     If `phase-state.yaml` does NOT exist (e.g. the ticket was created outside `/create-ticket` or in a pre-schema legacy state), skip this step silently — `/impl` will bootstrap the state file later.
 3. **MUST invoke `/investigate` via the Skill tool** with the topic to run codebase research via the researcher agent (sonnet). **NEVER bypass /investigate** with direct `Grep`/`Glob`/`Read` from within `/scout`. Fail the task immediately if `/investigate` cannot be invoked.
    - If `ticket-dir` is set, append `(ticket-dir: .backlog/active/{ticket-dir})` to the arguments.
