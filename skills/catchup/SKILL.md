@@ -12,6 +12,7 @@ allowed-tools:
   - Grep
   - "Bash(git:*)"
   - "Bash(ls:*)"
+  - "Bash(stat:*)"
   # Copilot CLI
   - task
   - view
@@ -19,6 +20,7 @@ allowed-tools:
   - grep
   - "shell(git:*)"
   - "shell(ls:*)"
+  - "shell(stat:*)"
 argument-hint: "[phase: investigate|plan|implement|test|review|commit]"
 ---
 
@@ -48,7 +50,27 @@ Working tree:
 
 If `$ARGUMENTS` specifies a phase name (investigate, plan, implement, test, review, or commit), skip directly to **Step 4** and use the specified phase for guidance.
 
-If `$ARGUMENTS` is empty, proceed with full recovery (Steps 1-4).
+If `$ARGUMENTS` is empty, proceed with full recovery (Steps 1-pre and 1-4).
+
+### 1-pre. phase-state.yaml primary state read
+
+`phase-state.yaml` is the **primary** source of truth for ticket lifecycle state, read **before** the compact-state / session-log sources in Step 1. See `skills/create-ticket/references/phase-state-schema.md` for the canonical schema.
+
+Use the `Glob` tool to enumerate `.backlog/active/*/phase-state.yaml`. For each match, use the `Read` tool to load the file, then use `Grep` on the in-memory content (via line-prefix matching — NOT shell pipelines; the allowed-tools of this skill do not include shell piping, consistent with AC 4.7) to extract per-ticket records:
+
+- `current_phase` (top-level scalar: `create_ticket | scout | impl | ship | done`)
+- `last_completed_phase` (top-level scalar: `create_ticket | scout | impl | ship | null`)
+- `overall_status` (top-level scalar: `in-progress | blocked | done | failed`)
+- `created` (top-level ISO-8601 scalar)
+- For each phase section under `phases:` where present, its `started_at` scalar (used to resolve the "most recent" tie-break in Rule 0.5)
+
+Match only **top-level** scalars for `current_phase`, `last_completed_phase`, `overall_status` (lines whose content starts at column 0). Do not confuse them with identically-named nested keys under `phases:` which are indented.
+
+Build an ordered per-ticket record list `phase_state_records = [{dir, current_phase, last_completed_phase, overall_status, created, latest_started_at}, ...]`. The `latest_started_at` field is the maximum `phases.{phase}.started_at` across that ticket's phase sections; when no `started_at` is present, fall back to `created`. Carry this list forward to Steps 2, 4, and 5.
+
+**Freshness flag**: If any `phase-state.yaml` was modified within the last hour, set `phase_state_fresh = true`. Determine freshness by comparing the file's mtime (via `Bash(stat:*)` if available, or by inspecting the Glob result ordering as a best-effort fallback) with the current time. If mtime cannot be determined, leave `phase_state_fresh = false`.
+
+**If no `phase-state.yaml` file exists anywhere in `.backlog/active/`**, set `phase_state_records = []` and fall through to Step 1 unchanged (AC 4.5 — existing compact-state + artifact-discovery behavior is preserved).
 
 ### 1. Compact-State and Session-Log Recovery
 
@@ -85,6 +107,8 @@ Determine whether the **researcher** agent is needed:
   - A compact-state file was found in Step 1 that is less than 1 hour old
   (State is already available from the file — no need for deep analysis.)
 
+- **Skip researcher** if `phase_state_fresh = true` (set in Step 1-pre — at least one `phase-state.yaml` was modified within the last hour). The unified state file already carries the per-phase records forward, so there is nothing a deep research pass would add (AC 4.6).
+
 - **Otherwise**: Spawn the **researcher** agent to analyze:
   - What has changed on this branch vs `<default-branch>`
   - What the changes are trying to accomplish
@@ -110,6 +134,23 @@ Detect the current development phase by checking these conditions **in order**. 
      - Single impl-loop ticket: "You were in the middle of `/impl` for `{dir}` (round `{latest_eval_round}` evaluated, last outcome: `{last_round_outcome}`). Re-run `/impl` to resume."
      - Multiple impl-loop tickets: List all looping tickets with their round/outcome, then recommend resuming the one with the highest `latest_eval_round`.
    - **Fallback** (when `tickets:` array is absent — legacy compact-state): use the aggregate `latest_eval_round` and `last_round_outcome` as before. If `active_tickets` is non-empty, name the ticket directory in the guidance.
+
+0.5. **`phase-state.yaml` indicates an in-progress ticket with a completed phase** → suggest `next_recommended` command based on `last_completed_phase` mapping
+
+   - **Precedence**: this rule is evaluated **after Rule 0** (which handles in-progress `/impl` loop recovery from compact-state) and **before Rule 1**. `phase-state.yaml` is the authoritative state source; the mapping below only fires when no Rule 0 match was found.
+   - **Fire condition**: at least one record in `phase_state_records` (from Step 1-pre) has `overall_status: in-progress` AND `last_completed_phase != ship` AND `last_completed_phase != null`. If none match, fall through to Rule 1.
+   - **Mapping from `last_completed_phase` to next recommended command**:
+
+     | `last_completed_phase` | next command |
+     |---|---|
+     | `create_ticket` | `/scout {ticket-dir}` |
+     | `scout` | `/impl {plan-path}` |
+     | `impl` | `/ship` |
+
+     (`last_completed_phase == ship` means the ticket should have moved to `.backlog/done/`; skip.)
+
+   - **Single in-progress ticket**: recommend the mapped command using that ticket's `{ticket-dir}` (and `plan.md` path for the `scout → /impl` case).
+   - **Multiple in-progress tickets** (AC 4.3): list ALL matching tickets in the guidance, then recommend resuming the one with the **most recent `latest_started_at`** (computed in Step 1-pre as the max `phases.{phase}.started_at` across that ticket's phase sections, with `created` as fallback). Ties are broken by lexicographic `{ticket-dir}` order. Surface the selected ticket in the `[SW-RESUME]` block's `Run:` line.
 
 1. **No research files for current topic** → suggest **investigate**
    - Check: `.docs/research/` is empty or has no files related to current branch
@@ -145,6 +186,7 @@ Present the detection result with reasoning, including any ticket directory info
 Print a concise summary:
 - Current situation (branch, what's been done)
 - Active tickets in `.backlog/active/` (list ticket-dir name and available artifacts)
+- If `phase_state_records` (from Step 1-pre) is non-empty, also list each record's `{dir} phase={current_phase} last_completed={last_completed_phase} status={overall_status}` — this is the authoritative lifecycle state and takes precedence over compact-state-derived information
 - If a YAML-frontmatter compact-state was parsed in Step 1, also list the `active_tickets` recorded at compact time (these are the tickets the user was focused on at the moment of compaction — they may differ from the current `.backlog/active/` listing if filesystem state has drifted)
 - Detected phase and recommended next action
 - Exact command sequence, e.g.:
@@ -153,6 +195,20 @@ Print a concise summary:
   /catchup  (optional, to recover context after clearing)
   /<next-command>
   ```
+
+**`[SW-RESUME]` block (AC 4.4)** — terminate the summary with the following English-only block. It is the structural counterpart to `[SW-CHECKPOINT]` emitted by phase-terminating skills; tooling can use either marker to locate the suggested next step.
+
+```
+[SW-RESUME]
+Active: {ticket-dir} @ {last_completed_phase}
+Run: {recommended next command}
+```
+
+Rules for populating the block:
+- When Rule 0.5 fired with a **single** in-progress ticket, emit one `Active:` line (`{ticket-dir} @ {last_completed_phase}`) and one `Run:` line with the mapped command.
+- When Rule 0.5 fired with **multiple** in-progress tickets, emit one `Active:` line per matching ticket, followed by a **single** `Run:` line whose command corresponds to the ticket with the most recent `latest_started_at` (see Rule 0.5 tie-break).
+- When Rule 0.5 did not fire but another rule recommended a command, emit a best-effort block: `Active: {ticket-dir or "none"} @ {detected phase}` and `Run: {recommended command}`.
+- When no recommendation can be made (e.g. no tickets, no recognizable phase), omit the `[SW-RESUME]` block entirely.
 
 ## Error Handling
 
