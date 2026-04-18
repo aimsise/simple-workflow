@@ -185,7 +185,7 @@ State updates occur at these 4 points within each round:
 
 13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from within `/impl` — the Generator → Evaluator information firewall depends on the orchestrator producing no code changes itself. Fail the task immediately if the Generator agent cannot be invoked.
     - subagent_type: `implementer` (always; no -light variant)
-    - model: `sonnet` if Size == S, otherwise `opus` (M/L/XL/unknown)
+    - model: `sonnet` if Size is S or M, otherwise `opus` (L/XL/unknown)
     - description: "Implement plan for <feature>"
     - Prompt must include:
       a. Full plan content

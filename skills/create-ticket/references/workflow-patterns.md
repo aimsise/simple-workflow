@@ -21,7 +21,7 @@
 | planner | agent | Implementation plan design (opus for M/L/XL, sonnet for S) |
 | researcher | agent | Code research and analysis |
 | ticket-evaluator | agent | Ticket quality evaluation with 5 quality gates (sonnet) |
-| implementer | agent | Code implementation (opus for M/L/XL, sonnet for S) |
+| implementer | agent | Code implementation (opus for L/XL, sonnet for S/M) |
 | ac-evaluator | agent | AC compliance verification (sonnet) |
 
 ---

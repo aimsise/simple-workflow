@@ -123,7 +123,7 @@ This asymmetry is deliberate: the Generator-Evaluator separation relies on evalu
 | Security audit | security-scanner | Sonnet |
 | Pattern analysis | tune-analyzer | Sonnet |
 
-Models are auto-selected based on ticket size (S/M/L/XL). S-size tickets use Sonnet for speed; M and above use Opus for depth. The `planner` and `implementer` agents accept a dynamic model parameter; orchestrator skills pass the appropriate model at invocation time.
+Models are auto-selected based on ticket size (S/M/L/XL). `planner` uses Sonnet for S and Opus for M/L/XL. `implementer` uses Sonnet for S/M and Opus for L/XL. Both agents accept a dynamic model parameter; orchestrator skills pass the appropriate model at invocation time.
 
 ### Hooks (Safety Hooks)
 
@@ -220,7 +220,7 @@ Implements code through a three-phase pipeline:
 - Saves current state with `git stash` for safety
 
 **Phase 2: Implementation loop (up to 3 rounds)**
-1. **Generator** (implementer) writes code using a test-first approach. Model is auto-selected: sonnet for S, opus for M/L/XL.
+1. **Generator** (implementer) writes code using a test-first approach. Model is auto-selected: sonnet for S/M, opus for L/XL.
 2. **AC Evaluator** independently verifies acceptance criteria compliance — on failure, sends specific feedback back to the Generator
 3. **`/audit`** runs after AC passes — a multi-agent review that always invokes `security-scanner` and runs `code-reviewer` in parallel, returning an aggregated `Status / Critical / Warnings / Suggestions` block
 

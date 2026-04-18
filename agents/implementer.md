@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: "Implement code changes following a plan. Opus model for M/L/XL tickets."
+description: "Implement code changes following a plan. Opus model for L/XL tickets, Sonnet for S/M."
 tools:
   # Claude Code
   - Read
