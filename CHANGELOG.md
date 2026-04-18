@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Unified ticket-lifecycle state file `phase-state.yaml` (PR A): created once by `/create-ticket` at the moment a ticket directory is created, updated in place by each phase-owner skill (`/scout`, `/impl`, `/ship`), and **never deleted** — moved alongside the ticket to `.backlog/done/` as a permanent record. Replaces the legacy round-scoped `impl-state.yaml`, absorbing all intra-impl loop state (`current_round`, `phase_sub`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`) under `phases.impl.*`. Canonical schema, field enums, status transitions, and per-skill write-ownership rules are documented in `skills/create-ticket/references/phase-state-schema.md`.
+- Legacy migration in `/impl` (PR A): on first run, a legacy `{ticket-dir}/impl-state.yaml` is converted to `phase-state.yaml` with every field mapped 1:1 (top-level `phase` becomes `phases.impl.phase_sub`; all others keep their names under `phases.impl.*`), then the legacy file is deleted only after the unified file is written successfully. A bootstrap path also generates a fresh `phase-state.yaml` when `/impl` is invoked on a plan-only ticket authored without `/create-ticket`.
+- `[SW-CHECKPOINT]` convention (PR B): every phase-terminating skill (`/create-ticket`, `/scout`, `/plan2doc`, `/impl`, `/ship`) appends an English-only YAML-parseable `## [SW-CHECKPOINT]` block as the last section of its output, with fields `phase`, `ticket`, `artifacts`, `next_recommended`, and a literal `context_advice` line telling the user that `/clear` followed by `/catchup` is safe. `/audit` deliberately does NOT emit a CHECKPOINT to keep the `/impl` loop presentation intact. Autopilot ignores the block and continues to parse the pre-existing `## Result` / `## Summary` structured returns.
+- `hooks/session-start.sh` now scans `.backlog/active/*/phase-state.yaml` and appends a compact per-ticket summary (`phase=… last_completed=… status=…`) to `additionalContext` along with a `Tip: run /catchup for full recovery.` line. YAML extraction uses `grep` + `sed` only (no `yq`), matching the pattern already in `pre-compact-save.sh`. Corrupt or unreadable files are skipped silently so that session start is never blocked. On a repository with no `phase-state.yaml` files, output is byte-identical to the prior hook (branch + changed-file count).
+- `/catchup` Step 1-pre reads `phase-state.yaml` as the **primary** state source (before the compact-state / session-log sources). Step 4 adds Rule 0.5 which fires when a ticket has `overall_status: in-progress` and `last_completed_phase != ship`, mapping the completed phase to a recommended next command (`create_ticket → /scout`, `scout → /impl`, `impl → /ship`). When multiple tickets are in-progress, all are listed and the one with the most recent `started_at` is highlighted. Step 5 appends a `[SW-RESUME]` block (`Active: {dir} @ {phase}` / `Run: {command}`) mirroring the CHECKPOINT shape emitted by phase-terminating skills. The `researcher` agent is additionally skipped when `phase-state.yaml` was modified within the last hour.
+- `skills/create-ticket/references/phase-state-schema.md` — canonical schema reference with field enums, status transitions, write-ownership table, reader table, legacy migration path, and the full legacy `impl-state.yaml → phase-state.yaml` rename table.
+
+### Changed
+- `README.md` — "Built-in Ticket Management" section now describes `phase-state.yaml` as the unified lifecycle file (with explicit "never deleted" statement) and links to `skills/create-ticket/references/phase-state-schema.md`. A one-line note about the `[SW-CHECKPOINT]` convention also added.
+- `skills/create-ticket/references/workflow-patterns.md` — tool reference table now mentions `phase-state.yaml` as the unified per-ticket state file and notes that `[SW-CHECKPOINT]` blocks are emitted by phase-terminating skills.
+- `skills/catchup/SKILL.md` `allowed-tools` gained `Bash(stat:*)` / `shell(stat:*)` to support the `phase-state.yaml` freshness check used by the researcher-skip condition (AC 4.6). YAML parsing itself remains `Read` + `Grep` only (AC 4.7).
+
+### Removed
+- Legacy active-mechanism references to `impl-state.yaml` in skill bodies. Remaining mentions (in `/impl`'s one-shot migration step and in the legacy-rename table of `phase-state-schema.md`) are explicitly marked as legacy and kept to document the migration contract.
+
 ## [3.6.0] - 2026-04-17
 
 ### Reverted

@@ -200,3 +200,16 @@ nor `impl-state.yaml` is present (e.g. a ticket authored without
 - Each writer MUST only touch its own section plus the top-level status fields.
 - `/ship` MUST preserve `phase-state.yaml` inside the ticket directory when moving it to `.backlog/done/`.
 - Internal sub-skills (`/investigate`, `/plan2doc`) MUST NOT write to `phase-state.yaml`; only their parent phase-owner skill writes.
+
+---
+
+## 7. Readers
+
+`phase-state.yaml` is also consumed by non-writer components. Readers MUST treat the file as read-only:
+
+| Reader | Where | Purpose |
+|---|---|---|
+| `hooks/session-start.sh` | `additionalContext` output | Lists active tickets with `current_phase`, `last_completed_phase`, `overall_status` at session start. Falls back to branch + changed-files only when no file exists. |
+| `/catchup` (Step 1-pre) | before compact-state / session-log | Primary state source. Drives Rule 0.5 (resume-from-last-completed-phase) and the `[SW-RESUME]` block. |
+
+Readers MUST tolerate malformed / partial YAML silently (extracting what they can, skipping what they can't) so that a corrupt file never blocks session start or `/catchup`.

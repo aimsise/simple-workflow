@@ -84,6 +84,12 @@ Each ticket is a directory where all work artifacts accumulate:
 
 From creation to completion, every intermediate artifact is confined within its ticket directory. This directory-level confinement serves dual purposes: **audit trail** (the complete history of investigation, planning, evaluation, and review is preserved as files) and **contamination prevention** (artifacts from one ticket never leak into another's context). The directory structure itself enforces governance — information accumulates in the filesystem, not the context window.
 
+#### Unified ticket state: `phase-state.yaml`
+
+Every ticket carries a `phase-state.yaml` file that declares its full lifecycle state (`create_ticket → scout → impl → ship → done`). `/create-ticket` creates it, each subsequent phase-owner skill updates only its own section, and `/ship` moves it alongside the ticket directory to `.backlog/done/`. **`phase-state.yaml` is never deleted** — it is the permanent lifecycle record for the ticket. The `SessionStart` hook and `/catchup` both read this file to recover active-ticket context in one step, without walking every artifact. The canonical schema, field enums, and per-skill write-ownership rules live in [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md).
+
+Phase-terminating skills (`/create-ticket`, `/scout`, `/plan2doc`, `/impl`, `/ship`) close their output with a standardized `[SW-CHECKPOINT]` block that lists the phase, ticket, artifacts, and recommended next command — a signal that running `/clear` is safe and that `/catchup` can recover from `phase-state.yaml` with minimal token spend.
+
 ### Knowledge Base (Cross-Session Learning)
 
 `.simple-wf-knowledge/` is an automatically maintained knowledge base that captures recurring patterns from evaluation logs. `/tune` analyzes completed ticket evaluations (eval-round, audit-round files) via the `tune-analyzer` agent, extracts actionable patterns (common failures, recurring feedback themes), and persists them as structured entries. At implementation time, `/impl` injects relevant knowledge base patterns into the Generator's dispatch prompt, so lessons learned from past tickets inform future implementation — closing the loop between evaluation feedback and code generation across sessions.
