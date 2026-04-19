@@ -1449,5 +1449,41 @@ assert_file_contains \
 
 echo ""
 
+# =============================================================================
+# カテゴリ W: Remedy A enforcement (impl step 15 Evaluator prompt template)
+# 差分: Remedy A (commit 38c1fea) で追加された impl/SKILL.md step 15 の
+#        copy-pasteable Evaluator prompt template と Binding rule の
+#        構造的整合性を CI で保証する。既存 Cat V の強制言語検証とは独立で、
+#        具体的な文字列と fenced-block 位置関係を検証する。
+# =============================================================================
+echo "--- Cat W: Remedy A enforcement ---"
+
+# --- Category W: Remedy A enforcement ---
+IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
+
+# W-1: {eval-report-path} placeholder line exists AND sits inside a fenced code block.
+# Pure-bash scan: toggle inside_fence on each standalone ``` line, then assert the
+# placeholder line falls while inside_fence=true. Independent of absolute line numbers.
+w1_result="false"
+if [ -f "$IMPL_MD" ]; then
+  w1_result=$(awk '
+    BEGIN { in_fence = 0; found_in_fence = 0 }
+    /^[[:space:]]*```/ { in_fence = 1 - in_fence; next }
+    in_fence && /Save your evaluation report to: \{eval-report-path\}/ { found_in_fence = 1 }
+    END { print (found_in_fence ? "true" : "false") }
+  ' "$IMPL_MD")
+fi
+assert_true \
+  "W-1: impl/SKILL.md has 'Save your evaluation report to: {eval-report-path}' inside a fenced code block" \
+  "$w1_result"
+
+# W-2: Binding rule forbidding a second ac-evaluator call solely to persist the report exists.
+assert_file_contains \
+  "W-2: impl/SKILL.md has Remedy A binding rule 'second time solely to persist the report'" \
+  "$IMPL_MD" \
+  "second time solely to persist the report"
+
+echo ""
+
 # --- サマリー ---
 print_summary
