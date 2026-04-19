@@ -1928,5 +1928,93 @@ done
 
 echo ""
 
+# =============================================================================
+# カテゴリ AB: count-tokens.sh tiktoken/fallback agreement (FU-15)
+# 差分: Cat Y は count-tokens.sh が正の整数を返すことのみ検証し、tiktoken
+#        ブランチ と fallback ブランチ の数値的整合性は検証しない。
+#        さらに CI では tiktoken が未インストールのため tiktoken ブランチ
+#        自体が常に skip され、実行経路が未検証だった。本カテゴリは以下を
+#        保証する:
+#          1. tiktoken が利用可能な環境では、normal-path 実行の stderr に
+#             [tiktoken] ラベルが出現すること (サイレントな fallback 退行を
+#             検知; Test-the-test 対策)。
+#          2. normal-path (tiktoken) と SWF_FORCE_FALLBACK=1 (chars/4) の
+#             数値が ±25% 以内に収まること。
+#        tiktoken が利用不能な環境では skip として PASS 扱い (Total は
+#        安定させる) にする。ローカル開発機 (tiktoken 未導入) と CI
+#        (tiktoken インストール済み) の両方で実行可能。
+# =============================================================================
+echo "--- Cat AB: count-tokens.sh tiktoken/fallback agreement ---"
+
+AB_HELPER="$REPO_DIR/tests/helpers/count-tokens.sh"
+AB_TARGET="$REPO_DIR/skills/impl/SKILL.md"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+# tiktoken が import 可能か独立に判定する (normal-path の stderr ラベルに
+# 依存せず、helper が fallback に退行した場合も区別できる)。
+ab_tiktoken_available="false"
+if python3 -c "import tiktoken" >/dev/null 2>&1; then
+  ab_tiktoken_available="true"
+fi
+
+if [ ! -f "$AB_TARGET" ] || [ ! -x "$AB_HELPER" ]; then
+  echo -e "  ${RED}FAIL${NC} AB: preconditions (helper or target SKILL.md missing)"
+  echo -e "       Helper: $AB_HELPER"
+  echo -e "       Target: $AB_TARGET"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+elif [ "$ab_tiktoken_available" = "false" ]; then
+  # tiktoken 不在: skip扱いで PASS (Total は常に +1 安定)
+  echo -e "  ${GREEN}PASS${NC} AB: tiktoken/fallback agreement (skipped: tiktoken unavailable)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  ab_normal_stderr=""
+  ab_normal_out=""
+  ab_fallback_out=""
+  ab_tmp_err=$(mktemp)
+  ab_normal_out="$(bash "$AB_HELPER" "$AB_TARGET" 2>"$ab_tmp_err" || true)"
+  ab_normal_stderr="$(cat "$ab_tmp_err")"
+  rm -f "$ab_tmp_err"
+  ab_fallback_out="$(SWF_FORCE_FALLBACK=1 bash "$AB_HELPER" "$AB_TARGET" 2>/dev/null || true)"
+
+  # Guard 1: normal-path は [tiktoken] ラベルを stderr に出すべき。
+  # 出さない場合は helper が silent-fallback に退行しており、数値一致テスト
+  # だけでは検知不能 (Test-the-test FU15-6 対策)。
+  if ! printf '%s' "$ab_normal_stderr" | grep -qF "[tiktoken]"; then
+    echo -e "  ${RED}FAIL${NC} AB: tiktoken available but normal-path stderr did not contain '[tiktoken]' label"
+    echo -e "       Helper: $AB_HELPER"
+    echo -e "       normal-path stderr: $ab_normal_stderr"
+    echo -e "       Hint: tiktoken branch may have silently fallen through to chars/4."
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  elif ! [[ "$ab_normal_out" =~ ^[1-9][0-9]*$ ]] || ! [[ "$ab_fallback_out" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "  ${RED}FAIL${NC} AB: helper did not produce positive integer outputs on both paths"
+    echo -e "       normal-path stdout: '$ab_normal_out'"
+    echo -e "       fallback stdout   : '$ab_fallback_out'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  else
+    # Agreement check: |normal - fallback| / normal <= 0.25
+    # 整数演算で |diff|*100 <= normal*25 と等価。
+    ab_diff=$((ab_normal_out - ab_fallback_out))
+    if [ "$ab_diff" -lt 0 ]; then
+      ab_diff=$((-ab_diff))
+    fi
+    ab_threshold=$((ab_normal_out * 25))
+    ab_scaled_diff=$((ab_diff * 100))
+    if [ "$ab_scaled_diff" -le "$ab_threshold" ]; then
+      echo -e "  ${GREEN}PASS${NC} AB: tiktoken=$ab_normal_out fallback=$ab_fallback_out diff=$ab_diff within +/-25%"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} AB: tiktoken/fallback agreement exceeded +/-25%"
+      echo -e "       tiktoken (normal) : $ab_normal_out"
+      echo -e "       fallback (chars/4): $ab_fallback_out"
+      echo -e "       |diff|            : $ab_diff"
+      echo -e "       threshold (25%)   : $((ab_normal_out / 4))"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+  fi
+fi
+
+echo ""
+
 # --- サマリー ---
 print_summary
