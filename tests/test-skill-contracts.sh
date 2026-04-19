@@ -1661,5 +1661,65 @@ y_check_token_count "skills/tune/SKILL.md"
 
 echo ""
 
+# =============================================================================
+# カテゴリ Z: create-ticket / ticket-evaluator AC example drift guard (FU-11)
+# 差分: Round-2 レビューで指摘された通り、skills/create-ticket/SKILL.md Phase 3
+#        の `#### AC Quality Criteria` 節にある Gate 1/Gate 2 の BAD/GOOD 例は
+#        agents/ticket-evaluator.md と逐語的に重複している。プラグイン機構は
+#        ファイル横断のコンテンツ補間をサポートしないため、ランタイムでの
+#        デデュープは不可能。代替として、4 つの正典例文字列が "両ファイルに"
+#        存在することを CI で保証し、片方のみ編集された場合に即座に検知する。
+#        Cat W (ac-evaluator 構造), Cat X (Mandatory 表), Cat Y (token helper)
+#        とは独立した文面一致契約。
+# =============================================================================
+echo "--- Cat Z: create-ticket / ticket-evaluator AC example drift guard ---"
+
+# --- Category Z: AC example drift guard ---
+# Canonical Gate 1/Gate 2 BAD/GOOD example strings that MUST appear in both
+# agents/ticket-evaluator.md AND skills/create-ticket/SKILL.md. If any string
+# disappears from either file, the duplicated examples have drifted silently
+# and this test fires.
+Z_CANONICAL_EXAMPLES=(
+  "Improve performance"
+  "Response time under 200ms for 95th percentile"
+  "Support large files"
+  "Stream files over 100MB without loading into memory"
+)
+
+Z_TICKET_EVALUATOR="$REPO_DIR/agents/ticket-evaluator.md"
+Z_CREATE_TICKET="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# Assert that a literal string appears in BOTH canonical files. Uses grep -qF --
+# to guarantee exact (non-regex) literal matching. Emits a single combined
+# assertion per string; failure message names which file(s) are missing it so
+# drift is self-diagnosing.
+z_check_both_files() {
+  local literal="$1"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local in_te="false" in_ct="false"
+  if [ -f "$Z_TICKET_EVALUATOR" ] && grep -qF -- "$literal" "$Z_TICKET_EVALUATOR"; then
+    in_te="true"
+  fi
+  if [ -f "$Z_CREATE_TICKET" ] && grep -qF -- "$literal" "$Z_CREATE_TICKET"; then
+    in_ct="true"
+  fi
+  if [ "$in_te" = "true" ] && [ "$in_ct" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC} Z: canonical AC example present in both ticket-evaluator.md and create-ticket/SKILL.md: '$literal'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Z: AC example drift detected for '$literal'"
+    echo -e "       agents/ticket-evaluator.md       : $([ "$in_te" = "true" ] && echo present || echo MISSING)"
+    echo -e "       skills/create-ticket/SKILL.md    : $([ "$in_ct" = "true" ] && echo present || echo MISSING)"
+    echo -e "       Fix: restore the canonical string in both files (duplicated intentionally; plugin architecture does not support cross-file interpolation)."
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+for z_literal in "${Z_CANONICAL_EXAMPLES[@]}"; do
+  z_check_both_files "$z_literal"
+done
+
+echo ""
+
 # --- サマリー ---
 print_summary
