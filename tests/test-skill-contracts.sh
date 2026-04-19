@@ -1496,19 +1496,13 @@ echo ""
 echo "--- Cat X: Mandatory table target names ---"
 
 # X: Expected Invocation Target substrings per SKILL.md.
-# Data structure: per-file parallel arrays. To add a new skill, append a block
-# below with { X_FILES+=(...); X_TARGETS_<shortname>=( ... ); }. Each target is
-# a literal substring that must appear in the Mandatory table's first column
+# Data structure: per-file parallel arrays. To add a new skill, declare
+# X_TARGETS_<shortname>=( ... ) and add an x_check_targets call at the bottom
+# of this block with the matching SKILL.md path. Each target is a literal
+# substring that must appear in the Mandatory table's first column
 # (Invocation Target) for that file. Substrings are chosen to uniquely identify
 # each row even when two rows share an agent name (e.g. ac-evaluator Dry Run
 # vs. main gate).
-
-X_FILES=(
-  "skills/impl/SKILL.md"
-  "skills/autopilot/SKILL.md"
-  "skills/create-ticket/SKILL.md"
-  "skills/ship/SKILL.md"
-)
 
 X_TARGETS_impl=(
   "\`implementer\` agent (Agent tool, \"Generator\")"
@@ -1556,9 +1550,8 @@ extract_mandatory_targets_col1() {
 # Assert every expected target substring is found in the Mandatory table's
 # first column of the given file. One assert per (file, target) pair.
 x_check_targets() {
-  local short="$1"    # e.g. "impl", "ship", "create-ticket"
-  local rel_path="$2" # e.g. "skills/impl/SKILL.md"
-  shift 2
+  local rel_path="$1" # e.g. "skills/impl/SKILL.md"
+  shift 1
   local targets=("$@")
   local abs="$REPO_DIR/$rel_path"
   local col1
@@ -1587,10 +1580,10 @@ x_check_targets() {
   done
 }
 
-x_check_targets "impl"          "skills/impl/SKILL.md"          "${X_TARGETS_impl[@]}"
-x_check_targets "autopilot"     "skills/autopilot/SKILL.md"     "${X_TARGETS_autopilot[@]}"
-x_check_targets "create-ticket" "skills/create-ticket/SKILL.md" "${X_TARGETS_create_ticket[@]}"
-x_check_targets "ship"          "skills/ship/SKILL.md"          "${X_TARGETS_ship[@]}"
+x_check_targets "skills/impl/SKILL.md"          "${X_TARGETS_impl[@]}"
+x_check_targets "skills/autopilot/SKILL.md"     "${X_TARGETS_autopilot[@]}"
+x_check_targets "skills/create-ticket/SKILL.md" "${X_TARGETS_create_ticket[@]}"
+x_check_targets "skills/ship/SKILL.md"          "${X_TARGETS_ship[@]}"
 
 echo ""
 
