@@ -18,7 +18,7 @@ jobs:
       - name: Run ShellCheck on hooks
         run: shellcheck --severity=warning hooks/*.sh
       - name: Run ShellCheck on tests
-        run: shellcheck --severity=warning tests/*.sh
+        run: shellcheck --severity=warning tests/*.sh tests/helpers/*.sh
 
   test:
     name: Tests
