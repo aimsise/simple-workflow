@@ -1501,6 +1501,86 @@ assert_true \
   "W-2: agents/ac-evaluator.md has a non-empty Output contract line inside ## Report Persistence Contract section" \
   "$w2_result"
 
+# W-3 / W-4: Negative assertions (Round-3 review follow-up / FU-13).
+# Rationale: W-1 and W-2 only verify that positive MUST/non-empty markers exist in
+# the `## Report Persistence Contract` section. They remain green even if a
+# semantically-inverting line (e.g. "Output may be empty", "Callers MAY re-invoke",
+# "non-empty is optional", "MAY return without writing") is inserted into the same
+# section alongside the positive text. W-3 and W-4 close that loophole by FAILing
+# if prohibited phrase patterns appear anywhere inside the section body (between
+# the `## Report Persistence Contract` heading and the `## Context Conservation
+# Protocol` heading, both heading lines excluded).
+#
+# Scope: both assertions scan ONLY the body lines of the Report Persistence
+# Contract section. Matches elsewhere in the file (frontmatter, other sections)
+# are ignored on purpose — that is what makes the negative assertions a true
+# "no-bypass within the contract" guard rather than a global lint.
+
+# W-3: no permissive-output / optional-nonempty phrasing inside the section.
+# Covers AC FU13-2 classes (a) "Output may be empty" / "empty Output is
+# acceptable" / "Output can be empty" and (c) "non-empty is optional" /
+# "non-empty is a suggestion" / "non-empty is only advisory".
+w3_result="true"
+if [ -f "$ACEV_MD" ]; then
+  w3_result=$(awk '
+    BEGIN {
+      in_section = 0
+      found = 0
+      # (a) Output is allowed to be empty
+      p1 = "output[[:space:]]+(may|can|might)[[:space:]]+be[[:space:]]+empty"
+      p2 = "empty[[:space:]]+output[[:space:]]+is[[:space:]]+(acceptable|allowed|ok|fine|permitted)"
+      p3 = "(you[[:space:]]+)?may[[:space:]]+return[[:space:]]+(an[[:space:]]+)?empty[[:space:]]+output"
+      # (c) non-empty requirement is optional/suggestive/advisory
+      p4 = "non-empty[[:space:]]+is[[:space:]]+(optional|a[[:space:]]+suggestion|only[[:space:]]+advisory|advisory|suggestive)"
+    }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section {
+      ls = tolower($0)
+      if (ls ~ p1) found = 1
+      if (ls ~ p2) found = 1
+      if (ls ~ p3) found = 1
+      if (ls ~ p4) found = 1
+    }
+    END { print (found ? "false" : "true") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-3: agents/ac-evaluator.md has no permissive-output / optional-non-empty phrasing inside ## Report Persistence Contract section" \
+  "$w3_result"
+
+# W-4: no retry-permission / return-without-writing phrasing inside the section.
+# Covers AC FU13-2 classes (b) "Callers MAY re-invoke" / "callers may retry" /
+# "may re-invoke this agent" and (d) "MAY return without writing" / "may return
+# before writing" (the "you may return an empty Output" form is already covered
+# by W-3's p3, so W-4 focuses on the callers / return-without-writing angle).
+w4_result="true"
+if [ -f "$ACEV_MD" ]; then
+  w4_result=$(awk '
+    BEGIN {
+      in_section = 0
+      found = 0
+      # (b) callers may re-invoke / retry
+      p1 = "callers?[[:space:]]+(may|can|might)[[:space:]]+(re-?invoke|retry|call[[:space:]]+again)"
+      p2 = "(may|can|might)[[:space:]]+re-?invoke[[:space:]]+(this[[:space:]]+)?agent"
+      # (d) may return without / before writing
+      p3 = "(may|can|might)[[:space:]]+return[[:space:]]+(without|before)[[:space:]]+writ"
+    }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section {
+      ls = tolower($0)
+      if (ls ~ p1) found = 1
+      if (ls ~ p2) found = 1
+      if (ls ~ p3) found = 1
+    }
+    END { print (found ? "false" : "true") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-4: agents/ac-evaluator.md has no caller-retry / return-without-writing phrasing inside ## Report Persistence Contract section" \
+  "$w4_result"
+
 echo ""
 
 # =============================================================================
