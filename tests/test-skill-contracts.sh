@@ -1721,5 +1721,96 @@ done
 
 echo ""
 
+# =============================================================================
+# カテゴリ AA: Hidden-contract HTML-comment guard
+# 差分: Cat V は契約キーワード (MUST / NEVER / Fail) の出現「回数」のみを
+#        カウントするため、本来の契約ブロックを削除し、HTML コメント
+#        (<!-- ... -->) 内に契約キーワードを忍ばせた状態でもテストが
+#        通ってしまう脆弱性があった (Round-3 skeptical review で実証)。
+#        本カテゴリは、契約を担う 4 つの SKILL.md を対象に、HTML コメント
+#        ブロック (複数行をまたぐ場合を含む) の内側に MUST / NEVER / Fail
+#        という契約マーカートークンが含まれていないことを保証する。
+# =============================================================================
+echo "--- Cat AA: Hidden-contract HTML-comment guard ---"
+
+AA_CONTRACT_SKILLS=(
+  "skills/impl/SKILL.md"
+  "skills/autopilot/SKILL.md"
+  "skills/create-ticket/SKILL.md"
+  "skills/ship/SKILL.md"
+)
+
+# aa_has_hidden_contract_comment — awk scanner that tracks HTML comment blocks
+# spanning multiple lines. Concatenates the inner text of each <!-- ... -->
+# block (including blocks that open and close on different lines) and reports
+# "HIT" on the first block whose inner content contains any of the
+# case-sensitive tokens MUST, NEVER, or Fail. Prints a diagnostic with the
+# starting line number for failure messages. Prints nothing on clean files.
+aa_has_hidden_contract_comment() {
+  local file="$1"
+  awk '
+    BEGIN { in_cmt = 0; buf = ""; start_line = 0 }
+    {
+      line = $0
+      while (length(line) > 0) {
+        if (in_cmt == 0) {
+          idx = index(line, "<!--")
+          if (idx == 0) { break }
+          # consume up to and including the opener
+          line = substr(line, idx + 4)
+          in_cmt = 1
+          buf = ""
+          start_line = NR
+        } else {
+          idx = index(line, "-->")
+          if (idx == 0) {
+            # entire remainder is inside the comment (multi-line span)
+            buf = buf " " line
+            line = ""
+          } else {
+            # capture inner content up to the closer, then resume scan
+            buf = buf " " substr(line, 1, idx - 1)
+            line = substr(line, idx + 3)
+            in_cmt = 0
+            if (buf ~ /MUST/ || buf ~ /NEVER/ || buf ~ /Fail/) {
+              printf "HIT line=%d content=%s\n", start_line, buf
+              exit 0
+            }
+          }
+        }
+      }
+    }
+    END {
+      # Unterminated comment: treat accumulated buffer as suspect too
+      if (in_cmt == 1 && (buf ~ /MUST/ || buf ~ /NEVER/ || buf ~ /Fail/)) {
+        printf "HIT line=%d content=%s\n", start_line, buf
+      }
+    }
+  ' "$file"
+}
+
+for aa_rel in "${AA_CONTRACT_SKILLS[@]}"; do
+  aa_file="$REPO_DIR/$aa_rel"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ ! -f "$aa_file" ]; then
+    echo -e "  ${RED}FAIL${NC} AA: $aa_rel exists (required contract-bearing skill file)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    continue
+  fi
+  aa_hit=$(aa_has_hidden_contract_comment "$aa_file")
+  if [ -z "$aa_hit" ]; then
+    echo -e "  ${GREEN}PASS${NC} AA: $aa_rel has no HTML comment hiding a contract keyword (MUST/NEVER/Fail)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AA: $aa_rel contains HTML comment hiding a contract keyword"
+    echo -e "       File: $aa_file"
+    echo -e "       Detail: $aa_hit"
+    echo -e "       Fix: move MUST/NEVER/Fail language out of HTML comments into real prose so Cat V enforces it."
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+echo ""
+
 # --- サマリー ---
 print_summary
