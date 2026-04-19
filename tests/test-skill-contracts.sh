@@ -1581,6 +1581,42 @@ assert_true \
   "W-4: agents/ac-evaluator.md has no caller-retry / return-without-writing phrasing inside ## Report Persistence Contract section" \
   "$w4_result"
 
+# W-5: skills/impl/SKILL.md must not contain a raw `{eval-report-path}` placeholder
+# in any triple-backtick fenced block on a `Save your evaluation report to:` line
+# WITHOUT a companion warning line in the SAME fenced block telling the orchestrator
+# to substitute the placeholder. Rationale (FU-14): the step-15 Evaluator prompt
+# template lives inside a fenced block for copy-paste convenience. If an
+# orchestrator pastes the block verbatim without substituting `{eval-report-path}`,
+# ac-evaluator writes to a literal file named `{eval-report-path}`, reintroducing
+# the FU-1 bug. Test-the-test: if the warning is removed while the raw placeholder
+# remains, W-5 FAILs. If the placeholder is replaced with a concrete example path,
+# W-5 PASSes regardless of the warning (no raw placeholder to worry about).
+IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
+w5_result="true"
+if [ -f "$IMPL_MD" ]; then
+  w5_result=$(awk '
+    BEGIN { in_fence = 0; has_raw_placeholder = 0; has_warning = 0; bad = 0 }
+    /^[[:space:]]*```/ {
+      if (in_fence == 0) {
+        in_fence = 1; has_raw_placeholder = 0; has_warning = 0; next
+      } else {
+        if (has_raw_placeholder && !has_warning) bad = 1
+        in_fence = 0; has_raw_placeholder = 0; has_warning = 0; next
+      }
+    }
+    in_fence {
+      if (index($0, "Save your evaluation report to: {eval-report-path}") > 0) has_raw_placeholder = 1
+      ls = tolower($0)
+      # warning: mentions substitute AND references placeholder(s) or braces
+      if (index(ls, "substitute") > 0 && (index(ls, "placeholder") > 0 || index(ls, "brace") > 0 || index($0, "{") > 0)) has_warning = 1
+    }
+    END { print (bad ? "false" : "true") }
+  ' "$IMPL_MD")
+fi
+assert_true \
+  "W-5: skills/impl/SKILL.md fenced block with raw {eval-report-path} placeholder includes a same-block substitute-placeholder warning line (FU-14)" \
+  "$w5_result"
+
 echo ""
 
 # =============================================================================

@@ -265,6 +265,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
    **Copy-pasteable Evaluator prompt template** (substitute `{plan-path}`, `{acceptance-criteria}`, `{git-diff-shortstat}`, `{eval-report-path}`, `{n}` per 15.e):
 
    ```
+   # Orchestrator: substitute all {brace} placeholders ({plan-path}, {acceptance-criteria}, {git-diff-shortstat}, {eval-report-path}, {n}) with concrete values BEFORE sending this prompt. A raw placeholder like `{eval-report-path}` in the Save line will cause ac-evaluator to write to a literal file named `{eval-report-path}`, reintroducing the FU-1 bug.
    Plan path: {plan-path}. Read it in full before evaluating.
    Acceptance Criteria:
    {acceptance-criteria}
