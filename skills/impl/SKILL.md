@@ -49,7 +49,7 @@ User arguments: $ARGUMENTS
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `implementer` agent (Agent tool, "Generator") | Phase 2 step 13 — once per round | No code produced by a dedicated Generator; firewall broken. Detected by missing implementer trace in skill invocation audit |
+| `implementer` agent (Agent tool, "Generator") | Phase 2 step 13 — once per round | No code produced by a dedicated Generator; `/impl` is tempted to self-write edits (firewall broken). Detected by missing implementer trace in skill invocation audit |
 | `ac-evaluator` agent (Agent tool, Dry Run) | Phase 1 step 8 — round 1, L/XL only | No pre-committed verification rubric. Detected by missing evaluator trace for L/XL round 1 |
 | `ac-evaluator` agent (Agent tool, main gate) | Phase 2 step 15 — once per round | No independent AC verdict (Ticket 002 failure mode). Missing `eval-round-{n}.md` triggers `[PIPELINE] impl: ARTIFACT-MISSING`; ticket marked failed |
 | `/audit` (Skill tool) | Phase 2 step 17 — when AC gate is PASS / PASS-WITH-CAVEATS | No code-reviewer + security-scanner review. Missing `audit-round-{n}.md` / `quality-round-{n}.md` / `security-scan-{n}.md` triggers `[PIPELINE] impl: ARTIFACT-MISSING`; ticket marked failed |
