@@ -1485,5 +1485,114 @@ assert_file_contains \
 
 echo ""
 
+# =============================================================================
+# カテゴリ X: Mandatory Skill Invocations ターゲット名検証 (FU-3)
+# 差分: 既存 Cat V / T' / U' は Mandatory 表の "行数" や周辺バインドルール文言は
+#        検証するが、各行の "Invocation Target" 第1カラムに期待するスキル/エージェント
+#        名が実在するかは検証しない。本カテゴリは (SKILL.md, 期待ターゲット) ペアを
+#        可視なデータ構造で宣言し、Mandatory 表の第1カラムを抽出して部分一致検索で
+#        アサートする。行順入れ替え・セル内改行に対してロバスト。
+# =============================================================================
+echo "--- Cat X: Mandatory table target names ---"
+
+# X: Expected Invocation Target substrings per SKILL.md.
+# Data structure: per-file parallel arrays. To add a new skill, append a block
+# below with { X_FILES+=(...); X_TARGETS_<shortname>=( ... ); }. Each target is
+# a literal substring that must appear in the Mandatory table's first column
+# (Invocation Target) for that file. Substrings are chosen to uniquely identify
+# each row even when two rows share an agent name (e.g. ac-evaluator Dry Run
+# vs. main gate).
+
+X_FILES=(
+  "skills/impl/SKILL.md"
+  "skills/autopilot/SKILL.md"
+  "skills/create-ticket/SKILL.md"
+  "skills/ship/SKILL.md"
+)
+
+X_TARGETS_impl=(
+  "\`implementer\` agent (Agent tool, \"Generator\")"
+  "\`ac-evaluator\` agent (Agent tool, Dry Run)"
+  "\`ac-evaluator\` agent (Agent tool, main gate)"
+  "\`/audit\` (Skill tool)"
+)
+
+X_TARGETS_autopilot=(
+  "\`/create-ticket\` (Skill)"
+  "\`/scout\` (Skill)"
+  "\`/impl\` (Skill)"
+  "\`/ship\` (Skill)"
+)
+
+X_TARGETS_create_ticket=(
+  "\`researcher\` agent (Agent tool)"
+  "\`planner\` agent (Agent tool)"
+  "\`ticket-evaluator\` agent (Agent tool)"
+)
+
+X_TARGETS_ship=(
+  "\`/tune\` (Skill)"
+)
+
+# Extract the first column (Invocation Target) of every Mandatory table row
+# from the given SKILL.md file. Skips header and separator rows; robust to
+# row order. Prints one extracted target cell per line.
+extract_mandatory_targets_col1() {
+  local file="$1"
+  awk -F'|' '
+    /^## Mandatory Skill Invocations/ { in_sec=1; next }
+    in_sec && /^## / { in_sec=0 }
+    in_sec && /^\| / && !/^\| Invocation Target/ && !/^\|---/ {
+      # NF counts columns split by |. With a leading and trailing |, field 2
+      # is the first logical column. Print trimmed.
+      cell = $2
+      sub(/^[[:space:]]+/, "", cell)
+      sub(/[[:space:]]+$/, "", cell)
+      print cell
+    }
+  ' "$file"
+}
+
+# Assert every expected target substring is found in the Mandatory table's
+# first column of the given file. One assert per (file, target) pair.
+x_check_targets() {
+  local short="$1"    # e.g. "impl", "ship", "create-ticket"
+  local rel_path="$2" # e.g. "skills/impl/SKILL.md"
+  shift 2
+  local targets=("$@")
+  local abs="$REPO_DIR/$rel_path"
+  local col1
+  if [ -f "$abs" ]; then
+    col1="$(extract_mandatory_targets_col1 "$abs")"
+  else
+    col1=""
+  fi
+  local target
+  for target in "${targets[@]}"; do
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if [ -n "$col1" ] && printf '%s\n' "$col1" | grep -qF -- "$target"; then
+      echo -e "  ${GREEN}PASS${NC} X: $rel_path Mandatory table references target '$target'"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} X: $rel_path Mandatory table missing target '$target'"
+      echo -e "       File: $abs"
+      echo -e "       Extracted column 1:"
+      if [ -n "$col1" ]; then
+        printf '%s\n' "$col1" | sed 's/^/         /'
+      else
+        echo "         (none / file not found)"
+      fi
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+  done
+}
+
+x_check_targets "impl"          "skills/impl/SKILL.md"          "${X_TARGETS_impl[@]}"
+x_check_targets "autopilot"     "skills/autopilot/SKILL.md"     "${X_TARGETS_autopilot[@]}"
+x_check_targets "create-ticket" "skills/create-ticket/SKILL.md" "${X_TARGETS_create_ticket[@]}"
+x_check_targets "ship"          "skills/ship/SKILL.md"          "${X_TARGETS_ship[@]}"
+
+echo ""
+
 # --- サマリー ---
 print_summary
