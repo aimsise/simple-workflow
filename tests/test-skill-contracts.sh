@@ -1581,41 +1581,131 @@ assert_true \
   "W-4: agents/ac-evaluator.md has no caller-retry / return-without-writing phrasing inside ## Report Persistence Contract section" \
   "$w4_result"
 
-# W-5: skills/impl/SKILL.md must not contain a raw `{eval-report-path}` placeholder
-# in any triple-backtick fenced block on a `Save your evaluation report to:` line
-# WITHOUT a companion warning line in the SAME fenced block telling the orchestrator
-# to substitute the placeholder. Rationale (FU-14): the step-15 Evaluator prompt
-# template lives inside a fenced block for copy-paste convenience. If an
-# orchestrator pastes the block verbatim without substituting `{eval-report-path}`,
-# ac-evaluator writes to a literal file named `{eval-report-path}`, reintroducing
-# the FU-1 bug. Test-the-test: if the warning is removed while the raw placeholder
-# remains, W-5 FAILs. If the placeholder is replaced with a concrete example path,
-# W-5 PASSes regardless of the warning (no raw placeholder to worry about).
+# W-5: skills/impl/SKILL.md must not contain a raw `Save your evaluation report to:
+# {eval-report-path}` line WITHOUT a companion warning line in close proximity
+# (within ±15 lines) telling the orchestrator to substitute the placeholder.
+# Rationale (FU-14): if an orchestrator pastes the template verbatim without
+# substituting `{eval-report-path}`, ac-evaluator writes to a literal file named
+# `{eval-report-path}`, reintroducing the FU-1 bug.
+#
+# 4th-review H-3 simplification: the earlier implementation used a fence state
+# machine keyed on ```-fences. That was bypassable by `~~~` fences or 4-space-
+# indented code blocks. This proximity-based check is fence-independent: the
+# warning and the placeholder line must co-locate regardless of markdown
+# structure. Window size 15 comfortably covers the current 6-line gap between
+# warning (L268) and placeholder (L274) while leaving slack for future edits.
+#
+# Test-the-test: if the warning is removed while the raw placeholder remains,
+# W-5 FAILs. If the placeholder is replaced with a concrete example path, W-5
+# PASSes regardless of the warning (no raw placeholder to worry about).
 IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
 w5_result="true"
 if [ -f "$IMPL_MD" ]; then
   w5_result=$(awk '
-    BEGIN { in_fence = 0; has_raw_placeholder = 0; has_warning = 0; bad = 0 }
-    /^[[:space:]]*```/ {
-      if (in_fence == 0) {
-        in_fence = 1; has_raw_placeholder = 0; has_warning = 0; next
-      } else {
-        if (has_raw_placeholder && !has_warning) bad = 1
-        in_fence = 0; has_raw_placeholder = 0; has_warning = 0; next
+    BEGIN { n = 0; window = 15 }
+    {
+      lines[NR] = $0
+      if (index($0, "Save your evaluation report to: {eval-report-path}") > 0) {
+        ph[++n] = NR
+      }
+      ls = tolower($0)
+      if (index(ls, "substitute") > 0 && (index(ls, "placeholder") > 0 || index(ls, "brace") > 0 || index($0, "{") > 0)) {
+        warn[NR] = 1
       }
     }
-    in_fence {
-      if (index($0, "Save your evaluation report to: {eval-report-path}") > 0) has_raw_placeholder = 1
-      ls = tolower($0)
-      # warning: mentions substitute AND references placeholder(s) or braces
-      if (index(ls, "substitute") > 0 && (index(ls, "placeholder") > 0 || index(ls, "brace") > 0 || index($0, "{") > 0)) has_warning = 1
+    END {
+      for (i = 1; i <= n; i++) {
+        p = ph[i]
+        ok = 0
+        for (d = -window; d <= window; d++) {
+          if ((p + d) in warn) { ok = 1; break }
+        }
+        if (!ok) { print "false"; exit 0 }
+      }
+      print "true"
     }
-    END { print (bad ? "false" : "true") }
   ' "$IMPL_MD")
 fi
 assert_true \
-  "W-5: skills/impl/SKILL.md fenced block with raw {eval-report-path} placeholder includes a same-block substitute-placeholder warning line (FU-14)" \
+  "W-5: skills/impl/SKILL.md raw {eval-report-path} placeholder has a substitute-placeholder warning within ±15 lines (FU-14, H-3 fence-independent)" \
   "$w5_result"
+
+# Test-the-test (W-5-M): copy impl/SKILL.md to a temp file, strip the
+# "substitute" warning, and assert the scanner reports "false". Locks in
+# detection for both (a) the fence-independent check and (b) future regressions
+# that delete the warning line. Removed strings: any line matching
+# /substitute.*placeholder|substitute.*brace/ loses its "substitute" keyword.
+w5_mut_tmp=$(mktemp -t w5_mut.XXXXXX.md) || w5_mut_tmp="/tmp/w5_mut_$$.md"
+if [ -f "$IMPL_MD" ]; then
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # neuter the warning line by replacing 'substitute' with 'REDACTED' (keep the
+  # placeholder line intact so the scanner has something to flag)
+  awk '{ if (tolower($0) ~ /substitute.*placeholder|substitute.*brace|substitute.*\{/) { gsub(/substitute/, "REDACTED"); gsub(/Substitute/, "REDACTED") } print }' "$IMPL_MD" > "$w5_mut_tmp"
+  w5_mut_result=$(awk '
+    BEGIN { n = 0; window = 15 }
+    {
+      if (index($0, "Save your evaluation report to: {eval-report-path}") > 0) {
+        ph[++n] = NR
+      }
+      ls = tolower($0)
+      if (index(ls, "substitute") > 0 && (index(ls, "placeholder") > 0 || index(ls, "brace") > 0 || index($0, "{") > 0)) {
+        warn[NR] = 1
+      }
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        p = ph[i]; ok = 0
+        for (d = -window; d <= window; d++) {
+          if ((p + d) in warn) { ok = 1; break }
+        }
+        if (!ok) { print "false"; exit 0 }
+      }
+      print "true"
+    }
+  ' "$w5_mut_tmp")
+  if [ "$w5_mut_result" = "false" ]; then
+    echo -e "  ${GREEN}PASS${NC} W-5-M: scanner FAILs on warning-stripped SKILL.md (test-the-test for H-3)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} W-5-M: scanner missed warning-stripped SKILL.md — W-5 detector regressed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+fi
+rm -f "$w5_mut_tmp"
+
+# W-6: skills/impl/SKILL.md step 16 AC Gate must enforce the ac-evaluator
+# Report Persistence Contract at runtime by rejecting empty or ERROR-prefixed
+# Output before Status parsing. Rationale (4th review H-2): the contract text
+# in agents/ac-evaluator.md is only load-bearing if the orchestrator refuses
+# to proceed when it is violated. Without this guard the orchestrator would
+# silently advance to step 17 /audit on empty Output.
+#
+# Scan window: the `16. AC Gate:` heading and the next ~30 lines (the gate
+# block ends at a `> **CHECKPOINT` line or step 17). Required markers: the
+# phrase "Output" co-occurring with both "empty" and "ERROR-" within the gate
+# block, plus a FAIL-CRITICAL escalation verb (stop / FAIL-CRITICAL).
+w6_result="true"
+if [ -f "$IMPL_MD" ]; then
+  w6_result=$(awk '
+    BEGIN { in_gate = 0; seen_output = 0; seen_empty = 0; seen_error = 0; seen_stop = 0 }
+    /^16\. AC Gate:/ { in_gate = 1; next }
+    /^17\./ { in_gate = 0 }
+    in_gate {
+      if (index($0, "Output") > 0) seen_output = 1
+      ls = tolower($0)
+      if (index(ls, "empty") > 0) seen_empty = 1
+      if (index($0, "ERROR-") > 0) seen_error = 1
+      if (index($0, "FAIL-CRITICAL") > 0 || index(ls, "stop") > 0) seen_stop = 1
+    }
+    END {
+      ok = (seen_output && seen_empty && seen_error && seen_stop)
+      print (ok ? "true" : "false")
+    }
+  ' "$IMPL_MD")
+fi
+assert_true \
+  "W-6: skills/impl/SKILL.md step 16 AC Gate enforces Report Persistence Contract at runtime (empty / ERROR- Output → FAIL-CRITICAL, 4th review H-2)" \
+  "$w6_result"
 
 echo ""
 
@@ -1860,11 +1950,19 @@ AA_CONTRACT_SKILLS=(
 # spanning multiple lines. Concatenates the inner text of each <!-- ... -->
 # block (including blocks that open and close on different lines) and reports
 # "HIT" on the first block whose inner content contains any of the
-# case-sensitive tokens MUST, NEVER, or Fail. Prints a diagnostic with the
+# case-sensitive RFC 2119 normative tokens (MUST, NEVER, Fail, SHALL, REQUIRED,
+# MANDATORY, PROHIBITED, FORBIDDEN). LLMs treat these as near-synonyms of
+# MUST, so hiding any of them inside an HTML comment is equivalent to hiding
+# a MUST-level contract (4th review H-4). Prints a diagnostic with the
 # starting line number for failure messages. Prints nothing on clean files.
 aa_has_hidden_contract_comment() {
   local file="$1"
   awk '
+    function suspect(s) {
+      return (s ~ /MUST/ || s ~ /NEVER/ || s ~ /Fail/ || s ~ /SHALL/ \
+           || s ~ /REQUIRED/ || s ~ /MANDATORY/ || s ~ /PROHIBITED/ \
+           || s ~ /FORBIDDEN/)
+    }
     BEGIN { in_cmt = 0; buf = ""; start_line = 0 }
     {
       line = $0
@@ -1888,7 +1986,7 @@ aa_has_hidden_contract_comment() {
             buf = buf " " substr(line, 1, idx - 1)
             line = substr(line, idx + 3)
             in_cmt = 0
-            if (buf ~ /MUST/ || buf ~ /NEVER/ || buf ~ /Fail/) {
+            if (suspect(buf)) {
               printf "HIT line=%d content=%s\n", start_line, buf
               exit 0
             }
@@ -1898,7 +1996,7 @@ aa_has_hidden_contract_comment() {
     }
     END {
       # Unterminated comment: treat accumulated buffer as suspect too
-      if (in_cmt == 1 && (buf ~ /MUST/ || buf ~ /NEVER/ || buf ~ /Fail/)) {
+      if (in_cmt == 1 && suspect(buf)) {
         printf "HIT line=%d content=%s\n", start_line, buf
       }
     }
@@ -1915,16 +2013,34 @@ for aa_rel in "${AA_CONTRACT_SKILLS[@]}"; do
   fi
   aa_hit=$(aa_has_hidden_contract_comment "$aa_file")
   if [ -z "$aa_hit" ]; then
-    echo -e "  ${GREEN}PASS${NC} AA: $aa_rel has no HTML comment hiding a contract keyword (MUST/NEVER/Fail)"
+    echo -e "  ${GREEN}PASS${NC} AA: $aa_rel has no HTML comment hiding a contract keyword (MUST/NEVER/Fail/SHALL/REQUIRED/MANDATORY/PROHIBITED/FORBIDDEN)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "  ${RED}FAIL${NC} AA: $aa_rel contains HTML comment hiding a contract keyword"
     echo -e "       File: $aa_file"
     echo -e "       Detail: $aa_hit"
-    echo -e "       Fix: move MUST/NEVER/Fail language out of HTML comments into real prose so Cat V enforces it."
+    echo -e "       Fix: move RFC 2119 normative language (MUST/SHALL/REQUIRED/MANDATORY/PROHIBITED/FORBIDDEN/NEVER/Fail) out of HTML comments into real prose so Cat V enforces it."
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done
+
+# Test-the-test (AA-M): synthesize a fixture for each RFC 2119 synonym token
+# and verify the scanner HITs. Guards against a future author collapsing the
+# token alternation (4th review H-4 regression).
+aa_mut_tmp=$(mktemp -t aa_mut.XXXXXX) || aa_mut_tmp="/tmp/aa_mut_$$"
+for aa_tok in SHALL REQUIRED MANDATORY PROHIBITED FORBIDDEN; do
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  printf '# fixture\n<!-- callers %s re-invoke this agent -->\n' "$aa_tok" > "$aa_mut_tmp"
+  aa_mut_hit=$(aa_has_hidden_contract_comment "$aa_mut_tmp")
+  if [ -n "$aa_mut_hit" ]; then
+    echo -e "  ${GREEN}PASS${NC} AA-M: scanner fires on hidden '$aa_tok' token (test-the-test for H-4)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AA-M: scanner missed hidden '$aa_tok' token — token alternation regressed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+rm -f "$aa_mut_tmp"
 
 echo ""
 
