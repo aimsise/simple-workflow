@@ -1458,30 +1458,48 @@ echo ""
 # =============================================================================
 echo "--- Cat W: Remedy A enforcement ---"
 
-# --- Category W: Remedy A enforcement ---
-IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
+# --- Category W: Remedy A enforcement (agent-side, 案γ) ---
+# FU-7 shift: Cat W now targets agents/ac-evaluator.md rather than impl/SKILL.md.
+# Rationale: the idempotency guarantee belongs in the agent contract (which the
+# orchestrator reads as part of its agent system prompt) — not in SKILL.md prose,
+# which is defeatable by an orphan fenced block at EOF. Structural position check
+# (MUST directive appears inside the new `## Report Persistence Contract` section,
+# i.e. before `## Context Conservation Protocol`) makes the assertion resistant
+# to orphan-fence bypass and prose relocation.
+ACEV_MD="$REPO_DIR/agents/ac-evaluator.md"
 
-# W-1: {eval-report-path} placeholder line exists AND sits inside a fenced code block.
-# Pure-bash scan: toggle inside_fence on each standalone ``` line, then assert the
-# placeholder line falls while inside_fence=true. Independent of absolute line numbers.
+# W-1: agents/ac-evaluator.md has a MUST-form directive to write the report before
+# returning, AND that directive sits inside the `## Report Persistence Contract`
+# section (i.e. strictly before the `## Context Conservation Protocol` heading).
 w1_result="false"
-if [ -f "$IMPL_MD" ]; then
+if [ -f "$ACEV_MD" ]; then
   w1_result=$(awk '
-    BEGIN { in_fence = 0; found_in_fence = 0 }
-    /^[[:space:]]*```/ { in_fence = 1 - in_fence; next }
-    in_fence && /Save your evaluation report to: \{eval-report-path\}/ { found_in_fence = 1 }
-    END { print (found_in_fence ? "true" : "false") }
-  ' "$IMPL_MD")
+    BEGIN { in_section = 0; found_in_section = 0 }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section && /MUST write the evaluation report/ { found_in_section = 1 }
+    END { print (found_in_section ? "true" : "false") }
+  ' "$ACEV_MD")
 fi
 assert_true \
-  "W-1: impl/SKILL.md has 'Save your evaluation report to: {eval-report-path}' inside a fenced code block" \
+  "W-1: agents/ac-evaluator.md has 'MUST write the evaluation report' inside ## Report Persistence Contract section (before ## Context Conservation Protocol)" \
   "$w1_result"
 
-# W-2: Binding rule forbidding a second ac-evaluator call solely to persist the report exists.
-assert_file_contains \
-  "W-2: impl/SKILL.md has Remedy A binding rule 'second time solely to persist the report'" \
-  "$IMPL_MD" \
-  "second time solely to persist the report"
+# W-2: agents/ac-evaluator.md has a contract line marking the **Output** field as
+# non-empty, AND that line sits inside the `## Report Persistence Contract` section.
+w2_result="false"
+if [ -f "$ACEV_MD" ]; then
+  w2_result=$(awk '
+    BEGIN { in_section = 0; found_in_section = 0 }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section && /Output.*non-empty|non-empty.*Output|Output.*MUST NOT be empty/ { found_in_section = 1 }
+    END { print (found_in_section ? "true" : "false") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-2: agents/ac-evaluator.md has a non-empty Output contract line inside ## Report Persistence Contract section" \
+  "$w2_result"
 
 echo ""
 

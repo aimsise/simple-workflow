@@ -60,7 +60,7 @@ User arguments: $ARGUMENTS
 - `MUST invoke /audit via the Skill tool` — never spawn `code-reviewer` / `security-scanner` directly; `/audit` enforces the "single agent failure = FAIL" invariant.
 - `NEVER bypass these via direct file operations` — writing `eval-round-{n}.md` / `quality-round-{n}.md` / `audit-round-{n}.md` from `/impl` itself is a contract violation.
 - `Fail the task immediately if any mandatory invocation cannot be completed` — print the reason, set `phases.impl.status: failed` and `overall_status: failed` in `phase-state.yaml`, and stop; do not fabricate a PASS.
-- `MUST include the eval-report save path in the FIRST ac-evaluator invocation — NEVER call ac-evaluator a second time solely to persist the report` — re-invocation for persistence is a contract violation (detected via consecutive ac-evaluator calls with identical AC scope in the skill invocation audit).
+- `ac-evaluator is contractually idempotent on persistence (see agents/ac-evaluator.md Report Persistence Contract): it always writes the report on the first call and returns a non-empty Output path. NEVER re-invoke ac-evaluator solely to persist a report — an empty Output is an agent failure, not a retryable state.`
 
 ## phase-state.yaml write ownership
 
