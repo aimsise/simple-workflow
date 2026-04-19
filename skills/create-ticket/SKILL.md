@@ -130,8 +130,14 @@ Every AC must pass both gates. Match the GOOD pattern; the evaluator rejects the
 - **Gate 2 — Unambiguity**: each AC must have exactly one interpretation. Define any term open to multiple readings.
   - BAD: "Support large files" ("large" undefined)
   - GOOD: "Stream files over 100MB without loading into memory"
+- **Gate 3 — Completeness** (ticket-wide): cover scope gaps, edge cases / error handling, and named dependencies.
+  - BAD: "Support multiple file formats" (which? unsupported input? symlinks?)
+  - GOOD: "Accept `.md` and `.txt` (UTF-8); reject others with exit 1 and 'unsupported format'; do not follow symlinks; depends on `gray-matter`"
+- **Gate 4 — Implementability** (ticket-wide): Scope + Implementation Notes must name file paths and contracts. Describe WHAT and WHY, never HOW (no prescribed algorithms, internal data structures, or code snippets).
+  - BAD: "Add search functionality" (no file, no contract)
+  - GOOD: "Add `src/search.ts` exporting `searchNotes(query: string): Note[]`; wire `search <query>` in `src/cli.ts`; tests in `tests/search.test.ts`. Why: no CLI query entry point today."
 
-Pattern: vague threshold → concrete threshold (Gate 1); undefined term → defined term (Gate 2).
+Pattern: vague → concrete (Gate 1); undefined → defined (Gate 2); missing edge case / dep → enumerated (Gate 3); missing path / contract → named file + signature (Gate 4).
 
 #### Split Judgment
 
