@@ -1587,5 +1587,61 @@ x_check_targets "skills/ship/SKILL.md"          "${X_TARGETS_ship[@]}"
 
 echo ""
 
+# =============================================================================
+# カテゴリ Y: count-tokens.sh helper integration smoke test (FU-8)
+# 差分: tests/helpers/count-tokens.sh は将来の圧縮作業を byte ではなく token
+#        ベースの測定へ誘導するために導入された (commit ff67cf3) が、リポジトリ
+#        内から呼び出されていない orphan スクリプトだった。本カテゴリは各
+#        skills/*/SKILL.md に対してヘルパーを実行し、stdout が正の整数
+#        (^[1-9][0-9]*$) であることを検証することで、ヘルパーの契約を CI に
+#        繋ぎ込む。Cat W/X 等の SKILL.md 構造検証とは独立。
+# =============================================================================
+echo "--- Cat Y: count-tokens.sh helper smoke ---"
+
+COUNT_TOKENS_HELPER="$REPO_DIR/tests/helpers/count-tokens.sh"
+
+# Invoke tests/helpers/count-tokens.sh on the given SKILL.md and assert stdout
+# is a positive integer. Stderr (the [tiktoken] / [fallback: chars/4] mode
+# label) is intentionally discarded here — Cat Y only checks the numeric
+# contract. Paths with spaces are safe because "$abs" is quoted throughout.
+y_check_token_count() {
+  local rel_path="$1" # e.g. "skills/impl/SKILL.md"
+  local abs="$REPO_DIR/$rel_path"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local out=""
+  if [ -f "$abs" ] && [ -x "$COUNT_TOKENS_HELPER" ]; then
+    out="$(bash "$COUNT_TOKENS_HELPER" "$abs" 2>/dev/null || true)"
+  fi
+  if [[ "$out" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "  ${GREEN}PASS${NC} Y: $rel_path count-tokens.sh stdout is positive integer ($out)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Y: $rel_path count-tokens.sh did not produce a positive integer"
+    echo -e "       File: $abs"
+    echo -e "       Helper: $COUNT_TOKENS_HELPER"
+    echo -e "       stdout: '$out' (expected /^[1-9][0-9]*\$/, got non-integer output)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+# Cover all 13 SKILL.md files. The minimum AC requires impl, autopilot,
+# create-ticket, ship; covering the full set catches helper regressions on
+# any skill without a separate data structure.
+y_check_token_count "skills/audit/SKILL.md"
+y_check_token_count "skills/autopilot/SKILL.md"
+y_check_token_count "skills/brief/SKILL.md"
+y_check_token_count "skills/catchup/SKILL.md"
+y_check_token_count "skills/create-ticket/SKILL.md"
+y_check_token_count "skills/impl/SKILL.md"
+y_check_token_count "skills/investigate/SKILL.md"
+y_check_token_count "skills/plan2doc/SKILL.md"
+y_check_token_count "skills/refactor/SKILL.md"
+y_check_token_count "skills/scout/SKILL.md"
+y_check_token_count "skills/ship/SKILL.md"
+y_check_token_count "skills/test/SKILL.md"
+y_check_token_count "skills/tune/SKILL.md"
+
+echo ""
+
 # --- サマリー ---
 print_summary
