@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-04-20
+
+### Changed
+- **Plugin-slim (Remedy 4 Phase A)**: Compressed the four heaviest contract-bearing SKILL files and consolidated the ac-evaluator Report Persistence Contract into the agent definition. Aggregate byte reduction across `skills/{impl,autopilot,create-ticket,ship}/SKILL.md` + `agents/ac-evaluator.md` is **-30,419 bytes (-22.9%)** against `main`: `impl` -28.8%, `autopilot` -30.4%, `ship` -20.7%, `create-ticket` -12.7% (net, after FU add-backs for Gate 1/2/3/4 content), `ac-evaluator` +21.9% (absorbed the persistence contract from impl/SKILL.md). Semantic content (MUST rules, Mandatory Skill Invocations tables, phase-state ownership) was preserved; only prose redundancy and duplicated examples were removed. Token-count helper `tests/helpers/count-tokens.sh` gained a tiktoken branch with a `chars/4` fallback so future compression audits can be measured consistently.
+- **Contract hardening**: `agents/ac-evaluator.md` now carries the Report Persistence Contract (Output MUST be non-empty; write failures MUST return `Status: FAIL-CRITICAL` / `Output: ERROR-WRITE-FAILED`; callers MUST NOT re-invoke solely to persist). `skills/impl/SKILL.md` step 16 AC Gate rejects empty / `ERROR-`-prefixed Output as `FAIL-CRITICAL` before Status parsing, making the contract load-bearing at runtime rather than prose-only.
+- **Test coverage**: `tests/test-skill-contracts.sh` grew to 289 assertions (from 267 on `main`), adding Cat V / W-1..W-6 / X / Y / Z / AA / AA-M / AB to guard Mandatory Skill Invocations targets, the Report Persistence Contract (positive and negative patterns including retry-permission / return-without-writing phrasings), HTML-comment-hidden RFC 2119 normative tokens (MUST/SHALL/REQUIRED/MANDATORY/PROHIBITED/FORBIDDEN/NEVER/Fail), and tiktoken/fallback numerical agreement on the token helper.
+
+### Notes / Scope limits (Phase A)
+- **Runtime cache_read delta is NOT yet measured**. The perf motivation is the main-session `cache_read` accounting observed in a prior heavy-session trace (`d87a5d22`), but this branch ships only the static byte reduction above; a before/after JSONL comparison on a comparable `/autopilot` run is queued as follow-up work (plan D-6). Do not infer a specific per-session token savings from the byte-reduction figures — per-turn consumption depends on invocation frequency and tool-result accumulation.
+- **This is a compression-only pass**. The wrapper-architecture approach scoped in `.docs/cost-analysis/rate-limit-projection.md` (interposing a summarizer sub-agent to shrink tool-result payloads, projected ~30% main-session reduction) is NOT implemented here; tool-result accumulation remains untouched. Phase B will evaluate the wrapper direction separately.
+
 ## [3.7.0] - 2026-04-17
 
 ### Added

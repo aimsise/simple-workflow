@@ -169,18 +169,28 @@ Save your detailed evaluation report to the file path specified by the caller. I
 
 You MUST NOT modify source code. Use Write only to save your evaluation report.
 
+## Report Persistence Contract
+
+This contract is load-bearing: the orchestrator relies on it to avoid redundant re-invocations solely for persistence.
+
+- You MUST write the evaluation report to disk before returning. The Write call completes before the return value is emitted — never return first and "save later".
+- The save path MUST be the caller-specified path when provided. If the caller omits a path, you MUST save to `.docs/eval-round/{topic}-eval-report.md` (derive `{topic}` from the subject of the evaluation).
+- The **Output** field in the return value MUST be non-empty and MUST contain the path that was actually written. An empty Output is a contract violation, not a signal for "caller should retry to persist".
+- If the Write call fails (permission denied, disk full, invalid path, etc.), you MUST return **Status**: FAIL-CRITICAL and **Output**: ERROR-WRITE-FAILED, with the underlying error surfaced in **Issues**. Never return an empty Output to signal "I did not save".
+- Callers MUST NOT re-invoke this agent solely to persist the report. Since the first call is contractually idempotent on persistence (it always writes before returning), a second invocation for save-only purposes is wasted work and a protocol violation. An empty Output is an agent failure, not a retryable state.
+
 Your Feedback field must contain specific, actionable instructions that a developer can follow to fix the issues. Vague feedback like "improve quality" is not acceptable.
 
 ## Context Conservation Protocol
 
 - All detailed analysis MUST be written to files
 - Return value to caller is LIMITED to a structured summary under 500 tokens
-- Return format:
+- Return format (the `**Output**` field is non-empty by contract — see Report Persistence Contract above):
 
 ```
 ## Result
 **Status**: PASS | PASS-WITH-CAVEATS | FAIL | FAIL-CRITICAL
-**Output**: [evaluation report file path]
+**Output**: [evaluation report file path]  # non-empty by contract; ERROR-WRITE-FAILED on write failure
 **Lint**: pass | fail | skipped (independently verified)
 **Test**: pass | fail | skipped (independently verified)
 **Caveats**: [only when PASS-WITH-CAVEATS — list skipped verifications]

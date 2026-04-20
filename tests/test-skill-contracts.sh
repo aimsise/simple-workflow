@@ -1449,5 +1449,688 @@ assert_file_contains \
 
 echo ""
 
+# =============================================================================
+# カテゴリ W: Remedy A enforcement (impl step 15 Evaluator prompt template)
+# 差分: Remedy A (commit 38c1fea) で追加された impl/SKILL.md step 15 の
+#        copy-pasteable Evaluator prompt template と Binding rule の
+#        構造的整合性を CI で保証する。既存 Cat V の強制言語検証とは独立で、
+#        具体的な文字列と fenced-block 位置関係を検証する。
+# =============================================================================
+echo "--- Cat W: Remedy A enforcement ---"
+
+# --- Category W: Remedy A enforcement (agent-side, 案γ) ---
+# FU-7 shift: Cat W now targets agents/ac-evaluator.md rather than impl/SKILL.md.
+# Rationale: the idempotency guarantee belongs in the agent contract (which the
+# orchestrator reads as part of its agent system prompt) — not in SKILL.md prose,
+# which is defeatable by an orphan fenced block at EOF. Structural position check
+# (MUST directive appears inside the new `## Report Persistence Contract` section,
+# i.e. before `## Context Conservation Protocol`) makes the assertion resistant
+# to orphan-fence bypass and prose relocation.
+ACEV_MD="$REPO_DIR/agents/ac-evaluator.md"
+
+# W-1: agents/ac-evaluator.md has a MUST-form directive to write the report before
+# returning, AND that directive sits inside the `## Report Persistence Contract`
+# section (i.e. strictly before the `## Context Conservation Protocol` heading).
+w1_result="false"
+if [ -f "$ACEV_MD" ]; then
+  w1_result=$(awk '
+    BEGIN { in_section = 0; found_in_section = 0 }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section && /MUST write the evaluation report/ { found_in_section = 1 }
+    END { print (found_in_section ? "true" : "false") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-1: agents/ac-evaluator.md has 'MUST write the evaluation report' inside ## Report Persistence Contract section (before ## Context Conservation Protocol)" \
+  "$w1_result"
+
+# W-2: agents/ac-evaluator.md has a contract line marking the **Output** field as
+# non-empty, AND that line sits inside the `## Report Persistence Contract` section.
+w2_result="false"
+if [ -f "$ACEV_MD" ]; then
+  w2_result=$(awk '
+    BEGIN { in_section = 0; found_in_section = 0 }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section && /Output.*non-empty|non-empty.*Output|Output.*MUST NOT be empty/ { found_in_section = 1 }
+    END { print (found_in_section ? "true" : "false") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-2: agents/ac-evaluator.md has a non-empty Output contract line inside ## Report Persistence Contract section" \
+  "$w2_result"
+
+# W-3 / W-4: Negative assertions (Round-3 review follow-up / FU-13).
+# Rationale: W-1 and W-2 only verify that positive MUST/non-empty markers exist in
+# the `## Report Persistence Contract` section. They remain green even if a
+# semantically-inverting line (e.g. "Output may be empty", "Callers MAY re-invoke",
+# "non-empty is optional", "MAY return without writing") is inserted into the same
+# section alongside the positive text. W-3 and W-4 close that loophole by FAILing
+# if prohibited phrase patterns appear anywhere inside the section body (between
+# the `## Report Persistence Contract` heading and the `## Context Conservation
+# Protocol` heading, both heading lines excluded).
+#
+# Scope: both assertions scan ONLY the body lines of the Report Persistence
+# Contract section. Matches elsewhere in the file (frontmatter, other sections)
+# are ignored on purpose — that is what makes the negative assertions a true
+# "no-bypass within the contract" guard rather than a global lint.
+
+# W-3: no permissive-output / optional-nonempty phrasing inside the section.
+# Covers AC FU13-2 classes (a) "Output may be empty" / "empty Output is
+# acceptable" / "Output can be empty" and (c) "non-empty is optional" /
+# "non-empty is a suggestion" / "non-empty is only advisory".
+w3_result="true"
+if [ -f "$ACEV_MD" ]; then
+  w3_result=$(awk '
+    BEGIN {
+      in_section = 0
+      found = 0
+      # (a) Output is allowed to be empty
+      p1 = "output[[:space:]]+(may|can|might)[[:space:]]+be[[:space:]]+empty"
+      p2 = "empty[[:space:]]+output[[:space:]]+is[[:space:]]+(acceptable|allowed|ok|fine|permitted)"
+      p3 = "(you[[:space:]]+)?may[[:space:]]+return[[:space:]]+(an[[:space:]]+)?empty[[:space:]]+output"
+      # (c) non-empty requirement is optional/suggestive/advisory
+      p4 = "non-empty[[:space:]]+is[[:space:]]+(optional|a[[:space:]]+suggestion|only[[:space:]]+advisory|advisory|suggestive)"
+    }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section {
+      ls = tolower($0)
+      if (ls ~ p1) found = 1
+      if (ls ~ p2) found = 1
+      if (ls ~ p3) found = 1
+      if (ls ~ p4) found = 1
+    }
+    END { print (found ? "false" : "true") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-3: agents/ac-evaluator.md has no permissive-output / optional-non-empty phrasing inside ## Report Persistence Contract section" \
+  "$w3_result"
+
+# W-4: no retry-permission / return-without-writing phrasing inside the section.
+# Covers AC FU13-2 classes (b) "Callers MAY re-invoke" / "callers may retry" /
+# "may re-invoke this agent" and (d) "MAY return without writing" / "may return
+# before writing" (the "you may return an empty Output" form is already covered
+# by W-3's p3, so W-4 focuses on the callers / return-without-writing angle).
+w4_result="true"
+if [ -f "$ACEV_MD" ]; then
+  w4_result=$(awk '
+    BEGIN {
+      in_section = 0
+      found = 0
+      # (b) callers may re-invoke / retry
+      p1 = "callers?[[:space:]]+(may|can|might)[[:space:]]+(re-?invoke|retry|call[[:space:]]+again)"
+      p2 = "(may|can|might)[[:space:]]+re-?invoke[[:space:]]+(this[[:space:]]+)?agent"
+      # (d) may return without / before writing
+      p3 = "(may|can|might)[[:space:]]+return[[:space:]]+(without|before)[[:space:]]+writ"
+    }
+    /^## Report Persistence Contract[[:space:]]*$/ { in_section = 1; next }
+    /^## Context Conservation Protocol[[:space:]]*$/ { in_section = 0 }
+    in_section {
+      ls = tolower($0)
+      if (ls ~ p1) found = 1
+      if (ls ~ p2) found = 1
+      if (ls ~ p3) found = 1
+    }
+    END { print (found ? "false" : "true") }
+  ' "$ACEV_MD")
+fi
+assert_true \
+  "W-4: agents/ac-evaluator.md has no caller-retry / return-without-writing phrasing inside ## Report Persistence Contract section" \
+  "$w4_result"
+
+# W-5: skills/impl/SKILL.md must not contain a raw `Save your evaluation report to:
+# {eval-report-path}` line WITHOUT a companion warning line in close proximity
+# (within ±15 lines) telling the orchestrator to substitute the placeholder.
+# Rationale (FU-14): if an orchestrator pastes the template verbatim without
+# substituting `{eval-report-path}`, ac-evaluator writes to a literal file named
+# `{eval-report-path}`, reintroducing the FU-1 bug.
+#
+# 4th-review H-3 simplification: the earlier implementation used a fence state
+# machine keyed on ```-fences. That was bypassable by `~~~` fences or 4-space-
+# indented code blocks. This proximity-based check is fence-independent: the
+# warning and the placeholder line must co-locate regardless of markdown
+# structure. Window size 15 comfortably covers the current 6-line gap between
+# warning (L268) and placeholder (L274) while leaving slack for future edits.
+#
+# Test-the-test: if the warning is removed while the raw placeholder remains,
+# W-5 FAILs. If the placeholder is replaced with a concrete example path, W-5
+# PASSes regardless of the warning (no raw placeholder to worry about).
+IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
+w5_result="true"
+if [ -f "$IMPL_MD" ]; then
+  w5_result=$(awk '
+    BEGIN { n = 0; window = 15 }
+    {
+      lines[NR] = $0
+      if (index($0, "Save your evaluation report to: {eval-report-path}") > 0) {
+        ph[++n] = NR
+      }
+      ls = tolower($0)
+      if (index(ls, "substitute") > 0 && (index(ls, "placeholder") > 0 || index(ls, "brace") > 0 || index($0, "{") > 0)) {
+        warn[NR] = 1
+      }
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        p = ph[i]
+        ok = 0
+        for (d = -window; d <= window; d++) {
+          if ((p + d) in warn) { ok = 1; break }
+        }
+        if (!ok) { print "false"; exit 0 }
+      }
+      print "true"
+    }
+  ' "$IMPL_MD")
+fi
+assert_true \
+  "W-5: skills/impl/SKILL.md raw {eval-report-path} placeholder has a substitute-placeholder warning within ±15 lines (FU-14, H-3 fence-independent)" \
+  "$w5_result"
+
+# Test-the-test (W-5-M): copy impl/SKILL.md to a temp file, strip the
+# "substitute" warning, and assert the scanner reports "false". Locks in
+# detection for both (a) the fence-independent check and (b) future regressions
+# that delete the warning line. Removed strings: any line matching
+# /substitute.*placeholder|substitute.*brace/ loses its "substitute" keyword.
+w5_mut_tmp=$(mktemp -t w5_mut.XXXXXX.md) || w5_mut_tmp="/tmp/w5_mut_$$.md"
+if [ -f "$IMPL_MD" ]; then
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # neuter the warning line by replacing 'substitute' with 'REDACTED' (keep the
+  # placeholder line intact so the scanner has something to flag)
+  awk '{ if (tolower($0) ~ /substitute.*placeholder|substitute.*brace|substitute.*\{/) { gsub(/substitute/, "REDACTED"); gsub(/Substitute/, "REDACTED") } print }' "$IMPL_MD" > "$w5_mut_tmp"
+  w5_mut_result=$(awk '
+    BEGIN { n = 0; window = 15 }
+    {
+      if (index($0, "Save your evaluation report to: {eval-report-path}") > 0) {
+        ph[++n] = NR
+      }
+      ls = tolower($0)
+      if (index(ls, "substitute") > 0 && (index(ls, "placeholder") > 0 || index(ls, "brace") > 0 || index($0, "{") > 0)) {
+        warn[NR] = 1
+      }
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        p = ph[i]; ok = 0
+        for (d = -window; d <= window; d++) {
+          if ((p + d) in warn) { ok = 1; break }
+        }
+        if (!ok) { print "false"; exit 0 }
+      }
+      print "true"
+    }
+  ' "$w5_mut_tmp")
+  if [ "$w5_mut_result" = "false" ]; then
+    echo -e "  ${GREEN}PASS${NC} W-5-M: scanner FAILs on warning-stripped SKILL.md (test-the-test for H-3)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} W-5-M: scanner missed warning-stripped SKILL.md — W-5 detector regressed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+fi
+rm -f "$w5_mut_tmp"
+
+# W-6: skills/impl/SKILL.md step 16 AC Gate must enforce the ac-evaluator
+# Report Persistence Contract at runtime by rejecting empty or ERROR-prefixed
+# Output before Status parsing. Rationale (4th review H-2): the contract text
+# in agents/ac-evaluator.md is only load-bearing if the orchestrator refuses
+# to proceed when it is violated. Without this guard the orchestrator would
+# silently advance to step 17 /audit on empty Output.
+#
+# Scan window: the `16. AC Gate:` heading and the next ~30 lines (the gate
+# block ends at a `> **CHECKPOINT` line or step 17). Required markers: the
+# phrase "Output" co-occurring with both "empty" and "ERROR-" within the gate
+# block, plus a FAIL-CRITICAL escalation verb (stop / FAIL-CRITICAL).
+w6_result="true"
+if [ -f "$IMPL_MD" ]; then
+  w6_result=$(awk '
+    BEGIN { in_gate = 0; seen_output = 0; seen_empty = 0; seen_error = 0; seen_stop = 0 }
+    /^16\. AC Gate:/ { in_gate = 1; next }
+    /^17\./ { in_gate = 0 }
+    in_gate {
+      if (index($0, "Output") > 0) seen_output = 1
+      ls = tolower($0)
+      if (index(ls, "empty") > 0) seen_empty = 1
+      if (index($0, "ERROR-") > 0) seen_error = 1
+      if (index($0, "FAIL-CRITICAL") > 0 || index(ls, "stop") > 0) seen_stop = 1
+    }
+    END {
+      ok = (seen_output && seen_empty && seen_error && seen_stop)
+      print (ok ? "true" : "false")
+    }
+  ' "$IMPL_MD")
+fi
+assert_true \
+  "W-6: skills/impl/SKILL.md step 16 AC Gate enforces Report Persistence Contract at runtime (empty / ERROR- Output → FAIL-CRITICAL, 4th review H-2)" \
+  "$w6_result"
+
+echo ""
+
+# =============================================================================
+# カテゴリ X: Mandatory Skill Invocations ターゲット名検証 (FU-3)
+# 差分: 既存 Cat V / T' / U' は Mandatory 表の "行数" や周辺バインドルール文言は
+#        検証するが、各行の "Invocation Target" 第1カラムに期待するスキル/エージェント
+#        名が実在するかは検証しない。本カテゴリは (SKILL.md, 期待ターゲット) ペアを
+#        可視なデータ構造で宣言し、Mandatory 表の第1カラムを抽出して部分一致検索で
+#        アサートする。行順入れ替え・セル内改行に対してロバスト。
+# =============================================================================
+echo "--- Cat X: Mandatory table target names ---"
+
+# X: Expected Invocation Target substrings per SKILL.md.
+# Data structure: per-file parallel arrays. To add a new skill, declare
+# X_TARGETS_<shortname>=( ... ) and add an x_check_targets call at the bottom
+# of this block with the matching SKILL.md path. Each target is a literal
+# substring that must appear in the Mandatory table's first column
+# (Invocation Target) for that file. Substrings are chosen to uniquely identify
+# each row even when two rows share an agent name (e.g. ac-evaluator Dry Run
+# vs. main gate).
+
+X_TARGETS_impl=(
+  "\`implementer\` agent (Agent tool, \"Generator\")"
+  "\`ac-evaluator\` agent (Agent tool, Dry Run)"
+  "\`ac-evaluator\` agent (Agent tool, main gate)"
+  "\`/audit\` (Skill tool)"
+)
+
+X_TARGETS_autopilot=(
+  "\`/create-ticket\` (Skill)"
+  "\`/scout\` (Skill)"
+  "\`/impl\` (Skill)"
+  "\`/ship\` (Skill)"
+)
+
+X_TARGETS_create_ticket=(
+  "\`researcher\` agent (Agent tool)"
+  "\`planner\` agent (Agent tool)"
+  "\`ticket-evaluator\` agent (Agent tool)"
+)
+
+X_TARGETS_ship=(
+  "\`/tune\` (Skill)"
+)
+
+# Extract the first column (Invocation Target) of every Mandatory table row
+# from the given SKILL.md file. Skips header and separator rows; robust to
+# row order. Prints one extracted target cell per line.
+extract_mandatory_targets_col1() {
+  local file="$1"
+  awk -F'|' '
+    /^## Mandatory Skill Invocations/ { in_sec=1; next }
+    in_sec && /^## / { in_sec=0 }
+    in_sec && /^\| / && !/^\| Invocation Target/ && !/^\|---/ {
+      # NF counts columns split by |. With a leading and trailing |, field 2
+      # is the first logical column. Print trimmed.
+      cell = $2
+      sub(/^[[:space:]]+/, "", cell)
+      sub(/[[:space:]]+$/, "", cell)
+      print cell
+    }
+  ' "$file"
+}
+
+# Assert every expected target substring is found in the Mandatory table's
+# first column of the given file. One assert per (file, target) pair.
+x_check_targets() {
+  local rel_path="$1" # e.g. "skills/impl/SKILL.md"
+  shift 1
+  local targets=("$@")
+  local abs="$REPO_DIR/$rel_path"
+  local col1
+  if [ -f "$abs" ]; then
+    col1="$(extract_mandatory_targets_col1 "$abs")"
+  else
+    col1=""
+  fi
+  local target
+  for target in "${targets[@]}"; do
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if [ -n "$col1" ] && printf '%s\n' "$col1" | grep -qF -- "$target"; then
+      echo -e "  ${GREEN}PASS${NC} X: $rel_path Mandatory table references target '$target'"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} X: $rel_path Mandatory table missing target '$target'"
+      echo -e "       File: $abs"
+      echo -e "       Extracted column 1:"
+      if [ -n "$col1" ]; then
+        printf '%s\n' "$col1" | sed 's/^/         /'
+      else
+        echo "         (none / file not found)"
+      fi
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+  done
+}
+
+x_check_targets "skills/impl/SKILL.md"          "${X_TARGETS_impl[@]}"
+x_check_targets "skills/autopilot/SKILL.md"     "${X_TARGETS_autopilot[@]}"
+x_check_targets "skills/create-ticket/SKILL.md" "${X_TARGETS_create_ticket[@]}"
+x_check_targets "skills/ship/SKILL.md"          "${X_TARGETS_ship[@]}"
+
+echo ""
+
+# =============================================================================
+# カテゴリ Y: count-tokens.sh helper integration smoke test (FU-8)
+# 差分: tests/helpers/count-tokens.sh は将来の圧縮作業を byte ではなく token
+#        ベースの測定へ誘導するために導入された (commit ff67cf3) が、リポジトリ
+#        内から呼び出されていない orphan スクリプトだった。本カテゴリは各
+#        skills/*/SKILL.md に対してヘルパーを実行し、stdout が正の整数
+#        (^[1-9][0-9]*$) であることを検証することで、ヘルパーの契約を CI に
+#        繋ぎ込む。Cat W/X 等の SKILL.md 構造検証とは独立。
+# =============================================================================
+echo "--- Cat Y: count-tokens.sh helper smoke ---"
+
+COUNT_TOKENS_HELPER="$REPO_DIR/tests/helpers/count-tokens.sh"
+
+# Invoke tests/helpers/count-tokens.sh on the given SKILL.md and assert stdout
+# is a positive integer. Stderr (the [tiktoken] / [fallback: chars/4] mode
+# label) is intentionally discarded here — Cat Y only checks the numeric
+# contract. Paths with spaces are safe because "$abs" is quoted throughout.
+y_check_token_count() {
+  local rel_path="$1" # e.g. "skills/impl/SKILL.md"
+  local abs="$REPO_DIR/$rel_path"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local out=""
+  if [ -f "$abs" ] && [ -x "$COUNT_TOKENS_HELPER" ]; then
+    out="$(bash "$COUNT_TOKENS_HELPER" "$abs" 2>/dev/null || true)"
+  fi
+  if [[ "$out" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "  ${GREEN}PASS${NC} Y: $rel_path count-tokens.sh stdout is positive integer ($out)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Y: $rel_path count-tokens.sh did not produce a positive integer"
+    echo -e "       File: $abs"
+    echo -e "       Helper: $COUNT_TOKENS_HELPER"
+    echo -e "       stdout: '$out' (expected /^[1-9][0-9]*\$/, got non-integer output)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+# Cover all 13 SKILL.md files. The minimum AC requires impl, autopilot,
+# create-ticket, ship; covering the full set catches helper regressions on
+# any skill without a separate data structure.
+y_check_token_count "skills/audit/SKILL.md"
+y_check_token_count "skills/autopilot/SKILL.md"
+y_check_token_count "skills/brief/SKILL.md"
+y_check_token_count "skills/catchup/SKILL.md"
+y_check_token_count "skills/create-ticket/SKILL.md"
+y_check_token_count "skills/impl/SKILL.md"
+y_check_token_count "skills/investigate/SKILL.md"
+y_check_token_count "skills/plan2doc/SKILL.md"
+y_check_token_count "skills/refactor/SKILL.md"
+y_check_token_count "skills/scout/SKILL.md"
+y_check_token_count "skills/ship/SKILL.md"
+y_check_token_count "skills/test/SKILL.md"
+y_check_token_count "skills/tune/SKILL.md"
+
+echo ""
+
+# =============================================================================
+# カテゴリ Z: create-ticket / ticket-evaluator AC example drift guard (FU-11)
+# 差分: Round-2 レビューで指摘された通り、skills/create-ticket/SKILL.md Phase 3
+#        の `#### AC Quality Criteria` 節にある Gate 1/Gate 2 の BAD/GOOD 例は
+#        agents/ticket-evaluator.md と逐語的に重複している。プラグイン機構は
+#        ファイル横断のコンテンツ補間をサポートしないため、ランタイムでの
+#        デデュープは不可能。代替として、4 つの正典例文字列が "両ファイルに"
+#        存在することを CI で保証し、片方のみ編集された場合に即座に検知する。
+#        Cat W (ac-evaluator 構造), Cat X (Mandatory 表), Cat Y (token helper)
+#        とは独立した文面一致契約。
+# =============================================================================
+echo "--- Cat Z: create-ticket / ticket-evaluator AC example drift guard ---"
+
+# --- Category Z: AC example drift guard ---
+# Canonical Gate 1/Gate 2 BAD/GOOD example strings that MUST appear in both
+# agents/ticket-evaluator.md AND skills/create-ticket/SKILL.md. If any string
+# disappears from either file, the duplicated examples have drifted silently
+# and this test fires.
+Z_CANONICAL_EXAMPLES=(
+  "Improve performance"
+  "Response time under 200ms for 95th percentile"
+  "Support large files"
+  "Stream files over 100MB without loading into memory"
+)
+
+Z_TICKET_EVALUATOR="$REPO_DIR/agents/ticket-evaluator.md"
+Z_CREATE_TICKET="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# Assert that a literal string appears in BOTH canonical files. Uses grep -qF --
+# to guarantee exact (non-regex) literal matching. Emits a single combined
+# assertion per string; failure message names which file(s) are missing it so
+# drift is self-diagnosing.
+z_check_both_files() {
+  local literal="$1"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local in_te="false" in_ct="false"
+  if [ -f "$Z_TICKET_EVALUATOR" ] && grep -qF -- "$literal" "$Z_TICKET_EVALUATOR"; then
+    in_te="true"
+  fi
+  if [ -f "$Z_CREATE_TICKET" ] && grep -qF -- "$literal" "$Z_CREATE_TICKET"; then
+    in_ct="true"
+  fi
+  if [ "$in_te" = "true" ] && [ "$in_ct" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC} Z: canonical AC example present in both ticket-evaluator.md and create-ticket/SKILL.md: '$literal'"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} Z: AC example drift detected for '$literal'"
+    echo -e "       agents/ticket-evaluator.md       : $([ "$in_te" = "true" ] && echo present || echo MISSING)"
+    echo -e "       skills/create-ticket/SKILL.md    : $([ "$in_ct" = "true" ] && echo present || echo MISSING)"
+    echo -e "       Fix: restore the canonical string in both files (duplicated intentionally; plugin architecture does not support cross-file interpolation)."
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+for z_literal in "${Z_CANONICAL_EXAMPLES[@]}"; do
+  z_check_both_files "$z_literal"
+done
+
+echo ""
+
+# =============================================================================
+# カテゴリ AA: Hidden-contract HTML-comment guard
+# 差分: Cat V は契約キーワード (MUST / NEVER / Fail) の出現「回数」のみを
+#        カウントするため、本来の契約ブロックを削除し、HTML コメント
+#        (<!-- ... -->) 内に契約キーワードを忍ばせた状態でもテストが
+#        通ってしまう脆弱性があった (Round-3 skeptical review で実証)。
+#        本カテゴリは、契約を担う 4 つの SKILL.md を対象に、HTML コメント
+#        ブロック (複数行をまたぐ場合を含む) の内側に MUST / NEVER / Fail
+#        という契約マーカートークンが含まれていないことを保証する。
+# =============================================================================
+echo "--- Cat AA: Hidden-contract HTML-comment guard ---"
+
+AA_CONTRACT_SKILLS=(
+  "skills/impl/SKILL.md"
+  "skills/autopilot/SKILL.md"
+  "skills/create-ticket/SKILL.md"
+  "skills/ship/SKILL.md"
+)
+
+# aa_has_hidden_contract_comment — awk scanner that tracks HTML comment blocks
+# spanning multiple lines. Concatenates the inner text of each <!-- ... -->
+# block (including blocks that open and close on different lines) and reports
+# "HIT" on the first block whose inner content contains any of the
+# case-sensitive RFC 2119 normative tokens (MUST, NEVER, Fail, SHALL, REQUIRED,
+# MANDATORY, PROHIBITED, FORBIDDEN). LLMs treat these as near-synonyms of
+# MUST, so hiding any of them inside an HTML comment is equivalent to hiding
+# a MUST-level contract (4th review H-4). Prints a diagnostic with the
+# starting line number for failure messages. Prints nothing on clean files.
+aa_has_hidden_contract_comment() {
+  local file="$1"
+  awk '
+    function suspect(s) {
+      return (s ~ /MUST/ || s ~ /NEVER/ || s ~ /Fail/ || s ~ /SHALL/ \
+           || s ~ /REQUIRED/ || s ~ /MANDATORY/ || s ~ /PROHIBITED/ \
+           || s ~ /FORBIDDEN/)
+    }
+    BEGIN { in_cmt = 0; buf = ""; start_line = 0 }
+    {
+      line = $0
+      while (length(line) > 0) {
+        if (in_cmt == 0) {
+          idx = index(line, "<!--")
+          if (idx == 0) { break }
+          # consume up to and including the opener
+          line = substr(line, idx + 4)
+          in_cmt = 1
+          buf = ""
+          start_line = NR
+        } else {
+          idx = index(line, "-->")
+          if (idx == 0) {
+            # entire remainder is inside the comment (multi-line span)
+            buf = buf " " line
+            line = ""
+          } else {
+            # capture inner content up to the closer, then resume scan
+            buf = buf " " substr(line, 1, idx - 1)
+            line = substr(line, idx + 3)
+            in_cmt = 0
+            if (suspect(buf)) {
+              printf "HIT line=%d content=%s\n", start_line, buf
+              exit 0
+            }
+          }
+        }
+      }
+    }
+    END {
+      # Unterminated comment: treat accumulated buffer as suspect too
+      if (in_cmt == 1 && suspect(buf)) {
+        printf "HIT line=%d content=%s\n", start_line, buf
+      }
+    }
+  ' "$file"
+}
+
+for aa_rel in "${AA_CONTRACT_SKILLS[@]}"; do
+  aa_file="$REPO_DIR/$aa_rel"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ ! -f "$aa_file" ]; then
+    echo -e "  ${RED}FAIL${NC} AA: $aa_rel exists (required contract-bearing skill file)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    continue
+  fi
+  aa_hit=$(aa_has_hidden_contract_comment "$aa_file")
+  if [ -z "$aa_hit" ]; then
+    echo -e "  ${GREEN}PASS${NC} AA: $aa_rel has no HTML comment hiding a contract keyword (MUST/NEVER/Fail/SHALL/REQUIRED/MANDATORY/PROHIBITED/FORBIDDEN)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AA: $aa_rel contains HTML comment hiding a contract keyword"
+    echo -e "       File: $aa_file"
+    echo -e "       Detail: $aa_hit"
+    echo -e "       Fix: move RFC 2119 normative language (MUST/SHALL/REQUIRED/MANDATORY/PROHIBITED/FORBIDDEN/NEVER/Fail) out of HTML comments into real prose so Cat V enforces it."
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# Test-the-test (AA-M): synthesize a fixture for each RFC 2119 synonym token
+# and verify the scanner HITs. Guards against a future author collapsing the
+# token alternation (4th review H-4 regression).
+aa_mut_tmp=$(mktemp -t aa_mut.XXXXXX) || aa_mut_tmp="/tmp/aa_mut_$$"
+for aa_tok in SHALL REQUIRED MANDATORY PROHIBITED FORBIDDEN; do
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  printf '# fixture\n<!-- callers %s re-invoke this agent -->\n' "$aa_tok" > "$aa_mut_tmp"
+  aa_mut_hit=$(aa_has_hidden_contract_comment "$aa_mut_tmp")
+  if [ -n "$aa_mut_hit" ]; then
+    echo -e "  ${GREEN}PASS${NC} AA-M: scanner fires on hidden '$aa_tok' token (test-the-test for H-4)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AA-M: scanner missed hidden '$aa_tok' token — token alternation regressed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+rm -f "$aa_mut_tmp"
+
+echo ""
+
+# =============================================================================
+# カテゴリ AB: count-tokens.sh tiktoken/fallback agreement (FU-15)
+# 差分: Cat Y は count-tokens.sh が正の整数を返すことのみ検証し、tiktoken
+#        ブランチ と fallback ブランチ の数値的整合性は検証しない。
+#        さらに CI では tiktoken が未インストールのため tiktoken ブランチ
+#        自体が常に skip され、実行経路が未検証だった。本カテゴリは以下を
+#        保証する:
+#          1. tiktoken が利用可能な環境では、normal-path 実行の stderr に
+#             [tiktoken] ラベルが出現すること (サイレントな fallback 退行を
+#             検知; Test-the-test 対策)。
+#          2. normal-path (tiktoken) と SWF_FORCE_FALLBACK=1 (chars/4) の
+#             数値が ±25% 以内に収まること。
+#        tiktoken が利用不能な環境では skip として PASS 扱い (Total は
+#        安定させる) にする。ローカル開発機 (tiktoken 未導入) と CI
+#        (tiktoken インストール済み) の両方で実行可能。
+# =============================================================================
+echo "--- Cat AB: count-tokens.sh tiktoken/fallback agreement ---"
+
+AB_HELPER="$REPO_DIR/tests/helpers/count-tokens.sh"
+AB_TARGET="$REPO_DIR/skills/impl/SKILL.md"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+# tiktoken が import 可能か独立に判定する (normal-path の stderr ラベルに
+# 依存せず、helper が fallback に退行した場合も区別できる)。
+ab_tiktoken_available="false"
+if python3 -c "import tiktoken" >/dev/null 2>&1; then
+  ab_tiktoken_available="true"
+fi
+
+if [ ! -f "$AB_TARGET" ] || [ ! -x "$AB_HELPER" ]; then
+  echo -e "  ${RED}FAIL${NC} AB: preconditions (helper or target SKILL.md missing)"
+  echo -e "       Helper: $AB_HELPER"
+  echo -e "       Target: $AB_TARGET"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+elif [ "$ab_tiktoken_available" = "false" ]; then
+  # tiktoken 不在: skip扱いで PASS (Total は常に +1 安定)
+  echo -e "  ${GREEN}PASS${NC} AB: tiktoken/fallback agreement (skipped: tiktoken unavailable)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  ab_normal_stderr=""
+  ab_normal_out=""
+  ab_fallback_out=""
+  ab_tmp_err=$(mktemp)
+  ab_normal_out="$(bash "$AB_HELPER" "$AB_TARGET" 2>"$ab_tmp_err" || true)"
+  ab_normal_stderr="$(cat "$ab_tmp_err")"
+  rm -f "$ab_tmp_err"
+  ab_fallback_out="$(SWF_FORCE_FALLBACK=1 bash "$AB_HELPER" "$AB_TARGET" 2>/dev/null || true)"
+
+  # Guard 1: normal-path は [tiktoken] ラベルを stderr に出すべき。
+  # 出さない場合は helper が silent-fallback に退行しており、数値一致テスト
+  # だけでは検知不能 (Test-the-test FU15-6 対策)。
+  if ! printf '%s' "$ab_normal_stderr" | grep -qF "[tiktoken]"; then
+    echo -e "  ${RED}FAIL${NC} AB: tiktoken available but normal-path stderr did not contain '[tiktoken]' label"
+    echo -e "       Helper: $AB_HELPER"
+    echo -e "       normal-path stderr: $ab_normal_stderr"
+    echo -e "       Hint: tiktoken branch may have silently fallen through to chars/4."
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  elif ! [[ "$ab_normal_out" =~ ^[1-9][0-9]*$ ]] || ! [[ "$ab_fallback_out" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "  ${RED}FAIL${NC} AB: helper did not produce positive integer outputs on both paths"
+    echo -e "       normal-path stdout: '$ab_normal_out'"
+    echo -e "       fallback stdout   : '$ab_fallback_out'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  else
+    # Agreement check: |normal - fallback| / normal <= 0.25
+    # 整数演算で |diff|*100 <= normal*25 と等価。
+    ab_diff=$((ab_normal_out - ab_fallback_out))
+    if [ "$ab_diff" -lt 0 ]; then
+      ab_diff=$((-ab_diff))
+    fi
+    ab_threshold=$((ab_normal_out * 25))
+    ab_scaled_diff=$((ab_diff * 100))
+    if [ "$ab_scaled_diff" -le "$ab_threshold" ]; then
+      echo -e "  ${GREEN}PASS${NC} AB: tiktoken=$ab_normal_out fallback=$ab_fallback_out diff=$ab_diff within +/-25%"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} AB: tiktoken/fallback agreement exceeded +/-25%"
+      echo -e "       tiktoken (normal) : $ab_normal_out"
+      echo -e "       fallback (chars/4): $ab_fallback_out"
+      echo -e "       |diff|            : $ab_diff"
+      echo -e "       threshold (25%)   : $((ab_normal_out / 4))"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+  fi
+fi
+
+echo ""
+
 # --- サマリー ---
 print_summary

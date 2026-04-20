@@ -65,6 +65,18 @@ simple-workflow/
 3. Register it in `hooks/hooks.json`
 4. Add tests in `tests/test-your-hook.sh`
 
+### Measuring SKILL.md Size
+
+For compression work, measure token count with `tests/helpers/count-tokens.sh` rather than bytes:
+
+```bash
+tests/helpers/count-tokens.sh skills/impl/SKILL.md
+```
+
+The helper prefers `tiktoken` (cl100k_base) when Python has it installed and falls back to a `chars/4` estimate otherwise. Stdout is a single integer; stderr carries a mode label (`[tiktoken]` or `[fallback: chars/4]`).
+
+Rationale: byte caps invite proxy over-optimization — trimming characters to hit a round byte count rather than compressing redundant prose. Token counts track closer to actual `cache_read` cost, which is what compression is ultimately trying to reduce.
+
 ## Testing
 
 Run the full test suite:
