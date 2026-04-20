@@ -599,14 +599,41 @@ Recommended workflow per ticket: `/scout → /impl → /ship`
 
 ### Step W-11: Emit SW-CHECKPOINT block
 
-Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the skill's output, after `### Created Tickets` and any other summary content. Fill:
+Emit the `## [SW-CHECKPOINT]` block per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section of the skill's output, after `### Created Tickets` and any other summary content.
 
-- `phase=create_ticket`
-- `ticket=<first created ticket-dir or "none">` (for N>1 use the first in topological order).
-- `artifacts=[<repo-relative paths to every `ticket.md` written, plus `split-plan.md` if N>1>]`
-- `next_recommended=/scout {ticket-dir}` (or `""` if none created). For N>1, choose the first-unblocked ticket using: (1) all tickets with `depends_on: []`, (2) lexicographic-minimum `ticket_dir` as tiebreak (per `spec-split-plan-schema.md` § first-unblocked rule).
+Common fields (all modes):
 
-Emit on failure paths with `artifacts: []`.
+- `phase: create_ticket`
+- `ticket: <first created ticket-dir or "none">` (for N>1 use the first in topological order).
+- `artifacts:` list repo-relative paths to every `ticket.md` written, plus `split-plan.md` when N>1. On failure paths use `artifacts: []` on a single line.
+- `context_advice:` the literal sentence from the template (verbatim).
+
+**Recommendation line — choose exactly ONE shape per run**:
+
+- **Success path, N = 1** (bare description, brief mode without split, findings mode with 1 Required Work Unit):
+  - Emit a single line: `next_recommended: /scout <ticket-dir>`.
+  - Do NOT emit `next_recommended_auto:` or `next_recommended_manual:`.
+  - The block MUST NOT contain the substring `next_recommended_auto` anywhere (negative AC).
+
+- **Success path, N > 1** (findings mode with 2+ Required Work Units, or brief mode where split judgment chose split):
+  - Emit BOTH of the following, on separate lines, in this order:
+    - `next_recommended_auto: /autopilot {parent-slug}`
+    - `next_recommended_manual: /scout {first-unblocked-ticket-dir}`
+  - Do NOT emit a plain `next_recommended:` line in this block.
+  - `{first-unblocked-ticket-dir}` is computed thus (per `spec-split-plan-schema.md` § first-unblocked rule):
+    1. Enumerate every ticket whose `depends_on: []` (empty list).
+    2. Sort candidates by `ticket_dir` in ascending **lexicographic** order (this is the physical path string, e.g. `.backlog/product_backlog/<parent-slug>/005-foo`).
+    3. Pick the first (lexicographically smallest). This is deterministic even when every ticket is independent — exactly one line matches `^next_recommended_manual:` (negative AC: N=3 all-independent run still emits a single `next_recommended_manual:`).
+  - Regex invariant: the block contains exactly one line matching `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$` AND exactly one line matching `^next_recommended_manual:[[:space:]]+/scout[[:space:]]+\.backlog/product_backlog/\S+$`.
+
+- **Failure path (any N — counter-invalid, decomposer failed, split-plan validation failed, planner/evaluator exhausted retries, write failure during Step W-4, etc.)**:
+  - Emit a single line: `next_recommended: ""` (literal empty string).
+  - Do NOT emit `next_recommended_auto:` or `next_recommended_manual:` (even if N>1 was attempted — no ticket dirs exist, no downstream command is sensible).
+  - `artifacts: []` on a single line.
+
+**Uniqueness**: per emitted block, exactly one shape is present. Emitting all three recommendation-line variants, or none, is a contract violation.
+
+The rationale for the dual-recommendation form and the first-unblocked rule lives in `skills/create-ticket/references/sw-checkpoint-template.md` § "Why the dual-recommendation for N>1" — do not restate it here.
 
 ### Workflow selection guide
 
