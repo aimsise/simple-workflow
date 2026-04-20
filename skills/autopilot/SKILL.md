@@ -149,7 +149,7 @@ tickets:
     - On Bash fallback: `invocation_method.create-ticket = manual-bash`.
     - Parse response to extract ticket slug and path ("Ticket file path: .backlog/product_backlog/{ticket-dir}/ticket.md").
     - On failure: state `steps.create-ticket = failed`, `status = failed`; log and go to Phase 3.
-    - On success: copy `autopilot-policy.yaml` from briefs dir to `.backlog/product_backlog/{ticket-dir}/` so `/scout` will move it with the ticket.
+    - Note: `autopilot-policy.yaml` is propagated to each ticket directory by `/create-ticket` itself (Plan 1 AC #14 — policy-copy responsibility moved out of `/autopilot`). `/autopilot` no longer performs this copy. The downstream Policy guard in Step 11 verifies the file is present; if absent, `/scout` is aborted.
     - **State update (after)**: `steps.create-ticket = completed`, `ticket_dir = {ticket-dir}`, `ticket_mapping.{slug} = {ticket-dir}`.
     - Record: `[PIPELINE] create-ticket: success | ticket={ticket-dir}`.
 
@@ -162,7 +162,7 @@ tickets:
     - **MUST invoke `/scout {ticket-dir}` via the Skill tool**. **NEVER bypass /scout** via `/investigate` / `/plan2doc`. Fail immediately if not invokable.
     - On Bash fallback: `invocation_method.scout = manual-bash`.
     - On failure: state `steps.scout = failed`, `status = failed`; log and go to Phase 3.
-    - On success: verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/`; if missing, copy from briefs dir as safety net.
+    - On success: verify `autopilot-policy.yaml` exists in `.backlog/active/{ticket-dir}/` (moved by `/scout`). If missing, log `[PIPELINE] scout: WARN — autopilot-policy.yaml missing in active dir after /scout` — do NOT copy from briefs (Plan 1 moved the copy responsibility to `/create-ticket`). Subsequent `/impl` Policy guard will abort.
     - **Artifact verification**: Both `investigation.md` and `plan.md` must exist in `.backlog/active/{ticket-dir}/`; missing → record `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{ticket-dir}/`, state `steps.scout = failed`, `status = failed`, go to Phase 3.
     - **State update (after)**: `steps.scout = completed`.
     - Record: `[PIPELINE] scout: success`.
@@ -261,14 +261,14 @@ For each ticket in topological order (let `i` = 0-based index):
 
       > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read `.backlog/briefs/active/{slug}/autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
 
-   b. Copy `autopilot-policy.yaml` from briefs dir to `.backlog/product_backlog/{ticket-dir}/` so `/scout` moves it with the ticket.
+   b. Note: `autopilot-policy.yaml` is propagated into each ticket directory by `/create-ticket` in Phase 1 Plan AC #14 (split-brief mode passes `brief=` to each sub-ticket invocation, which drives the copy). `/autopilot` no longer performs this copy. The Policy guard in step 3c verifies presence; absence aborts `/scout`.
 
    c. **Step: scout**
       Resume: if `scout = completed`, skip to 3d (ticket already in `.backlog/active/{ticket-dir}/`).
       - **State update (before)**: `steps.scout = in_progress`, `invocation_method.scout = skill`.
       - **Policy guard**: `autopilot-policy.yaml` must exist in `.backlog/product_backlog/{ticket-dir}/`. Missing → log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.scout = failed`, `status = failed`, next ticket.
       - **MUST invoke `/scout {ticket-dir}` via the Skill tool**. **NEVER bypass /scout** via `/investigate` / `/plan2doc`. Fail immediately if not invokable.
-      - On Bash fallback: `invocation_method.scout = manual-bash`. On success verify policy in active dir; copy from briefs as safety net if missing.
+      - On Bash fallback: `invocation_method.scout = manual-bash`. On success verify policy in active dir; if missing, log `[PIPELINE] scout: WARN — autopilot-policy.yaml missing in active dir after /scout` — do NOT copy from briefs (Plan 1 moved the copy responsibility to `/create-ticket`).
       - **Artifact verification**: `investigation.md` and `plan.md` must exist. Missing → `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{ticket-dir}/`, state failed, next ticket.
       - On `/scout` failure: state `steps.scout = failed`, `status = failed`, next ticket.
       - **State update (after)**: `steps.scout = completed`.
