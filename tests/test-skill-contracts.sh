@@ -779,17 +779,32 @@ for skill_slug in $POLICY_SKILLS; do
     '\[AUTOPILOT-POLICY\]'
 done
 
-# J-4: brief SKILL.md に split-plan.md への参照がある
-assert_file_contains \
-  "brief SKILL.md に split-plan.md への参照がある" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
-  "split-plan\\.md"
+# J-4 (v4.0.0 Plan 2): brief SKILL.md MUST NOT actively write split-plan.md.
+# Phase 5 (Split Analysis) has been removed; ticket decomposition now lives in
+# /create-ticket (planner Split Judgment or findings-mode decomposer). We
+# accept narrative mentions ("/brief no longer writes split-plan.md") but
+# reject write-intent headings like "Generate split-plan.md" / "Write to
+# <path>/split-plan.md" that would indicate an actual write step.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE '(Generate split-plan|Write (to )?.*/split-plan\.md)' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${RED}FAIL${NC} brief SKILL.md should NOT contain write-intent prose for split-plan.md (Phase 5 removed)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} brief SKILL.md has no write-intent prose for split-plan.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
 
-# J-5: brief SKILL.md に分割トリガー条件の記述がある
-assert_file_contains \
-  "brief SKILL.md に estimated_size と L/XL の分割判定がある" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
-  "estimated_size.*L.*XL|L or XL|L/XL"
+# J-5 (v4.0.0 Plan 2): brief SKILL.md MUST NOT reference `Phase 5` (the
+# Split Analysis phase has been removed; its responsibilities moved to
+# /create-ticket). The last phase is now renamed "Finalization".
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'Phase 5' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${RED}FAIL${NC} brief SKILL.md should NOT reference 'Phase 5' (removed in v4.0.0)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} brief SKILL.md has no 'Phase 5' reference"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
 
 # J-6: autopilot SKILL.md に split-plan.md の検出手順がある
 assert_file_contains \

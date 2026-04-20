@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-04-21
+
+### Breaking Changes
+- **`/brief` no longer writes `split-plan.md`**: Phase 5 (Split Analysis) has been removed from `/brief`. The skill now ends after writing `brief.md` and `autopilot-policy.yaml` (the new "Finalization" phase). Ticket decomposition moves exclusively to `/create-ticket` — either via the `planner` agent's Split Judgment in bare / `brief=<path>` modes, or via the `decomposer` agent in the new **findings mode** (`/create-ticket findings=<path>`). Briefs produced before v4.0.0 that still have a sibling `split-plan.md` are left untouched on disk (legacy artefact retention — see `.docs/fix_structure/spec-migration-policy.md`), and a fresh `/brief` invocation for a different slug does not remove them.
+- **`brief.md` frontmatter slim**: the fields `split:` and `ticket_count:` are no longer emitted by `/brief` (they were coupled to Phase 5 and are now obsolete). A new scalar `interview_complete: {true|false}` is added to record whether the Phase 2 Socratic interview ran to at least one user response; `/create-ticket brief=<path>` consumes this flag to skip its own Socratic when set to `true`.
+- **Uniform `parent_slug` nesting for tickets**: `/create-ticket` always writes to `.backlog/product_backlog/{parent-slug}/{NNN}-{slug}/` — even for N=1 bare-description tickets. The legacy bare `.backlog/product_backlog/{NNN}-{slug}/` layout is no longer produced. Existing legacy tickets on disk are preserved and remain readable by the depth-agnostic glob used in hooks / `/catchup` (Plan 3). Readers detect both layouts during the transition.
+- **`ticket_dir:` top-level field removed from `phase-state.yaml`**: the file path itself encodes the ticket location, so the scalar is redundant. New writes omit it; legacy files that still carry it are ignored by readers (schema-slim, Plan 3).
+- **`/autopilot` is a pure consumer of `split-plan.md`** (Plan 4): `/autopilot <parent-slug>` no longer invokes `/create-ticket` to materialize tickets. It reads `.backlog/product_backlog/{parent-slug}/split-plan.md` (produced by `/create-ticket`) as the single source of truth for the ticket set and drives `/scout → /impl → /ship` per ticket. Legacy `split-plan.md` at `.backlog/briefs/active/{parent-slug}/split-plan.md` is explicitly NOT read. If `split-plan.md` is missing but a brief exists, autopilot prints an actionable error telling the user to run `/create-ticket brief=<path>` first. The `autopilot-policy.yaml` byte-identical copy into each ticket directory is now the responsibility of `/create-ticket brief=<path>` (propagation moved upstream, Plan 1).
+
+### Added
+- **findings mode for `/create-ticket`**: new entrypoint `/create-ticket findings=<path>` consumes a structured findings document, invokes the `decomposer` agent to partition `## Required Work Units` into N tickets with a DAG of `depends_on` links, then runs per-ticket `planner` + `ticket-evaluator` passes with atomic all-or-nothing commit semantics. A dedicated `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1` kill-switch exits non-zero before any filesystem mutation. The decomposer output schema + first-unblocked tiebreak rule are documented in `.docs/fix_structure/spec-split-plan-schema.md` and `.docs/fix_structure/spec-findings-fixture.md`. For N>1 runs, `/create-ticket` emits a dual-recommendation SW-CHECKPOINT (`next_recommended_auto: /autopilot <parent-slug>` + `next_recommended_manual: /scout <first-unblocked-ticket-dir>`); for N=1 it emits the classic single `next_recommended:` line.
+- **Capped Socratic interview for both `/brief` and `/create-ticket`**: both skills enforce **at most 3 questions per round**, **at most 10 rounds**, and therefore **at most 30 questions total** before the terminal artifact (`brief.md` for `/brief`, `ticket.md` for `/create-ticket`) appears. Non-interactive environments (`claude -p` / closed stdin) still skip the interview via the `AskUserQuestion` fallback; `/create-ticket brief=<path>` with `interview_complete: true` in the brief frontmatter skips the Socratic entirely even with closed stdin (a ticket file appears within 10 seconds).
+- **`/brief` dual-recommendation SW-CHECKPOINT**: on the success path, the final `## [SW-CHECKPOINT]` block carries both `next_recommended_auto: /autopilot <slug>` and `next_recommended_manual: /create-ticket brief=<path>`, letting the user choose to hand off to `/autopilot` or stage the decomposition manually via `/create-ticket`. On the failure path (any write failure or `auto=true` chained `/create-ticket` failure), both keys are emitted with empty-string values `""`.
+- **`/brief ... auto=true` chained handoff**: after writing `brief.md` and `autopilot-policy.yaml`, if `auto=true` was passed AND the interactive confirmation returned `yes`, `/brief` chains `/create-ticket brief=<path>` followed by `/autopilot <parent-slug>`. If `/create-ticket` fails, stdout contains the literals `ERROR:` and `create-ticket failed`, and `/autopilot` is NOT invoked. Interactive `no` and the non-interactive default `no` both save the brief + policy without chaining.
+
+### Changed
+- **`/create-ticket` entrypoint parsing**: arguments are parsed into exactly one of three mutually exclusive modes — `findings=<path>` / `brief=<path>` / bare description. Passing both `brief=` and `findings=` prints `ERROR: brief= and findings= are mutually exclusive. Pass exactly one.` and exits non-zero before any counter read or directory creation.
+- **Policy-copy propagation** (`autopilot-policy.yaml`): moved from `/autopilot` into `/create-ticket brief=<path>` using `cp -p` for byte-identical, timestamp-preserving copies into each newly-created ticket directory. Findings mode and bare-description mode do NOT emit `autopilot-policy.yaml` per ticket — the absence is an explicit signal to `/autopilot`'s downstream Policy guard that the ticket is "not autopilot-eligible" (see `spec-migration-policy.md`).
+- **Depth-agnostic reader glob** (Plan 3): hooks, `/catchup`, and `phase-state.yaml` consumers use a glob that matches both the legacy flat `.backlog/active/{NNN}-{slug}/` and the new nested `.backlog/active/{parent-slug}/{NNN}-{slug}/` layouts without duplicates. Legacy tickets remain in place.
+
+### Removed
+- **`/brief` Phase 5 (Split Analysis)**: removed in its entirety. The `estimated_size` L / XL branch that used to produce `split-plan.md` and set `split: true` / `ticket_count: N` in brief frontmatter is gone; the same responsibility now lives in `/create-ticket` (planner Split Judgment in bare / brief modes, decomposer in findings mode). Anything a caller used to grep for about `Phase 5` in `/brief`'s skill prose has been renamed (e.g., "Phase 5 → Split Analysis" is now "Finalization" and ends at the SW-CHECKPOINT emission).
+- **`split:` and `ticket_count:` frontmatter fields in `brief.md`**: no longer emitted by `/brief`; existing briefs with these fields are ignored by downstream consumers (schema-slim).
+- **`ticket_dir:` top-level field in `phase-state.yaml`**: no longer emitted by `/create-ticket`; the file's path already encodes the ticket location.
+
+### findings mode refactor — summary
+
+This release consolidates the "findings mode" refactor across four plans:
+- **Plan 1**: findings mode in `/create-ticket`, decomposer agent, uniform `parent_slug` nesting, policy-copy responsibility moved to `/create-ticket`.
+- **Plan 2**: `/brief` Phase 5 removal, capped Socratic interview (3 per round / 10 rounds / 30 total) in both `/brief` and `/create-ticket`, `interview_complete` frontmatter scalar, dual-recommendation SW-CHECKPOINT in `/brief`, `auto=true` chain.
+- **Plan 3**: depth-agnostic reader glob, `phase-state.yaml` schema slim (`ticket_dir:` dropped).
+- **Plan 4**: `/autopilot` consumer-only mode — reads `.backlog/product_backlog/{parent-slug}/split-plan.md`, never `/create-ticket`.
+
+The refactor surface area and migration policy (which legacy artefacts are preserved vs. no-op) are documented in `.docs/fix_structure/spec-migration-policy.md`.
+
 ## [3.8.0] - 2026-04-20
 
 ### Changed
@@ -400,6 +435,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[4.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v4.0.0
+[3.8.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.8.0
 [3.7.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.7.0
 [3.6.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.6.0
 [3.5.4]: https://github.com/aimsise/simple-workflow/releases/tag/v3.5.4

@@ -157,7 +157,7 @@ Locate the `## Required Work Units` section. Enumerate child headings matching r
 
 ### Step F-4: Brief-backed short-circuit (Socratic skip)
 
-If the findings file was supplied alongside (or was derived from) a brief with frontmatter `interview_complete: true`, skip Phase 2 Socratic Refinement. Otherwise run Socratic Refinement (see Phase 2 below) before invoking the decomposer.
+If the findings file was supplied alongside (or was derived from) a brief with frontmatter `interview_complete: true`, skip Phase 2 Socratic Refinement entirely (do NOT invoke `AskUserQuestion`). Otherwise run the capped Socratic Refinement (max 3 questions per round, max 10 rounds, max 30 questions total — see Phase 2 below) before invoking the decomposer.
 
 ### Step F-5: Invoke `decomposer` agent
 
@@ -219,9 +219,11 @@ If the brief path does not exist, print `ERROR: Brief file not found at <path>` 
 
 Read the brief's YAML frontmatter. Extract:
 - `slug` → `{brief_slug}` (used as `{parent-slug}` unless overridden)
-- `interview_complete` (if `true`, Phase 2 Socratic Refinement is skipped)
+- `interview_complete` (if `true`, Phase 2 Socratic Refinement is SKIPPED entirely — no `AskUserQuestion` call, no stdin read; if `false` or absent, run the capped Socratic interview per Phase 2 below).
 
 The `{parent-slug}` for brief mode defaults to `{brief_slug}`.
+
+**Stdin independence (`interview_complete: true`)**: when the brief frontmatter contains `interview_complete: true`, `/create-ticket` MUST be able to produce a ticket file under `.backlog/` within 10 seconds even if stdin is a closed file descriptor. This is verified by AC #7 of the findings-mode Plan 2. When `interview_complete: false` (or absent), the skill blocks on `AskUserQuestion` / stdin until at least one answer arrives (AC #8).
 
 ### Step B-3: Run Phase 1 + 2 + 3 + 4
 
@@ -271,21 +273,33 @@ In **findings mode**, Phase 1 is already satisfied by the findings document itse
 
 ### Phase 2: Socratic Refinement
 
-**Brief mode with `interview_complete: true`**: skip Phase 2 — the brief already contains structured-interview context. Proceed to Phase 3.
+**Brief mode with `interview_complete: true`**: SKIP Phase 2 entirely — the brief already contains structured-interview context. Proceed to Phase 3 immediately. When `brief=<path>` is provided and the brief's YAML frontmatter contains the literal line `interview_complete: true`, the skill MUST NOT invoke `AskUserQuestion` and MUST NOT block on stdin; a ticket file is expected to appear under `.backlog/` within 10 seconds even with closed stdin (AC #7 from the findings-mode plan).
 
-**Findings mode**: skip Phase 2 if the upstream brief (if any) had `interview_complete: true`. Otherwise run at most 3 questions in a single `AskUserQuestion` call.
+**Brief mode with `interview_complete: false` or absent**: run the capped Socratic interview below. Absence of the `interview_complete` key in the brief frontmatter is treated as `false` (safe default — run the interview when capability is available).
 
-Otherwise, refine scope through targeted questions:
+**Findings mode**: SKIP Phase 2 if the upstream brief (if any) had `interview_complete: true`. Otherwise run the capped Socratic interview below.
 
-1. Analyze the researcher's findings.
+**Bare description mode**: always run the capped Socratic interview below (unless non-interactive fallback fires).
+
+**Interview caps (load-bearing for contract)**:
+- At most **3 questions per round** (a single `AskUserQuestion` call carries at most 3 items).
+- At most **10 rounds** total across the interview.
+- Therefore at most **30 questions total** before a ticket file appears under `.backlog/`.
+
+These caps apply uniformly to bare-description Socratic, brief-mode-without-`interview_complete` Socratic, and findings-mode Socratic. Implementations MUST NOT exceed 3 items per `AskUserQuestion` call and MUST NOT issue more than 10 rounds.
+
+Refine scope through targeted questions:
+
+1. Analyze the researcher's findings (or the findings / brief document in the respective modes).
 2. Identify unclear points across:
    - **Scope boundaries**: Related functionality that may or may not be included
    - **Priority**: Which concern takes precedence when multiple exist
    - **Edge cases**: Boundary / error cases from investigation
    - **Constraints**: Performance, security, backward-compat requirements
-3. Use `AskUserQuestion` for up to 3 targeted questions (single call).
+3. Use `AskUserQuestion` for **up to 3** targeted questions per round (single call; at most 10 rounds → at most 30 questions total).
    - **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors (typical in `claude -p` / CI where stdin is not a TTY), skip Phase 2 and proceed to Phase 3 with researcher findings only. Note "Phase 2 skipped (non-interactive mode)" in the final summary. Do NOT hang.
 4. Save the answers for the Phase 3 planner prompt.
+5. **Convergence**: stop the interview once the user indicates sufficiency, scope is clear, or 10 rounds have been reached. The 10-round ceiling (combined with the 3-per-round cap) also enforces the 30-question total ceiling.
 
 If investigation yields sufficient clarity (e.g., simple S-size with obvious scope), skip questioning and proceed to Phase 3.
 

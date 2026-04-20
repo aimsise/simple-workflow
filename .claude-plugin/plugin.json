@@ -1,7 +1,7 @@
 {
   "name": "simple-workflow",
   "description": "Complete development lifecycle plugin with built-in ticket management, Generator-Evaluator quality pipeline, context conservation, unified phase-state.yaml ticket lifecycle, and [SW-CHECKPOINT] checkpoints for long-running sessions.",
-  "version": "3.8.0",
+  "version": "4.0.0",
   "author": {
     "name": "aimsise",
     "url": "https://github.com/aimsise"
