@@ -24,13 +24,23 @@ if [ "$CONTINUE_COUNT" -ge 5 ] 2>/dev/null; then
 fi
 
 # --- Find autopilot-state.yaml ---
+# Depth-agnostic scan: the legacy layout is
+# `.backlog/briefs/active/{slug}/autopilot-state.yaml` (one level under
+# briefs/active/), but nested layouts such as
+# `.backlog/briefs/active/{parent-slug}/{slug}/autopilot-state.yaml` are
+# also valid. Use `find` with no -maxdepth so all depths are discovered.
+# sort -u guarantees deterministic ordering and dedupes on any rare case
+# where the same file is reachable through two paths.
 STATE_FILE=""
-for f in .backlog/briefs/active/*/autopilot-state.yaml; do
-  if [ -f "$f" ]; then
-    STATE_FILE="$f"
-    break
-  fi
-done
+if [ -d .backlog/briefs/active ]; then
+  while IFS= read -r _f; do
+    if [ -f "$_f" ]; then
+      STATE_FILE="$_f"
+      break
+    fi
+  done < <(find .backlog/briefs/active -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+  unset _f
+fi
 
 if [ -z "$STATE_FILE" ]; then
   exit 0
@@ -80,6 +90,12 @@ TICKET_DIR=$(awk '
 TICKET_DIR="${TICKET_DIR:-unknown}"
 
 # --- Extract slug from state file path ---
+# The "slug" is the full relative path between `briefs/active/` and
+# `/autopilot-state.yaml`. For the legacy flat layout this is just the
+# single directory name (e.g. `my-slug`); for nested layouts it is the
+# composite path (e.g. `parent-slug/my-slug`). Surfacing the full path
+# in `reason` means the caller can see which nested brief directory the
+# pipeline is parked in without needing a second probe.
 SLUG=$(echo "$STATE_FILE" | sed 's|.*/briefs/active/||; s|/autopilot-state.yaml||')
 
 # --- Increment file-based counter ---
