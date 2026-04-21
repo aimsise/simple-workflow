@@ -79,6 +79,8 @@ Parse `$ARGUMENTS`:
 
 Conduct an iterative Q&A to gather comprehensive requirements.
 
+**`auto=true` independence guard (load-bearing)**: Phase 2 Structured Interview (Socratic) **MUST** run regardless of whether `auto=true` was passed in `$ARGUMENTS`. `auto=true` **MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2 — it has **no effect whatsoever** on Phase 2's execution. Any non-interactive wording elsewhere in this skill (for example, in the Finalization Phase Step 2 chain-confirmation context) is scoped to that specific step and **MUST NOT** be generalized to Phase 2. The **ONLY** condition under which Phase 2 is skipped is the existing **"Non-interactive environment fallback"** defined below (triggered strictly by `AskUserQuestion` itself being unavailable or returning an error, e.g. `claude -p` / CI automation without a TTY) — **not** by the presence of `auto=true`.
+
 **Caps (load-bearing for contract)**:
 - At most **3 questions per round** (single `AskUserQuestion` call holds up to 3 items).
 - At most **10 rounds** total.
@@ -223,29 +225,28 @@ Print:
 
 ### Step 2 — `auto=true` handoff
 
-Only runs when `auto=true` was parsed from arguments.
+Only runs when `auto=true` was parsed from arguments. Within **Step 2's chain-confirmation context**, the flow is strictly linear (display → status update → auto-kick write → `/create-ticket` → `/autopilot`): Step 2 **MUST NOT** call `AskUserQuestion`, nor otherwise prompt the user for a yes/no confirmation, to gate the chain between these sub-steps. The brief + policy display in (a) is the only user-facing surface in this branch and is a passive display — it does not gate the chain.
 
-a. Display the brief content and policy content to the user.
-b. Use `AskUserQuestion` to ask "This will chain /create-ticket brief=<path> then /autopilot {slug}. Proceed?" with options "yes" and "no".
-   - **Non-interactive fallback**: If `AskUserQuestion` is unavailable or errors, default to **"no"**. Print "Auto-kick skipped (non-interactive mode). Run /create-ticket brief=.backlog/briefs/active/{slug}/brief.md and then /autopilot {slug} manually to start the pipeline." and skip the chaining below.
-c. If confirmation is "yes": update `brief.md` `status:` from `draft` to `confirmed`, then:
-   0. **Before invoking `/create-ticket` via the Skill tool**, write the auto-kick state file at `.backlog/briefs/active/{slug}/auto-kick.yaml` with the following sample shape (use `date -u +%Y-%m-%dT%H:%M:%SZ` for `started`):
+**Scope disclaimer (Step 2-only)**: The non-interactive restriction described above is **scoped exclusively to Step 2's chain confirmation**. It **MUST NOT** be generalized to the rest of `/brief`. In particular, **Phase 2 Structured Interview (Socratic) is independent of this restriction and MUST run regardless of whether `auto=true` was passed** — `auto=true` has no effect on Phase 2's behavior. Phase 2 is the requirements-gathering interview and is governed solely by its own rules (see `## Phase 2` above).
 
-      ```yaml
-      version: 1
-      slug: {slug}
-      started: {ISO-8601 UTC from `date -u +%Y-%m-%dT%H:%M:%SZ`}
-      ```
+a. Display the brief content and policy content to the user. This display is passive — it informs the user of what will be chained but does not pause for acknowledgement.
+b. Update `brief.md` `status:` from `draft` to `confirmed`.
+c. **Before invoking `/create-ticket` via the Skill tool**, write the auto-kick state file at `.backlog/briefs/active/{slug}/auto-kick.yaml` with the following sample shape (use `date -u +%Y-%m-%dT%H:%M:%SZ` for `started`):
 
-      This file signals the Stop hook that the auto-chain is mid-flight between `/brief` → `/create-ticket` → `/autopilot`; it is deleted by `/autopilot` Phase 1 on startup. Only write this file on the "yes" branch — the "no" branch and the non-interactive AskUserQuestion fallback (Step 2c-d) MUST NOT write it.
-   1. **MUST invoke `/create-ticket` via the Skill tool** with argument `brief=.backlog/briefs/active/{slug}/brief.md`.
-   2. If `/create-ticket` exits non-zero (or its SW-CHECKPOINT block indicates a failure path), **stdout MUST contain the literal string `ERROR:` AND the literal string `create-ticket failed`**; `/autopilot` MUST NOT be invoked. **Before emitting the failure-path SW-CHECKPOINT, delete `.backlog/briefs/active/{slug}/auto-kick.yaml`** (idempotent — missing file is not an error). This prevents a stale auto-kick flag from looping the Stop hook indefinitely after a brief-side abort. Skip directly to Step 3 (SW-CHECKPOINT) with the failure recommendation shape.
-   3. Otherwise, proceed to the next invocation.
+   ```yaml
+   version: 1
+   slug: {slug}
+   started: {ISO-8601 UTC from `date -u +%Y-%m-%dT%H:%M:%SZ`}
+   ```
 
-      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `auto-kick.yaml` is present at `.backlog/briefs/active/{slug}/auto-kick.yaml`. Invoke `/autopilot {slug}` via the Skill tool now. Do NOT end your turn or summarize.
+   This file signals the Stop hook that the auto-chain is mid-flight between `/brief` → `/create-ticket` → `/autopilot`; it is deleted by `/autopilot` Phase 1 on startup.
+d. **MUST invoke `/create-ticket` via the Skill tool** with argument `brief=.backlog/briefs/active/{slug}/brief.md`.
+e. If `/create-ticket` exits non-zero (or its SW-CHECKPOINT block indicates a failure path), **stdout MUST contain the literal string `ERROR:` AND the literal string `create-ticket failed`**; `/autopilot` MUST NOT be invoked. **Before emitting the failure-path SW-CHECKPOINT, delete `.backlog/briefs/active/{slug}/auto-kick.yaml`** (idempotent — missing file is not an error). This prevents a stale auto-kick flag from looping the Stop hook indefinitely after a brief-side abort. Skip directly to Step 4 (SW-CHECKPOINT) with the failure recommendation shape.
+f. Otherwise (`/create-ticket` succeeded), proceed to the final invocation:
 
-      **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.backlog/product_backlog/{slug}/`).
-d. If confirmation is "no" (or the non-interactive default fired): keep `status:` as `draft`. Do NOT write `.backlog/briefs/active/{slug}/auto-kick.yaml` — it is only produced on the "yes" branch above. Print "Brief saved. To start the pipeline, run /create-ticket brief=.backlog/briefs/active/{slug}/brief.md and then /autopilot {slug}." No chaining.
+   > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `auto-kick.yaml` is present at `.backlog/briefs/active/{slug}/auto-kick.yaml`. Invoke `/autopilot {slug}` via the Skill tool now. Do NOT end your turn or summarize.
+
+   **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.backlog/product_backlog/{slug}/`).
 
 ### Step 3 — `auto=true` NOT specified
 
@@ -286,4 +287,3 @@ In both shapes both recommendation keys are present; only their values differ.
 - **AskUserQuestion failure in Phase 2**: Skip Phase 2, proceed with researcher findings only; set `interview_complete: false`.
 - **Write failure** (brief.md or autopilot-policy.yaml): Report the error and emit the failure-path SW-CHECKPOINT from Step 4 (empty-string recommendations, `artifacts: []`).
 - **`auto=true` path — `/create-ticket` chained invocation fails**: stdout MUST contain `ERROR:` AND `create-ticket failed`. Do NOT invoke `/autopilot`. Emit the failure-path SW-CHECKPOINT from Step 4.
-- **`auto=true` non-interactive (AskUserQuestion unavailable)**: default to "no"; the brief and policy are saved, no chaining occurs, and the success-path SW-CHECKPOINT is still emitted (brief + policy writes succeeded).

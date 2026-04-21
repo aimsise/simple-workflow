@@ -224,6 +224,8 @@ If `resume_mode`, use `ticket_mapping` from state; else seed empty and add each 
 
 #### Per-ticket pipeline
 
+> **MUST NOT directive — non-interactive orchestrator contract**: `/autopilot` is a fully non-interactive orchestrator. From the moment the per-ticket pipeline begins until every ticket in `PROCESSING_ORDER` has reached a terminal status (`completed`, `failed`, or `skipped`), the skill **MUST NOT** call `AskUserQuestion` under any circumstance. This prohibition applies **uniformly** to every boundary inside the pipeline — mid-step, between steps (after `/scout`, after `/impl`, after `/ship`), at the loop tail between tickets, and on resume from a prior `autopilot-state.yaml`. The skill **MUST NOT** ask the user to confirm continuation, choose the next ticket, approve the next step, or otherwise gate progress on an interactive prompt. The **only legitimate stop** inside the pipeline is a gate evaluation in each ticket's `autopilot-policy.yaml` whose `action` resolves to `stop` — that is the contracted stop path and it is decided by reading YAML, **not** by prompting the user. Interactive prompts (`AskUserQuestion` or equivalent) are explicitly out of contract and MUST NOT be used as a substitute for the policy-gate stop path. Stop hooks cannot intercept `AskUserQuestion`, so this SKILL-level prohibition is the sole enforcement mechanism.
+
 For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_ORDER`):
 
 1. **Resume skip check** (`resume_mode = true` only):
@@ -281,6 +283,10 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
    f. Record PR URL and status.
 
       > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read the `autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
+
+   g. **Loop-tail CHECKPOINT — iterate or exit**:
+
+      > **CHECKPOINT — LOOP TAIL (this ticket complete → iterate to next ticket in PROCESSING_ORDER)**: This ticket is complete (every step of this ticket's pipeline has reached a terminal status — `completed`, `failed`, or `skipped`). The next action is to **iterate to the next ticket in `PROCESSING_ORDER`** by re-entering the per-ticket pipeline at step 1 (Resume skip check) for index `i+1`. You **MUST NOT** call `AskUserQuestion` at this loop-tail boundary. You **MUST NOT** `end_turn` at this loop-tail boundary. You **MUST NOT** summarize progress, print a "Part N complete" status, or otherwise pause for acknowledgement at this loop-tail boundary. **Exit condition**: when every ticket in `PROCESSING_ORDER` has reached a terminal status (`completed` / `failed` / `skipped`) — i.e., there is no next index to iterate to — exit the per-ticket loop and proceed to the post-loop phase (Split Autopilot Log → Split Completion Report → Split Brief Lifecycle → Split State File Cleanup → final `## [SW-CHECKPOINT]` emission).
 
 4. **Error handling per ticket**: Any step failure → ticket `failed` (state already updated), log error. Continue to next ticket (do NOT stop the pipeline). Tickets with a failed dependency are skipped (step 2). Independent tickets still run.
 
