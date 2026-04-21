@@ -207,8 +207,7 @@ If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-t
 
 ### Step F-9: Dispatch to Common Write Path
 
-- If exactly **1** ticket was produced → route to the **N=1 Common Write Path** (no `split-plan.md` written). See Common Write Path below.
-- If **N>1** tickets were produced → route to the **N>1 Common Write Path** (`split-plan.md` is written at `.backlog/product_backlog/{parent-slug}/split-plan.md`). See Common Write Path below.
+- Route to the **Common Write Path** regardless of N. `split-plan.md` is written at `.backlog/product_backlog/{parent-slug}/split-plan.md` for every run (N ≥ 1), so `/autopilot` can consume the ticket set uniformly. See Common Write Path below.
 
 ---
 
@@ -416,7 +415,7 @@ Once all validations above have passed:
 2. For each ticket `i`, create `.backlog/product_backlog/{parent-slug}/{NNN}-{slug_i}/` (absent).
 3. For each ticket `i`, write `ticket.md` at `{ticket_dir_path_i}/ticket.md`. Replace `{NNN}` in the `## T-{NNN}:` placeholder with the actual number (e.g. `## T-005: Add User Auth`).
 4. For each ticket `i`, write `phase-state.yaml` at `{ticket_dir_path_i}/phase-state.yaml` per Step W-6 below.
-5. For **N>1 only**: write `split-plan.md` at `.backlog/product_backlog/{parent-slug}/split-plan.md` per Step W-7 below. **For N=1, NO `split-plan.md` is written** (AC #13).
+5. Write `split-plan.md` at `.backlog/product_backlog/{parent-slug}/split-plan.md` per Step W-7 below. This is unconditional (N ≥ 1): `/autopilot` consumes this file as its single source of truth and treats a 1-entry split-plan identically to an N-entry one.
 6. **Autopilot policy propagation** (Step W-8): if `brief=<path>` was passed AND `.backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk, copy it into each ticket directory.
 
 **Atomicity rule**: if ANY write fails during Step W-4, attempt best-effort cleanup of already-created dirs (`rm -rf`) before reporting the error. Counter increment in Step W-5 happens ONLY after every file in the above list has been successfully written.
@@ -495,9 +494,9 @@ For each ticket `i`:
 
 **Atomicity**: On write failure, report the error but do NOT delete already-created `ticket.md` files — retry is idempotent on the state file.
 
-### Step W-7: split-plan.md template (N>1 only)
+### Step W-7: split-plan.md template
 
-Write `.backlog/product_backlog/{parent-slug}/split-plan.md` following `.docs/fix_structure/spec-split-plan-schema.md`. Exact schema:
+Write `.backlog/product_backlog/{parent-slug}/split-plan.md` following `.docs/fix_structure/spec-split-plan-schema.md`. For N=1, emit exactly one `### 1.` entry under `## Tickets`, with `depends_on: []`. `ticket_count: 1` in the frontmatter. Exact schema:
 
 ```markdown
 ---
@@ -613,7 +612,7 @@ Common fields (all modes):
 
 - `phase: create_ticket`
 - `ticket: <first created ticket-dir or "none">` (for N>1 use the first in topological order).
-- `artifacts:` list repo-relative paths to every `ticket.md` written, plus `split-plan.md` when N>1. On failure paths use `artifacts: []` on a single line.
+- `artifacts:` list repo-relative paths to every `ticket.md` written, plus `split-plan.md`. On failure paths use `artifacts: []` on a single line.
 - `context_advice:` the literal sentence from the template (verbatim).
 
 **Recommendation line — choose exactly ONE shape per run**:

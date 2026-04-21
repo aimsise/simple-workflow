@@ -48,13 +48,13 @@ argument-hint: "<parent-slug>"
 ## Pre-computed Context
 
 Brief files:
-!`ls .backlog/briefs/active/*/brief.md 2>/dev/null`
+!`find .backlog/briefs/active -mindepth 2 -maxdepth 2 -name brief.md 2>/dev/null`
 
 Split plans under product_backlog (source of truth for /autopilot):
-!`ls .backlog/product_backlog/*/split-plan.md 2>/dev/null`
+!`find .backlog/product_backlog -mindepth 2 -maxdepth 2 -name split-plan.md 2>/dev/null`
 
 Active tickets:
-!`ls -d .backlog/active/*/ 2>/dev/null | head -10`
+!`find .backlog/active -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -10`
 
 Current branch:
 !`git branch --show-current`
