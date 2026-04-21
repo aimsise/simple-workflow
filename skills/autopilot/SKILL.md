@@ -93,6 +93,8 @@ Parse `$ARGUMENTS`: extract `{parent-slug}` (first arg); empty → "Usage: /auto
 
 The pre-flight gate decides whether `/autopilot` has a runnable input. The single source of truth for the ticket list is `.backlog/product_backlog/{parent-slug}/split-plan.md` (new path, Plan 4). Legacy path `.backlog/briefs/active/{parent-slug}/split-plan.md` is explicitly NOT read (Plan 4 Negative AC).
 
+0. **Auto-kick cleanup**: If `.backlog/briefs/active/{parent-slug}/auto-kick.yaml` exists, delete it. This signals to the Stop hook that the auto-chain has entered `/autopilot` and the pre-autopilot guard is no longer needed. Deletion is idempotent — missing file is not an error. Do NOT touch `brief.md`, `autopilot-policy.yaml`, or `autopilot-state.yaml` in this step — only `auto-kick.yaml` is removed.
+
 1. **Split-plan discovery (single source of truth)**:
    - Let `SPLIT_PLAN = .backlog/product_backlog/{parent-slug}/split-plan.md`.
    - Legacy path `.backlog/briefs/active/{parent-slug}/split-plan.md` MUST NOT be read. Even if such a file exists on disk, `/autopilot` does not fall back to it. This is enforced by the Plan 4 Negative AC: "A `split-plan.md` located at the legacy path is not read by `/autopilot` as the authoritative ticket source — the skill's execution transcript for `/autopilot <slug>` against such a fixture emits stdout containing `ERROR:` or `not found` referencing the new path."

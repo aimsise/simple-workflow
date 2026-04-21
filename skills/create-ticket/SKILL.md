@@ -9,6 +9,7 @@ disable-model-invocation: false
 allowed-tools:
   # Claude Code
   - Agent
+  - Skill
   - Read
   - Glob
   - Grep
@@ -23,6 +24,7 @@ allowed-tools:
   - "Bash(ls:*)"
   # Copilot CLI
   - task
+  - skill
   - view
   - glob
   - grep
@@ -51,6 +53,9 @@ Ticket template:
 
 split-plan.md schema (canonical reference for N>1 writes):
 !`cat "$CLAUDE_PLUGIN_ROOT/.docs/fix_structure/spec-split-plan-schema.md" 2>/dev/null || echo "[WARNING: spec-split-plan-schema.md not found]"`
+
+AC Quality Criteria (canonical contract — planner and ticket-evaluator are both bound by this file):
+!`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/ac-quality-criteria.md" 2>/dev/null || echo "[WARNING: ac-quality-criteria.md not found]"`
 
 ## phase-state.yaml write ownership
 
@@ -192,11 +197,11 @@ Validate: every `depends_on` element must be the `id` of another ticket in the s
 For each ticket skeleton returned by the decomposer, in topological order:
 
 1. **MUST invoke the `planner` via the Agent tool** with the skeleton (title, scope_summary, size, findings context). Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow).
-2. Follow the same AC Quality Criteria as bare/brief modes (Gates 1-4 below).
+2. Follow the same AC Quality Criteria as bare/brief modes — the canonical rubric at `skills/create-ticket/references/ac-quality-criteria.md` (see Phase 3 below).
 
 ### Step F-8: Per-ticket evaluation
 
-For each planner draft, **MUST invoke the `ticket-evaluator` via the Agent tool**. Apply the same retry/escalation policy as the bare/brief modes (max 2 rounds, gate check on `gates.ticket_quality_fail` for autopilot-policy when `brief=` is present). See Phase 4 below.
+For each planner draft, **MUST invoke the `ticket-evaluator` via the Agent tool**. **MUST inline-inject the canonical AC Quality Criteria content into the evaluator's spawn prompt**, delimited by the exact marker pair `<canonical_ac_criteria>` ... `</canonical_ac_criteria>`. The canonical content is the one already loaded into this skill's Pre-computed Context above (the `AC Quality Criteria` backtick-bang loader near the top of this file) — reuse that loaded text verbatim; do NOT have the evaluator open the file itself and do NOT compute an absolute path. If the Pre-computed Context loader produced the `[WARNING: ac-quality-criteria.md not found]` sentinel, stop with an ERROR rather than spawning the evaluator without the rubric. Apply the same retry/escalation policy as the bare/brief modes (max 2 rounds, gate check on `gates.ticket_quality_fail` for autopilot-policy when `brief=` is present). See Phase 4 below.
 
 If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with **no** directories created and **no** counter change. This is the atomicity guarantee of findings mode. (Edge case: partial ticket creation failure → no ticket dirs remain.)
 
@@ -317,26 +322,13 @@ Additional context for the planner:
 - Phase 2 answers (scope, priority, edge cases, constraints)
 - If brief was provided: full brief content (replaces Phase 2 answers)
 - If findings mode: decomposer-returned skeleton (title, scope_summary, size, depends_on) plus the findings file content, so the planner can lift affected files and observable outcomes verbatim.
-- "Each AC will be evaluated by an independent evaluator for Testability (objectively verifiable PASS/FAIL) and Unambiguity (single interpretation). ACs that fail either gate will be rejected."
+- "Each AC will be evaluated by an independent evaluator against the canonical AC Quality Criteria at `skills/create-ticket/references/ac-quality-criteria.md` (injected via Pre-computed Context above). The planner MUST follow that file as the sole source of truth for Gates 1-5, including the Gate 4 observation-point carve-out and the Gate 5 size-mismatch rationale rule. ACs that fail any gate will be rejected."
 
 #### AC Quality Criteria
 
-Every AC must pass both gates. Match the GOOD pattern; the evaluator rejects the BAD pattern.
+The full rubric (Gates 1-5, BAD/GOOD examples, size thresholds, HOW/observation-point carve-out, Evaluator MUST NOT list) lives in the canonical contract `skills/create-ticket/references/ac-quality-criteria.md`, which is injected into this skill via Pre-computed Context above. Both the planner and the ticket-evaluator are bound by that file. Do NOT restate the rubric here.
 
-- **Gate 1 — Testability**: each AC must be objectively verifiable with a clear PASS/FAIL outcome. Replace vague adjectives with concrete thresholds.
-  - BAD: "Improve performance" (no threshold)
-  - GOOD: "Response time under 200ms for 95th percentile"
-- **Gate 2 — Unambiguity**: each AC must have exactly one interpretation. Define any term open to multiple readings.
-  - BAD: "Support large files" ("large" undefined)
-  - GOOD: "Stream files over 100MB without loading into memory"
-- **Gate 3 — Completeness** (ticket-wide): cover scope gaps, edge cases / error handling, and named dependencies.
-  - BAD: "Support multiple file formats" (which? unsupported input? symlinks?)
-  - GOOD: "Accept `.md` and `.txt` (UTF-8); reject others with exit 1 and 'unsupported format'; do not follow symlinks; depends on `gray-matter`"
-- **Gate 4 — Implementability** (ticket-wide): Scope + Implementation Notes must name file paths and contracts. Describe WHAT and WHY, never HOW (no prescribed algorithms, internal data structures, or code snippets).
-  - BAD: "Add search functionality" (no file, no contract)
-  - GOOD: "Add `src/search.ts` exporting `searchNotes(query: string): Note[]`; wire `search <query>` in `src/cli.ts`; tests in `tests/search.test.ts`. Why: no CLI query entry point today."
-
-Pattern: vague → concrete (Gate 1); undefined → defined (Gate 2); missing edge case / dep → enumerated (Gate 3); missing path / contract → named file + signature (Gate 4).
+Planner behaviour: draft every AC to satisfy Gates 1-5 on first pass; when the file-count axis and AC-count axis of Gate 5 disagree, include a short rationale in the ticket so the evaluator can apply the single-axis tiebreak rule.
 
 #### Split Judgment (bare / brief modes only)
 
@@ -357,6 +349,8 @@ Instruct the planner to evaluate whether the ticket should be split:
 
 **MUST invoke the `ticket-evaluator` via the Agent tool.** **NEVER self-assess** — the ticket-evaluator is the independent gate verifying AC Testability/Unambiguity. Fail immediately if it cannot be invoked.
 
+**MUST inline-inject the canonical AC Quality Criteria into every `ticket-evaluator` spawn prompt** (both the initial evaluation and any retry re-spawn), delimited by the exact marker pair `<canonical_ac_criteria>` ... `</canonical_ac_criteria>`. The injected content is the canonical rubric text already loaded into this skill's Pre-computed Context above (via the `AC Quality Criteria` backtick-bang loader near the top of this file); reuse that loaded text verbatim. The evaluator does NOT read the canonical file itself — it reads only the marker block in its spawn prompt, so failure to inject is a contract violation that will cause the evaluator to fail-fast with ERROR. If the Pre-computed Context loader produced the `[WARNING: ac-quality-criteria.md not found]` sentinel, stop with an ERROR rather than spawning the evaluator without the rubric.
+
 **When split (N > 1, any mode)**: Run the evaluation process below **independently per sub-ticket**. If any sub-ticket FAILs after exhausting retry/escalation, the entire create-ticket stops (all sub-tickets affected; no directories created; counter untouched).
 
 **When not split (N = 1)**: Run the evaluation for the single ticket (existing behavior).
@@ -364,13 +358,13 @@ Instruct the planner to evaluate whether the ticket should be split:
 #### Per-ticket evaluation process
 
 1. Read the ticket content from Phase 3.
-2. Spawn the **ticket-evaluator** with the ticket content.
+2. Spawn the **ticket-evaluator** with the ticket content. **MUST** include the canonical AC Quality Criteria inline in the spawn prompt, delimited by the exact marker pair `<canonical_ac_criteria>` ... `</canonical_ac_criteria>`, using the rubric text already loaded in the Pre-computed Context above (do NOT have the evaluator resolve or open the canonical file).
 3. Decision:
    - **PASS** → proceed to Common Write Path.
    - **FAIL** →
      a. Save the evaluator's Feedback.
      b. Re-spawn the **planner** with: original ticket content; evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
-     c. Re-spawn the **ticket-evaluator** on the revised ticket.
+     c. Re-spawn the **ticket-evaluator** on the revised ticket. **MUST** again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair, sourced from the Pre-computed Context above. Missing the marker block causes the evaluator to fail-fast with ERROR.
      d. Max 2 rounds (initial + 1 revision). If still FAIL:
         - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.backlog/product_backlog/{parent-slug}/{ticket-dir}/`. If missing **and** `brief=<path>` was given, also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.backlog/briefs/active/{slug}/`).
           - If present, read `gates.ticket_quality_fail`: `retry_with_feedback` + retry count < `max_retries` → continue retrying (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=retry_with_feedback round={n}`); else stop (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=stop`).

@@ -184,7 +184,8 @@ risk_tolerance: {conservative|moderate|aggressive}
 gates:
   ticket_quality_fail:
     action: retry_with_feedback
-    max_retries: 2
+    max_retries: 3
+    allow_partial_split_commit: false  # opt-in: when true, successful sub-tickets in an N>1 split are committed even if one sub-ticket exhausts retries. Default false preserves the atomic all-or-nothing contract.
   evaluator_dry_run_fail:
     action: {proceed_without|stop}  # conservative=stop, moderate/aggressive=proceed_without
   ac_eval_fail:
@@ -228,10 +229,23 @@ a. Display the brief content and policy content to the user.
 b. Use `AskUserQuestion` to ask "This will chain /create-ticket brief=<path> then /autopilot {slug}. Proceed?" with options "yes" and "no".
    - **Non-interactive fallback**: If `AskUserQuestion` is unavailable or errors, default to **"no"**. Print "Auto-kick skipped (non-interactive mode). Run /create-ticket brief=.backlog/briefs/active/{slug}/brief.md and then /autopilot {slug} manually to start the pipeline." and skip the chaining below.
 c. If confirmation is "yes": update `brief.md` `status:` from `draft` to `confirmed`, then:
+   0. **Before invoking `/create-ticket` via the Skill tool**, write the auto-kick state file at `.backlog/briefs/active/{slug}/auto-kick.yaml` with the following sample shape (use `date -u +%Y-%m-%dT%H:%M:%SZ` for `started`):
+
+      ```yaml
+      version: 1
+      slug: {slug}
+      started: {ISO-8601 UTC from `date -u +%Y-%m-%dT%H:%M:%SZ`}
+      ```
+
+      This file signals the Stop hook that the auto-chain is mid-flight between `/brief` → `/create-ticket` → `/autopilot`; it is deleted by `/autopilot` Phase 1 on startup. Only write this file on the "yes" branch — the "no" branch and the non-interactive AskUserQuestion fallback (Step 2c-d) MUST NOT write it.
    1. **MUST invoke `/create-ticket` via the Skill tool** with argument `brief=.backlog/briefs/active/{slug}/brief.md`.
-   2. If `/create-ticket` exits non-zero (or its SW-CHECKPOINT block indicates a failure path), **stdout MUST contain the literal string `ERROR:` AND the literal string `create-ticket failed`**; `/autopilot` MUST NOT be invoked. Skip directly to Step 3 (SW-CHECKPOINT) with the failure recommendation shape.
-   3. Otherwise, **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.backlog/product_backlog/{slug}/`).
-d. If confirmation is "no" (or the non-interactive default fired): keep `status:` as `draft`. Print "Brief saved. To start the pipeline, run /create-ticket brief=.backlog/briefs/active/{slug}/brief.md and then /autopilot {slug}." No chaining.
+   2. If `/create-ticket` exits non-zero (or its SW-CHECKPOINT block indicates a failure path), **stdout MUST contain the literal string `ERROR:` AND the literal string `create-ticket failed`**; `/autopilot` MUST NOT be invoked. **Before emitting the failure-path SW-CHECKPOINT, delete `.backlog/briefs/active/{slug}/auto-kick.yaml`** (idempotent — missing file is not an error). This prevents a stale auto-kick flag from looping the Stop hook indefinitely after a brief-side abort. Skip directly to Step 3 (SW-CHECKPOINT) with the failure recommendation shape.
+   3. Otherwise, proceed to the next invocation.
+
+      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `auto-kick.yaml` is present at `.backlog/briefs/active/{slug}/auto-kick.yaml`. Invoke `/autopilot {slug}` via the Skill tool now. Do NOT end your turn or summarize.
+
+      **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.backlog/product_backlog/{slug}/`).
+d. If confirmation is "no" (or the non-interactive default fired): keep `status:` as `draft`. Do NOT write `.backlog/briefs/active/{slug}/auto-kick.yaml` — it is only produced on the "yes" branch above. Print "Brief saved. To start the pipeline, run /create-ticket brief=.backlog/briefs/active/{slug}/brief.md and then /autopilot {slug}." No chaining.
 
 ### Step 3 — `auto=true` NOT specified
 
