@@ -324,38 +324,67 @@ Each ticket gets its own subsection in ## Pipeline Execution:
 - scout: {status}
 - impl: {status} ({rounds} rounds)
 - ship: {status} → PR: {url}
-- Manual Bash Fallbacks: {list of steps with manual-bash invocation_method, or "none"}
+- Manual Bash Fallbacks: {rendered from manual_bash_fallbacks[] — see below}
 ```
 
-Include `## Warnings` when any ticket has `invocation_method = manual-bash`: list ticket IDs and fallback steps. Omit if none.
+**Single source of truth for Manual Bash Fallbacks**: the authoritative log is the structured `manual_bash_fallbacks[]` list recorded in this ticket's `autopilot-state.yaml` (schema defined in the Manual Bash Fallback Discipline section below). Every entry in the structured list MUST be rendered verbatim in the per-ticket subsection as `{timestamp} | {command} | {reason} (exit={exit_code}, destructive={destructive})`. When the list is empty or absent, print `none`. The per-step `invocation_method == manual-bash` flag (used elsewhere in this document) is a derived indicator — it MUST be set if and only if a matching `manual_bash_fallbacks[]` entry exists for that step, never independently.
+
+Include `## Warnings` when any ticket's `manual_bash_fallbacks[]` is non-empty (equivalently: any step with `invocation_method == manual-bash`, which is derived from the list): list ticket IDs and replay each fallback entry with its `reason` and `destructive` flag. Omit if every ticket's `manual_bash_fallbacks[]` is empty.
 
 ### Split Completion Report
 
-Print: overall status (completed / partial / failed); per-ticket table (status + PR URL); counts `{completed}/{failed}/{skipped} of {total}`. On partial / failed: "To resume, re-run `/autopilot {parent-slug}`. The pipeline will automatically continue from the last checkpoint. To start fresh, delete the `autopilot-state.yaml` first."
+Print: overall status (completed / partial / failed); per-ticket table (status + PR URL); counts `{completed}/{failed}/{skipped} of {total}`. On partial / failed: "To resume, re-run `/autopilot {parent-slug}`. The pipeline will automatically continue from the last checkpoint. To start fresh, remove the `autopilot-state.yaml` (or rename it aside) before re-running."
 
 ### Split Brief Lifecycle
 
 - All tickets completed AND brief exists → brief `completed`, move to `briefs/done/`.
 - Any ticket failed / skipped AND brief exists → brief `stopped`, stays in `briefs/active/`.
 - No brief (split-plan-only run) → skip brief lifecycle; the `split-plan.md` and per-ticket `autopilot-log.md` artefacts are the permanent record.
-- `final_status`: all completed (no manual-bash) → `completed`; all completed but some manual-bash → `completed-with-warnings`; mixed completed + failed/skipped → `partial`; first ticket failed → `failed`.
+- `final_status`: all completed AND every ticket's `manual_bash_fallbacks[]` empty → `completed`; all completed but at least one ticket has a non-empty `manual_bash_fallbacks[]` → `completed-with-warnings`; mixed completed + failed/skipped → `partial`; first ticket failed → `failed`.
 
 ### Split State File Cleanup
 
-After Split Brief Lifecycle, delete the `autopilot-state.yaml` at whichever location it was written (`.backlog/briefs/active/{parent-slug}/` or `.backlog/briefs/done/{parent-slug}/` if moved, or `.backlog/product_backlog/{parent-slug}/` for split-plan-only runs). Logs are the permanent record. (This is the "State file cleanup" step — absence of this text is a contract violation.)
+After Split Brief Lifecycle, **move** the `autopilot-state.yaml` from its active location (`.backlog/briefs/active/{parent-slug}/` or `.backlog/product_backlog/{parent-slug}/`) to `.backlog/briefs/done/{parent-slug}/autopilot-state.yaml` (creating the dir if missing). NEVER delete — post-mortem and Manual Bash Fallback history must be preserved. Logs and state together form the permanent record of the run. (This is the "State file cleanup" step — absence of this text is a contract violation.)
 
 ### Autopilot Log Sections (common to overall + per-ticket)
 
 Every `autopilot-log.md` (overall or per-ticket) includes the following sections derived from Phase 1 step 5 (Human override detection) and runtime `[AUTOPILOT-POLICY]` lines:
 
 - `## Pipeline Execution` — per-step status per ticket.
-- `## Warnings` (only on `completed-with-warnings`): list each manual-bash fallback step + method.
+- `## Warnings` (only on `completed-with-warnings`): replay every ticket's `manual_bash_fallbacks[]` entries verbatim (`timestamp | command | reason | exit_code | destructive`). Each entry MUST appear; silent drops are a contract violation. The structured list is the single source of truth — do NOT derive the Warnings section from `invocation_method` flags alone.
 - `## Human Overrides`: step-5 `human_override` rows `| {gate} | {expected_action} | {actual_action} | human_override |`. **Exclude `kb_override` rows** from this section — they go to `## KB Overrides` instead. None → "No human overrides detected."
 - `## KB Overrides`: step-5 `kb_override` rows `| {gate} | {expected_action} | {actual_action} | kb_override |` (gates where the value differs from the risk_tolerance default AND a `# kb-suggested` comment is attached in the policy file). None → "No KB overrides detected."
 - `## Decisions Made` table: parse `[AUTOPILOT-POLICY]` lines; "No policy decisions were triggered" if none. Include step-5 overrides — **distinguish `human_override` and `kb_override` type** via the final column so a reviewer can tell which differences came from the user and which came from the KB suggestion layer.
 - `## Stop Reason` (only on stopped/failed).
 
-**`completed-with-warnings`**: all tickets completed AND some `invocation_method == manual-bash`. Log fallbacks in `## Warnings`.
+**`completed-with-warnings`**: all tickets completed AND at least one ticket has a non-empty `manual_bash_fallbacks[]` in its state (equivalently: at least one step with `invocation_method == manual-bash`, which is derived from the structured list). Log fallbacks in `## Warnings` by replaying every `manual_bash_fallbacks[]` entry — the structured list is authoritative, the per-step flag is derived.
+
+### Manual Bash Fallback Discipline
+
+A Manual Bash Fallback is an orchestrator-level `Bash` call used to recover from an anomaly that a subagent could not handle. It is a last resort.
+
+**MUST NOT treat as Manual Bash Fallback**:
+- Generator / Evaluator / any subagent response truncation (timeout / token limit). These MUST trigger the configured retry gate (`ac_eval_fail`, `evaluator_dry_run_fail`, etc.) and re-spawn the subagent, NOT be covered by an orchestrator-run shadow execution.
+- Cases where a subagent was the intended executor but failed. Re-spawn the subagent with the failure context in its prompt.
+
+**MUST NOT use destructive operations as error shortcuts**:
+- Prohibited without explicit justification: `rm -rf`, `rm -f .git/index`, `git reset --hard`, `git clean -f`, `git checkout .`, `git branch -D` of an active branch.
+- If a tool's error output names a non-destructive flag (e.g. `use -f to force removal`, `use --allow-empty-message`), apply that flag first. Do not jump to destructive alternatives.
+- Before any destructive call, write the reasoning into `autopilot-state.yaml` `manual_bash_fallbacks[]` and prefer an interactive confirmation when the autopilot is in a resumable state.
+
+**MUST log every Manual Bash Fallback immediately**:
+Append to `autopilot-state.yaml` at the active parent dir:
+
+```yaml
+manual_bash_fallbacks:
+  - timestamp: "<ISO-8601 UTC>"
+    command: "<command verbatim>"
+    reason: "<why this fell outside the subagent contract>"
+    exit_code: <int>
+    destructive: <true|false>
+```
+
+On finalization (when writing `autopilot-log.md`), the `Manual Bash Fallbacks` section MUST replay this list verbatim. "No manual bash fallbacks" is valid ONLY when `manual_bash_fallbacks` is empty or absent. When the state file recorded fallbacks, the log MUST NOT emit an empty `Manual Bash Fallbacks: none` line — silent drops are a contract violation.
 
 ## Error Handling
 
