@@ -10,10 +10,21 @@ if [ -d ".docs/session-log" ]; then
   find .docs/session-log -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
 
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  # --- Ensure at least one commit exists (empty repository detection) ---
-  # Idempotent: if HEAD already resolves to a commit, this block is skipped.
-  if ! git rev-parse HEAD >/dev/null 2>&1; then
+# --- v4.1.0 gitignore setup block ---
+# Runs once per repo: installs a minimal git environment (init if missing,
+# initial commit if empty, appends simple-workflow .gitignore entries, commits
+# the gitignore if HEAD exists), then writes a setup flag to prevent any
+# future modification of .gitignore by this hook. Respecting the user's
+# decision to delete entries later is the reason for the flag.
+if [ ! -f .simple-wf-knowledge/.gitignore-setup-done ]; then
+
+  # 1. Ensure a git repo exists
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    git init -b main >/dev/null 2>&1 || git init >/dev/null 2>&1 || true
+  fi
+
+  # 2. Empty-repo initial commit (idempotent: skipped when HEAD resolves).
+  if git rev-parse --git-dir >/dev/null 2>&1 && ! git rev-parse HEAD >/dev/null 2>&1; then
     if [ -f .gitignore ]; then
       git add .gitignore >/dev/null 2>&1 || true
       git commit -q -m "Initial commit: project baseline" >/dev/null 2>&1 || true
@@ -22,28 +33,80 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     fi
   fi
 
-  # --- Ensure .gitignore contains simple-workflow entries ---
-  _sw_gitignore_entries=(.docs/ .backlog/ .simple-wf-knowledge/)
-  _sw_needs_header=false
-  _sw_missing_entries=()
-  for _sw_entry in "${_sw_gitignore_entries[@]}"; do
-    if ! grep -qxF "$_sw_entry" .gitignore 2>/dev/null; then
-      _sw_missing_entries+=("$_sw_entry")
-      _sw_needs_header=true
-    fi
-  done
-  if [[ "$_sw_needs_header" == "true" ]]; then
-    # Add a blank line separator if .gitignore exists and is non-empty
-    if [[ -s .gitignore ]]; then
-      printf '\n' >> .gitignore
-    fi
-    printf '# simple-workflow plugin\n' >> .gitignore
-    for _sw_entry in "${_sw_missing_entries[@]}"; do
-      printf '%s\n' "$_sw_entry" >> .gitignore
+  # 3. Ensure .gitignore contains the required entries AND is fully committed.
+  #    - Append missing entries (idempotent: never re-appends an entry that
+  #      already matches by exact line).
+  #    - Commit .gitignore when it is not in a clean state vs HEAD — whether
+  #      the non-clean state was produced by this run's append OR by a prior
+  #      run whose commit failed (e.g. missing git identity, rejected
+  #      pre-commit hook). The retry-commit path is what lets a prior failure
+  #      self-heal once the user resolves the underlying issue.
+  #    - Never uses `-f` with `git add`.
+  _sw_gitignore_modified=0
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    _sw_gitignore_entries=(.docs/ .backlog/ .simple-wf-knowledge/)
+    _sw_missing_entries=()
+    for _sw_entry in "${_sw_gitignore_entries[@]}"; do
+      if ! grep -qxF "$_sw_entry" .gitignore 2>/dev/null; then
+        _sw_missing_entries+=("$_sw_entry")
+      fi
     done
+    if [ ${#_sw_missing_entries[@]} -gt 0 ]; then
+      [ -s .gitignore ] && printf '\n' >> .gitignore
+      printf '# simple-workflow plugin artifacts (local-only; delete entries to share via git)\n' >> .gitignore
+      for _sw_entry in "${_sw_missing_entries[@]}"; do
+        printf '%s\n' "$_sw_entry" >> .gitignore
+      done
+      _sw_gitignore_modified=1
+    fi
+    # Commit .gitignore when we have a HEAD and the file is in a non-clean
+    # state: either because we just appended, or because a prior run left
+    # staged/unstaged/untracked changes behind. `git status --porcelain`
+    # detects all three states (`git diff --quiet HEAD` misses untracked).
+    if git rev-parse HEAD >/dev/null 2>&1; then
+      if [ "$_sw_gitignore_modified" = "1" ] || \
+         [ -n "$(git status --porcelain -- .gitignore 2>/dev/null)" ]; then
+        git add .gitignore >/dev/null 2>&1 && \
+          git commit -q -m "chore: add simple-workflow artifacts to .gitignore" >/dev/null 2>&1 || true
+      fi
+    fi
+    unset _sw_gitignore_entries _sw_missing_entries _sw_entry
   fi
-  unset _sw_gitignore_entries _sw_needs_header _sw_missing_entries _sw_entry
 
+  # 4. Write the setup flag only when the setup actually finalized.
+  #    "Finalized" means: git repo exists AND .gitignore working-tree state
+  #    equals HEAD (no uncommitted modifications). If .gitignore was mutated
+  #    but the commit failed (e.g. missing `git config user.email`), the flag
+  #    is NOT written — the warning is surfaced to stderr and the next session
+  #    retries. Writing the flag in that state would permanently lock the
+  #    repo into a staged-but-uncommitted .gitignore (silent inconsistency).
+  _sw_setup_ok=1
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    _sw_setup_ok=0
+  elif git rev-parse HEAD >/dev/null 2>&1; then
+    # Clean state = `git status --porcelain -- .gitignore` produces no output
+    # (no staged, unstaged, OR untracked changes). Covers the case where a
+    # prior commit failed and left .gitignore staged-but-uncommitted.
+    if [ -n "$(git status --porcelain -- .gitignore 2>/dev/null)" ]; then
+      _sw_setup_ok=0
+    fi
+  else
+    # No HEAD yet — only safe if we did not modify .gitignore this run.
+    if [ "$_sw_gitignore_modified" = "1" ]; then
+      _sw_setup_ok=0
+    fi
+  fi
+
+  if [ "$_sw_setup_ok" = "1" ]; then
+    mkdir -p .simple-wf-knowledge 2>/dev/null || true
+    touch .simple-wf-knowledge/.gitignore-setup-done 2>/dev/null || true
+  else
+    printf '[simple-wf-setup] WARNING: .gitignore was modified but the setup commit did not finalize. Configure `git config user.email` / `user.name` (or resolve a pre-commit hook failure) and re-open the session to retry. The setup flag will NOT be written until the commit succeeds.\n' >&2
+  fi
+  unset _sw_setup_ok _sw_gitignore_modified
+fi
+
+if git rev-parse --git-dir >/dev/null 2>&1; then
   BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
   CHANGED=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
   CONTEXT="Branch: ${BRANCH} | Changed files: ${CHANGED}"

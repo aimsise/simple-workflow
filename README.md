@@ -172,6 +172,33 @@ Once installed, all slash commands work the same on both platforms:
 
 > **Note**: Session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire on Copilot CLI. Context recovery via `/catchup` after compaction works best on Claude Code.
 
+## Setup
+
+On first invocation of `/brief`, `/autopilot`, or any other git-dependent skill, simple-workflow's `SessionStart` hook:
+
+1. Runs `git init -b main` if the project has no git repo
+2. Makes an initial commit if the repo has no HEAD
+3. Appends the following to `.gitignore` if any are missing:
+
+       .docs/
+       .backlog/
+       .simple-wf-knowledge/
+
+4. Commits the `.gitignore` update (`chore: add simple-workflow artifacts to .gitignore`)
+5. Writes `.simple-wf-knowledge/.gitignore-setup-done` as an idempotency marker
+
+**Respecting user intent**: Once the marker file exists, simple-workflow will NEVER touch your `.gitignore` again, even across sessions. If you delete an entry manually, that decision is permanent — simple-workflow will not re-add it.
+
+## Ticket counter is per-developer
+
+`.backlog/.ticket-counter` lives under the gitignored `.backlog/` tree, so each developer working on the same repo starts independently at T-001. This is deliberate for individual productivity workflows.
+
+If you want to share ticket numbering across a team, opt out by adding exactly one line to your `.gitignore`:
+
+    !.backlog/.ticket-counter
+
+After that, the counter file is tracked in git. Concurrent ticket creation by multiple developers will require manual conflict resolution on the counter — this is expected trade-off of team-shared numbering.
+
 ## Core Workflow
 
 A typical development flow follows these five steps:
