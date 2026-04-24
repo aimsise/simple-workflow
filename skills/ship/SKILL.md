@@ -129,13 +129,15 @@ Commits ahead of default branch:
 
 ## Phase 1: Commit
 
+**Destructive shortcut prohibition**: If a git command fails with an error message suggesting a non-destructive remediation (e.g. `use -f to force removal`, `use --allow-empty-message`), apply that suggestion first. NEVER use `rm -f .git/index`, `git reset --hard`, `git clean -f` as an error-recovery shortcut.
+
 1. **Pre-flight check**: `git status --short`. If nothing staged/unstaged/untracked, print "No changes to ship." and stop.
 
 2. **Sensitive file warning**: Inspect the working tree for `.env*`, `*credentials*`, `*secret*`, `*.key`, `*.pem`. If any are present (staged/unstaged/untracked), warn the user explicitly before proceeding; the user decides whether to abort or continue.
 
 3. **Create commit**:
    a. `git diff --stat` and `git diff --cached --stat`.
-   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new files relevant to the ticket **except** files under `.backlog/briefs/` (e.g. `autopilot-state.yaml`, `brief.md`, `split-plan.md`) — pipeline management files, never ticket artifacts. Defense-in-depth: `.gitignore` normally excludes them, but if misconfigured they must still never be staged. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files with the same `.backlog/briefs/` exclusion.
+   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new user-code files. `.backlog/`, `.docs/`, `.simple-wf-knowledge/` are expected to be gitignored via the `hooks/session-start.sh` setup; do NOT attempt to force-add them with `-f`. If they appear in `git status`, the setup hook failed — warn the user rather than paper over. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files (gitignore handles exclusion).
    c. `git add` selected files.
    d. Conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"; `git log --oneline -5` for style.
    e. Commit via HEREDOC.
@@ -160,6 +162,8 @@ Commits ahead of default branch:
       3. For each file in `.backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` to `.backlog/done/{ticket-dir}/`. Do NOT re-write `phase-state.yaml` — already written in sub-step 2.
       4. `rmdir .backlog/active/{ticket-dir}`. If non-empty, list remaining files and stop (recoverable; needs manual attention).
    c. No post-move rewrite needed — 5.b.2 serialized phase-state.yaml to its destination before any other move.
+
+   **Post-move commit policy**: After the `mv` in step 5.b.3, `git status --short` should be clean (the moved files are gitignored). If status is still dirty, investigate — do NOT create a `chore: move ticket artifacts` follow-up commit. The ticket lifecycle produces exactly ONE commit per ticket (step 3's `feat:` / `fix:` commit).
 
 6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the ticket-dir name as argument. Extracts reusable patterns from the ticket's evaluation logs into the project KB. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml`. If `/tune` execution fails, log but do **not** stop the ship workflow — commit made, ticket moved. Fail only if the Skill tool itself is unreachable (contract bypass).
 
