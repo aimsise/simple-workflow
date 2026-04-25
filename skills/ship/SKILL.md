@@ -56,22 +56,22 @@ User arguments: $ARGUMENTS
 
 ## Mandatory Skill Invocations
 
-`/ship` MUST delegate to `/tune` via the Skill tool once a ticket has been moved to `.backlog/done/`. The rest of `/ship` (commit, push, PR creation) is direct `git`/`gh` work, not a sub-skill contract. Any `/tune` bypass is a contract violation detected by the skill invocation audit (Phase A+).
+`/ship` MUST delegate to `/tune` via the Skill tool once a ticket has been moved to `.simple-workflow/backlog/done/`. The rest of `/ship` (commit, push, PR creation) is direct `git`/`gh` work, not a sub-skill contract. Any `/tune` bypass is a contract violation detected by the skill invocation audit (Phase A+).
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `/tune` (Skill) | Phase 1 step 6 — only after a ticket was moved to `.backlog/done/` in step 5 | No knowledge-base pattern extraction from the ticket's `eval-round-*.md` / `quality-round-*.md`. Next `/impl` Generator runs without updated `.simple-wf-knowledge/index.yaml` — learning degrades. Detected by missing `/tune` trace after a ticket-move in the skill invocation audit |
+| `/tune` (Skill) | Phase 1 step 6 — only after a ticket was moved to `.simple-workflow/backlog/done/` in step 5 | No knowledge-base pattern extraction from the ticket's `eval-round-*.md` / `quality-round-*.md`. Next `/impl` Generator runs without updated `.simple-workflow/kb/index.yaml` — learning degrades. Detected by missing `/tune` trace after a ticket-move in the skill invocation audit |
 
 **Binding rules**:
 - `MUST invoke /tune via the Skill tool` whenever a ticket was moved in step 5. Pass the ticket-dir name as argument.
-- `NEVER bypass /tune` via direct manipulation of `.simple-wf-knowledge/candidates.yaml` or `entries.yaml` from within `/ship`.
+- `NEVER bypass /tune` via direct manipulation of `.simple-workflow/kb/candidates.yaml` or `entries.yaml` from within `/ship`.
 - If `/tune` itself fails, **do NOT stop the ship workflow** (commit made, ticket moved) — but the invocation MUST have been attempted. `Fail the /tune invocation attempt only if the Skill tool is unreachable; log and continue.`
 
 ## phase-state.yaml write ownership
 
 Writes ONLY `phases.ship` plus top-level `current_phase` / `last_completed_phase` / `overall_status`. Never modify `phases.create_ticket` / `phases.scout` / `phases.impl`.
 
-`phase-state.yaml` lives inside the ticket directory. When `/ship` moves `.backlog/active/{ticket-dir}` → `.backlog/done/{ticket-dir}` via `mv`, the state file moves with it. NEVER delete `phase-state.yaml` — it is the permanent historical record that stays in `.backlog/done/{ticket-dir}/` forever.
+`phase-state.yaml` lives inside the ticket directory. When `/ship` moves `.simple-workflow/backlog/active/{ticket-dir}` → `.simple-workflow/backlog/done/{ticket-dir}` via `mv`, the state file moves with it. NEVER delete `phase-state.yaml` — it is the permanent historical record that stays in `.simple-workflow/backlog/done/{ticket-dir}/` forever.
 
 Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
@@ -137,7 +137,7 @@ Commits ahead of default branch:
 
 3. **Create commit**:
    a. `git diff --stat` and `git diff --cached --stat`.
-   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new user-code files. `.backlog/`, `.docs/`, `.simple-wf-knowledge/` are expected to be gitignored via the `hooks/session-start.sh` setup; do NOT attempt to force-add them with `-f`. If they appear in `git status`, the setup hook failed — warn the user rather than paper over. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files (gitignore handles exclusion).
+   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new user-code files. `.simple-workflow/` is expected to be gitignored via the `hooks/session-start.sh` setup; do NOT attempt to force-add it with `-f`. If it appears in `git status`, the setup hook failed — warn the user rather than paper over. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files (gitignore handles exclusion).
    c. `git add` selected files.
    d. Conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"; `git log --oneline -5` for style.
    e. Commit via HEREDOC.
@@ -145,27 +145,27 @@ Commits ahead of default branch:
 
 4. **Post-commit verification**: `git status`. If tree still dirty or `git log -1 --format=%H` unchanged, report and stop.
 
-5. **Ticket completion** (moves the ticket to `.backlog/done/`): If `.backlog/active/` exists, list it. Determine `ticket-dir`:
-   - **Explicit `ticket-dir=`**: If provided, check `.backlog/active/{dir-name}`. Exists → use it (skip branch matching). Else print WARNING "ticket-dir '{dir-name}' not found in .backlog/active/ — falling back to branch name matching." and fall through.
-   - **Fallback — branch matching**: For each dir in `.backlog/active/`, strip the leading `NNN-` (e.g. `001-add-search-feature` → `add-search-feature`). If branch contains this slug, set `ticket-dir` to the full dir name.
+5. **Ticket completion** (moves the ticket to `.simple-workflow/backlog/done/`): If `.simple-workflow/backlog/active/` exists, list it. Determine `ticket-dir`:
+   - **Explicit `ticket-dir=`**: If provided, check `.simple-workflow/backlog/active/{dir-name}`. Exists → use it (skip branch matching). Else print WARNING "ticket-dir '{dir-name}' not found in .simple-workflow/backlog/active/ — falling back to branch name matching." and fall through.
+   - **Fallback — branch matching**: For each dir in `.simple-workflow/backlog/active/`, strip the leading `NNN-` (e.g. `001-add-search-feature` → `add-search-feature`). If branch contains this slug, set `ticket-dir` to the full dir name.
    - No match → skip silently.
 
    Once determined:
 
-   a. **Begin ship phase (only if `.backlog/active/{ticket-dir}/phase-state.yaml` exists)**: read-modify-write ONLY these fields:
+   a. **Begin ship phase (only if `.simple-workflow/backlog/active/{ticket-dir}/phase-state.yaml` exists)**: read-modify-write ONLY these fields:
       - `phases.ship.status: in-progress`
       - `phases.ship.started_at: {now}` (ISO-8601 UTC via `date -u +%Y-%m-%dT%H:%M:%SZ`)
       - `current_phase: ship`
    b. **Write destination-anchored phase-state.yaml FIRST, then move remaining contents** — ordering closes the race where an interruption after `mv` strands state mid-move (Reviewer B Finding 7). The schema has no top-level `ticket_dir:`, so ordering is the entire mitigation.
-      1. `mkdir -p .backlog/done/{ticket-dir}`.
-      2. Write the updated phase-state.yaml (with the 5a `in-progress` update) directly to `.backlog/done/{ticket-dir}/phase-state.yaml`. **After this sub-step the destination state file is self-consistent even if interrupted.**
-      3. For each file in `.backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` to `.backlog/done/{ticket-dir}/`. Do NOT re-write `phase-state.yaml` — already written in sub-step 2.
-      4. `rmdir .backlog/active/{ticket-dir}`. If non-empty, list remaining files and stop (recoverable; needs manual attention).
+      1. `mkdir -p .simple-workflow/backlog/done/{ticket-dir}`.
+      2. Write the updated phase-state.yaml (with the 5a `in-progress` update) directly to `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml`. **After this sub-step the destination state file is self-consistent even if interrupted.**
+      3. For each file in `.simple-workflow/backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` to `.simple-workflow/backlog/done/{ticket-dir}/`. Do NOT re-write `phase-state.yaml` — already written in sub-step 2.
+      4. `rmdir .simple-workflow/backlog/active/{ticket-dir}`. If non-empty, list remaining files and stop (recoverable; needs manual attention).
    c. No post-move rewrite needed — 5.b.2 serialized phase-state.yaml to its destination before any other move.
 
    **Post-move commit policy**: After the `mv` in step 5.b.3, `git status --short` should be clean (the moved files are gitignored). If status is still dirty, investigate — do NOT create a `chore: move ticket artifacts` follow-up commit. The ticket lifecycle produces exactly ONE commit per ticket (step 3's `feat:` / `fix:` commit).
 
-6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the ticket-dir name as argument. Extracts reusable patterns from the ticket's evaluation logs into the project KB. **NEVER bypass /tune** via direct writes to `.simple-wf-knowledge/*.yaml`. If `/tune` execution fails, log but do **not** stop the ship workflow — commit made, ticket moved. Fail only if the Skill tool itself is unreachable (contract bypass).
+6. **Knowledge base tuning** (only after a ticket was moved in step 5): **MUST invoke `/tune` via the Skill tool**, passing the ticket-dir name as argument. Extracts reusable patterns from the ticket's evaluation logs into the project KB. **NEVER bypass /tune** via direct writes to `.simple-workflow/kb/*.yaml`. If `/tune` execution fails, log but do **not** stop the ship workflow — commit made, ticket moved. Fail only if the Skill tool itself is unreachable (contract bypass).
 
 Proceed to Phase 2.
 
@@ -176,11 +176,11 @@ Proceed to Phase 2.
 8. `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
 9. **Review gate**: Check for recent code review:
-    - If a ticket completed (`{ticket-dir}` now in `.backlog/done/` after step 5), run `ls -t .backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` for the latest review.
+    - If a ticket completed (`{ticket-dir}` now in `.simple-workflow/backlog/done/` after step 5), run `ls -t .simple-workflow/backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` for the latest review.
     - No ticket → skip the review gate.
     - Review file exists → compare its mtime with the last commit time.
     - NO review file, or review predates last code-changing commit:
-      - **Autopilot policy check**: If `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_review_gate.action`:
+      - **Autopilot policy check**: If `.simple-workflow/backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_review_gate.action`:
         - `proceed_if_eval_passed`: Check latest `eval-round-*.md` Status:
           - PASS / PASS-WITH-CAVEATS → proceed. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to PR body.
           - FAIL or no eval-round → stop (safety valve; never ship code that failed AC). Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop reason=eval_status_not_pass`.
@@ -193,7 +193,7 @@ Proceed to Phase 2.
 13. `git push origin HEAD`. On failure, show the error and stop.
 14. Generate PR title (conventional commit, single line) and body (summary of changes + scope) from commit log and diff.
 15. `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
-15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read `.backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY (read-modify-write):
+15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY (read-modify-write):
      - `phases.ship.status: completed`
      - `phases.ship.completed_at: {now}` (ISO-8601 UTC, recomputed)
      - `phases.ship.artifacts.pr_url: <pr-url>` (URL from step 15, or existing PR URL captured in step 12)
@@ -201,7 +201,7 @@ Proceed to Phase 2.
      - `current_phase: done`
      - `overall_status: done`
 
-     Do NOT modify `phases.create_ticket` / `phases.scout` / `phases.impl`. The state file stays at `.backlog/done/{ticket-dir}/phase-state.yaml` as the permanent record — NEVER delete.
+     Do NOT modify `phases.create_ticket` / `phases.scout` / `phases.impl`. The state file stays at `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` as the permanent record — NEVER delete.
 
      If an existing PR was captured in step 12, run this state update there too, so re-runs finalize correctly.
 16. Print the PR URL. If merge is not enabled, stop. Note: on squash-merge the PR title becomes the commit message on the target branch.
@@ -210,7 +210,7 @@ Proceed to Phase 2.
 
 17. `gh pr merge <pr-url> --squash --delete-branch`.
 18. If merge fails due to pending CI:
-    - **Autopilot policy check**: If `.backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_ci_pending`:
+    - **Autopilot policy check**: If `.simple-workflow/backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_ci_pending`:
       - `wait`: `gh pr checks <pr-number> --watch` with `timeout_minutes`. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
         - Pass within timeout → retry merge. Timeout → `on_timeout` (`stop` by default). Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=on_timeout`.
       - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=stop`.
@@ -219,9 +219,9 @@ Proceed to Phase 2.
       - **Force**: `gh pr merge <pr-url> --squash --delete-branch --admin`. **WARNING: bypasses CI; risks merging untested code. Confirm before proceeding.** Requires admin permissions.
       - **Skip**: Stop without merging. Print PR URL for manual follow-up.
 19. After successful merge, sync local: `git checkout <target-branch> && git pull origin <target-branch>`.
-20. Print summary: merged PR URL, deleted branch, local state. If a ticket moved in step 5, include "Ticket moved to .backlog/done/{ticket-dir}".
+20. Print summary: merged PR URL, deleted branch, local state. If a ticket moved in step 5, include "Ticket moved to .simple-workflow/backlog/done/{ticket-dir}".
 
-21. **Emit SW-CHECKPOINT block**. Emit `## [SW-CHECKPOINT]` per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section — after step 20 (Phase 3), or step 16 (Phase 2 when `merge=true` unset), or any early-stop (`No changes`, `No remote`, auth / push failure, `No commits ahead`, `Existing PR`, etc.). Emit exactly once at the very end, after PR URL / summary / errors. Fill: `phase=ship`, `ticket=.backlog/done/{ticket-dir}` if moved in step 5 (else `.backlog/active/{ticket-dir}` if detected-not-moved, else `none`), `artifacts=[<repo-relative paths to phase-state.yaml and PR URL / commit SHA>]`, `next_recommended=""` (the ticket is complete). Failure paths use `artifacts: []`.
+21. **Emit SW-CHECKPOINT block**. Emit `## [SW-CHECKPOINT]` per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section — after step 20 (Phase 3), or step 16 (Phase 2 when `merge=true` unset), or any early-stop (`No changes`, `No remote`, auth / push failure, `No commits ahead`, `Existing PR`, etc.). Emit exactly once at the very end, after PR URL / summary / errors. Fill: `phase=ship`, `ticket=.simple-workflow/backlog/done/{ticket-dir}` if moved in step 5 (else `.simple-workflow/backlog/active/{ticket-dir}` if detected-not-moved, else `none`), `artifacts=[<repo-relative paths to phase-state.yaml and PR URL / commit SHA>]`, `next_recommended=""` (the ticket is complete). Failure paths use `artifacts: []`.
 
 ## Error Handling
 

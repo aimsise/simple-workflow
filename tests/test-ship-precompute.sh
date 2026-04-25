@@ -184,7 +184,7 @@ scenario_c_single_gitignore_commit() {
   repo=$(mk_repo)
   (
     cd "$repo"
-    printf '.docs/\n.backlog/\n' > .gitignore
+    printf '.simple-workflow/\n' > .gitignore
     git add .gitignore
     git commit -q -m "C: initial gitignore"
   )

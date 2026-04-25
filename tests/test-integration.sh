@@ -140,15 +140,13 @@ setup_ship_fixture() {
 
   # .gitignore matching production
   cat > .gitignore <<'EOF'
-.docs/
-.backlog/
-.simple-wf-knowledge/
+.simple-workflow/
 EOF
   git add .gitignore
   git commit -q -m "initial: add .gitignore"
 
-  # Create ticket fixture: .backlog/active/001-test-hello/
-  local ticket_dir=".backlog/active/001-test-hello"
+  # Create ticket fixture: .simple-workflow/backlog/active/001-test-hello/
+  local ticket_dir=".simple-workflow/backlog/active/001-test-hello"
   mkdir -p "$ticket_dir"
 
   cat > "$ticket_dir/ticket.md" <<'MD'
@@ -213,15 +211,13 @@ setup_audit_fixture() {
 
   # .gitignore matching production
   cat > .gitignore <<'EOF'
-.docs/
-.backlog/
-.simple-wf-knowledge/
+.simple-workflow/
 EOF
   git add .gitignore
   git commit -q -m "initial: add .gitignore"
 
-  # Create ticket fixture: .backlog/active/002-test-world/
-  local ticket_dir=".backlog/active/002-test-world"
+  # Create ticket fixture: .simple-workflow/backlog/active/002-test-world/
+  local ticket_dir=".simple-workflow/backlog/active/002-test-world"
   mkdir -p "$ticket_dir"
 
   cat > "$ticket_dir/ticket.md" <<'MD'
@@ -269,7 +265,7 @@ setup_integration_brief() {
     git commit -q -m "initial"
   fi
 
-  local brief_dir=".backlog/briefs/active/test-slug"
+  local brief_dir=".simple-workflow/backlog/briefs/active/test-slug"
   mkdir -p "$brief_dir"
 
   # v4.0.0 Plan 2: brief.md no longer carries split: / ticket_count: fields.
@@ -304,10 +300,10 @@ Create two utility text files for testing.
 MD
 
   # v4.0.0 Plan 4: /autopilot reads split-plan.md from
-  # `.backlog/product_backlog/{parent-slug}/split-plan.md`, NOT from the
+  # `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`, NOT from the
   # brief directory. Fixture places it in the consumer-facing location so
   # the autopilot integration test exercises the new consumer-only path.
-  local product_backlog_dir=".backlog/product_backlog/test-slug"
+  local product_backlog_dir=".simple-workflow/backlog/product_backlog/test-slug"
   mkdir -p "$product_backlog_dir"
 
   cat > "$product_backlog_dir/split-plan.md" <<'MD'
@@ -329,7 +325,7 @@ Create two utility text files for testing.
 
 ### 1. test-slug-part-1: Create hello.txt
 
-- ticket_dir: `.backlog/product_backlog/test-slug/001-create-hello`
+- ticket_dir: `.simple-workflow/backlog/product_backlog/test-slug/001-create-hello`
 - size: S
 - depends_on: []
 
@@ -337,14 +333,14 @@ hello.txt exists with content "Hello".
 
 ### 2. test-slug-part-2: Create world.txt
 
-- ticket_dir: `.backlog/product_backlog/test-slug/002-create-world`
+- ticket_dir: `.simple-workflow/backlog/product_backlog/test-slug/002-create-world`
 - size: S
 - depends_on: []
 
 world.txt exists with content "World".
 MD
 
-  # Also create the ticket dirs that /scout will move into .backlog/active/.
+  # Also create the ticket dirs that /scout will move into .simple-workflow/backlog/active/.
   mkdir -p "$product_backlog_dir/001-create-hello"
   mkdir -p "$product_backlog_dir/002-create-world"
 
@@ -400,8 +396,8 @@ test_ship_integration() {
 
   # AC3: ticket moved from active to done (filesystem check)
   assert_true \
-    "/ship: ticket moved to .backlog/done/001-test-hello/" \
-    "[ -d '$test_repo/.backlog/done/001-test-hello' ]"
+    "/ship: ticket moved to .simple-workflow/backlog/done/001-test-hello/" \
+    "[ -d '$test_repo/.simple-workflow/backlog/done/001-test-hello' ]"
 
   # AC4: autopilot-state.yaml NOT in HEAD commit
   local head_files=""
@@ -447,11 +443,11 @@ test_audit_integration() {
   # AC6: quality-round-1.md and security-scan-1.md exist
   assert_true \
     "/audit: quality-round-1.md created" \
-    "[ -f '$test_repo/.backlog/active/002-test-world/quality-round-1.md' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/active/002-test-world/quality-round-1.md' ]"
 
   assert_true \
     "/audit: security-scan-1.md created" \
-    "[ -f '$test_repo/.backlog/active/002-test-world/security-scan-1.md' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/active/002-test-world/security-scan-1.md' ]"
 
   # Cleanup
   rm -rf "$test_repo"
@@ -483,51 +479,51 @@ test_brief_fixture() {
 
   assert_true \
     "brief fixture: brief.md exists" \
-    "[ -f '$test_repo/.backlog/briefs/active/test-slug/brief.md' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/brief.md' ]"
 
   # v4.0.0 Plan 4: split-plan.md lives under product_backlog, not briefs/active.
   assert_true \
     "brief fixture: split-plan.md exists at product_backlog location" \
-    "[ -f '$test_repo/.backlog/product_backlog/test-slug/split-plan.md' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/product_backlog/test-slug/split-plan.md' ]"
 
   # v4.0.0 Plan 2: /brief no longer writes split-plan.md under briefs/active.
   assert_false \
     "brief fixture: NO split-plan.md under briefs/active (Plan 2)" \
-    "[ -f '$test_repo/.backlog/briefs/active/test-slug/split-plan.md' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/split-plan.md' ]"
 
   assert_true \
     "brief fixture: autopilot-policy.yaml exists" \
-    "[ -f '$test_repo/.backlog/briefs/active/test-slug/autopilot-policy.yaml' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/autopilot-policy.yaml' ]"
 
   assert_true \
     "brief fixture: brief.md has confirmed status" \
-    "grep -q 'status: confirmed' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "grep -q 'status: confirmed' '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/brief.md'"
 
   # v4.0.0 Plan 2: brief.md now carries estimated_size (not size) and
   # interview_complete; split: / ticket_count: fields removed.
   assert_true \
     "brief fixture: brief.md has estimated_size" \
-    "grep -q 'estimated_size:' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "grep -q 'estimated_size:' '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/brief.md'"
 
   assert_true \
     "brief fixture: brief.md has interview_complete: true" \
-    "grep -q 'interview_complete: true' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "grep -q 'interview_complete: true' '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/brief.md'"
 
   assert_false \
     "brief fixture: brief.md has NO split: field (Plan 2)" \
-    "grep -qE '^split:[[:space:]]' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "grep -qE '^split:[[:space:]]' '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/brief.md'"
 
   assert_false \
     "brief fixture: brief.md has NO ticket_count: field (Plan 2)" \
-    "grep -qE '^ticket_count:[[:space:]]' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "grep -qE '^ticket_count:[[:space:]]' '$test_repo/.simple-workflow/backlog/briefs/active/test-slug/brief.md'"
 
   assert_true \
     "brief fixture: split-plan.md has 001-create-hello" \
-    "grep -q '001-create-hello' '$test_repo/.backlog/product_backlog/test-slug/split-plan.md'"
+    "grep -q '001-create-hello' '$test_repo/.simple-workflow/backlog/product_backlog/test-slug/split-plan.md'"
 
   assert_true \
     "brief fixture: split-plan.md has 002-create-world" \
-    "grep -q '002-create-world' '$test_repo/.backlog/product_backlog/test-slug/split-plan.md'"
+    "grep -q '002-create-world' '$test_repo/.simple-workflow/backlog/product_backlog/test-slug/split-plan.md'"
 
   # Cleanup
   rm -rf "$test_repo"
@@ -555,8 +551,7 @@ test_autopilot_integration() {
     git config user.name "Test"
 
     cat > .gitignore <<'EOF'
-.docs/
-.simple-wf-knowledge/
+.simple-workflow/
 EOF
     git add .gitignore
     git commit -q -m "initial"
@@ -585,8 +580,8 @@ EOF
   fi
 
   # --- Verify ticket creation ---
-  local done_dir="$test_repo/.backlog/done"
-  local active_dir="$test_repo/.backlog/active"
+  local done_dir="$test_repo/.simple-workflow/backlog/done"
+  local active_dir="$test_repo/.simple-workflow/backlog/active"
 
   # Count completed tickets (in done/) + any still in active/
   local done_count=0
@@ -631,11 +626,11 @@ EOF
   # --- Verify brief lifecycle ---
   assert_true \
     "/autopilot: brief moved to briefs/done/" \
-    "[ -d '$test_repo/.backlog/briefs/done/test-slug' ]"
+    "[ -d '$test_repo/.simple-workflow/backlog/briefs/done/test-slug' ]"
 
   assert_true \
     "/autopilot: autopilot-log.md exists in briefs/done/" \
-    "[ -f '$test_repo/.backlog/briefs/done/test-slug/autopilot-log.md' ]"
+    "[ -f '$test_repo/.simple-workflow/backlog/briefs/done/test-slug/autopilot-log.md' ]"
 
   # --- Verify individual autopilot-log per ticket (split mode requirement) ---
   if [ -d "$done_dir" ]; then
@@ -653,7 +648,7 @@ EOF
   # --- Verify autopilot-state.yaml cleaned up ---
   assert_false \
     "/autopilot: autopilot-state.yaml cleaned up from briefs/" \
-    "find '$test_repo/.backlog/briefs' -name 'autopilot-state.yaml' 2>/dev/null | grep -q ."
+    "find '$test_repo/.simple-workflow/backlog/briefs' -name 'autopilot-state.yaml' 2>/dev/null | grep -q ."
 
   # Cleanup
   rm -rf "$test_repo"

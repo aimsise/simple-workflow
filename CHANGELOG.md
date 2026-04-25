@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] — 2026-04-25
+
+### ⚠ BREAKING CHANGE — Directory consolidation
+
+PJ ルート直下の 3 ディレクトリ（`.docs/`, `.backlog/`, `.simple-wf-knowledge/`）を `.simple-workflow/` 配下へ統合しました。既存ユーザは手動マイグレーションが必要です。
+
+**Migration guide**: 詳細手順は [GitHub Discussions Announcement v5.0.0](<DISCUSSION_URL>) を参照してください。
+
+#### Path mapping
+
+| Old | New |
+|-----|-----|
+| `.docs/` | `.simple-workflow/docs/` |
+| `.backlog/` | `.simple-workflow/backlog/` |
+| `.backlog/.ticket-counter` | `.simple-workflow/.ticket-counter` |
+| `.simple-wf-knowledge/` | `.simple-workflow/kb/` |
+| `.simple-wf-knowledge/.gitignore-setup-done` | `.simple-workflow/.setup-done` |
+
+#### Why
+
+- PJ ルートの汚染を 3 ディレクトリ → 1 ディレクトリへ削減
+- `.gitignore` 1 行管理 (`/.simple-workflow/`) でセットアップを単純化
+- アンインストール時 `rm -rf .simple-workflow/` で完結
+
+#### What is NOT changed
+
+- `phase-state.yaml` などの YAML スキーマは不変
+- スキル/フック/エージェントの公開契約（引数・SW-CHECKPOINT フォーマット等）は不変
+- 本リリースに自動マイグレーションスクリプトは含まれません（手動置換）
+
+#### Internal changes
+
+- `hooks/session-start.sh` の `.gitignore` 整備対象を 1 エントリ化
+- `skills/impl/SKILL.md` の `git stash` 除外パスを 3 → 1 個へ縮小
+- 16 テストファイル中 10 ファイルでフィクスチャパス更新
+
 ## [4.2.0] - 2026-04-25
 
 ### Changed

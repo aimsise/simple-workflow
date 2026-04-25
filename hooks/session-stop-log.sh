@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Stop hook: log session activity to .docs/session-log/ in YAML+Markdown format
+# Stop hook: log session activity to .simple-workflow/docs/session-log/ in YAML+Markdown format
 
 set -euo pipefail
 
 # Consume stdin (some hook events provide JSON payload)
 cat > /dev/null
 
-LOG_DIR=".docs/session-log"
+LOG_DIR=".simple-workflow/docs/session-log"
 mkdir -p "$LOG_DIR"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")

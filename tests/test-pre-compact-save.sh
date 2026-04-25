@@ -19,13 +19,13 @@ run_hook "$HOOK" "" "$TEST_REPO"
 
 # Test 1: compact-state-*.md file is created
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 if [ -n "$COMPACT_FILE" ] && [ -f "$COMPACT_FILE" ]; then
   echo -e "  ${GREEN}PASS${NC} compact-state-*.md file is created"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} compact-state-*.md file is created"
-  echo -e "       No matching file found in $TEST_REPO/.docs/compact-state/"
+  echo -e "       No matching file found in $TEST_REPO/.simple-workflow/docs/compact-state/"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -178,22 +178,22 @@ echo ""
 # Verifies the in_progress_phase heuristic and latest_*_round detection.
 
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/001-feature-x"
-echo "ticket" > "$TEST_REPO/.backlog/active/001-feature-x/ticket.md"
+mkdir -p "$TEST_REPO/.simple-workflow/backlog/active/001-feature-x"
+echo "ticket" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-x/ticket.md"
 # Round 1: eval done, audit done with PASS
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/001-feature-x/eval-round-1.md"
-echo "round 1 audit" > "$TEST_REPO/.backlog/active/001-feature-x/audit-round-1.md"
+echo "round 1 eval" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-x/eval-round-1.md"
+echo "round 1 audit" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-x/audit-round-1.md"
 # Round 2: eval done, audit done with FAIL
-echo "round 2 eval" > "$TEST_REPO/.backlog/active/001-feature-x/eval-round-2.md"
+echo "round 2 eval" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-x/eval-round-2.md"
 # Test 17 fake Status row is written to audit-round-2.md (Fix 3)
 {
   echo "# Audit round 2"
   echo ""
   echo "**Status**: FAIL"
-} > "$TEST_REPO/.backlog/active/001-feature-x/audit-round-2.md"
+} > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-x/audit-round-2.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 
 # Test 15: latest_eval_round is 2
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
@@ -242,18 +242,18 @@ echo ""
 # --- Test group 3: repo with completed round (PASS_WITH_CONCERNS) ---
 
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/002-feature-y"
-echo "ticket" > "$TEST_REPO/.backlog/active/002-feature-y/ticket.md"
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/002-feature-y/eval-round-1.md"
+mkdir -p "$TEST_REPO/.simple-workflow/backlog/active/002-feature-y"
+echo "ticket" > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-y/ticket.md"
+echo "round 1 eval" > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-y/eval-round-1.md"
 # Test 19 fake Status row is written to audit-round-1.md (Fix 3)
 {
   echo "# Audit round 1"
   echo ""
   echo "**Status**: PASS_WITH_CONCERNS"
-} > "$TEST_REPO/.backlog/active/002-feature-y/audit-round-1.md"
+} > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-y/audit-round-1.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 
 # Test 19: in_progress_phase is impl-done (PASS_WITH_CONCERNS at completed round)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
@@ -279,17 +279,17 @@ echo ""
 # quality-round-1.md (no audit-round file) must yield last_round_outcome=unknown.
 # This verifies pre-compact-save does NOT fall back to parsing quality-round files.
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/003-feature-z"
-echo "ticket" > "$TEST_REPO/.backlog/active/003-feature-z/ticket.md"
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/003-feature-z/eval-round-1.md"
+mkdir -p "$TEST_REPO/.simple-workflow/backlog/active/003-feature-z"
+echo "ticket" > "$TEST_REPO/.simple-workflow/backlog/active/003-feature-z/ticket.md"
+echo "round 1 eval" > "$TEST_REPO/.simple-workflow/backlog/active/003-feature-z/eval-round-1.md"
 {
   echo "# Code review round 1 (raw code-reviewer output)"
   echo ""
   echo "**Status**: success"
-} > "$TEST_REPO/.backlog/active/003-feature-z/quality-round-1.md"
+} > "$TEST_REPO/.simple-workflow/backlog/active/003-feature-z/quality-round-1.md"
 # NOTE: no audit-round-1.md — simulates code-reviewer ran but /audit did not persist
 run_hook "$HOOK" "" "$TEST_REPO"
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -n "$COMPACT_FILE" ] && grep -qE '^last_round_outcome: unknown$' "$COMPACT_FILE"; then
@@ -308,16 +308,16 @@ echo ""
 # so last_round_outcome must remain "unknown" — this detects accidental future
 # loosening of the case filter.
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/004-feature-w"
-echo "ticket" > "$TEST_REPO/.backlog/active/004-feature-w/ticket.md"
-echo "round 1 eval" > "$TEST_REPO/.backlog/active/004-feature-w/eval-round-1.md"
+mkdir -p "$TEST_REPO/.simple-workflow/backlog/active/004-feature-w"
+echo "ticket" > "$TEST_REPO/.simple-workflow/backlog/active/004-feature-w/ticket.md"
+echo "round 1 eval" > "$TEST_REPO/.simple-workflow/backlog/active/004-feature-w/eval-round-1.md"
 {
   echo "# Misplaced raw code-reviewer output in audit-round file"
   echo ""
   echo "**Status**: success"
-} > "$TEST_REPO/.backlog/active/004-feature-w/audit-round-1.md"
+} > "$TEST_REPO/.simple-workflow/backlog/active/004-feature-w/audit-round-1.md"
 run_hook "$HOOK" "" "$TEST_REPO"
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -n "$COMPACT_FILE" ] && grep -qE '^last_round_outcome: unknown$' "$COMPACT_FILE"; then
@@ -336,26 +336,26 @@ echo ""
 # computed and aggregate values reflect the most relevant ticket.
 
 setup_test_repo
-mkdir -p "$TEST_REPO/.backlog/active/001-feature-a"
-mkdir -p "$TEST_REPO/.backlog/active/002-feature-b"
-echo "ticket a" > "$TEST_REPO/.backlog/active/001-feature-a/ticket.md"
-echo "ticket b" > "$TEST_REPO/.backlog/active/002-feature-b/ticket.md"
+mkdir -p "$TEST_REPO/.simple-workflow/backlog/active/001-feature-a"
+mkdir -p "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b"
+echo "ticket a" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-a/ticket.md"
+echo "ticket b" > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b/ticket.md"
 
 # feature-a: round 1+2 eval, round 1+2 audit, last audit PASS -> impl-done
-echo "e1" > "$TEST_REPO/.backlog/active/001-feature-a/eval-round-1.md"
-echo "e2" > "$TEST_REPO/.backlog/active/001-feature-a/eval-round-2.md"
-{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/001-feature-a/audit-round-1.md"
-{ echo "**Status**: PASS"; } > "$TEST_REPO/.backlog/active/001-feature-a/audit-round-2.md"
+echo "e1" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-a/eval-round-1.md"
+echo "e2" > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-a/eval-round-2.md"
+{ echo "**Status**: PASS"; } > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-a/audit-round-1.md"
+{ echo "**Status**: PASS"; } > "$TEST_REPO/.simple-workflow/backlog/active/001-feature-a/audit-round-2.md"
 
 # feature-b: round 1+2+3 eval, round 1+2 audit FAIL -> impl-loop
-echo "e1" > "$TEST_REPO/.backlog/active/002-feature-b/eval-round-1.md"
-echo "e2" > "$TEST_REPO/.backlog/active/002-feature-b/eval-round-2.md"
-echo "e3" > "$TEST_REPO/.backlog/active/002-feature-b/eval-round-3.md"
-{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/002-feature-b/audit-round-1.md"
-{ echo "**Status**: FAIL"; } > "$TEST_REPO/.backlog/active/002-feature-b/audit-round-2.md"
+echo "e1" > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b/eval-round-1.md"
+echo "e2" > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b/eval-round-2.md"
+echo "e3" > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b/eval-round-3.md"
+{ echo "**Status**: FAIL"; } > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b/audit-round-1.md"
+{ echo "**Status**: FAIL"; } > "$TEST_REPO/.simple-workflow/backlog/active/002-feature-b/audit-round-2.md"
 
 run_hook "$HOOK" "" "$TEST_REPO"
-COMPACT_FILE=$(ls "$TEST_REPO"/.docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
+COMPACT_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/compact-state/compact-state-*.md 2>/dev/null | head -1)
 
 # Test 22: aggregate latest_eval_round is 3 (from feature-b)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))

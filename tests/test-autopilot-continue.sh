@@ -17,8 +17,8 @@ trap 'cleanup_test_repo' EXIT
 create_state_file() {
   local slug="$1"
   local content="$2"
-  mkdir -p ".backlog/briefs/active/${slug}"
-  echo "$content" > ".backlog/briefs/active/${slug}/autopilot-state.yaml"
+  mkdir -p ".simple-workflow/backlog/briefs/active/${slug}"
+  echo "$content" > ".simple-workflow/backlog/briefs/active/${slug}/autopilot-state.yaml"
 }
 
 # Helper: run the autopilot-continue hook with optional env vars
@@ -484,11 +484,11 @@ cleanup_test_repo
 # Auto-kick tests (brief → create-ticket → autopilot chain guard)
 # ============================================================
 
-# Helper: create brief.md + auto-kick.yaml under .backlog/briefs/active/{slug}
+# Helper: create brief.md + auto-kick.yaml under .simple-workflow/backlog/briefs/active/{slug}
 create_autokick_fixture() {
   local slug="$1"
-  mkdir -p ".backlog/briefs/active/${slug}"
-  cat > ".backlog/briefs/active/${slug}/brief.md" <<EOF
+  mkdir -p ".simple-workflow/backlog/briefs/active/${slug}"
+  cat > ".simple-workflow/backlog/briefs/active/${slug}/brief.md" <<EOF
 ---
 slug: ${slug}
 created: 2026-04-20
@@ -499,18 +499,18 @@ interview_complete: true
 ---
 # Brief
 EOF
-  cat > ".backlog/briefs/active/${slug}/auto-kick.yaml" <<EOF
+  cat > ".simple-workflow/backlog/briefs/active/${slug}/auto-kick.yaml" <<EOF
 version: 1
 slug: ${slug}
 started: 2026-04-20T00:00:00Z
 EOF
 }
 
-# Helper: create split-plan.md under .backlog/product_backlog/{slug}
+# Helper: create split-plan.md under .simple-workflow/backlog/product_backlog/{slug}
 create_split_plan() {
   local slug="$1"
-  mkdir -p ".backlog/product_backlog/${slug}"
-  cat > ".backlog/product_backlog/${slug}/split-plan.md" <<EOF
+  mkdir -p ".simple-workflow/backlog/product_backlog/${slug}"
+  cat > ".simple-workflow/backlog/product_backlog/${slug}/split-plan.md" <<EOF
 ---
 parent_slug: ${slug}
 findings_source: ""
@@ -772,7 +772,7 @@ for _ in 1 2 3 4 5; do
 done
 # At this point, 6th would allow stop. Touch auto-kick.yaml so it's newer than counter.
 sleep 1
-touch "$TEST_REPO/.backlog/briefs/active/feat-bump/auto-kick.yaml"
+touch "$TEST_REPO/.simple-workflow/backlog/briefs/active/feat-bump/auto-kick.yaml"
 
 run_autopilot_hook '{"session_id":"test-autokick-7"}' "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
@@ -822,7 +822,7 @@ fi
 echo "--- NegAC-AUTOKICK-3: neither state nor auto-kick → exit 0, empty stdout ---"
 
 setup_test_repo
-# Deliberately do NOT create any files under .backlog/briefs/active/
+# Deliberately do NOT create any files under .simple-workflow/backlog/briefs/active/
 
 run_autopilot_hook '{"session_id":"test-autokick-neg3"}' "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))

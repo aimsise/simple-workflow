@@ -52,7 +52,7 @@ Ticket template:
 !`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/phase-state-schema.md" 2>/dev/null || echo "[WARNING: phase-state-schema.md not found]"`
 
 split-plan.md schema (canonical reference for N>1 writes):
-!`cat "$CLAUDE_PLUGIN_ROOT/.docs/fix_structure/spec-split-plan-schema.md" 2>/dev/null || echo "[WARNING: spec-split-plan-schema.md not found]"`
+!`cat "$CLAUDE_PLUGIN_ROOT/.simple-workflow/docs/fix_structure/spec-split-plan-schema.md" 2>/dev/null || echo "[WARNING: spec-split-plan-schema.md not found]"`
 
 AC Quality Criteria (canonical contract — planner and ticket-evaluator are both bound by this file):
 !`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/ac-quality-criteria.md" 2>/dev/null || echo "[WARNING: ac-quality-criteria.md not found]"`
@@ -144,7 +144,7 @@ Substitute `<path>` with the literal path argument. Exit non-zero. Do NOT touch 
 
 ### Step F-2: Findings frontmatter validation
 
-Read the findings file. Parse its YAML frontmatter. Required keys per `.docs/fix_structure/spec-findings-fixture.md`:
+Read the findings file. Parse its YAML frontmatter. Required keys per `.simple-workflow/docs/fix_structure/spec-findings-fixture.md`:
 
 - `title` (required)
 - `findings_version` (required; MUST equal `1` for this skill version)
@@ -207,7 +207,7 @@ If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-t
 
 ### Step F-9: Dispatch to Common Write Path
 
-- Route to the **Common Write Path** regardless of N. `split-plan.md` is written at `.backlog/product_backlog/{parent-slug}/split-plan.md` for every run (N ≥ 1), so `/autopilot` can consume the ticket set uniformly. See Common Write Path below.
+- Route to the **Common Write Path** regardless of N. `split-plan.md` is written at `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` for every run (N ≥ 1), so `/autopilot` can consume the ticket set uniformly. See Common Write Path below.
 
 ---
 
@@ -227,7 +227,7 @@ Read the brief's YAML frontmatter. Extract:
 
 The `{parent-slug}` for brief mode defaults to `{brief_slug}`.
 
-**Stdin independence (`interview_complete: true`)**: when the brief frontmatter contains `interview_complete: true`, `/create-ticket` MUST be able to produce a ticket file under `.backlog/` within 10 seconds even if stdin is a closed file descriptor. This is verified by AC #7 of the findings-mode Plan 2. When `interview_complete: false` (or absent), the skill blocks on `AskUserQuestion` / stdin until at least one answer arrives (AC #8).
+**Stdin independence (`interview_complete: true`)**: when the brief frontmatter contains `interview_complete: true`, `/create-ticket` MUST be able to produce a ticket file under `.simple-workflow/backlog/` within 10 seconds even if stdin is a closed file descriptor. This is verified by AC #7 of the findings-mode Plan 2. When `interview_complete: false` (or absent), the skill blocks on `AskUserQuestion` / stdin until at least one answer arrives (AC #8).
 
 ### Step B-3: Run Phase 1 + 2 + 3 + 4
 
@@ -253,7 +253,7 @@ Same as Brief Mode (researcher → Socratic → planner → ticket-evaluator), b
 
 ### Step D-3: Dispatch to Common Write Path (N=1)
 
-Bare description mode ALWAYS nests the single ticket under `{parent-slug}/` — never at bare `.backlog/product_backlog/NNN-*/`. This uniform-nesting rule (AC #7) holds for N=1 just as for N>1.
+Bare description mode ALWAYS nests the single ticket under `{parent-slug}/` — never at bare `.simple-workflow/backlog/product_backlog/NNN-*/`. This uniform-nesting rule (AC #7) holds for N=1 just as for N>1.
 
 ---
 
@@ -277,7 +277,7 @@ In **findings mode**, Phase 1 is already satisfied by the findings document itse
 
 ### Phase 2: Socratic Refinement
 
-**Brief mode with `interview_complete: true`**: SKIP Phase 2 entirely — the brief already contains structured-interview context. Proceed to Phase 3 immediately. When `brief=<path>` is provided and the brief's YAML frontmatter contains the literal line `interview_complete: true`, the skill MUST NOT invoke `AskUserQuestion` and MUST NOT block on stdin; a ticket file is expected to appear under `.backlog/` within 10 seconds even with closed stdin (AC #7 from the findings-mode plan).
+**Brief mode with `interview_complete: true`**: SKIP Phase 2 entirely — the brief already contains structured-interview context. Proceed to Phase 3 immediately. When `brief=<path>` is provided and the brief's YAML frontmatter contains the literal line `interview_complete: true`, the skill MUST NOT invoke `AskUserQuestion` and MUST NOT block on stdin; a ticket file is expected to appear under `.simple-workflow/backlog/` within 10 seconds even with closed stdin (AC #7 from the findings-mode plan).
 
 **Brief mode with `interview_complete: false` or absent**: run the capped Socratic interview below. Absence of the `interview_complete` key in the brief frontmatter is treated as `false` (safe default — run the interview when capability is available).
 
@@ -288,7 +288,7 @@ In **findings mode**, Phase 1 is already satisfied by the findings document itse
 **Interview caps (load-bearing for contract)**:
 - At most **3 questions per round** (a single `AskUserQuestion` call carries at most 3 items).
 - At most **10 rounds** total across the interview.
-- Therefore at most **30 questions total** before a ticket file appears under `.backlog/`.
+- Therefore at most **30 questions total** before a ticket file appears under `.simple-workflow/backlog/`.
 
 These caps apply uniformly to bare-description Socratic, brief-mode-without-`interview_complete` Socratic, and findings-mode Socratic. Implementations MUST NOT exceed 3 items per `AskUserQuestion` call and MUST NOT issue more than 10 rounds.
 
@@ -365,7 +365,7 @@ Instruct the planner to evaluate whether the ticket should be split:
      b. Re-spawn the **planner** with: original ticket content; evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
      c. Re-spawn the **ticket-evaluator** on the revised ticket. **MUST** again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair, sourced from the Pre-computed Context above. Missing the marker block causes the evaluator to fail-fast with ERROR.
      d. Max 2 rounds (initial + 1 revision). If still FAIL:
-        - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.backlog/product_backlog/{parent-slug}/{ticket-dir}/`. If missing **and** `brief=<path>` was given, also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.backlog/briefs/active/{slug}/`).
+        - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.simple-workflow/backlog/product_backlog/{parent-slug}/{ticket-dir}/`. If missing **and** `brief=<path>` was given, also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.simple-workflow/backlog/briefs/active/{slug}/`).
           - If present, read `gates.ticket_quality_fail`: `retry_with_feedback` + retry count < `max_retries` → continue retrying (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=retry_with_feedback round={n}`); else stop (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=stop`).
           - Else interactive flow below.
         - `AskUserQuestion`: "The ticket has unresolved quality issues: [list]. Proceed anyway or stop to revise manually?"
@@ -391,10 +391,10 @@ All three modes converge here. This section enforces the atomic counter/director
 
 ### Step W-1: Counter read & validate
 
-1. Read `.backlog/.ticket-counter`. If missing, initialize counter to `1` (write happens in Step W-5, after all validations pass).
+1. Read `.simple-workflow/.ticket-counter`. If missing, initialize counter to `1` (write happens in Step W-5, after all validations pass).
 2. If the file's content is **non-numeric**, print exactly:
    ```
-   ERROR: .backlog/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.
+   ERROR: .simple-workflow/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.
    ```
    Exit non-zero. Do NOT write any ticket directories. Do NOT update the counter. (Edge case: counter invalid → non-zero exit, no dirs.)
 3. Let `counter` = current value; let `N` = 1 (bare / brief / findings-N=1) or `N` > 1 (findings-N>1 / brief-with-split).
@@ -405,7 +405,7 @@ For each ticket `i` (0-indexed, `i = 0 … N-1`):
 - `number_i` = `counter + i`.
 - Zero-pad `number_i` to 3 digits → `{NNN}` (e.g., `1` → `001`).
 - Derive `{slug_i}` from the ticket's title in kebab-case.
-- **Uniform nesting (AC #7)**: `{ticket_dir_path_i}` = `.backlog/product_backlog/{parent-slug}/{NNN}-{slug_i}/` — always nested under `{parent-slug}`, even for N=1 bare description mode. NEVER write directly to `.backlog/product_backlog/{NNN}-{slug_i}/` (a bare `NNN-slug` directly under `product_backlog/`, without an intervening parent_slug, is forbidden).
+- **Uniform nesting (AC #7)**: `{ticket_dir_path_i}` = `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN}-{slug_i}/` — always nested under `{parent-slug}`, even for N=1 bare description mode. NEVER write directly to `.simple-workflow/backlog/product_backlog/{NNN}-{slug_i}/` (a bare `NNN-slug` directly under `product_backlog/`, without an intervening parent_slug, is forbidden).
 
 ### Step W-3: Dependency graph validation (N>1 only)
 
@@ -420,18 +420,18 @@ On violation, print `ERROR: split-plan validation failed — <reason>` (or `ERRO
 
 Once all validations above have passed:
 
-1. **Create the parent directory**: `mkdir -p .backlog/product_backlog/{parent-slug}/`.
-2. For each ticket `i`, create `.backlog/product_backlog/{parent-slug}/{NNN}-{slug_i}/` (absent).
+1. **Create the parent directory**: `mkdir -p .simple-workflow/backlog/product_backlog/{parent-slug}/`.
+2. For each ticket `i`, create `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN}-{slug_i}/` (absent).
 3. For each ticket `i`, write `ticket.md` at `{ticket_dir_path_i}/ticket.md`. Replace `{NNN}` in the `## T-{NNN}:` placeholder with the actual number (e.g. `## T-005: Add User Auth`).
 4. For each ticket `i`, write `phase-state.yaml` at `{ticket_dir_path_i}/phase-state.yaml` per Step W-6 below.
-5. Write `split-plan.md` at `.backlog/product_backlog/{parent-slug}/split-plan.md` per Step W-7 below. This is unconditional (N ≥ 1): `/autopilot` consumes this file as its single source of truth and treats a 1-entry split-plan identically to an N-entry one.
-6. **Autopilot policy propagation** (Step W-8): if `brief=<path>` was passed AND `.backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk, copy it into each ticket directory.
+5. Write `split-plan.md` at `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` per Step W-7 below. This is unconditional (N ≥ 1): `/autopilot` consumes this file as its single source of truth and treats a 1-entry split-plan identically to an N-entry one.
+6. **Autopilot policy propagation** (Step W-8): if `brief=<path>` was passed AND `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk, copy it into each ticket directory.
 
 **Atomicity rule**: if ANY write fails during Step W-4, attempt best-effort cleanup of already-created dirs (`rm -rf`) before reporting the error. Counter increment in Step W-5 happens ONLY after every file in the above list has been successfully written.
 
 ### Step W-5: Atomic counter write
 
-Write `counter + N` to `.backlog/.ticket-counter` (`counter` was the pre-run value read in Step W-1; `N` is the ticket count). Bump is single-shot: the file is written **once** after all N dirs + artifacts have been committed. This guarantees AC #10 (counter increments by exactly 3 after a 3-ticket run).
+Write `counter + N` to `.simple-workflow/.ticket-counter` (`counter` was the pre-run value read in Step W-1; `N` is the ticket count). Bump is single-shot: the file is written **once** after all N dirs + artifacts have been committed. This guarantees AC #10 (counter increments by exactly 3 after a 3-ticket run).
 
 ### Step W-6: phase-state.yaml template (per ticket)
 
@@ -505,7 +505,7 @@ For each ticket `i`:
 
 ### Step W-7: split-plan.md template
 
-Write `.backlog/product_backlog/{parent-slug}/split-plan.md` following `.docs/fix_structure/spec-split-plan-schema.md`. For N=1, emit exactly one `### 1.` entry under `## Tickets`, with `depends_on: []`. `ticket_count: 1` in the frontmatter. Exact schema:
+Write `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` following `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md`. For N=1, emit exactly one `### 1.` entry under `## Tickets`, with `depends_on: []`. `ticket_count: 1` in the frontmatter. Exact schema:
 
 ```markdown
 ---
@@ -526,7 +526,7 @@ version: 1
 
 ### 1. {parent-slug}-part-1: {Unit Title}
 
-- ticket_dir: `.backlog/product_backlog/{parent-slug}/{NNN-1}-{slug-1}`
+- ticket_dir: `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN-1}-{slug-1}`
 - size: {S|M|L|XL}
 - depends_on: []
 
@@ -534,7 +534,7 @@ version: 1
 
 ### 2. {parent-slug}-part-2: {Unit Title}
 
-- ticket_dir: `.backlog/product_backlog/{parent-slug}/{NNN-2}-{slug-2}`
+- ticket_dir: `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN-2}-{slug-2}`
 - size: {S|M|L|XL}
 - depends_on: [{parent-slug}-part-1]
 
@@ -542,7 +542,7 @@ version: 1
 
 ### 3. {parent-slug}-part-3: {Unit Title}
 
-- ticket_dir: `.backlog/product_backlog/{parent-slug}/{NNN-3}-{slug-3}`
+- ticket_dir: `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN-3}-{slug-3}`
 - size: {S|M|L|XL}
 - depends_on: [{parent-slug}-part-1]
 
@@ -562,11 +562,11 @@ On validation failure, print `ERROR: split-plan validation failed — <reason>` 
 
 This step replaces the legacy `/autopilot` responsibility of copying the policy into each ticket dir.
 
-Only runs if `brief=<path>` was passed AND the file `.backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk.
+Only runs if `brief=<path>` was passed AND the file `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk.
 
 ```bash
 for ticket_dir_path_i in {ticket_dir_path_0} {ticket_dir_path_1} ...; do
-  cp -p .backlog/briefs/active/{brief_slug}/autopilot-policy.yaml \
+  cp -p .simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml \
         "${ticket_dir_path_i}/autopilot-policy.yaml"
 done
 ```
@@ -592,7 +592,7 @@ c. In each ticket.md, add to the metadata table:
 After writing, print a summary:
 
 **Non-split (N = 1)**:
-- Ticket file path (e.g. `Ticket file path: .backlog/product_backlog/{parent-slug}/{NNN}-{slug}/ticket.md`)
+- Ticket file path (e.g. `Ticket file path: .simple-workflow/backlog/product_backlog/{parent-slug}/{NNN}-{slug}/ticket.md`)
 - Category, Size
 - Number of ACs
 - Quality evaluation result (PASS / FAIL + remaining issues)
@@ -605,11 +605,11 @@ After writing, print a summary:
 
 | # | Path | Category | Size | ACs | Quality |
 |---|------|----------|------|-----|---------|
-| T-005 | .backlog/product_backlog/{parent-slug}/005-foo/ticket.md | CodeQuality | M | 3 | PASS |
-| T-006 | .backlog/product_backlog/{parent-slug}/006-bar/ticket.md | CodeQuality | S | 2 | PASS |
+| T-005 | .simple-workflow/backlog/product_backlog/{parent-slug}/005-foo/ticket.md | CodeQuality | M | 3 | PASS |
+| T-006 | .simple-workflow/backlog/product_backlog/{parent-slug}/006-bar/ticket.md | CodeQuality | S | 2 | PASS |
 | ... | ... | ... | ... | ... | ... |
 
-Split plan: .backlog/product_backlog/{parent-slug}/split-plan.md
+Split plan: .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md
 Recommended workflow per ticket: `/scout → /impl → /ship`
 ```
 
@@ -638,9 +638,9 @@ Common fields (all modes):
   - Do NOT emit a plain `next_recommended:` line in this block.
   - `{first-unblocked-ticket-dir}` is computed thus (per `spec-split-plan-schema.md` § first-unblocked rule):
     1. Enumerate every ticket whose `depends_on: []` (empty list).
-    2. Sort candidates by `ticket_dir` in ascending **lexicographic** order (this is the physical path string, e.g. `.backlog/product_backlog/<parent-slug>/005-foo`).
+    2. Sort candidates by `ticket_dir` in ascending **lexicographic** order (this is the physical path string, e.g. `.simple-workflow/backlog/product_backlog/<parent-slug>/005-foo`).
     3. Pick the first (lexicographically smallest). This is deterministic even when every ticket is independent — exactly one line matches `^next_recommended_manual:` (negative AC: N=3 all-independent run still emits a single `next_recommended_manual:`).
-  - Regex invariant: the block contains exactly one line matching `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$` AND exactly one line matching `^next_recommended_manual:[[:space:]]+/scout[[:space:]]+\.backlog/product_backlog/\S+$`.
+  - Regex invariant: the block contains exactly one line matching `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$` AND exactly one line matching `^next_recommended_manual:[[:space:]]+/scout[[:space:]]+\.simple-workflow/backlog/product_backlog/\S+$`.
 
 - **Failure path (any N — counter-invalid, decomposer failed, split-plan validation failed, planner/evaluator exhausted retries, write failure during Step W-4, etc.)**:
   - Emit a single line: `next_recommended: ""` (literal empty string).
@@ -671,7 +671,7 @@ Identify available skills/agents by scanning `.claude/skills/` and `.claude/agen
 
 All `ERROR:` paths below share the same invariants: **no ticket directories created**, **`.ticket-counter` unchanged** (atomicity), non-zero exit.
 
-- **Counter file invalid**: Non-numeric `.backlog/.ticket-counter` → print `ERROR: .backlog/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.` and stop; create no ticket.
+- **Counter file invalid**: Non-numeric `.simple-workflow/.ticket-counter` → print `ERROR: .simple-workflow/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.` and stop; create no ticket.
 - **Empty arguments**: Print "Usage: /create-ticket <ticket description> | brief=<path> | findings=<path>" and stop.
 - **Both `brief=` and `findings=`**: Print `ERROR: brief= and findings= are mutually exclusive. Pass exactly one.` and stop.
 - **`findings=<path>` points to non-existent file**: Print `ERROR: Findings file not found at <path>` and stop.

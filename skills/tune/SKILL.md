@@ -27,13 +27,13 @@ User arguments: $ARGUMENTS
 ## Pre-computed Context
 
 Active tickets:
-!`ls -d .backlog/active/*/ 2>/dev/null | head -10`
+!`ls -d .simple-workflow/backlog/active/*/ 2>/dev/null | head -10`
 
 Done tickets:
-!`ls -d .backlog/done/*/ 2>/dev/null | head -10`
+!`ls -d .simple-workflow/backlog/done/*/ 2>/dev/null | head -10`
 
 Knowledge base status:
-!`ls .simple-wf-knowledge/*.yaml 2>/dev/null || echo "KB not initialized"`
+!`ls .simple-workflow/kb/*.yaml 2>/dev/null || echo "KB not initialized"`
 
 ## YAML Schema Reference
 
@@ -88,14 +88,14 @@ candidates:
 ### Step 0: Parse Arguments
 
 Parse `$ARGUMENTS`:
-- If a ticket-dir name is provided, scope log analysis to that ticket only (`.backlog/active/{ticket-dir}/` or `.backlog/done/{ticket-dir}/`)
-- If `all` is provided, analyze all tickets in `.backlog/done/` and `.backlog/active/`
-- If no argument, default to the most recently completed ticket in `.backlog/done/` (by modification time)
+- If a ticket-dir name is provided, scope log analysis to that ticket only (`.simple-workflow/backlog/active/{ticket-dir}/` or `.simple-workflow/backlog/done/{ticket-dir}/`)
+- If `all` is provided, analyze all tickets in `.simple-workflow/backlog/done/` and `.simple-workflow/backlog/active/`
+- If no argument, default to the most recently completed ticket in `.simple-workflow/backlog/done/` (by modification time)
 
 ### Step 1: Initialize Knowledge Base
 
-Check if `.simple-wf-knowledge/` directory exists. If not:
-1. Create the directory: `.simple-wf-knowledge/`
+Check if `.simple-workflow/kb/` directory exists. If not:
+1. Create the directory: `.simple-workflow/kb/`
 2. Create `entries.yaml` with content: `entries: []\n`
 3. Create `index.yaml` with content: `# Role-based pattern index\n`
 4. Create `candidates.yaml` with content: `candidates: []\n`
@@ -117,15 +117,15 @@ Use Glob to find these files. If `autopilot-log.md` does not exist in the ticket
 
 Invoke the `tune-analyzer` agent via the Agent tool:
 - Provide the list of evaluation log file paths collected in Step 2
-- Provide the knowledge base path: `.simple-wf-knowledge/`
-- Instruct it to write new candidate patterns to `.simple-wf-knowledge/candidates.yaml`
+- Provide the knowledge base path: `.simple-workflow/kb/`
+- Instruct it to write new candidate patterns to `.simple-workflow/kb/candidates.yaml`
 - Receive the agent's return value (patterns found/updated counts)
 
 If the agent returns **Status: failed**, print the error and stop.
 
 ### Step 4: Read Updated Candidates
 
-Read `.simple-wf-knowledge/candidates.yaml` to see the current candidate list.
+Read `.simple-workflow/kb/candidates.yaml` to see the current candidate list.
 
 ### Step 5: Pruning — Enforce Limits
 
@@ -192,4 +192,4 @@ Print a summary:
 - **tune-analyzer failure**: Print the agent's error output and stop. Do not modify the knowledge base.
 - **YAML parse error**: If any YAML file is malformed, print the error and stop. Do not overwrite malformed files without user confirmation.
 - **KB directory missing files**: Re-create only the missing files with defaults (Step 1).
-- **Promotion write failure**: Report which file failed to write. The knowledge base may be in an inconsistent state; advise the user to check `.simple-wf-knowledge/` manually.
+- **Promotion write failure**: Report which file failed to write. The knowledge base may be in an inconsistent state; advise the user to check `.simple-workflow/kb/` manually.

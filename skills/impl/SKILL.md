@@ -77,16 +77,16 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
 ## Pre-computed Context
 
 Oldest non-autopilot plan:
-!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}plan.md" ] && echo "${d}plan.md" && break; done || true`
+!`for d in $(ls -d .simple-workflow/backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}plan.md" ] && echo "${d}plan.md" && break; done || true`
 
-Latest plan in .docs/plans/:
-!`ls -t .docs/plans/*.md 2>/dev/null | head -1`
+Latest plan in .simple-workflow/docs/plans/:
+!`ls -t .simple-workflow/docs/plans/*.md 2>/dev/null | head -1`
 
 Oldest non-autopilot research:
-!`for d in $(ls -d .backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}investigation.md" ] && echo "${d}investigation.md" && break; done || true`
+!`for d in $(ls -d .simple-workflow/backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}investigation.md" ] && echo "${d}investigation.md" && break; done || true`
 
-Latest research in .docs/research/:
-!`ls -t .docs/research/*.md 2>/dev/null | head -1`
+Latest research in .simple-workflow/docs/research/:
+!`ls -t .simple-workflow/docs/research/*.md 2>/dev/null | head -1`
 
 Current state:
 !`git status --short`
@@ -94,16 +94,16 @@ Current state:
 ## Phase 1: Plan Loading & Size Detection
 
 1. Parse `$ARGUMENTS`:
-   - If it starts with `.backlog/active/` or `.docs/plans/` → use as plan path; remaining text is additional instructions.
-   - Otherwise → entire argument is additional instructions. Auto-select from `.backlog/active/`: list dirs containing `plan.md`; **Exclude** dirs containing `autopilot-policy.yaml` (autopilot-managed); sort by directory name ascending to select the lowest ticket number first (FIFO); pick first. Fallback: latest `.docs/plans/*.md`.
-   - No plan anywhere → print "No plan found in .backlog/active/ or .docs/plans/. Run /scout or /plan2doc first." and stop.
-   - If `.backlog/active/` contains only autopilot-managed tickets, print "All active tickets are managed by /autopilot. To implement manually, specify the plan path explicitly: /impl .backlog/active/{ticket-dir}/plan.md" and fall back to `.docs/plans/*.md`.
+   - If it starts with `.simple-workflow/backlog/active/` or `.simple-workflow/docs/plans/` → use as plan path; remaining text is additional instructions.
+   - Otherwise → entire argument is additional instructions. Auto-select from `.simple-workflow/backlog/active/`: list dirs containing `plan.md`; **Exclude** dirs containing `autopilot-policy.yaml` (autopilot-managed); sort by directory name ascending to select the lowest ticket number first (FIFO); pick first. Fallback: latest `.simple-workflow/docs/plans/*.md`.
+   - No plan anywhere → print "No plan found in .simple-workflow/backlog/active/ or .simple-workflow/docs/plans/. Run /scout or /plan2doc first." and stop.
+   - If `.simple-workflow/backlog/active/` contains only autopilot-managed tickets, print "All active tickets are managed by /autopilot. To implement manually, specify the plan path explicitly: /impl .simple-workflow/backlog/active/{ticket-dir}/plan.md" and fall back to `.simple-workflow/docs/plans/*.md`.
 
 2. Confirm the plan file exists (Glob or minimal `Read(limit=5)`). Do NOT read the plan in full — the implementer agent reads it in Phase 2.
 
 3. Size detection:
-   - Plan in `.backlog/active/{ticket-dir}/plan.md` → `Read(ticket.md, limit=30)` and extract Size from `| Size |`. Fallback `limit=80` once. Default `M` if still missing.
-   - Plan in `.docs/plans/` → default `M`.
+   - Plan in `.simple-workflow/backlog/active/{ticket-dir}/plan.md` → `Read(ticket.md, limit=30)` and extract Size from `| Size |`. Fallback `limit=80` once. Default `M` if still missing.
+   - Plan in `.simple-workflow/docs/plans/` → default `M`.
 
 4. **Worktree recommendation** (L/XL only): Print "Tip: Size {size} ticket. Consider a worktree: `git worktree add -b impl/{slug} ../impl-{slug} && cd ../impl-{slug}`. Then re-run /impl." `{slug}` = ticket dir with `NNN-` prefix stripped. Non-blocking.
 
@@ -128,7 +128,7 @@ Current state:
      - **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors, default to "no". Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure." and exit. Do NOT hang.
    - **On success**: Save the plan for Generator prompt (step 13g).
 
-9. If a related investigation file exists (same-dir `investigation.md` or latest `.docs/research/`), locate via Glob and pass the path to Generator field c.
+9. If a related investigation file exists (same-dir `investigation.md` or latest `.simple-workflow/docs/research/`), locate via Glob and pass the path to Generator field c.
 
 10. If working tree has uncommitted changes unrelated to the plan, warn user.
 
@@ -149,7 +149,7 @@ Current state:
     2. Identify unknown top-level keys (not in the migration doc's rename table). Known legacy fields: `phase`, `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`, `plan_file`, `ticket_dir`, `size`, `started`. Unknown keys are preserved per `legacy_extras` rule (migration doc §3).
     3. Write `phase-state.yaml` with the canonical schema (see `phase-state-schema.md`):
        - Top-level: `version: 1`; `size:` = legacy `size`; `created:` = legacy `started` (fallback `{now}`); `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`. No top-level `ticket_dir:`.
-       - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .backlog/active/{ticket-dir}/ticket.md` if exists else `null`.
+       - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .simple-workflow/backlog/active/{ticket-dir}/ticket.md` if exists else `null`.
        - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation` / `artifacts.plan` if the files exist else `null`.
        - `phases.impl.status: in-progress`, `started_at:` = legacy `started`. Copy legacy fields 1:1 under `phases.impl.*` per rename table (legacy `phase → phase_sub`; `started → started_at`; `plan_file` / `ticket_dir` dropped; other fields keep name).
        - `phases.impl.legacy_extras:` preserves unknown keys (omit field if none).
@@ -159,11 +159,11 @@ Current state:
     6. Set `impl_resume_mode = true` and proceed to §11c.
 
     **11b. Bootstrap**: If NEITHER file exists but a plan.md is present:
-    - Under `.backlog/active/{ticket-dir}/`:
+    - Under `.simple-workflow/backlog/active/{ticket-dir}/`:
       1. Create `phase-state.yaml` with the canonical schema: top-level `version: 1`, `size:` = detected Size, `created: {now}`, `current_phase: impl`, `last_completed_phase: scout`, `overall_status: in-progress`; `phases.create_ticket` and `phases.scout` marked completed with artifact fields pointing to existing files (else null); `phases.impl.status: in-progress`, `started_at: {now}`, other fields at pending defaults; `phases.ship.status: pending`.
       2. Print `[PHASE-STATE-BOOTSTRAP] phase-state.yaml bootstrapped for {ticket-dir} (no prior state found)`.
       3. Set `impl_resume_mode = false` and proceed to Step 12.
-    - Under `.docs/plans/` (non-ticket flow): skip state creation; all state-update steps (incl. Step 21 cleanup) become no-ops.
+    - Under `.simple-workflow/docs/plans/` (non-ticket flow): skip state creation; all state-update steps (incl. Step 21 cleanup) become no-ops.
 
     **11c. Resume dispatch**: If `phase-state.yaml` exists, `phases.impl.status == in-progress`, and `next_action` is non-null:
     - Set `impl_resume_mode = true`. Read `phases.impl.*`.
@@ -181,9 +181,9 @@ Current state:
 
     **11d. Fresh-start**: If `phase-state.yaml` exists but `phases.impl.status == pending` (typical post-`/scout`): set `impl_resume_mode = false` and proceed to Step 12. State updates happen at Step 13+ per the state-management section below.
 
-    If the plan lies outside any active ticket dir (e.g. `.docs/plans/...`), skip all state resolution and proceed with `impl_resume_mode = false`.
+    If the plan lies outside any active ticket dir (e.g. `.simple-workflow/docs/plans/...`), skip all state resolution and proceed with `impl_resume_mode = false`.
 
-12. **Safety checkpoint**: Create a rollback point with `git stash push -m "impl-checkpoint" --include-untracked -- ':!.backlog' ':!.docs' ':!.simple-wf-knowledge'` (preserves plugin artifacts). On success print "Safety checkpoint created. To rollback: git stash pop". If nothing to stash, skip silently.
+12. **Safety checkpoint**: Create a rollback point with `git stash push -m "impl-checkpoint" --include-untracked -- ':!.simple-workflow'` (preserves plugin artifacts). On success print "Safety checkpoint created. To rollback: git stash pop". If nothing to stash, skip silently.
 
 ## Phase 2: Generator → AC Evaluator → Code Quality Reviewer Loop (max 3 rounds)
 
@@ -222,7 +222,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
 - **After Evaluator (step 16)**: `phase_sub: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action: start-audit` (PASS) / `start-round-{N+1}-generator` (FAIL, rounds remain) / `stop-critical` (FAIL-CRITICAL).
 - **After /audit (step 18)**: `phase_sub: audit-complete`, `last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `last_audit_critical: {count}`, `next_action` per decision, `feedback_files.eval`/`feedback_files.quality` = round-N report paths.
 
-**Non-ticket flow**: When the plan is under `.docs/plans/` there is no `phase-state.yaml` and all state updates are no-ops.
+**Non-ticket flow**: When the plan is under `.simple-workflow/docs/plans/` there is no `phase-state.yaml` and all state updates are no-ops.
 
 13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from `/impl` — the Generator → Evaluator firewall requires the orchestrator to produce no code changes. Fail the task immediately if the Generator cannot be invoked.
     - subagent_type: `implementer` (always; no -light variant).
@@ -236,7 +236,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
       e. Round 2+: Pass previous round's feedback file paths: "Read feedback before implementing — AC Evaluator: {eval-round-{n-1}.md} (or 'All AC passed'); Code Quality: {quality-round-{n-1}.md} (or 'Not run' / 'No issues')."
       f. "Refer to CLAUDE.md for lint/test commands and coding standards."
       g. Round 1 with Dry Run: AC Evaluator's verification plan prefixed with "The AC evaluator will verify your implementation against the acceptance criteria using this plan:"
-      h. Knowledge-base injection: Read `.simple-wf-knowledge/index.yaml`; filter `role=implementer` and `confidence >= 0.8`; include up to 20 summary lines under "## Known Project Patterns". If `.simple-wf-knowledge/index.yaml` does not exist, skip this injection silently. **AC always wins over KB patterns on conflict.**
+      h. Knowledge-base injection: Read `.simple-workflow/kb/index.yaml`; filter `role=implementer` and `confidence >= 0.8`; include up to 20 summary lines under "## Known Project Patterns". If `.simple-workflow/kb/index.yaml` does not exist, skip this injection silently. **AC always wins over KB patterns on conflict.**
       i. Autopilot constraints: If `autopilot-policy.yaml` exists and `constraints.allow_breaking_changes: false`, include: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." Omit otherwise.
       j. **CONSTRAINT — Input immutability** (verbatim): "Do NOT modify `plan.md`, `ticket.md`, or `investigation.md` at any point. These are read-only inputs. Source code changes and new files (test files, eval reports are produced separately) are fine. If you believe the plan needs revision, flag it in your Next Steps field — the orchestrator will invoke `/plan2doc` separately." Prevents Generator / Evaluator contamination via input-artifact mutation.
     - Receive Generator's return value (changed files list + lint/test status).
@@ -255,8 +255,8 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
      c. Output of `git diff --shortstat` from step 14
      d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
      e. Report save path — **`{eval-report-path}` MUST be resolved by the orchestrator and substituted into the template below**. Resolution:
-        - Plan under `.backlog/active/{ticket-dir}/` → `{eval-report-path}` = `.backlog/active/{ticket-dir}/eval-round-{n}.md`.
-        - Else match current branch against active ticket dirs: strip leading `NNN-` prefix from each dir (e.g. `001-add-search-feature` → `add-search-feature`), check if branch contains the slug; if match, `{eval-report-path}` = `.backlog/active/{full-directory-name}/eval-round-{n}.md`. Else `{eval-report-path}` = `.docs/eval-round/{topic}-eval-round-{n}.md` where `{topic}` is derived from plan filename.
+        - Plan under `.simple-workflow/backlog/active/{ticket-dir}/` → `{eval-report-path}` = `.simple-workflow/backlog/active/{ticket-dir}/eval-round-{n}.md`.
+        - Else match current branch against active ticket dirs: strip leading `NNN-` prefix from each dir (e.g. `001-add-search-feature` → `add-search-feature`), check if branch contains the slug; if match, `{eval-report-path}` = `.simple-workflow/backlog/active/{full-directory-name}/eval-round-{n}.md`. Else `{eval-report-path}` = `.simple-workflow/docs/eval-round/{topic}-eval-round-{n}.md` where `{topic}` is derived from plan filename.
         `{n}` = current round (1, 2, or 3).
      f. Append verbatim: "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran)." Keeps Evaluator verdicts anchored to a pre-Generator rubric.
    - Prompt must NOT include: Generator's return value (bias elimination); a second invocation whose sole purpose is to persist the report (the save path is always in THIS first call — see Binding rules).
@@ -293,8 +293,8 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
     > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING** (skip if FAIL-CRITICAL): Read `phase-state.yaml`; execute `phases.impl.next_action` immediately (`start-audit` → Step 17; `start-round-{N+1}-generator` → Step 13). Do NOT end your turn.
 
 17. **MUST invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning). **NEVER bypass /audit** by spawning `code-reviewer` / `security-scanner` directly or skipping review after AC PASS. Fail the task immediately if `/audit` cannot be invoked — do not proceed to Phase 3 without a valid structured return block.
-    - Call `/audit` with `round={n}` (matches `eval-round-{n}.md`). If plan is under `.backlog/active/{ticket-dir}/plan.md`, also pass `ticket-dir={ticket-dir}` (bare directory name, e.g. `003-fix-login`) to `/audit`. Do NOT pass `only_security_scan` — both code-reviewer and security-scanner must run.
-    - `/audit` writes reports to `.backlog/active/{ticket-dir}/quality-round-{n}.md`, `security-scan-{n}.md`, `audit-round-{n}.md`. `round={n}` keeps round files aligned across retries / resumes.
+    - Call `/audit` with `round={n}` (matches `eval-round-{n}.md`). If plan is under `.simple-workflow/backlog/active/{ticket-dir}/plan.md`, also pass `ticket-dir={ticket-dir}` (bare directory name, e.g. `003-fix-login`) to `/audit`. Do NOT pass `only_security_scan` — both code-reviewer and security-scanner must run.
+    - `/audit` writes reports to `.simple-workflow/backlog/active/{ticket-dir}/quality-round-{n}.md`, `security-scan-{n}.md`, `audit-round-{n}.md`. `round={n}` keeps round files aligned across retries / resumes.
     - `/audit` must NOT receive Generator's or AC Evaluator's return value — firewall is preserved because `/audit` inspects `git diff` independently.
     - Parse `/audit`'s structured return block: `**Status**` (PASS | PASS_WITH_CONCERNS | FAIL), `**Critical**`, `**Warnings**`, `**Suggestions**`, `**Reports**`, `**Summary**`.
     - **If `/audit` itself fails** (no structured block / malformed):
@@ -332,7 +332,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
 
     **Failure case**: If `/impl` exits with remaining AC/quality issues after the max-rounds cap, set `phases.impl.status: completed` but leave `overall_status: in-progress` — user decides whether to re-run. Only set `phases.impl.status: failed` and `overall_status: failed` when the skill itself cannot complete (Generator/Evaluator invocation failure, FAIL-CRITICAL early stop).
 
-22. **Emit SW-CHECKPOINT block (Phase 3 final output only)**. Emit `## [SW-CHECKPOINT]` per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section, after step 20 summary and step 21 finalization. **Only once per invocation** — never after each round / inside the loop. Fill: `phase=impl`; `ticket=.backlog/active/{ticket-dir}` when under a ticket dir, else `none`; `artifacts=[<repo-relative paths to every eval-round-*.md / quality-round-*.md / audit-round-*.md / security-scan-*.md across all rounds + changed source files from `git diff --name-only`>]`; `next_recommended=/ship` on `proceed-to-phase-3`, else `""` (FAIL-CRITICAL / infra failure). Emit on failure paths with `artifacts: []`.
+22. **Emit SW-CHECKPOINT block (Phase 3 final output only)**. Emit `## [SW-CHECKPOINT]` per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section, after step 20 summary and step 21 finalization. **Only once per invocation** — never after each round / inside the loop. Fill: `phase=impl`; `ticket=.simple-workflow/backlog/active/{ticket-dir}` when under a ticket dir, else `none`; `artifacts=[<repo-relative paths to every eval-round-*.md / quality-round-*.md / audit-round-*.md / security-scan-*.md across all rounds + changed source files from `git diff --name-only`>]`; `next_recommended=/ship` on `proceed-to-phase-3`, else `""` (FAIL-CRITICAL / infra failure). Emit on failure paths with `artifacts: []`.
 
 ## Error Handling
 
@@ -347,7 +347,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
 
 Automated via the `/tune` skill:
 1. `/ship` invokes `/tune` automatically (Step 6) to extract patterns from evaluation logs.
-2. Patterns land in `.simple-wf-knowledge/candidates.yaml`, promoted to `entries.yaml` at confidence 0.8.
+2. Patterns land in `.simple-workflow/kb/candidates.yaml`, promoted to `entries.yaml` at confidence 0.8.
 3. Promoted patterns are injected into the Generator prompt (Step 13h) via `index.yaml`.
 4. Manual: `/tune {ticket-dir}` or `/tune all`.
-5. Review: `.simple-wf-knowledge/entries.yaml` and `.simple-wf-knowledge/index.yaml`.
+5. Review: `.simple-workflow/kb/entries.yaml` and `.simple-workflow/kb/index.yaml`.

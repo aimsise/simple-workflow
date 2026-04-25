@@ -42,7 +42,7 @@ Current branch:
 !`git branch --show-current`
 
 Active tickets:
-!`ls -d .backlog/active/*/ 2>/dev/null || echo "(none)"`
+!`ls -d .simple-workflow/backlog/active/*/ 2>/dev/null || echo "(none)"`
 
 Staged changes:
 !`git diff --cached --stat`
@@ -63,23 +63,23 @@ Parse `$ARGUMENTS` for the following:
 - If neither token is present, default `only_security_scan=false`.
 - `round=N` (case-insensitive, N is a positive integer): explicit round number for output filenames. When provided, the skill MUST write to `quality-round-{N}.md`, `security-scan-{N}.md`, and `audit-round-{N}.md` using this number instead of auto-incrementing. This lets the calling skill (e.g. `/impl`) synchronize audit round numbers with its own Generator-Evaluator loop counter. If N is ≤ 0 or not an integer, print a warning and fall back to auto-increment.
 - If `round=` is absent, use the current behavior (auto-increment: max existing round + 1).
-- `ticket-dir=<dir-name>` (case-insensitive key): ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). When provided, this value is used in Step 1 to construct the full path `.backlog/active/{dir-name}` instead of inferring the ticket directory from the branch name. This token is consumed by argument parsing and is NOT passed through as a commit/branch range hint.
+- `ticket-dir=<dir-name>` (case-insensitive key): ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). When provided, this value is used in Step 1 to construct the full path `.simple-workflow/backlog/active/{dir-name}` instead of inferring the ticket directory from the branch name. This token is consumed by argument parsing and is NOT passed through as a commit/branch range hint.
 - Any other tokens are treated as an optional commit/branch range hint, passed through to the agents as additional context.
 
 ### 1. Determine Output Destinations
 
 - Get the current branch name from the pre-computed context above.
-- List directories in `.backlog/active/` from the pre-computed context above.
+- List directories in `.simple-workflow/backlog/active/` from the pre-computed context above.
 
 **If `ticket-dir=<dir-name>` was provided in Step 0:**
-- Construct the full path: `.backlog/active/{dir-name}`
-- Check whether `.backlog/active/{dir-name}` exists as a directory.
-  - If the directory exists: set `ticket-dir` to `.backlog/active/{dir-name}` and skip branch name matching entirely.
-  - If the directory does NOT exist: print `WARNING: ticket-dir '.backlog/active/{dir-name}' does not exist; falling back to branch name matching.` and proceed to the branch name matching below as if `ticket-dir=` was not provided.
+- Construct the full path: `.simple-workflow/backlog/active/{dir-name}`
+- Check whether `.simple-workflow/backlog/active/{dir-name}` exists as a directory.
+  - If the directory exists: set `ticket-dir` to `.simple-workflow/backlog/active/{dir-name}` and skip branch name matching entirely.
+  - If the directory does NOT exist: print `WARNING: ticket-dir '.simple-workflow/backlog/active/{dir-name}' does not exist; falling back to branch name matching.` and proceed to the branch name matching below as if `ticket-dir=` was not provided.
 
 **If `ticket-dir=` was not provided (or directory does not exist):**
-- Match the current branch name against active ticket directories. For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion.
-- If a match is found: set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix).
+- Match the current branch name against active ticket directories. For each directory in `.simple-workflow/backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion.
+- If a match is found: set `ticket-dir` to `.simple-workflow/backlog/active/{full-directory-name}` (including the numeric prefix).
 
 **Once `ticket-dir` is resolved (by either method above):**
 - If `ticket-dir` is set:
@@ -87,7 +87,7 @@ Parse `$ARGUMENTS` for the following:
   - Otherwise, auto-increment: check existing `quality-round-*.md` files in `ticket-dir`, take max + 1, or 1 if none.
   - Code-reviewer output (when invoked): `{ticket-dir}/quality-round-{n}.md`
   - Security-scanner output (always invoked): `{ticket-dir}/security-scan-{n}.md`
-- If no match: use defaults (code-reviewer: `.docs/reviews/{topic}.md`, security-scanner: `.docs/reviews/security-{topic}.md`) where `{topic}` is derived from the current branch name.
+- If no match: use defaults (code-reviewer: `.simple-workflow/docs/reviews/{topic}.md`, security-scanner: `.simple-workflow/docs/reviews/security-{topic}.md`) where `{topic}` is derived from the current branch name.
 
 ### 2. Spawn Agents
 

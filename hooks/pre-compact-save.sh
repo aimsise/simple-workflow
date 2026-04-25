@@ -7,18 +7,19 @@ cat > /dev/null  # consume stdin
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DATE_ISO=$(date -Iseconds 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
 BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
-SAVE_FILE=".docs/compact-state/compact-state-${TIMESTAMP}.md"
+SAVE_FILE=".simple-workflow/docs/compact-state/compact-state-${TIMESTAMP}.md"
 
-mkdir -p .docs/compact-state
+mkdir -p .simple-workflow/docs/compact-state
 
-# Collect file lists depth-agnostically under .backlog/active/ so both the
-# legacy flat layout (.backlog/active/{NNN}-{slug}/) and the new nested
-# layouts (.backlog/active/{parent}/{NNN}-{slug}/ and deeper) are surfaced.
+# Collect file lists depth-agnostically under .simple-workflow/backlog/active/
+# so both the flat layout (.simple-workflow/backlog/active/{NNN}-{slug}/) and
+# nested layouts (.simple-workflow/backlog/active/{parent}/{NNN}-{slug}/ and
+# deeper) are surfaced.
 # `find` with no -maxdepth walks arbitrary depth; sort -u stabilises order
 # and de-duplicates in case the same file is reachable via multiple paths.
 #
-# An "active ticket" is any directory under `.backlog/active/` that
-# contains EITHER `ticket.md` OR `phase-state.yaml` (the latter covers
+# An "active ticket" is any directory under `.simple-workflow/backlog/active/`
+# that contains EITHER `ticket.md` OR `phase-state.yaml` (the latter covers
 # tickets that have had their phase-state initialised before `ticket.md`
 # is persisted, and guarantees that every ticket with a live lifecycle
 # record shows up in the compact-state frontmatter). We represent each
@@ -28,7 +29,7 @@ mkdir -p .docs/compact-state
 # ever contains the directory, so no missing-file read is attempted.
 ACTIVE_TICKET_FILES=()
 ACTIVE_BACKLOG_PLAN_FILES=()
-if [ -d .backlog/active ]; then
+if [ -d .simple-workflow/backlog/active ]; then
   while IFS= read -r _dir; do
     [ -n "$_dir" ] || continue
     # Deterministic canonical entry per ticket dir: always `{dir}/ticket.md`.
@@ -38,8 +39,8 @@ if [ -d .backlog/active ]; then
     ACTIVE_TICKET_FILES+=("$_dir/ticket.md")
   done < <(
     {
-      find .backlog/active -type f -name 'ticket.md' 2>/dev/null
-      find .backlog/active -type f -name 'phase-state.yaml' 2>/dev/null
+      find .simple-workflow/backlog/active -type f -name 'ticket.md' 2>/dev/null
+      find .simple-workflow/backlog/active -type f -name 'phase-state.yaml' 2>/dev/null
     } | while IFS= read -r _p; do
       [ -n "$_p" ] && dirname "$_p"
     done | sort -u
@@ -48,12 +49,12 @@ if [ -d .backlog/active ]; then
 
   while IFS= read -r _plan_md; do
     [ -n "$_plan_md" ] && ACTIVE_BACKLOG_PLAN_FILES+=("$_plan_md")
-  done < <(find .backlog/active -type f -name 'plan.md' 2>/dev/null | sort -u)
+  done < <(find .simple-workflow/backlog/active -type f -name 'plan.md' 2>/dev/null | sort -u)
 fi
 unset _plan_md
 
 shopt -s nullglob
-ACTIVE_DOCS_PLAN_FILES=(.docs/plans/*.md)
+ACTIVE_DOCS_PLAN_FILES=(.simple-workflow/docs/plans/*.md)
 shopt -u nullglob
 
 # --- Per-ticket processing ---
@@ -239,17 +240,17 @@ fi
   echo ""
   echo "## Evaluation State"
   # Depth-agnostic scan for eval-round-*.md / audit-round-*.md so nested
-  # ticket layouts (.backlog/active/{parent}/{NNN}-{slug}/) are surfaced
-  # alongside the legacy flat layout.
+  # ticket layouts (.simple-workflow/backlog/active/{parent}/{NNN}-{slug}/) are
+  # surfaced alongside the flat layout.
   ALL_EVAL_FILES=()
   ALL_AUDIT_FILES=()
-  if [ -d .backlog/active ]; then
+  if [ -d .simple-workflow/backlog/active ]; then
     while IFS= read -r _ef; do
       [ -n "$_ef" ] && ALL_EVAL_FILES+=("$_ef")
-    done < <(find .backlog/active -type f -name 'eval-round-*.md' 2>/dev/null | sort -u)
+    done < <(find .simple-workflow/backlog/active -type f -name 'eval-round-*.md' 2>/dev/null | sort -u)
     while IFS= read -r _af; do
       [ -n "$_af" ] && ALL_AUDIT_FILES+=("$_af")
-    done < <(find .backlog/active -type f -name 'audit-round-*.md' 2>/dev/null | sort -u)
+    done < <(find .simple-workflow/backlog/active -type f -name 'audit-round-*.md' 2>/dev/null | sort -u)
   fi
   unset _ef _af
   if [ "${#ALL_EVAL_FILES[@]}" -eq 0 ] && [ "${#ALL_AUDIT_FILES[@]}" -eq 0 ]; then

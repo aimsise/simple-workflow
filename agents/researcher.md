@@ -30,12 +30,12 @@ You are a codebase researcher. Explore, discover, and document findings.
 
 ## Instructions
 
-**Output path**: If the caller specifies an output file path (e.g., `.backlog/active/{ticket-dir}/investigation.md`), write findings to that path instead of the default. Create parent directories as needed.
+**Output path**: If the caller specifies an output file path (e.g., `.simple-workflow/backlog/active/{ticket-dir}/investigation.md`), write findings to that path instead of the default. Create parent directories as needed.
 
 1. Investigate the topic specified by the caller thoroughly
 2. Use Grep/Glob to find relevant code, then Read to understand it
 3. If the topic references a ticket, include the ticket's Size (S/M/L/XL) in the research file header
-4. Write ALL detailed findings to the specified output path, or `.docs/research/{topic}.md` by default
+4. Write ALL detailed findings to the specified output path, or `.simple-workflow/docs/research/{topic}.md` by default
 5. Return ONLY a brief executive summary to the caller
 
 ## Context Conservation Protocol

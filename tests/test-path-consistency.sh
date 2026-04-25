@@ -87,14 +87,14 @@ assert_file_contains \
   "ticket-dir"
 
 assert_file_contains \
-  "audit/SKILL.md references .backlog/active" \
+  "audit/SKILL.md references .simple-workflow/backlog/active" \
   "$REPO_DIR/skills/audit/SKILL.md" \
-  "\.backlog/active"
+  "\.simple-workflow/backlog/active"
 
 assert_file_contains \
-  "plan2doc/SKILL.md searches .backlog for tickets" \
+  "plan2doc/SKILL.md searches .simple-workflow/backlog for tickets" \
   "$REPO_DIR/skills/plan2doc/SKILL.md" \
-  "search.*\.backlog"
+  "search.*\.simple-workflow/backlog"
 
 assert_file_contains \
   "impl/SKILL.md uses branch matching for eval-round" \
@@ -102,9 +102,9 @@ assert_file_contains \
   "slug.*portion|strip.*prefix|branch.*contains"
 
 assert_file_contains \
-  "refactor/SKILL.md references ticket-dir or .backlog/active" \
+  "refactor/SKILL.md references ticket-dir or .simple-workflow/backlog/active" \
   "$REPO_DIR/skills/refactor/SKILL.md" \
-  "ticket-dir|\.backlog/active"
+  "ticket-dir|\.simple-workflow/backlog/active"
 
 assert_file_contains \
   "autopilot/SKILL.md references ticket-dir" \
@@ -765,9 +765,9 @@ assert_file_contains \
 
 # AC2: /impl's ticket-dir= pass to /audit uses bare name format (not full path)
 assert_file_not_contains \
-  "impl/SKILL.md does NOT pass ticket-dir=.backlog (no full path leak)" \
+  "impl/SKILL.md does NOT pass ticket-dir=.simple-workflow/backlog (no full path leak)" \
   "$REPO_DIR/skills/impl/SKILL.md" \
-  'ticket-dir=\.backlog'
+  'ticket-dir=\.simple-workflow/backlog'
 
 # AC3: Artifact verification ordering — phase-guarded for Phase E
 # AC3: Artifact verification ordering — ARTIFACT-MISSING appears before State update (after)
@@ -795,18 +795,19 @@ fi
 
 echo ""
 
-# --- Category 24: /ship Step 3b — gitignore handles .backlog/ exclusion ---
-# v4.1.0 (commit 01b7584) intentionally removed the explicit `.backlog/briefs/`
-# exclusion clause from ship/SKILL.md Step 3.b: `.backlog/` is gitignored via
+# --- Category 24: /ship Step 3b — gitignore handles .simple-workflow/ exclusion ---
+# v4.1.0 (commit 01b7584) intentionally removed the explicit briefs-exclusion
+# clause from ship/SKILL.md Step 3.b: `.simple-workflow/` is gitignored via
 # hooks/session-start.sh setup, so an in-prose carve-out is redundant. This
-# assertion guards the new contract — the literal substring `.backlog/briefs/`
-# MUST NOT reappear in ship/SKILL.md (gitignore is the single mechanism).
-echo "--- /ship Step 3b stages all relevant files (no .backlog/briefs/ exclusion clause; gitignore handles it) ---"
+# assertion guards the new contract — the literal substring
+# `.simple-workflow/backlog/briefs/` MUST NOT reappear in ship/SKILL.md
+# (gitignore is the single mechanism).
+echo "--- /ship Step 3b stages all relevant files (no briefs exclusion clause; gitignore handles it) ---"
 
 assert_file_not_contains \
-  "ship/SKILL.md Step 3b stages all relevant files (no .backlog/briefs/ exclusion clause; gitignore handles it)" \
+  "ship/SKILL.md Step 3b stages all relevant files (no .simple-workflow/backlog/briefs/ exclusion clause; gitignore handles it)" \
   "$REPO_DIR/skills/ship/SKILL.md" \
-  '\.backlog/briefs/'
+  '\.simple-workflow/backlog/briefs/'
 
 echo ""
 

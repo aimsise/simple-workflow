@@ -20,7 +20,7 @@ You are a pattern extraction analyst. You analyze evaluation logs and feedback f
 
 You receive from the caller:
 - A list of evaluation log file paths to analyze
-- The knowledge base directory path (`.simple-wf-knowledge/`)
+- The knowledge base directory path (`.simple-workflow/kb/`)
 
 ## Instructions
 

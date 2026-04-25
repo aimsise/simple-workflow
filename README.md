@@ -53,10 +53,10 @@ Structurally separates "writing code" from "judging code" to guarantee quality b
 
 ### Built-in Ticket Management
 
-Your project's `.backlog/` directory is a state machine. Tickets transition between states via physical directory moves (`mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`), making state visible, traceable, and greppable — no database or external tools required.
+Your project's `.simple-workflow/backlog/` directory is a state machine. Tickets transition between states via physical directory moves (`mv .simple-workflow/backlog/product_backlog/{ticket-dir} .simple-workflow/backlog/active/{ticket-dir}`), making state visible, traceable, and greppable — no database or external tools required.
 
 ```
-.backlog/
+.simple-workflow/backlog/
 ├── product_backlog/   # New tickets
 ├── active/            # In-progress tickets
 ├── blocked/           # Blocked tickets
@@ -65,17 +65,17 @@ Your project's `.backlog/` directory is a state machine. Tickets transition betw
 
 > **Note**: Moving tickets to `blocked/` is done manually:
 > ```bash
-> mv .backlog/active/{ticket-dir} .backlog/blocked/{ticket-dir}
+> mv .simple-workflow/backlog/active/{ticket-dir} .simple-workflow/backlog/blocked/{ticket-dir}
 > ```
 > To unblock and resume work:
 > ```bash
-> mv .backlog/blocked/{ticket-dir} .backlog/active/{ticket-dir}
+> mv .simple-workflow/backlog/blocked/{ticket-dir} .simple-workflow/backlog/active/{ticket-dir}
 > ```
 
 Each ticket is a directory where all work artifacts accumulate:
 
 ```
-.backlog/active/001-add-search-feature/
+.simple-workflow/backlog/active/001-add-search-feature/
 ├── ticket.md          # The ticket (size, acceptance criteria, scope)
 ├── investigation.md   # Research findings
 ├── plan.md            # Implementation plan
@@ -87,7 +87,7 @@ From creation to completion, every intermediate artifact is confined within its 
 
 #### Unified ticket state: `phase-state.yaml`
 
-Every ticket carries a `phase-state.yaml` file that declares its full lifecycle state (`create_ticket → scout → impl → ship → done`). `/create-ticket` creates it, each subsequent phase-owner skill updates only its own section, and `/ship` moves it alongside the ticket directory to `.backlog/done/`. **`phase-state.yaml` is never deleted** — it is the permanent lifecycle record for the ticket. The `SessionStart` hook and `/catchup` both read this file to recover active-ticket context in one step, without walking every artifact. The canonical schema, field enums, and per-skill write-ownership rules live in [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md).
+Every ticket carries a `phase-state.yaml` file that declares its full lifecycle state (`create_ticket → scout → impl → ship → done`). `/create-ticket` creates it, each subsequent phase-owner skill updates only its own section, and `/ship` moves it alongside the ticket directory to `.simple-workflow/backlog/done/`. **`phase-state.yaml` is never deleted** — it is the permanent lifecycle record for the ticket. The `SessionStart` hook and `/catchup` both read this file to recover active-ticket context in one step, without walking every artifact. The canonical schema, field enums, and per-skill write-ownership rules live in [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md).
 
 > **Scope note**: `phase-state.yaml` tracks the manual workflow (`/create-ticket` → `/scout` → `/impl` → `/ship`). Cost accounting and orchestration state for `/autopilot` are tracked in `autopilot-state.yaml`, a separate schema. See [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md) §5 "Dual-state precedence" for how `/catchup` reconciles the two.
 
@@ -95,7 +95,7 @@ Phase-terminating skills (`/create-ticket`, `/scout`, `/plan2doc`, `/impl`, `/sh
 
 ### Knowledge Base (Cross-Session Learning)
 
-`.simple-wf-knowledge/` is an automatically maintained knowledge base that captures recurring patterns from evaluation logs. `/tune` analyzes completed ticket evaluations (eval-round, audit-round files) via the `tune-analyzer` agent, extracts actionable patterns (common failures, recurring feedback themes), and persists them as structured entries. At implementation time, `/impl` injects relevant knowledge base patterns into the Generator's dispatch prompt, so lessons learned from past tickets inform future implementation — closing the loop between evaluation feedback and code generation across sessions.
+`.simple-workflow/kb/` is an automatically maintained knowledge base that captures recurring patterns from evaluation logs. `/tune` analyzes completed ticket evaluations (eval-round, audit-round files) via the `tune-analyzer` agent, extracts actionable patterns (common failures, recurring feedback themes), and persists them as structured entries. At implementation time, `/impl` injects relevant knowledge base patterns into the Generator's dispatch prompt, so lessons learned from past tickets inform future implementation — closing the loop between evaluation feedback and code generation across sessions.
 
 This feedback loop means simple-workflow is not a static tool — it is a **learning system that improves with use**. The more tickets you complete in a project, the more project-specific patterns accumulate, and the higher the probability that future implementations pass evaluation on the first round. In effect, the system develops project-specific expertise over time — analogous to a human developer becoming more effective the longer they work on a codebase — without fine-tuning the underlying model.
 
@@ -165,7 +165,7 @@ Once installed, all slash commands work the same on both platforms:
 ```
 /investigate <topic>
 /create-ticket <description>
-/scout .backlog/product_backlog/001-migrate-to-session-auth/ticket.md
+/scout .simple-workflow/backlog/product_backlog/001-migrate-to-session-auth/ticket.md
 /impl
 /audit
 /ship
@@ -173,24 +173,28 @@ Once installed, all slash commands work the same on both platforms:
 
 > **Note**: Session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire on Copilot CLI. Context recovery via `/catchup` after compaction works best on Claude Code.
 
+## Migrating from v4.x
+
+v5.0.0 consolidates the 3 top-level directories (`.docs/`, `.backlog/`, `.simple-wf-knowledge/`) into a single `.simple-workflow/` directory. See the [v5.0.0 Migration Announcement](<DISCUSSION_URL>) for the full step-by-step guide. Existing users must perform a one-time manual move; new installs need no action.
+
 ## Setup
 
 On your first `/brief`, `/autopilot`, or other git-dependent skill, simple-workflow's `SessionStart` hook prepares the target project:
 
 1. `git init -b main` if there is no repo (falls back to plain `git init` on git <2.28)
 2. An initial commit if the repo has no HEAD
-3. Appends `.docs/`, `.backlog/`, `.simple-wf-knowledge/` to `.gitignore` (idempotent — only missing entries are added) and commits with `chore: add simple-workflow artifacts to .gitignore`
-4. Writes `.simple-wf-knowledge/.gitignore-setup-done` as the idempotency marker — once present, simple-workflow will **never** touch your `.gitignore` again, even across sessions. If you delete an entry manually, that decision is permanent.
+3. Appends `.simple-workflow/` to `.gitignore` (idempotent — only added if missing) and commits with `chore: add simple-workflow artifacts to .gitignore`
+4. Writes `.simple-workflow/.setup-done` as the idempotency marker — once present, simple-workflow will **never** touch your `.gitignore` again, even across sessions. If you delete an entry manually, that decision is permanent.
 
 ### Ticket counter is per-developer
 
-`.backlog/.ticket-counter` lives under the gitignored `.backlog/` tree, so each developer starts independently at T-001. This is deliberate for individual productivity workflows.
+`.simple-workflow/.ticket-counter` lives under the gitignored `.simple-workflow/` tree, so each developer starts independently at T-001. This is deliberate for individual productivity workflows.
 
-If you want to share ticket numbering across a team, use this surgical opt-out in your `.gitignore` (the single-line `!.backlog/.ticket-counter` does **not** work — git does not descend into an ignored parent directory):
+If you want to share ticket numbering across a team, use this surgical opt-out in your `.gitignore` (the single-line `!.simple-workflow/.ticket-counter` does **not** work — git does not descend into an ignored parent directory):
 
-    !.backlog/                 # un-ignore the directory so git descends into it
-    .backlog/*                 # re-ignore all contents by default
-    !.backlog/.ticket-counter  # …except the counter
+    !.simple-workflow/                 # un-ignore the directory so git descends into it
+    .simple-workflow/*                 # re-ignore all contents by default
+    !.simple-workflow/.ticket-counter  # …except the counter
 
 That tracks only the counter; briefs, active tickets, and the knowledge base stay local. Concurrent ticket creation by multiple developers will produce git conflicts on the counter — that is the expected trade-off for team-shared numbering.
 
@@ -208,7 +212,7 @@ investigate ──> create-ticket ──> scout ──> impl ──> ship
 /investigate how is user authentication currently implemented
 ```
 
-The researcher agent explores the codebase and writes its findings to `.docs/research/` or the ticket directory. Only a summary is returned to the caller.
+The researcher agent explores the codebase and writes its findings to `.simple-workflow/docs/research/` or the ticket directory. Only a summary is returned to the caller.
 
 ### 2. `/create-ticket` — Create a Ticket
 
@@ -223,17 +227,17 @@ Creates a structured ticket through four phases:
 3. **Ticket drafting**: The planner creates a ticket with size, acceptance criteria, and scope
 4. **Quality evaluation**: The ticket-evaluator checks five quality gates (testability, unambiguity, completeness, implementability, size fit) — if any gate fails, the ticket is revised and re-evaluated
 
-The resulting ticket is saved to `.backlog/product_backlog/{ticket-dir}/ticket.md` (where `{ticket-dir}` is `{NNN}-{slug}`, e.g., `001-migrate-to-session-auth`).
+The resulting ticket is saved to `.simple-workflow/backlog/product_backlog/{ticket-dir}/ticket.md` (where `{ticket-dir}` is `{NNN}-{slug}`, e.g., `001-migrate-to-session-auth`).
 
 ### 3. `/scout` — Research + Plan
 
 ```
-/scout .backlog/product_backlog/001-migrate-to-session-auth/ticket.md
+/scout .simple-workflow/backlog/product_backlog/001-migrate-to-session-auth/ticket.md
 ```
 
-Chains `/investigate` and `/plan2doc` in sequence. Moves the ticket to `.backlog/active/`, then runs research and creates an implementation plan in one go. `/plan2doc` selects model based on ticket size (sonnet for S, opus for M/L/XL).
+Chains `/investigate` and `/plan2doc` in sequence. Moves the ticket to `.simple-workflow/backlog/active/`, then runs research and creates an implementation plan in one go. `/plan2doc` selects model based on ticket size (sonnet for S, opus for M/L/XL).
 
-At this point, `.backlog/active/{ticket-dir}/` contains `ticket.md`, `investigation.md`, and `plan.md` — everything needed for implementation.
+At this point, `.simple-workflow/backlog/active/{ticket-dir}/` contains `ticket.md`, `investigation.md`, and `plan.md` — everything needed for implementation.
 
 ### 4. `/impl` — Implement
 
@@ -276,7 +280,7 @@ Ships the current changes through up to three phases:
 2. **Create PR** — Pushes to GitHub and creates a pull request
 3. **Merge** (optional, `merge=true`) — Squash-merges, deletes the branch, and syncs local
 
-If no prior review via `/audit` is detected, a review gate recommends running one first. Pre-computed context (branch name, diff stats, commit log) is gathered with a resilience contract that ensures `/ship` never fails due to unexpected git state — missing remotes, empty diffs, or detached HEAD are all handled gracefully. After a successful commit, the ticket is automatically moved to `.backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
+If no prior review via `/audit` is detected, a review gate recommends running one first. Pre-computed context (branch name, diff stats, commit log) is gathered with a resilience contract that ensures `/ship` never fails due to unexpected git state — missing remotes, empty diffs, or detached HEAD are all handled gracefully. After a successful commit, the ticket is automatically moved to `.simple-workflow/backlog/done/`, and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
 
 ### Full Automation with /brief + /autopilot
 
@@ -286,7 +290,7 @@ For a fully automated pipeline from idea to PR:
 
 2. **`/autopilot <slug>`** — Reads the brief and executes the full pipeline (`create-ticket → scout → impl → ship`) with zero human intervention. Decision points are resolved by the autopilot-policy. Large scopes are automatically split into multiple tickets and executed in dependency order. Quality safeguards run at each pipeline step: an **Artifact Presence Gate** validates that all expected artifacts (investigation, plan, evaluation logs, etc.) exist before marking a step complete, and a **Skill Invocation Audit** tracks whether each step used proper Skill tool dispatch. Steps that fell back to manual bash invocation are flagged as `completed-with-warnings`.
 
-> **Note**: Workflow isolation is bidirectional. `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `product_backlog/`. Conversely, manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO). To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
+> **Note**: Workflow isolation is bidirectional. `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `.simple-workflow/backlog/product_backlog/`. Conversely, manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO). To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
 
 The autopilot-policy evolves over time: `/tune` extracts decision patterns from execution logs, and future `/brief` runs use these patterns to suggest more accurate defaults.
 
@@ -318,7 +322,7 @@ Hook scripts are registered in `hooks/hooks.json`. To customize, edit the JSON f
 
 - Designed for use with Claude Code CLI and GitHub Copilot CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
 - The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
-- Ticket management uses the local filesystem (`.backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
+- Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
 - AC Evaluator ships with built-in test/lint runners for JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator will rely on static code analysis only (reported as PASS-WITH-CAVEATS).
 

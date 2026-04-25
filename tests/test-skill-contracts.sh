@@ -273,7 +273,7 @@ echo "--- Cat C: Skill 委譲グラフ整合性 ---"
 
 # Skill allowed-tools を持つスキルの本文からバッククォート囲みの `/skillname` を抽出
 # パターン: `/audit` や `/impl` のようにバッククォートで囲まれたスキル呼び出し
-# /Error, /Phase 等の非スキル参照や .backlog/active/ 等のパス内スラッシュは除外
+# /Error, /Phase 等の非スキル参照や .simple-workflow/backlog/active/ 等のパス内スラッシュは除外
 cat_c_count=0
 for skill_dir in "$REPO_DIR"/skills/*/; do
   skill_slug=$(basename "$skill_dir")
@@ -1084,7 +1084,7 @@ fi
 assert_file_contains \
   "autopilot SKILL.md passes explicit plan path to /impl in single flow" \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
-  "/impl.*\.backlog/active/.*plan\.md"
+  "/impl.*\.simple-workflow/backlog/active/.*plan\.md"
 
 # M-6: Split flow Policy guard ABORT in autopilot
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
@@ -1104,7 +1104,7 @@ fi
 
 # M-7: Split flow explicit /impl plan path in autopilot
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qE "/impl \.backlog/active/.*plan\.md" "$REPO_DIR/skills/autopilot/SKILL.md"; then
+if grep -qE "/impl \.simple-workflow/backlog/active/.*plan\.md" "$REPO_DIR/skills/autopilot/SKILL.md"; then
   echo -e "  ${GREEN}PASS${NC} M-7: autopilot SKILL.md passes explicit plan path in split flow"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1144,25 +1144,17 @@ echo ""
 # =============================================================================
 echo "--- Cat N: impl safety contracts ---"
 
-# N-1: impl SKILL.md に3つのスタッシュ除外 pathspec が全て含まれる
+# N-1: impl SKILL.md に統合スタッシュ除外 pathspec ':!.simple-workflow' が含まれる
+# v5.0.0 で legacy 3 パス (旧 docs/backlog/knowledge 各ルート) は
+# `.simple-workflow/` 単一ディレクトリに統合されたため、除外も 1 行に集約される。
 assert_file_contains \
-  "impl SKILL.md contains stash exclusion ':!.backlog'" \
+  "impl SKILL.md contains stash exclusion ':!.simple-workflow'" \
   "$REPO_DIR/skills/impl/SKILL.md" \
-  "':!\.backlog'"
+  "':!\.simple-workflow'"
 
-assert_file_contains \
-  "impl SKILL.md contains stash exclusion ':!.docs'" \
-  "$REPO_DIR/skills/impl/SKILL.md" \
-  "':!\.docs'"
-
-assert_file_contains \
-  "impl SKILL.md contains stash exclusion ':!.simple-wf-knowledge'" \
-  "$REPO_DIR/skills/impl/SKILL.md" \
-  "':!\.simple-wf-knowledge'"
-
-# N-2: ship SKILL.md で .backlog/done が Phase 2 より前に記述されている
+# N-2: ship SKILL.md で .simple-workflow/backlog/done が Phase 2 より前に記述されている
 ship_md="$REPO_DIR/skills/ship/SKILL.md"
-done_line=$(awk '/\.backlog\/done/{print NR; exit}' "$ship_md")
+done_line=$(awk '/\.simple-workflow\/backlog\/done/{print NR; exit}' "$ship_md")
 phase2_line=$(awk '/^## Phase 2/{print NR; exit}' "$ship_md")
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -n "$done_line" ] && [ -n "$phase2_line" ] && [ "$done_line" -lt "$phase2_line" ]; then

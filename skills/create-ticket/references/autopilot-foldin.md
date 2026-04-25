@@ -1,7 +1,7 @@
 # autopilot-state.yaml → phase-state.yaml fold-in
 
 Deferred — see
-`.docs/discovery/test_simple_workflow3/for_save_context/eval_skeptical_review_remediation.md`
+`.simple-workflow/docs/discovery/test_simple_workflow3/for_save_context/eval_skeptical_review_remediation.md`
 Task 10 for context.
 
 This document is a placeholder for the future fold-in work that integrates

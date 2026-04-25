@@ -12,17 +12,17 @@ HOOK="$HOOK_DIR/session-stop-log.sh"
 # Trap to ensure cleanup on exit
 trap 'cleanup_test_repo' EXIT
 
-# Test 1: .docs/session-log/session-log-*.md file is created
+# Test 1: .simple-workflow/docs/session-log/session-log-*.md file is created
 setup_test_repo
 run_hook "$HOOK" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-LOG_FILE=$(ls "$TEST_REPO"/.docs/session-log/session-log-*.md 2>/dev/null | head -1)
+LOG_FILE=$(ls "$TEST_REPO"/.simple-workflow/docs/session-log/session-log-*.md 2>/dev/null | head -1)
 if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
   echo -e "  ${GREEN}PASS${NC} session-log-*.md file is created"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} session-log-*.md file is created"
-  echo -e "       No matching file found in $TEST_REPO/.docs/session-log/"
+  echo -e "       No matching file found in $TEST_REPO/.simple-workflow/docs/session-log/"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

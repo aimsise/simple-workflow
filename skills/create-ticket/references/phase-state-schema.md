@@ -61,7 +61,7 @@ advances `pending → in-progress → completed` (or `→ failed`).
 ## 5. Dual-state precedence
 
 During `/autopilot`, `autopilot-state.yaml` (under
-`.backlog/briefs/active/{slug}/`) is authoritative for pipeline
+`.simple-workflow/backlog/briefs/active/{slug}/`) is authoritative for pipeline
 orchestration; `phase-state.yaml` is maintained in parallel. Outside
 autopilot, `phase-state.yaml` is authoritative. On conflict, prefer the
 more recently-modified file and emit a warning. Fold-in deferred — see `skills/create-ticket/references/autopilot-foldin.md`.

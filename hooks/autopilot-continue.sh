@@ -24,21 +24,21 @@ if [ "$CONTINUE_COUNT" -ge 5 ] 2>/dev/null; then
 fi
 
 # --- Find autopilot-state.yaml ---
-# Depth-agnostic scan: the legacy layout is
-# `.backlog/briefs/active/{slug}/autopilot-state.yaml` (one level under
-# briefs/active/), but nested layouts such as
-# `.backlog/briefs/active/{parent-slug}/{slug}/autopilot-state.yaml` are
-# also valid. Use `find` with no -maxdepth so all depths are discovered.
+# Depth-agnostic scan: the flat layout is
+# `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` (one
+# level under briefs/active/), but nested layouts such as
+# `.simple-workflow/backlog/briefs/active/{parent-slug}/{slug}/autopilot-state.yaml`
+# are also valid. Use `find` with no -maxdepth so all depths are discovered.
 # sort -u guarantees deterministic ordering and dedupes on any rare case
 # where the same file is reachable through two paths.
 STATE_FILE=""
-if [ -d .backlog/briefs/active ]; then
+if [ -d .simple-workflow/backlog/briefs/active ]; then
   while IFS= read -r _f; do
     if [ -f "$_f" ]; then
       STATE_FILE="$_f"
       break
     fi
-  done < <(find .backlog/briefs/active -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+  done < <(find .simple-workflow/backlog/briefs/active -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
   unset _f
 fi
 
@@ -48,13 +48,13 @@ if [ -z "$STATE_FILE" ]; then
   # Its presence means the auto-chain is between /brief and /autopilot, so we must block end_turn
   # until /autopilot starts and removes the file.
   AUTOKICK_FILE=""
-  if [ -d .backlog/briefs/active ]; then
+  if [ -d .simple-workflow/backlog/briefs/active ]; then
     while IFS= read -r _f; do
       if [ -f "$_f" ]; then
         AUTOKICK_FILE="$_f"
         break
       fi
-    done < <(find .backlog/briefs/active -type f -name 'auto-kick.yaml' 2>/dev/null | sort -u)
+    done < <(find .simple-workflow/backlog/briefs/active -type f -name 'auto-kick.yaml' 2>/dev/null | sort -u)
     unset _f
   fi
 
@@ -85,7 +85,7 @@ if [ -z "$STATE_FILE" ]; then
   fi
 
   # Determine whether the upstream /create-ticket already produced split-plan.md
-  AUTOKICK_SPLIT_PLAN=".backlog/product_backlog/${AUTOKICK_SLUG}/split-plan.md"
+  AUTOKICK_SPLIT_PLAN=".simple-workflow/backlog/product_backlog/${AUTOKICK_SLUG}/split-plan.md"
 
   # Increment counter
   AUTOKICK_COUNT=$((AUTOKICK_COUNT + 1))
@@ -113,7 +113,7 @@ if [ -z "$STATE_FILE" ]; then
       --arg autokick_path "$AUTOKICK_FILE" \
       '{
         decision: "block",
-        reason: ("auto-kick.yaml detected at " + $autokick_path + " (slug: " + $slug + "). The auto-chain requires you to run /create-ticket first to produce .backlog/product_backlog/" + $slug + "/split-plan.md, and then run /autopilot " + $slug + " via the Skill tool. Do NOT end your turn or summarize.")
+        reason: ("auto-kick.yaml detected at " + $autokick_path + " (slug: " + $slug + "). The auto-chain requires you to run /create-ticket first to produce .simple-workflow/backlog/product_backlog/" + $slug + "/split-plan.md, and then run /autopilot " + $slug + " via the Skill tool. Do NOT end your turn or summarize.")
       }'
   fi
   exit 0
