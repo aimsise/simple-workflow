@@ -183,7 +183,7 @@ Independently verify by running:
 - **FAIL**: One or more AC fail, OR [HIGH] issues exist
 - **FAIL-CRITICAL**: Any [CRITICAL] issue exists
 
-Save your detailed evaluation report to the file path specified by the caller. If no path is specified, save to `.docs/eval-round/{topic}-eval-report.md` where {topic} is derived from the subject of the evaluation.
+Save your detailed evaluation report to the file path specified by the caller. If no path is specified, save to `.simple-workflow/docs/eval-round/{topic}-eval-report.md` where {topic} is derived from the subject of the evaluation.
 
 You MUST NOT modify source code. Use Write only to save your evaluation report.
 
@@ -192,7 +192,7 @@ You MUST NOT modify source code. Use Write only to save your evaluation report.
 This contract is load-bearing: the orchestrator relies on it to avoid redundant re-invocations solely for persistence.
 
 - You MUST write the evaluation report to disk before returning. The Write call completes before the return value is emitted — never return first and "save later".
-- The save path MUST be the caller-specified path when provided. If the caller omits a path, you MUST save to `.docs/eval-round/{topic}-eval-report.md` (derive `{topic}` from the subject of the evaluation).
+- The save path MUST be the caller-specified path when provided. If the caller omits a path, you MUST save to `.simple-workflow/docs/eval-round/{topic}-eval-report.md` (derive `{topic}` from the subject of the evaluation).
 - The **Output** field in the return value MUST be non-empty and MUST contain the path that was actually written. An empty Output is a contract violation, not a signal for "caller should retry to persist".
 - If the Write call fails (permission denied, disk full, invalid path, etc.), you MUST return **Status**: FAIL-CRITICAL and **Output**: ERROR-WRITE-FAILED, with the underlying error surfaced in **Issues**. Never return an empty Output to signal "I did not save".
 - Callers MUST NOT re-invoke this agent solely to persist the report. Since the first call is contractually idempotent on persistence (it always writes before returning), a second invocation for save-only purposes is wasted work and a protocol violation. An empty Output is an agent failure, not a retryable state.

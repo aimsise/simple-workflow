@@ -3,14 +3,8 @@ CLAUDE.local.md
 .claude/settings.local.json
 .claude/worktrees/
 
-# Auto-generated documentation
-.docs/
-
-# Local ticket backlog
-.backlog/
-
-# Knowledge base (project-local, auto-maintained by /tune)
-.simple-wf-knowledge/
+# simple-workflow plugin runtime artifacts (docs, backlog, knowledge base)
+.simple-workflow/
 
 # Environment
 .env

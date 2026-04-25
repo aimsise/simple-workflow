@@ -46,10 +46,10 @@ Interview templates:
 !`cat "$CLAUDE_PLUGIN_ROOT/skills/brief/references/interview-templates.md" 2>/dev/null || echo "[WARNING: interview-templates.md not found]"`
 
 Existing briefs:
-!`ls -t .backlog/briefs/active/*/brief.md 2>/dev/null | head -5`
+!`ls -t .simple-workflow/backlog/briefs/active/*/brief.md 2>/dev/null | head -5`
 
 Knowledge base (autopilot patterns):
-!`cat .simple-wf-knowledge/index.yaml 2>/dev/null | grep -A2 "^autopilot:" || echo "[No autopilot patterns in knowledge base]"`
+!`cat .simple-workflow/kb/index.yaml 2>/dev/null | grep -A2 "^autopilot:" || echo "[No autopilot patterns in knowledge base]"`
 
 # /brief
 
@@ -57,7 +57,7 @@ User input: $ARGUMENTS
 
 ## Scope boundary
 
-`/brief` produces two artifacts and stops: `.backlog/briefs/active/{slug}/brief.md` and `.backlog/briefs/active/{slug}/autopilot-policy.yaml`. **`/brief` never writes `split-plan.md`** — ticket decomposition is owned by `/create-ticket` (bare, `brief=<path>`, or `findings=<path>` modes). The obsolete frontmatter fields `split:` and `ticket_count:` are **not emitted** by this skill.
+`/brief` produces two artifacts and stops: `.simple-workflow/backlog/briefs/active/{slug}/brief.md` and `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`. **`/brief` never writes `split-plan.md`** — ticket decomposition is owned by `/create-ticket` (bare, `brief=<path>`, or `findings=<path>` modes). The obsolete frontmatter fields `split:` and `ticket_count:` are **not emitted** by this skill.
 
 ## Argument Parsing
 
@@ -107,7 +107,7 @@ At the end of Phase 2, record `interview_complete = true` iff **at least one rou
 
 ## Phase 3: Brief Document Generation
 
-1. Create directory: `mkdir -p .backlog/briefs/active/{slug}`
+1. Create directory: `mkdir -p .simple-workflow/backlog/briefs/active/{slug}`
 2. Synthesize all gathered information into a structured brief document.
 3. Estimate the ticket size (S/M/L/XL) based on:
    - S: 1-3 files, simple change
@@ -115,7 +115,7 @@ At the end of Phase 2, record `interview_complete = true` iff **at least one rou
    - L: 9+ files, significant complexity
    - XL: Architecture-level changes
 4. Estimate the category: Security / CodeQuality / Doc / DevOps / Community
-5. Write to `.backlog/briefs/active/{slug}/brief.md`.
+5. Write to `.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
 
 **Frontmatter contract** (brief.md):
 
@@ -166,7 +166,7 @@ interview_complete: {true|false}
 
 ## Phase 4: Policy Generation
 
-1. Read `.simple-wf-knowledge/index.yaml` if it exists.
+1. Read `.simple-workflow/kb/index.yaml` if it exists.
    - Filter entries under the `autopilot` section. These are historical decision patterns (from `/tune` analysis of autopilot-log.md) that inform default policy values.
    - For each gate in the policy template, search the `autopilot` section for patterns whose `summary` matches the gate name (e.g., `ac_eval_fail`, `ship_review_gate`).
 2. Determine default policy values based on:
@@ -176,8 +176,8 @@ interview_complete: {true|false}
      - confidence 0.5-0.7 → use the pattern's action but append `# [low confidence]` comment
      - confidence < 0.5 → use conservative default (stop)
    - **Size-scoped pattern priority**: If the `autopilot` section contains patterns with a `scope` matching the current brief's `estimated_size` (S/M/L/XL), prefer those over patterns with `scope=general`. Fall back to `scope=general` only when no size-specific pattern exists for a gate.
-   - If `.simple-wf-knowledge/index.yaml` does not exist or has no `autopilot` section (first run), use conservative defaults for all gates and add `# KB patterns: none` comment to the generated policy file.
-3. Write to `.backlog/briefs/active/{slug}/autopilot-policy.yaml` regardless of Phase 2 outcome (policy generation is preserved even when Phase 2 was skipped — the top-level `gates:` line MUST be present):
+   - If `.simple-workflow/kb/index.yaml` does not exist or has no `autopilot` section (first run), use conservative defaults for all gates and add `# KB patterns: none` comment to the generated policy file.
+3. Write to `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml` regardless of Phase 2 outcome (policy generation is preserved even when Phase 2 was skipped — the top-level `gates:` line MUST be present):
 
 ```yaml
 version: 1
@@ -209,7 +209,7 @@ constraints:
   allow_breaking_changes: {false|true}  # conservative/moderate=false, aggressive=true
 ```
 
-The split judgement that used to live here has been removed: `/brief` no longer analyzes `estimated_size` L / XL to produce `split-plan.md`. `/create-ticket brief=<path>` receives the brief and is responsible for decomposing the scope (via its `planner` Split Judgment or via `findings=<path>` mode + `decomposer`). See `.docs/fix_structure/spec-migration-policy.md` for the updated ownership boundary.
+The split judgement that used to live here has been removed: `/brief` no longer analyzes `estimated_size` L / XL to produce `split-plan.md`. `/create-ticket brief=<path>` receives the brief and is responsible for decomposing the scope (via its `planner` Split Judgment or via `findings=<path>` mode + `decomposer`). See `.simple-workflow/docs/fix_structure/spec-migration-policy.md` for the updated ownership boundary.
 
 ## Finalization: Output, `auto=true` handoff, and SW-CHECKPOINT
 
@@ -218,8 +218,8 @@ This is the final phase of `/brief`. It handles the summary print, the optional 
 ### Step 1 — Summary
 
 Print:
-- Brief file path: `.backlog/briefs/active/{slug}/brief.md`
-- Policy file path: `.backlog/briefs/active/{slug}/autopilot-policy.yaml`
+- Brief file path: `.simple-workflow/backlog/briefs/active/{slug}/brief.md`
+- Policy file path: `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`
 - Estimated size and category
 - Interview outcome (`interview_complete: true|false`); if true, number of rounds actually completed
 
@@ -231,7 +231,7 @@ Only runs when `auto=true` was parsed from arguments. Within **Step 2's chain-co
 
 a. Display the brief content and policy content to the user. This display is passive — it informs the user of what will be chained but does not pause for acknowledgement.
 b. Update `brief.md` `status:` from `draft` to `confirmed`.
-c. **Before invoking `/create-ticket` via the Skill tool**, write the auto-kick state file at `.backlog/briefs/active/{slug}/auto-kick.yaml` with the following sample shape (use `date -u +%Y-%m-%dT%H:%M:%SZ` for `started`):
+c. **Before invoking `/create-ticket` via the Skill tool**, write the auto-kick state file at `.simple-workflow/backlog/briefs/active/{slug}/auto-kick.yaml` with the following sample shape (use `date -u +%Y-%m-%dT%H:%M:%SZ` for `started`):
 
    ```yaml
    version: 1
@@ -240,13 +240,13 @@ c. **Before invoking `/create-ticket` via the Skill tool**, write the auto-kick 
    ```
 
    This file signals the Stop hook that the auto-chain is mid-flight between `/brief` → `/create-ticket` → `/autopilot`; it is deleted by `/autopilot` Phase 1 on startup.
-d. **MUST invoke `/create-ticket` via the Skill tool** with argument `brief=.backlog/briefs/active/{slug}/brief.md`.
-e. If `/create-ticket` exits non-zero (or its SW-CHECKPOINT block indicates a failure path), **stdout MUST contain the literal string `ERROR:` AND the literal string `create-ticket failed`**; `/autopilot` MUST NOT be invoked. **Before emitting the failure-path SW-CHECKPOINT, delete `.backlog/briefs/active/{slug}/auto-kick.yaml`** (idempotent — missing file is not an error). This prevents a stale auto-kick flag from looping the Stop hook indefinitely after a brief-side abort. Skip directly to Step 4 (SW-CHECKPOINT) with the failure recommendation shape.
+d. **MUST invoke `/create-ticket` via the Skill tool** with argument `brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
+e. If `/create-ticket` exits non-zero (or its SW-CHECKPOINT block indicates a failure path), **stdout MUST contain the literal string `ERROR:` AND the literal string `create-ticket failed`**; `/autopilot` MUST NOT be invoked. **Before emitting the failure-path SW-CHECKPOINT, delete `.simple-workflow/backlog/briefs/active/{slug}/auto-kick.yaml`** (idempotent — missing file is not an error). This prevents a stale auto-kick flag from looping the Stop hook indefinitely after a brief-side abort. Skip directly to Step 4 (SW-CHECKPOINT) with the failure recommendation shape.
 f. Otherwise (`/create-ticket` succeeded), proceed to the final invocation:
 
-   > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `auto-kick.yaml` is present at `.backlog/briefs/active/{slug}/auto-kick.yaml`. Invoke `/autopilot {slug}` via the Skill tool now. Do NOT end your turn or summarize.
+   > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `auto-kick.yaml` is present at `.simple-workflow/backlog/briefs/active/{slug}/auto-kick.yaml`. Invoke `/autopilot {slug}` via the Skill tool now. Do NOT end your turn or summarize.
 
-   **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.backlog/product_backlog/{slug}/`).
+   **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.simple-workflow/backlog/product_backlog/{slug}/`).
 
 ### Step 3 — `auto=true` NOT specified
 
@@ -256,7 +256,7 @@ Print:
 Brief generated. To proceed:
 1. Review and edit the brief if needed
 2. Update status to 'confirmed' in brief.md frontmatter
-3. Run /create-ticket brief=.backlog/briefs/active/{slug}/brief.md to produce the ticket set
+3. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md to produce the ticket set
 4. Run /autopilot {slug} to drive the full pipeline
 ```
 
@@ -268,9 +268,9 @@ Fields:
 - `phase: brief`
 - `ticket: none`
 - **Success path** (`brief.md` + `autopilot-policy.yaml` both written successfully):
-  - `artifacts:` — list containing the two repo-relative paths: `.backlog/briefs/active/{slug}/brief.md` and `.backlog/briefs/active/{slug}/autopilot-policy.yaml`.
+  - `artifacts:` — list containing the two repo-relative paths: `.simple-workflow/backlog/briefs/active/{slug}/brief.md` and `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`.
   - Emit EXACTLY ONE line matching `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$` with value `/autopilot {slug}`.
-  - Emit EXACTLY ONE line matching `^next_recommended_manual:[[:space:]]+/create-ticket[[:space:]]+brief=\S+$` with value `/create-ticket brief=.backlog/briefs/active/{slug}/brief.md`.
+  - Emit EXACTLY ONE line matching `^next_recommended_manual:[[:space:]]+/create-ticket[[:space:]]+brief=\S+$` with value `/create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
   - Do NOT emit a bare `next_recommended:` line alongside these two.
   - The `{slug}` attached to `/autopilot` is the brief's `{slug}` (= `parent-slug` downstream; they are aliases in this skill).
 - **Failure path** (any write failure — `mkdir` failed, `brief.md` write failed, `autopilot-policy.yaml` write failed, or `auto=true` chained `/create-ticket` failed):

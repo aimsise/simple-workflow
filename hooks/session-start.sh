@@ -3,11 +3,17 @@ set -euo pipefail
 cat > /dev/null  # consume stdin
 
 # --- Cleanup old session logs (30+ days) ---
-if [ -d ".docs/compact-state" ]; then
-  find .docs/compact-state -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
+# Rationale: only ephemeral state (compact-state, session-log) is aged out.
+# These files capture transient session context that loses value once the
+# session is gone. Evaluation logs (eval-round-*.md, audit-round-*.md,
+# quality-round-*.md, security-scan-*.md) and reviews/ are permanent
+# records of ticket-level decisions and are NEVER auto-deleted — they
+# stay forever inside their ticket directory (active/ or done/).
+if [ -d ".simple-workflow/docs/compact-state" ]; then
+  find .simple-workflow/docs/compact-state -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
-if [ -d ".docs/session-log" ]; then
-  find .docs/session-log -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
+if [ -d ".simple-workflow/docs/session-log" ]; then
+  find .simple-workflow/docs/session-log -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
 
 # --- v4.1.0 gitignore setup block ---
@@ -16,7 +22,7 @@ fi
 # the gitignore if HEAD exists), then writes a setup flag to prevent any
 # future modification of .gitignore by this hook. Respecting the user's
 # decision to delete entries later is the reason for the flag.
-if [ ! -f .simple-wf-knowledge/.gitignore-setup-done ]; then
+if [ ! -f .simple-workflow/.setup-done ]; then
 
   # 1. Ensure a git repo exists
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
@@ -44,7 +50,7 @@ if [ ! -f .simple-wf-knowledge/.gitignore-setup-done ]; then
   #    - Never uses `-f` with `git add`.
   _sw_gitignore_modified=0
   if git rev-parse --git-dir >/dev/null 2>&1; then
-    _sw_gitignore_entries=(.docs/ .backlog/ .simple-wf-knowledge/)
+    _sw_gitignore_entries=(.simple-workflow/)
     _sw_missing_entries=()
     for _sw_entry in "${_sw_gitignore_entries[@]}"; do
       if ! grep -qxF "$_sw_entry" .gitignore 2>/dev/null; then
@@ -98,8 +104,8 @@ if [ ! -f .simple-wf-knowledge/.gitignore-setup-done ]; then
   fi
 
   if [ "$_sw_setup_ok" = "1" ]; then
-    mkdir -p .simple-wf-knowledge 2>/dev/null || true
-    touch .simple-wf-knowledge/.gitignore-setup-done 2>/dev/null || true
+    mkdir -p .simple-workflow 2>/dev/null || true
+    touch .simple-workflow/.setup-done 2>/dev/null || true
   else
     printf '[simple-wf-setup] WARNING: .gitignore was modified but the setup commit did not finalize. Configure `git config user.email` / `user.name` (or resolve a pre-commit hook failure) and re-open the session to retry. The setup flag will NOT be written until the commit succeeds.\n' >&2
   fi
@@ -115,10 +121,11 @@ else
 fi
 
 # --- Active-ticket phase-state.yaml summary ---
-# Scan phase-state.yaml files depth-agnostically under .backlog/active/ and
-# .backlog/product_backlog/ so both the legacy flat layout
-# (.backlog/active/{NNN}-{slug}/) and the new nested layouts
-# (.backlog/active/{parent}/{NNN}-{slug}/, or deeper) are surfaced.
+# Scan phase-state.yaml files depth-agnostically under
+# .simple-workflow/backlog/active/ and .simple-workflow/backlog/product_backlog/
+# so both the flat layout (.simple-workflow/backlog/active/{NNN}-{slug}/) and
+# nested layouts (.simple-workflow/backlog/active/{parent}/{NNN}-{slug}/, or
+# deeper) are surfaced.
 # Uses grep+sed only (no yq) to match pre-compact-save.sh and avoid runtime
 # dependencies. All reads are guarded so that a missing or corrupt file
 # never blocks session start.
@@ -132,13 +139,14 @@ _sw_extract_scalar() {
 }
 
 # Scan BOTH active and product_backlog locations. /create-ticket writes the
-# initial phase-state.yaml into .backlog/product_backlog/ for tickets that
-# have not yet entered /scout. Readers that skip that directory miss every
-# ticket sitting at last_completed_phase: create_ticket.
+# initial phase-state.yaml into .simple-workflow/backlog/product_backlog/ for
+# tickets that have not yet entered /scout. Readers that skip that directory
+# miss every ticket sitting at last_completed_phase: create_ticket.
 #
 # The scan is anchored at the repo root (via `git rev-parse`) so that the
-# hook still finds `.backlog/` when a session opens in a subdirectory of the
-# repo. When we are not inside a git worktree the anchor falls back to $PWD.
+# hook still finds `.simple-workflow/backlog/` when a session opens in a
+# subdirectory of the repo. When we are not inside a git worktree the anchor
+# falls back to $PWD.
 #
 # `find` with no -maxdepth produces depth-agnostic matches. We sort -u on
 # resolved paths to guarantee a single entry per phase-state.yaml even if
@@ -146,8 +154,8 @@ _sw_extract_scalar() {
 _sw_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 _sw_state_files=()
 for _sw_scan_root in \
-  "${_sw_repo_root}/.backlog/active" \
-  "${_sw_repo_root}/.backlog/product_backlog"; do
+  "${_sw_repo_root}/.simple-workflow/backlog/active" \
+  "${_sw_repo_root}/.simple-workflow/backlog/product_backlog"; do
   [ -d "$_sw_scan_root" ] || continue
   while IFS= read -r _sw_found; do
     [ -n "$_sw_found" ] && _sw_state_files+=("$_sw_found")
@@ -190,7 +198,7 @@ for _sw_sf in "${_sw_state_files[@]:-}"; do
   # Skip tickets that are already done — the negative AC requires
   # `overall_status: done` under any location to be omitted from the
   # "Active tickets" listing (even if the path happens to sit under
-  # .backlog/active/ by accident of filesystem state).
+  # .simple-workflow/backlog/active/ by accident of filesystem state).
   if [ "$_sw_status" = "done" ]; then
     continue
   fi
@@ -205,8 +213,8 @@ for _sw_sf in "${_sw_state_files[@]:-}"; do
   # matched by prefix so the marker still attaches correctly.
   _sw_location_marker=""
   case "$_sw_ticket_dir" in
-    .backlog/product_backlog/*) _sw_location_marker=" (product_backlog)" ;;
-    .backlog/active/*)          _sw_location_marker=" (active)" ;;
+    .simple-workflow/backlog/product_backlog/*) _sw_location_marker=" (product_backlog)" ;;
+    .simple-workflow/backlog/active/*)          _sw_location_marker=" (active)" ;;
   esac
   _sw_ticket_lines+=$'\n'"  - ${_sw_ticket_dir}: phase=${_sw_cur} last_completed=${_sw_last} status=${_sw_status}${_sw_location_marker}"
 done

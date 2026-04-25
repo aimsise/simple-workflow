@@ -119,7 +119,8 @@ configure_local_git() {
 }
 
 # ---------- C1: fresh dir, no git ----------
-# Expected: .git created, .gitignore with 3 entries, >=1 commit, flag file.
+# Expected (v5.0.0): .git created, .gitignore with `.simple-workflow/` entry,
+# >=1 commit, flag file `.simple-workflow/.setup-done`.
 
 case_c1() {
   echo "=== C1: fresh dir (no git) ==="
@@ -131,20 +132,23 @@ case_c1() {
   local name=".git/ directory created"
   if [ -d "$dir/.git" ]; then report_pass "$name"; else report_fail "$name"; fi
 
-  name=".gitignore contains .docs/"
-  if grep -qxF '.docs/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
-  name=".gitignore contains .backlog/"
-  if grep -qxF '.backlog/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
-  name=".gitignore contains .simple-wf-knowledge/"
-  if grep -qxF '.simple-wf-knowledge/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+  name=".gitignore contains .simple-workflow/"
+  if grep -qxF '.simple-workflow/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
 
   local cnt
   cnt="$(commit_count "$dir")"
   name="git log has >=1 commit (got $cnt)"
   if [ "$cnt" -ge 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
-  name=".simple-wf-knowledge/.gitignore-setup-done present"
-  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  name=".simple-workflow/ directory created"
+  if [ -d "$dir/.simple-workflow" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+
+  name=".simple-workflow/.setup-done present"
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"
@@ -165,10 +169,9 @@ case_c2() {
   local name=".gitignore created"
   if [ -f "$dir/.gitignore" ]; then report_pass "$name"; else report_fail "$name"; fi
 
-  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
-    name=".gitignore contains $entry"
-    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
-  done
+  local entry='.simple-workflow/'
+  name=".gitignore contains $entry"
+  if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
 
   local cnt
   cnt="$(commit_count "$dir")"
@@ -176,7 +179,7 @@ case_c2() {
   if [ "$cnt" -ge 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
   name="flag file present"
-  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"
@@ -206,10 +209,9 @@ case_c3() {
 
   run_hook_in "$dir"
 
-  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
-    local name=".gitignore appended with $entry"
-    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
-  done
+  local entry='.simple-workflow/'
+  local name=".gitignore appended with $entry"
+  if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
 
   local after_cnt
   after_cnt="$(commit_count "$dir")"
@@ -226,17 +228,20 @@ case_c3() {
   fi
 
   name="flag file present"
-  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"
   fi
 }
 
-# ---------- C4: existing repo, 1 of 3 entries present ----------
+# ---------- C4: existing repo with unrelated .gitignore entry ----------
+# v5.0.0 collapses the 3-entry scheme to a single `.simple-workflow/` line.
+# This case verifies that an unrelated pre-existing entry (e.g. `node_modules/`)
+# is preserved while `.simple-workflow/` is appended exactly once.
 
 case_c4() {
-  echo "=== C4: repo with commits, 1 of 3 entries already present ==="
+  echo "=== C4: repo with commits, unrelated .gitignore entry already present ==="
   local dir
   dir="$(make_case_dir c4)"
   (
@@ -247,7 +252,7 @@ case_c4() {
   (
     cd "$dir"
     echo 'hello' > README.md
-    printf '.docs/\n' > .gitignore
+    printf 'node_modules/\n' > .gitignore
     git add README.md .gitignore
     git commit -q -m "initial with partial gitignore"
   )
@@ -257,16 +262,16 @@ case_c4() {
 
   run_hook_in "$dir"
 
-  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
+  for entry in 'node_modules/' '.simple-workflow/'; do
     local name=".gitignore contains $entry"
     if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
   done
 
-  # .docs/ must appear exactly once (no duplication).
-  local docs_count
-  docs_count="$(grep -cxF '.docs/' "$dir/.gitignore")"
-  local name=".docs/ not duplicated (count=$docs_count)"
-  if [ "$docs_count" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
+  # .simple-workflow/ must appear exactly once (no duplication).
+  local sw_count
+  sw_count="$(grep -cxF '.simple-workflow/' "$dir/.gitignore")"
+  local name=".simple-workflow/ not duplicated (count=$sw_count)"
+  if [ "$sw_count" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
   local after_cnt
   after_cnt="$(commit_count "$dir")"
@@ -274,17 +279,17 @@ case_c4() {
   if [ "$after_cnt" -eq $((before_cnt + 1)) ]; then report_pass "$name"; else report_fail "$name"; fi
 
   name="flag file present"
-  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"
   fi
 }
 
-# ---------- C5: all 3 entries already present (AC-5) ----------
+# ---------- C5: required entry already present (AC-5) ----------
 
 case_c5() {
-  echo "=== C5: repo with commits, all 3 entries already present (idempotency) ==="
+  echo "=== C5: repo with commits, .simple-workflow/ entry already present (idempotency) ==="
   local dir
   dir="$(make_case_dir c5)"
   (
@@ -294,7 +299,7 @@ case_c5() {
   configure_local_git "$dir"
   (
     cd "$dir"
-    printf '.docs/\n.backlog/\n.simple-wf-knowledge/\n' > .gitignore
+    printf '.simple-workflow/\n' > .gitignore
     echo 'hello' > README.md
     git add README.md .gitignore
     git commit -q -m "initial with all entries"
@@ -302,7 +307,7 @@ case_c5() {
 
   # Remove the flag if the hook wrote it in a previous case (same sandbox
   # tree uses separate case dirs, so this is defensive only).
-  rm -f "$dir/.simple-wf-knowledge/.gitignore-setup-done"
+  rm -f "$dir/.simple-workflow/.setup-done"
 
   # First run establishes the flag. AC-5 actually asks about the SECOND run
   # producing zero additional commits + no mtime change; record mtime and
@@ -336,16 +341,15 @@ case_c5() {
   name=".gitignore mtime unchanged across second run"
   if [ "$mtime_before" = "$mtime_after" ]; then report_pass "$name"; else report_fail "$name" "before=$mtime_before after=$mtime_after"; fi
 
-  # Sanity: all 3 entries appear exactly once.
-  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
-    local cnt
-    cnt="$(grep -cxF "$entry" "$dir/.gitignore")"
-    name="$entry present exactly once (count=$cnt)"
-    if [ "$cnt" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
-  done
+  # Sanity: required entry appears exactly once.
+  local entry='.simple-workflow/'
+  local cnt
+  cnt="$(grep -cxF "$entry" "$dir/.gitignore")"
+  name="$entry present exactly once (count=$cnt)"
+  if [ "$cnt" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
   name="flag file present"
-  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"
@@ -371,8 +375,8 @@ case_c6() {
   )
   # Flag exists BEFORE any simple-workflow entries are in .gitignore.
   # .gitignore does not exist yet; hook MUST NOT create or modify it.
-  mkdir -p "$dir/.simple-wf-knowledge"
-  : > "$dir/.simple-wf-knowledge/.gitignore-setup-done"
+  mkdir -p "$dir/.simple-workflow"
+  : > "$dir/.simple-workflow/.setup-done"
 
   local before_cnt
   before_cnt="$(commit_count "$dir")"
@@ -387,8 +391,8 @@ case_c6() {
   name=".gitignore NOT created"
   if [ ! -f "$dir/.gitignore" ]; then report_pass "$name"; else report_fail "$name"; fi
 
-  name=".docs/ NOT appended"
-  if ! grep -qxF '.docs/' "$dir/.gitignore" 2>/dev/null; then
+  name=".simple-workflow/ NOT appended"
+  if ! grep -qxF '.simple-workflow/' "$dir/.gitignore" 2>/dev/null; then
     report_pass "$name"
   else
     report_fail "$name"
@@ -443,14 +447,14 @@ HOOK_EOF
   if [ "$after_cnt" -eq "$before_cnt" ]; then report_pass "$name"; else report_fail "$name"; fi
 
   name=".gitignore was appended (mutation happened regardless of commit result)"
-  if grep -qxF '.docs/' "$dir/.gitignore" 2>/dev/null; then
+  if grep -qxF '.simple-workflow/' "$dir/.gitignore" 2>/dev/null; then
     report_pass "$name"
   else
     report_fail "$name"
   fi
 
   name="flag file NOT written when commit failed (silent state inconsistency prevented)"
-  if [ ! -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  if [ ! -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"
@@ -472,7 +476,7 @@ HOOK_EOF
   fi
 
   name="flag file written after retry succeeds"
-  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
     report_pass "$name"
   else
     report_fail "$name"

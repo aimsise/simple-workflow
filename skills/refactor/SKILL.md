@@ -80,7 +80,7 @@ Plan and execute refactoring: $ARGUMENTS
 ## Argument Parsing
 
 Parse `$ARGUMENTS` for the following:
-- `ticket-dir=<dir-name>` (case-insensitive key): Optional ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). When provided, this value is used in Step 1b to construct the full path `.backlog/active/{dir-name}` instead of inferring the ticket directory from the branch name.
+- `ticket-dir=<dir-name>` (case-insensitive key): Optional ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). When provided, this value is used in Step 1b to construct the full path `.simple-workflow/backlog/active/{dir-name}` instead of inferring the ticket directory from the branch name.
 - All other tokens are treated as the refactoring target and goal description.
 
 Current state:
@@ -91,15 +91,15 @@ Current branch:
 !`git branch --show-current`
 
 Active tickets:
-!`ls -d .backlog/active/*/ 2>/dev/null || echo "(none)"`
+!`ls -d .simple-workflow/backlog/active/*/ 2>/dev/null || echo "(none)"`
 
 ## Instructions
 
 ### Phase 1: Planning
 1. Spawn the **planner** agent to create a refactoring plan
 1b. **Ticket detection**: Get the current branch name and active ticket list from the pre-computed context above. Determine `ticket-dir` using the following priority:
-   - **Explicit `ticket-dir=` argument**: If `ticket-dir=<dir-name>` was provided in the arguments, check whether `.backlog/active/{dir-name}` exists. If it exists, set `ticket-dir` to `.backlog/active/{dir-name}` and skip branch name matching. If it does **not** exist, print a WARNING: "ticket-dir '{dir-name}' not found in .backlog/active/ — falling back to branch name matching." and proceed to the fallback below.
-   - **Fallback — branch name matching**: For each directory in `.backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.backlog/active/{full-directory-name}` (including the numeric prefix).
+   - **Explicit `ticket-dir=` argument**: If `ticket-dir=<dir-name>` was provided in the arguments, check whether `.simple-workflow/backlog/active/{dir-name}` exists. If it exists, set `ticket-dir` to `.simple-workflow/backlog/active/{dir-name}` and skip branch name matching. If it does **not** exist, print a WARNING: "ticket-dir '{dir-name}' not found in .simple-workflow/backlog/active/ — falling back to branch name matching." and proceed to the fallback below.
+   - **Fallback — branch name matching**: For each directory in `.simple-workflow/backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.simple-workflow/backlog/active/{full-directory-name}` (including the numeric prefix).
 2. Present the plan summary to the user
 
 ### Phase 2: Approval
@@ -116,10 +116,10 @@ Active tickets:
    - Run the project's lint command (as defined in CLAUDE.md or project conventions)
 6. Spawn the **code-reviewer** agent to review all changes:
    - If `ticket-dir` is set: specify output path as `{ticket-dir}/quality-refactor-{n}.md` where {n} is the iteration number
-   - If `ticket-dir` is not set: let the code-reviewer use its default (`.docs/reviews/{topic}.md`)
+   - If `ticket-dir` is not set: let the code-reviewer use its default (`.simple-workflow/docs/reviews/{topic}.md`)
 7. Evaluate review results:
    - **code-reviewer Status: failed or partial** (review infrastructure failure):
-     Use `AskUserQuestion` to ask "code-reviewerが失敗しました。どうしますか？" with options:
+     Use `AskUserQuestion` to ask "code-reviewer failed. How do you want to proceed?" with options:
      - "stop": stop the skill immediately. Print "Stopped by user after code-reviewer failure. Refactoring changes remain in working tree." and exit.
      - "continue without review": proceed to Phase 4 without quality verification, noting "Quality review SKIPPED (code-reviewer failed)" in the final summary.
      - **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), default to **stop**. Print "Stopped: /refactor cannot proceed without code-reviewer in non-interactive mode. Refactoring changes remain in working tree. Re-run in interactive mode." and exit. Do NOT hang waiting for input.

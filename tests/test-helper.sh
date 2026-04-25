@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# テストヘルパー - 外部依存なし
+# Test helper - no external dependencies
 
 TESTS_PASSED=0
 TESTS_FAILED=0
@@ -7,17 +7,17 @@ TESTS_TOTAL=0
 # shellcheck disable=SC2034
 CURRENT_TEST=""
 
-# テスト対象フックのルートディレクトリ
+# Root directory of the hooks under test
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../hooks" && pwd)"
 
-# カラー出力
+# Color output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 # shellcheck disable=SC2034
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-# pre-bash-safety.sh にJSON入力を渡してexit codeとstderrをキャプチャする関数
+# Pipe a JSON input into pre-bash-safety.sh and capture the exit code and stderr
 run_safety_hook() {
   local command="$1"
   local cwd="${2:-.}"
@@ -37,7 +37,7 @@ run_safety_hook() {
   rm -f "$stderr_file"
 }
 
-# コマンドが許可されること（exit 0）を検証
+# Assert that a command is allowed (exit 0)
 assert_allowed() {
   local description="$1"
   local command="$2"
@@ -59,7 +59,7 @@ assert_allowed() {
   fi
 }
 
-# コマンドがブロックされること（exit 2）を検証
+# Assert that a command is blocked (exit 2)
 assert_blocked() {
   local description="$1"
   local command="$2"
@@ -80,7 +80,7 @@ assert_blocked() {
   fi
 }
 
-# コマンドがブロックされ、stderrに期待するメッセージを含むことを検証
+# Assert that a command is blocked and stderr contains the expected message
 assert_blocked_message() {
   local description="$1"
   local command="$2"
@@ -107,7 +107,7 @@ assert_blocked_message() {
   fi
 }
 
-# 一括ステージングテスト用: 一時gitリポジトリ作成
+# For bulk staging tests: create a temporary git repository
 setup_test_repo() {
   TEST_REPO=$(mktemp -d)
   cd "$TEST_REPO"
@@ -119,7 +119,7 @@ setup_test_repo() {
   git commit -q -m "initial"
 }
 
-# 一時gitリポジトリの削除
+# Clean up the temporary git repository
 cleanup_test_repo() {
   if [ -n "${TEST_REPO:-}" ] && [ -d "$TEST_REPO" ]; then
     rm -rf "$TEST_REPO"
@@ -127,7 +127,7 @@ cleanup_test_repo() {
   fi
 }
 
-# フック実行（一般用: 任意フックにstdinを渡す）
+# Generic hook runner: pipe stdin to an arbitrary hook
 run_hook() {
   local hook_path="$1"
   local input="$2"
@@ -149,7 +149,7 @@ run_hook() {
   rm -f "$stdout_file" "$stderr_file"
 }
 
-# テスト結果サマリー表示
+# Print the test result summary
 print_summary() {
   echo ""
   echo "==============================="

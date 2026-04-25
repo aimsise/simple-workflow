@@ -47,7 +47,7 @@ context_advice: "Intermediate tool outputs from this phase remain in the main se
 - `phase:` uses the underscore-form canonical name of the emitting skill:
   one of `create_ticket`, `scout`, `impl`, `ship`.
 - `ticket:` is the full repo-relative ticket directory path (e.g.
-  `.backlog/active/001-foo`) when a ticket is in scope; otherwise the
+  `.simple-workflow/backlog/active/001-foo`) when a ticket is in scope; otherwise the
   bare string `none` (no quotes) for non-ticket flows.
 - `artifacts:` is a non-empty list of repo-relative paths on success;
   emit `artifacts: []` on a single line on failure paths (no files

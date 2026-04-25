@@ -3,7 +3,7 @@ name: autopilot
 description: >-
   Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Consume a pre-built ticket list (split-plan.md under
-  .backlog/product_backlog/{parent-slug}/) and drive the per-ticket
+  .simple-workflow/backlog/product_backlog/{parent-slug}/) and drive the per-ticket
   /scout → /impl → /ship pipeline in topological order with policy-based
   autonomous decision making at each gate.
 disable-model-invocation: false
@@ -48,13 +48,13 @@ argument-hint: "<parent-slug>"
 ## Pre-computed Context
 
 Brief files:
-!`find .backlog/briefs/active -mindepth 2 -maxdepth 2 -name brief.md 2>/dev/null`
+!`find .simple-workflow/backlog/briefs/active -mindepth 2 -maxdepth 2 -name brief.md 2>/dev/null`
 
 Split plans under product_backlog (source of truth for /autopilot):
-!`find .backlog/product_backlog -mindepth 2 -maxdepth 2 -name split-plan.md 2>/dev/null`
+!`find .simple-workflow/backlog/product_backlog -mindepth 2 -maxdepth 2 -name split-plan.md 2>/dev/null`
 
 Active tickets:
-!`find .backlog/active -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -10`
+!`find .simple-workflow/backlog/active -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -10`
 
 Current branch:
 !`git branch --show-current`
@@ -70,7 +70,7 @@ Default branch:
 |---|---|---|
 | `/scout` (Skill) | Per ticket, Phase 2 step 3c (from split-plan consumption) | Missing `investigation.md` + `plan.md` triggers `[PIPELINE] scout: ARTIFACT-MISSING`; ticket marked failed |
 | `/impl` (Skill) | Per ticket, Phase 2 step 3d, after scout | Missing `eval-round-*.md` (and `audit-round-*.md` / `quality-round-*.md` on PASS) triggers `[PIPELINE] impl: ARTIFACT-MISSING`; ticket marked failed |
-| `/ship` (Skill) | Per ticket, Phase 2 step 3e, after impl | Ticket not moved to `.backlog/done/` triggers `[PIPELINE] ship: ARTIFACT-MISSING`; no PR created |
+| `/ship` (Skill) | Per ticket, Phase 2 step 3e, after impl | Ticket not moved to `.simple-workflow/backlog/done/` triggers `[PIPELINE] ship: ARTIFACT-MISSING`; no PR created |
 
 **Binding rules**:
 - `MUST invoke /scout via the Skill tool` — never call `/investigate` or `/plan2doc` standalone; `/scout` is the sole entry point.
@@ -79,7 +79,7 @@ Default branch:
 - `NEVER bypass these skills via direct file operations` — pipeline correctness depends on each skill's internal state-management and artifact side effects.
 - `Fail this ticket immediately if any mandatory invocation cannot be completed via the prescribed Skill tool` — record in `autopilot-state.yaml` and proceed to the next ticket. Do NOT fabricate artifacts.
 
-**Ticket creation is NOT a responsibility of `/autopilot`.** As of Plan 4 of the v4.0.0 findings-mode refactor, `/create-ticket` is invoked upstream by the user and writes both the ticket directories under `.backlog/product_backlog/{parent-slug}/` AND (for N>1 runs) the `split-plan.md` that `/autopilot` consumes. `/autopilot` MUST NOT emit any line beginning with the literal string `/create-ticket` to its stdout — the skill never invokes `/create-ticket`, never writes `ticket.md`, never bumps `.backlog/.ticket-counter`. If a user reaches `/autopilot` without having run `/create-ticket` first, the skill exits with an `ERROR:` message (see Phase 1 below) and the error text is phrased so that no stdout line matches `^/create-ticket`.
+**Ticket creation is NOT a responsibility of `/autopilot`.** As of Plan 4 of the v4.0.0 findings-mode refactor, `/create-ticket` is invoked upstream by the user and writes both the ticket directories under `.simple-workflow/backlog/product_backlog/{parent-slug}/` AND (for N>1 runs) the `split-plan.md` that `/autopilot` consumes. `/autopilot` MUST NOT emit any line beginning with the literal string `/create-ticket` to its stdout — the skill never invokes `/create-ticket`, never writes `ticket.md`, never bumps `.simple-workflow/.ticket-counter`. If a user reaches `/autopilot` without having run `/create-ticket` first, the skill exits with an `ERROR:` message (see Phase 1 below) and the error text is phrased so that no stdout line matches `^/create-ticket`.
 
 # /autopilot
 
@@ -87,36 +87,36 @@ Target parent-slug: $ARGUMENTS
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS`: extract `{parent-slug}` (first arg); empty → "Usage: /autopilot <parent-slug>" and stop. Throughout this document, `{parent-slug}` is used; legacy docs called it `{slug}` (the names are interchangeable — the input is the directory basename under `.backlog/product_backlog/` for consuming a split-plan, and the brief slug under `.backlog/briefs/active/` when a brief is present).
+Parse `$ARGUMENTS`: extract `{parent-slug}` (first arg); empty → "Usage: /autopilot <parent-slug>" and stop. Throughout this document, `{parent-slug}` is used; legacy docs called it `{slug}` (the names are interchangeable — the input is the directory basename under `.simple-workflow/backlog/product_backlog/` for consuming a split-plan, and the brief slug under `.simple-workflow/backlog/briefs/active/` when a brief is present).
 
 ## Phase 1: Pre-flight Checks
 
-The pre-flight gate decides whether `/autopilot` has a runnable input. The single source of truth for the ticket list is `.backlog/product_backlog/{parent-slug}/split-plan.md` (new path, Plan 4). Legacy path `.backlog/briefs/active/{parent-slug}/split-plan.md` is explicitly NOT read (Plan 4 Negative AC).
+The pre-flight gate decides whether `/autopilot` has a runnable input. The single source of truth for the ticket list is `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (new path, Plan 4). Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` is explicitly NOT read (Plan 4 Negative AC).
 
-0. **Auto-kick cleanup**: If `.backlog/briefs/active/{parent-slug}/auto-kick.yaml` exists, delete it. This signals to the Stop hook that the auto-chain has entered `/autopilot` and the pre-autopilot guard is no longer needed. Deletion is idempotent — missing file is not an error. Do NOT touch `brief.md`, `autopilot-policy.yaml`, or `autopilot-state.yaml` in this step — only `auto-kick.yaml` is removed.
+0. **Auto-kick cleanup**: If `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` exists, delete it. This signals to the Stop hook that the auto-chain has entered `/autopilot` and the pre-autopilot guard is no longer needed. Deletion is idempotent — missing file is not an error. Do NOT touch `brief.md`, `autopilot-policy.yaml`, or `autopilot-state.yaml` in this step — only `auto-kick.yaml` is removed.
 
 1. **Split-plan discovery (single source of truth)**:
-   - Let `SPLIT_PLAN = .backlog/product_backlog/{parent-slug}/split-plan.md`.
-   - Legacy path `.backlog/briefs/active/{parent-slug}/split-plan.md` MUST NOT be read. Even if such a file exists on disk, `/autopilot` does not fall back to it. This is enforced by the Plan 4 Negative AC: "A `split-plan.md` located at the legacy path is not read by `/autopilot` as the authoritative ticket source — the skill's execution transcript for `/autopilot <slug>` against such a fixture emits stdout containing `ERROR:` or `not found` referencing the new path."
+   - Let `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`.
+   - Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` MUST NOT be read. Even if such a file exists on disk, `/autopilot` does not fall back to it. This is enforced by the Plan 4 Negative AC: "A `split-plan.md` located at the legacy path is not read by `/autopilot` as the authoritative ticket source — the skill's execution transcript for `/autopilot <slug>` against such a fixture emits stdout containing `ERROR:` or `not found` referencing the new path."
    - If `SPLIT_PLAN` exists → parsed in Phase 2 (Split Execution Flow).
    - If `SPLIT_PLAN` is missing:
-     a. If `.backlog/briefs/active/{parent-slug}/brief.md` exists → print exactly:
+     a. If `.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md` exists → print exactly:
         ```
-        ERROR: split-plan not found at .backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.
+        ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.
         ```
-        Exit non-zero. Do NOT create or modify any file under `.backlog/active/`. (No stdout line matches `^/create-ticket` — the `/create-ticket` token sits mid-line after `Run `.)
+        Exit non-zero. Do NOT create or modify any file under `.simple-workflow/backlog/active/`. (No stdout line matches `^/create-ticket` — the `/create-ticket` token sits mid-line after `Run `.)
      b. If no brief either (AC #8) → print exactly:
         ```
-        ERROR: no split-plan at .backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.
+        ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.
         ```
-        Exit non-zero. Do NOT create or modify any file under `.backlog/active/`.
+        Exit non-zero. Do NOT create or modify any file under `.simple-workflow/backlog/active/`.
 
-2. **Brief optionality (Plan 4)**: A brief is no longer required for `/autopilot` to proceed. When `SPLIT_PLAN` exists, `/autopilot` runs even if `.backlog/briefs/active/{parent-slug}/brief.md` is absent. Policy propagation is upstream (`/create-ticket brief=<path>` copied `autopilot-policy.yaml` into each ticket dir, Plan 1). If a ticket dir has no policy, the Policy guard below aborts that ticket — explicit "not autopilot-eligible" signal.
+2. **Brief optionality (Plan 4)**: A brief is no longer required for `/autopilot` to proceed. When `SPLIT_PLAN` exists, `/autopilot` runs even if `.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md` is absent. Policy propagation is upstream (`/create-ticket brief=<path>` copied `autopilot-policy.yaml` into each ticket dir, Plan 1). If a ticket dir has no policy, the Policy guard below aborts that ticket — explicit "not autopilot-eligible" signal.
 
 3. If the brief does exist, read it for decision logging and status verification:
    - `status` must be `confirmed` (if `draft`, print "ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with auto=true." and stop). If the brief is absent (split-plan-only runs), skip this step — there is no brief status to check.
 
-4. If `.backlog/briefs/active/{parent-slug}/autopilot-policy.yaml` exists, read it for decision logging; otherwise per-ticket policy files (copied in by `/create-ticket`) serve the same role.
+4. If `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-policy.yaml` exists, read it for decision logging; otherwise per-ticket policy files (copied in by `/create-ticket`) serve the same role.
 
 5. **Human override detection**: Compare each gate's action in the per-ticket or brief-level `autopilot-policy.yaml` to the expected defaults for the declared `risk_tolerance`:
    - `conservative` defaults: `ticket_quality_fail.action: retry_with_feedback`, `evaluator_dry_run_fail.action: stop`, `ac_eval_fail.action: retry`, `audit_infrastructure_fail.action: stop`, `ship_review_gate.action: stop`, `ship_ci_pending.action: wait`, `ship_ci_pending.timeout_minutes: 30`, `constraints.max_total_rounds: 9`, `constraints.allow_breaking_changes: false`, `unexpected_error.action: stop`
@@ -125,16 +125,16 @@ The pre-flight gate decides whether `/autopilot` has a runnable input. The singl
    - Gate differs from default: check for `# kb-suggested` comment. Present → `kb_override`; absent → `human_override`. Store (gate, expected, actual, type) for the log.
    - No differences → "No human overrides detected."
 
-6. **State recovery**: `autopilot-state.yaml` absent at `.backlog/briefs/active/{parent-slug}/autopilot-state.yaml` (or any previously-chosen location) → `resume_mode = false`. Else `resume_mode = true`, parse:
+6. **State recovery**: `autopilot-state.yaml` absent at `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` (or any previously-chosen location) → `resume_mode = false`. Else `resume_mode = true`, parse:
    - Print:
      ```
-     [RESUME] 前回の /autopilot 実行が途中で停止しています。途中から再開します。
+     [RESUME] The previous /autopilot run stopped midway. Resuming from where it left off.
      [RESUME] Execution mode: {execution_mode}
      [RESUME] Progress: {completed_count}/{total_tickets} tickets completed
      ```
    - Per ticket: `[RESUME] {logical_id} → {ticket_dir}: {status} (last completed: {last_completed_step})`.
    - `started` older than 7 days: `[RESUME] WARNING: State file is from {started}. Codebase may have changed. Consider deleting autopilot-state.yaml and re-running.`
-   - Carry `ticket_mapping`. Per-ticket resume: `completed` → skip (`[RESUME] Skipping {logical_id}: already completed`); `failed` / `skipped` → retry from first non-completed step; `in_progress` → re-run that step; `pending` → normal. Skip `scout` → ticket already in `.backlog/active/{parent-slug}/{ticket-dir}/`.
+   - Carry `ticket_mapping`. Per-ticket resume: `completed` → skip (`[RESUME] Skipping {logical_id}: already completed`); `failed` / `skipped` → retry from first non-completed step; `in_progress` → re-run that step; `pending` → normal. Skip `scout` → ticket already in `.simple-workflow/backlog/active/{parent-slug}/{ticket-dir}/`.
 
 ## Phase 2: Pipeline Execution
 
@@ -148,7 +148,18 @@ There is no longer a "no split-plan.md → Single Ticket Flow" branch. `/autopil
 
 Skip if `resume_mode = true` (state exists). This brief-level / parent-level `autopilot-state.yaml` is distinct from each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
 
-Write `.backlog/briefs/active/{parent-slug}/autopilot-state.yaml` (or, when no brief dir exists, `.backlog/product_backlog/{parent-slug}/autopilot-state.yaml` — `/autopilot` chooses whichever parent directory is present on disk; both locations are valid for state):
+#### `autopilot-state.yaml` location precedence
+
+`/autopilot` chooses **one** location based on what is already on disk. Both locations are valid for state; the choice is determined at runtime, not configured.
+
+| Order | Path | Selected when |
+|-------|------|---------------|
+| 1 | `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` | The brief directory exists (i.e. the run originated from `/brief` -> `/create-ticket brief=<path>`). |
+| 2 | `.simple-workflow/backlog/product_backlog/{parent-slug}/autopilot-state.yaml` | The brief directory does not exist on disk (i.e. `/create-ticket` was invoked without `brief=<path>`, or the brief directory was never created). |
+
+Resolution rule on resume: read whichever of the two paths exists. If neither exists, `resume_mode = false` and a fresh state file is written at the active location above. The two paths are never both authoritative simultaneously — `/autopilot` always commits to one location for a given run, then mirrors the same location to `briefs/done/` at the end of the run (see Split Brief Lifecycle below).
+
+Write the state file:
 
 ```yaml
 version: 1
@@ -169,13 +180,13 @@ Note: the `steps:` / `invocation_method:` maps no longer contain a `create-ticke
 
 ### Split Execution Flow
 
-**Input**: `SPLIT_PLAN = .backlog/product_backlog/{parent-slug}/split-plan.md` (parsed in Phase 1 discovery). This is the **single source of truth** for the ticket set. Legacy path `.backlog/briefs/active/{parent-slug}/split-plan.md` is ignored.
+**Input**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (parsed in Phase 1 discovery). This is the **single source of truth** for the ticket set. Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` is ignored.
 
 #### Parse `split-plan.md`
 
-Per `.docs/fix_structure/spec-split-plan-schema.md`:
+Per `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md`:
 
-1. Read frontmatter: `parent_slug`, `ticket_count`, `version`. If any is missing, print `ERROR: split-plan.md at .backlog/product_backlog/{parent-slug}/split-plan.md has invalid frontmatter` and exit non-zero.
+1. Read frontmatter: `parent_slug`, `ticket_count`, `version`. If any is missing, print `ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md has invalid frontmatter` and exit non-zero.
 2. Verify `parent_slug` in frontmatter equals the `{parent-slug}` argument. Mismatch → `ERROR: split-plan.md parent_slug mismatch (file=<frontmatter-value>, argument=<parent-slug>)` and exit non-zero.
 3. Enumerate ticket entries under `## Tickets`: each `### N. {parent-slug}-part-N: <Title>` heading with its meta lines (`- ticket_dir: \`...\``, `- size: ...`, `- depends_on: [...]`).
 
@@ -184,10 +195,10 @@ Per `.docs/fix_structure/spec-split-plan-schema.md`:
 If the `## Tickets` section contains **zero** `### N.` entries (equivalently, `ticket_count: 0` or no entries found), print exactly:
 
 ```
-ERROR: split-plan.md at .backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).
+ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).
 ```
 
-Exit non-zero. Do NOT create or modify any file under `.backlog/active/`. (The literal word `empty` is load-bearing — Plan 4 Edge Case asserts `stdout containing 'ERROR:' and the literal 'empty'`.)
+Exit non-zero. Do NOT create or modify any file under `.simple-workflow/backlog/active/`. (The literal word `empty` is load-bearing — Plan 4 Edge Case asserts `stdout containing 'ERROR:' and the literal 'empty'`.)
 
 #### Edge: cyclic `depends_on` graph
 
@@ -196,10 +207,10 @@ Build a directed graph over ticket logical IDs (`{parent-slug}-part-N`) using ea
 If a cycle is detected (e.g., A depends on B AND B depends on A), print exactly:
 
 ```
-ERROR: circular dependency detected in split-plan.md at .backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <list cycle members>
+ERROR: circular dependency detected in split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <list cycle members>
 ```
 
-Exit non-zero **before any ticket work begins**. Do NOT create or modify any file under `.backlog/active/{parent-slug}/` (Plan 4 Edge Case asserts "no `.backlog/active/{parent-slug}/` subdirectories are created during this failed invocation"). The literal word `circular` MUST appear in stdout; the word `cycle` is also acceptable (Plan 4 Edge Case allows either).
+Exit non-zero **before any ticket work begins**. Do NOT create or modify any file under `.simple-workflow/backlog/active/{parent-slug}/` (Plan 4 Edge Case asserts "no `.simple-workflow/backlog/active/{parent-slug}/` subdirectories are created during this failed invocation"). The literal word `circular` MUST appear in stdout; the word `cycle` is also acceptable (Plan 4 Edge Case allows either).
 
 #### Topological sort with lexicographic tiebreak
 
@@ -237,21 +248,21 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
    - Any dep `failed` / `skipped` → mark this ticket `skipped` reason "dependency {dep-slug} {status}". state `tickets[i].status = skipped`; record `[PIPELINE] {ticket-part}: skipped | reason=dependency_{dep-slug}_{status} | ticket-dir={ticket-dir}`; next ticket. `ticket-dir` is always known (from split-plan).
    - All deps `completed` → proceed.
 
-3. **Execute pipeline for this ticket** (no ticket-creation step — the ticket dir already exists under `.backlog/product_backlog/{parent-slug}/` when the pipeline starts, and `/scout` moves it into `.backlog/active/{parent-slug}/`):
+3. **Execute pipeline for this ticket** (no ticket-creation step — the ticket dir already exists under `.simple-workflow/backlog/product_backlog/{parent-slug}/` when the pipeline starts, and `/scout` moves it into `.simple-workflow/backlog/active/{parent-slug}/`):
 
    a. **Pre-scout: Policy guard**
-      - Verify `autopilot-policy.yaml` exists at `.backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (it was copied there by `/create-ticket` when `brief=<path>` was passed upstream; see Plan 1 AC #14).
+      - Verify `autopilot-policy.yaml` exists at `.simple-workflow/backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (it was copied there by `/create-ticket` when `brief=<path>` was passed upstream; see Plan 1 AC #14).
       - If missing → log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.scout = failed`, `status = failed`, next ticket. Do NOT proceed. This is the explicit "not autopilot-eligible" signal for tickets created without a brief (findings-only or bare-description — Plan 1 AC #15).
 
-   b. *(Former step `create-ticket` removed in Plan 4. `/autopilot` does not invoke `/create-ticket` and does not write `ticket.md` or mutate `.backlog/.ticket-counter`. The ticket dir and `ticket.md` are produced upstream by `/create-ticket` before `/autopilot` runs.)*
+   b. *(Former step `create-ticket` removed in Plan 4. `/autopilot` does not invoke `/create-ticket` and does not write `ticket.md` or mutate `.simple-workflow/.ticket-counter`. The ticket dir and `ticket.md` are produced upstream by `/create-ticket` before `/autopilot` runs.)*
 
    c. **Step: scout**
-      Resume: if `scout = completed`, skip to 3d (ticket already in `.backlog/active/{parent-slug}/{NNN}-{slug}/`).
+      Resume: if `scout = completed`, skip to 3d (ticket already in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`).
       - Emit stdout line: `scout: {NNN-slug} start` (where `{NNN-slug}` is the ticket_dir basename).
       - **State update (before)**: `steps.scout = in_progress`, `invocation_method.scout = skill`.
-      - **MUST invoke `/scout {ticket-dir}` via the Skill tool**, passing the full path `.backlog/product_backlog/{parent-slug}/{NNN}-{slug}` (the source location in product_backlog; `/scout` moves it to `.backlog/active/{parent-slug}/{NNN}-{slug}/`). **NEVER bypass /scout** via `/investigate` / `/plan2doc`. Fail immediately if not invokable.
+      - **MUST invoke `/scout {ticket-dir}` via the Skill tool**, passing the full path `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN}-{slug}` (the source location in product_backlog; `/scout` moves it to `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`). **NEVER bypass /scout** via `/investigate` / `/plan2doc`. Fail immediately if not invokable.
       - On Bash fallback: `invocation_method.scout = manual-bash`. On success verify policy in active dir; if missing, log `[PIPELINE] scout: WARN — autopilot-policy.yaml missing in active dir after /scout` — do NOT copy from briefs (Plan 1 moved the copy responsibility to `/create-ticket`).
-      - **Artifact verification**: `investigation.md` and `plan.md` must exist in `.backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
+      - **Artifact verification**: `investigation.md` and `plan.md` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
       - On `/scout` failure: state `steps.scout = failed`, `status = failed`, next ticket.
       - **State update (after)**: `steps.scout = completed`.
       - Emit stdout line: `scout: {NNN-slug} complete`.
@@ -261,10 +272,10 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
    d. **Step: impl**
       Resume: if `impl = completed`, skip to 3e.
       - **State update (before)**: `steps.impl = in_progress`, `invocation_method.impl = skill`.
-      - **Policy guard**: `autopilot-policy.yaml` must exist in `.backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.impl = failed`, `status = failed`, next ticket.
-      - **MUST invoke `/impl .backlog/active/{parent-slug}/{NNN}-{slug}/plan.md` via the Skill tool**. **NEVER bypass /impl** by spawning `implementer` / `ac-evaluator` directly. Fail immediately if not invokable.
+      - **Policy guard**: `autopilot-policy.yaml` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.impl = failed`, `status = failed`, next ticket.
+      - **MUST invoke `/impl .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/plan.md` via the Skill tool**. **NEVER bypass /impl** by spawning `implementer` / `ac-evaluator` directly. Fail immediately if not invokable.
       - On Bash fallback: `invocation_method.impl = manual-bash`. On failure: state `steps.impl = failed`, `status = failed`, next ticket.
-      - **Artifact verification** in `.backlog/active/{parent-slug}/{NNN}-{slug}/`: at least one `eval-round-*.md`; if PASS (AC passed + `/audit` ran) at least one `audit-round-*.md` AND `quality-round-*.md` (skip when `/impl` ended FAIL at AC stage, i.e. AC評価の全ラウンドでFAIL). Missing → `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
+      - **Artifact verification** in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`: at least one `eval-round-*.md`; if PASS (AC passed + `/audit` ran) at least one `audit-round-*.md` AND `quality-round-*.md` (skip when `/impl` ended FAIL at AC stage, i.e. all AC evaluation rounds FAILED). Missing → `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
       - **State update (after)**: `steps.impl = completed`.
 
       > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read the `autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
@@ -272,12 +283,12 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
    e. **Step: ship**
       Resume: if `ship = completed`, skip to 3f.
       - **State update (before)**: `steps.ship = in_progress`, `invocation_method.ship = skill`.
-      - **Policy guard**: `autopilot-policy.yaml` must exist in `.backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.ship = failed`, `status = failed`, next ticket.
+      - **Policy guard**: `autopilot-policy.yaml` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.ship = failed`, `status = failed`, next ticket.
       - Determine target branch from Pre-computed Context.
       - **MUST invoke `/ship {target-branch} ticket-dir={ticket-dir}` via the Skill tool** (no `merge=true`). **NEVER bypass /ship** with direct `git commit` / `gh pr create` / `mv` — /ship is the atomic orchestrator for commit + ticket move + `/tune` + PR. Fail immediately if not invokable.
       - On Bash fallback: `invocation_method.ship = manual-bash`. On failure: state `steps.ship = failed`, `status = failed`, next ticket.
-      - **Artifact verification**: `.backlog/done/{parent-slug}/{NNN}-{slug}/` must exist (nested layout) — or `.backlog/done/{NNN}-{slug}/` for any legacy flat-layout tickets. Missing → `[PIPELINE] ship: ARTIFACT-MISSING — done ticket-dir not found after ship`, state failed, next ticket.
-      - **Artifact Presence Gate**: Verify 7 patterns (check `done/{...}/` first, else `active/{...}/`): `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`. Missing → `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}`, ticket failed. **Exception**: Last `eval-round-*.md` FAIL or FAIL-CRITICAL (AC評価の全ラウンドでFAIL) → skip checking the last 3 patterns.
+      - **Artifact verification**: `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` must exist (nested layout) — or `.simple-workflow/backlog/done/{NNN}-{slug}/` for any legacy flat-layout tickets. Missing → `[PIPELINE] ship: ARTIFACT-MISSING — done ticket-dir not found after ship`, state failed, next ticket.
+      - **Artifact Presence Gate**: Verify 7 patterns (check `done/{...}/` first, else `active/{...}/`): `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`. Missing → `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}`, ticket failed. **Exception**: Last `eval-round-*.md` FAIL or FAIL-CRITICAL (all AC evaluation rounds FAILED) → skip checking the last 3 patterns.
       - **State update (after)**: `steps.ship = completed`, `status = completed`.
 
    f. Record PR URL and status.
@@ -294,8 +305,8 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
 
 Write both the overall and per-ticket logs:
 
-1. **Overall log**: `.backlog/briefs/active/{parent-slug}/autopilot-log.md` (or `briefs/done/{parent-slug}/autopilot-log.md` if the brief was moved; if no brief dir exists, write at `.backlog/product_backlog/{parent-slug}/autopilot-log.md`).
-2. **Per-ticket logs**: Each processed ticket (completed / failed / skipped) MUST have its own `autopilot-log.md` at its ticket dir. Location priority: `.backlog/done/{parent-slug}/{NNN}-{slug}/` first (if `/ship` reached Step 5), else `.backlog/active/{parent-slug}/{NNN}-{slug}/`.
+1. **Overall log**: `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-log.md` (or `briefs/done/{parent-slug}/autopilot-log.md` if the brief was moved; if no brief dir exists, write at `.simple-workflow/backlog/product_backlog/{parent-slug}/autopilot-log.md`).
+2. **Per-ticket logs**: Each processed ticket (completed / failed / skipped) MUST have its own `autopilot-log.md` at its ticket dir. Location priority: `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` first (if `/ship` reached Step 5), else `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`.
 
 IMPORTANT: Per-ticket logs are required — no skipping.
 
@@ -344,7 +355,7 @@ Print: overall status (completed / partial / failed); per-ticket table (status +
 
 ### Split State File Cleanup
 
-After Split Brief Lifecycle, **move** the `autopilot-state.yaml` from its active location (`.backlog/briefs/active/{parent-slug}/` or `.backlog/product_backlog/{parent-slug}/`) to `.backlog/briefs/done/{parent-slug}/autopilot-state.yaml` (creating the dir if missing). NEVER delete — post-mortem and Manual Bash Fallback history must be preserved. Logs and state together form the permanent record of the run. (This is the "State file cleanup" step — absence of this text is a contract violation.)
+After Split Brief Lifecycle, **move** the `autopilot-state.yaml` from its active location (`.simple-workflow/backlog/briefs/active/{parent-slug}/` or `.simple-workflow/backlog/product_backlog/{parent-slug}/`) to `.simple-workflow/backlog/briefs/done/{parent-slug}/autopilot-state.yaml` (creating the dir if missing). NEVER delete — post-mortem and Manual Bash Fallback history must be preserved. Logs and state together form the permanent record of the run. (This is the "State file cleanup" step — absence of this text is a contract violation.)
 
 ### Autopilot Log Sections (common to overall + per-ticket)
 
@@ -389,12 +400,12 @@ On finalization (when writing `autopilot-log.md`), the `Manual Bash Fallbacks` s
 ## Error Handling
 
 - **Empty arguments**: "Usage: /autopilot <parent-slug>" and stop.
-- **No split-plan.md AND no brief**: print `ERROR: no split-plan at .backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and stop. Do NOT create or modify any file under `.backlog/active/`. (AC #8)
-- **No split-plan.md but brief exists**: print `ERROR: split-plan not found at .backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and stop. (AC #1: stdout does NOT contain a line matching `^/create-ticket`.)
-- **Legacy split-plan at `.backlog/briefs/active/{parent-slug}/split-plan.md`**: ignored. `/autopilot` does NOT fall back to it. The usual "No split-plan.md" error fires and mentions the new path (the literal substrings `ERROR:` and `not found` both appear in stdout — Plan 4 Negative AC).
-- **split-plan.md has zero ticket entries**: print `ERROR: split-plan.md at .backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).` and stop. (Edge case — literal `empty` is load-bearing.)
-- **Cyclic `depends_on` graph**: print `ERROR: circular dependency detected in split-plan.md at .backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <cycle members>` and stop BEFORE any pipeline work. Do NOT create `.backlog/active/{parent-slug}/` subdirectories. The literal word `circular` (or `cycle`) MUST appear in stdout.
+- **No split-plan.md AND no brief**: print `ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and stop. Do NOT create or modify any file under `.simple-workflow/backlog/active/`. (AC #8)
+- **No split-plan.md but brief exists**: print `ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and stop. (AC #1: stdout does NOT contain a line matching `^/create-ticket`.)
+- **Legacy split-plan at `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md`**: ignored. `/autopilot` does NOT fall back to it. The usual "No split-plan.md" error fires and mentions the new path (the literal substrings `ERROR:` and `not found` both appear in stdout — Plan 4 Negative AC).
+- **split-plan.md has zero ticket entries**: print `ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).` and stop. (Edge case — literal `empty` is load-bearing.)
+- **Cyclic `depends_on` graph**: print `ERROR: circular dependency detected in split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <cycle members>` and stop BEFORE any pipeline work. Do NOT create `.simple-workflow/backlog/active/{parent-slug}/` subdirectories. The literal word `circular` (or `cycle`) MUST appear in stdout.
 - **Brief not confirmed** (brief exists but status is `draft`): instruct user to update status.
 - **Any pipeline step failure (per ticket)**: check `gates.unexpected_error.action`: `stop` (default) → log, mark ticket failed, partial report. Any other value → treat as `stop` (safety fallback); print `[AUTOPILOT-POLICY] gate=unexpected_error action=stop (fallback from unsupported action={original_action})`. Policy absent / field undefined → default `stop`. Always print `[AUTOPILOT-POLICY] gate=unexpected_error action={actual_action}` on invocation.
 - **Any pipeline step failure (per ticket, continued)**: log for that ticket, mark failed, next ticket. Dependents skipped.
-- **Artifact preservation**: On failure, artifacts (ticket, plan, eval-round, etc.) remain in the ticket dir — `.backlog/done/{parent-slug}/{NNN}-{slug}/` if `/ship` Step 5 completed, else `.backlog/active/{parent-slug}/{NNN}-{slug}/`. The `autopilot-state.yaml` records exact progress for `/autopilot {parent-slug}` resume.
+- **Artifact preservation**: On failure, artifacts (ticket, plan, eval-round, etc.) remain in the ticket dir — `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` if `/ship` Step 5 completed, else `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. The `autopilot-state.yaml` records exact progress for `/autopilot {parent-slug}` resume.

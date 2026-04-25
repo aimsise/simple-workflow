@@ -2,7 +2,7 @@
 
 This document catalogs the per-ticket knobs that individual skills read from
 `{ticket-dir}/autopilot-policy.yaml`. The full policy schema (gates, retry
-limits, etc.) is documented in `.docs/plans/` — this page lists only the
+limits, etc.) is documented in `.simple-workflow/docs/plans/` — this page lists only the
 fields that orchestrator skills consult directly outside the gate machinery.
 
 ## `constraints.sonnet_size_threshold`

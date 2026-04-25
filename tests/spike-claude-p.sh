@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# spike-claude-p.sh — claude -p コマンドの動作検証スパイク
+# spike-claude-p.sh — sanity-check spike for the `claude -p` command
 #
-# 目的: claude CLI の -p (headless) モードで skill 呼び出しが動作するか検証する
-# 結果: 3つの検証項目のうち、成功数に応じて今後のテスト戦略を決定する
+# Goal: verify whether skill invocations work in the claude CLI's `-p` (headless) mode.
+# Outcome: based on how many of the 3 verifications pass, decide the future test strategy.
 #
-# Go/No-Go 判定基準:
-#   3/3 成功 → Go: Level 1 テストを claude -p ベースで本格実装
-#   1/3 or 2/3 → ラッパー: 成功した項目のみ claude -p を使い、
-#                 失敗した項目はモック/スタブに切り替え
-#   0/3 全失敗 → Level 0 特化: claude -p テストを断念し、
-#                 Level 0（静的解析）テストのみに注力
+# Go / No-Go criteria:
+#   3/3 pass    -> Go: build out Level 1 tests on top of `claude -p`
+#   1/3 or 2/3  -> Wrapper: use `claude -p` only for the verifications that passed,
+#                  fall back to mocks/stubs for the rest
+#   0/3 (all fail) -> Level 0 only: drop the `claude -p` based tests and
+#                     focus exclusively on static-analysis (Level 0) tests
 #
-# 実行方法:
+# Usage:
 #   bash tests/spike-claude-p.sh
 #
-# 注意: このスパイクは test-* パターンに一致しないため run-all.sh では
-#       自動実行されない（意図的）
+# Note: this spike intentionally does NOT match the test-* pattern, so
+#       run-all.sh will not pick it up automatically.
 set -euo pipefail
 
-# --- claude CLI 検出 ---
+# --- claude CLI detection ---
 if ! command -v claude &>/dev/null; then
-  echo "SKIP: claude CLI が見つかりません（spike-claude-p.sh をスキップ）"
+  echo "SKIP: claude CLI not found (skipping spike-claude-p.sh)"
   exit 0
 fi
 
@@ -49,63 +49,63 @@ spike_assert() {
   fi
 }
 
-echo "=== Spike: claude -p 動作検証 ==="
+echo "=== Spike: claude -p sanity check ==="
 echo ""
 
-# --- 検証 1: skill 名解決 ---
-# claude -p で /audit --help 等を呼び出し、skill が認識されるか確認
-echo "--- 検証 1: skill 名解決 ---"
+# --- Verification 1: skill name resolution ---
+# Invoke `/audit --help` etc. via `claude -p` and confirm the skill is recognized
+echo "--- Verification 1: skill name resolution ---"
 verify1_result="fail"
 if output=$(claude -p "List available skills. Just print the skill names, one per line." --max-turns 1 2>&1); then
-  # 少なくとも1つの既知スキル名が含まれているか
+  # At least one known skill name is present in the output
   if echo "$output" | grep -qiE '(audit|impl|ship|scout|plan2doc)'; then
     verify1_result="pass"
   fi
 fi
-spike_assert "skill 名が claude -p で解決される" "$verify1_result"
+spike_assert "skill names resolve under claude -p" "$verify1_result"
 echo ""
 
-# --- 検証 2: バッククォート展開 ---
-# !`command` 形式のプリコンピュートコンテキストが展開されるか
-echo "--- 検証 2: バッククォート展開 ---"
+# --- Verification 2: backtick expansion ---
+# Confirm that pre-computed-context blocks of the form !`command` get expanded
+echo "--- Verification 2: backtick expansion ---"
 verify2_result="fail"
 if output=$(cd "$REPO_DIR" && claude -p "Run: git branch --show-current" --max-turns 1 --allowedTools "Bash(git branch:*)" 2>&1); then
-  # ブランチ名が返ってきていれば展開は動作している
+  # If a branch name comes back, expansion is working
   if echo "$output" | grep -qE '[a-zA-Z]'; then
     verify2_result="pass"
   fi
 fi
-spike_assert "バッククォート展開が動作する" "$verify2_result"
+spike_assert "backtick expansion works" "$verify2_result"
 echo ""
 
-# --- 検証 3: allowed-tools 尊重 ---
-# allowed-tools 外のツールが制限されるか確認
-echo "--- 検証 3: allowed-tools 尊重 ---"
+# --- Verification 3: allowed-tools is respected ---
+# Confirm that tools outside allowed-tools are blocked
+echo "--- Verification 3: allowed-tools is respected ---"
 verify3_result="fail"
 if output=$(cd "$REPO_DIR" && claude -p "Try to write a file called /tmp/spike-test-file.txt with content 'test'. Report if you succeeded or were blocked." --max-turns 1 --allowedTools "Bash(git:*)" 2>&1); then
-  # ファイルが作成されていなければ allowed-tools が尊重されている
+  # If the file was not created, allowed-tools was respected
   if [ ! -f /tmp/spike-test-file.txt ]; then
     verify3_result="pass"
   else
     rm -f /tmp/spike-test-file.txt
   fi
 fi
-spike_assert "allowed-tools 制限が尊重される" "$verify3_result"
+spike_assert "allowed-tools restriction is respected" "$verify3_result"
 echo ""
 
-# --- サマリー ---
+# --- Summary ---
 echo "==============================="
-echo -e "Spike結果: $SPIKE_TOTAL 項目中 ${GREEN}${SPIKE_PASSED} 成功${NC} / ${RED}${SPIKE_FAILED} 失敗${NC}"
+echo -e "Spike result: $SPIKE_TOTAL items, ${GREEN}${SPIKE_PASSED} passed${NC} / ${RED}${SPIKE_FAILED} failed${NC}"
 echo "==============================="
 echo ""
 
-# --- Go/No-Go 判定 ---
+# --- Go / No-Go decision ---
 if [ "$SPIKE_PASSED" -eq 3 ]; then
-  echo -e "${GREEN}判定: Go${NC} — claude -p ベースの Level 1 テストを本格実装可能"
+  echo -e "${GREEN}Verdict: Go${NC} — Level 1 tests on top of claude -p are viable for full build-out"
 elif [ "$SPIKE_PASSED" -gt 0 ]; then
-  echo -e "${YELLOW}判定: ラッパー${NC} — 部分成功。成功項目のみ claude -p を使い、他はモック/スタブ"
+  echo -e "${YELLOW}Verdict: Wrapper${NC} — partial success: use claude -p for the items that passed, mock/stub the rest"
 else
-  echo -e "${RED}判定: Level 0 特化${NC} — claude -p テスト断念。静的解析テストに注力"
+  echo -e "${RED}Verdict: Level 0 only${NC} — drop claude -p tests, focus on static-analysis tests"
 fi
 
 exit 0

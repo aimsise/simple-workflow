@@ -30,7 +30,7 @@ MIGRATION_TMP=""
 setup_fixture() {
   # $1 = fixture label
   MIGRATION_TMP=$(mktemp -d)
-  mkdir -p "$MIGRATION_TMP/.backlog/active/001-fixture-$1"
+  mkdir -p "$MIGRATION_TMP/.simple-workflow/backlog/active/001-fixture-$1"
 }
 cleanup_fixture() {
   if [ -n "$MIGRATION_TMP" ] && [ -d "$MIGRATION_TMP" ]; then
@@ -42,7 +42,7 @@ trap 'cleanup_fixture' EXIT
 
 # --- Fixture 1: clean legacy (impl-state.yaml only) ---
 setup_fixture "clean-legacy"
-F1="$MIGRATION_TMP/.backlog/active/001-fixture-clean-legacy"
+F1="$MIGRATION_TMP/.simple-workflow/backlog/active/001-fixture-clean-legacy"
 cat > "$F1/impl-state.yaml" <<EOF
 phase: evaluator-complete
 current_round: 2
@@ -53,10 +53,10 @@ last_audit_critical: 0
 next_action: start-round-3-generator
 size: M
 started: 2025-04-15T10:30:00Z
-ticket_dir: .backlog/active/001-fixture-clean-legacy
-plan_file: .backlog/active/001-fixture-clean-legacy/plan.md
+ticket_dir: .simple-workflow/backlog/active/001-fixture-clean-legacy
+plan_file: .simple-workflow/backlog/active/001-fixture-clean-legacy/plan.md
 feedback_files:
-  eval: .backlog/active/001-fixture-clean-legacy/eval-round-2.md
+  eval: .simple-workflow/backlog/active/001-fixture-clean-legacy/eval-round-2.md
   quality: null
 EOF
 
@@ -93,7 +93,7 @@ cleanup_fixture
 # --- Fixture 2: both files, phase-state.yaml.phases.impl populated ---
 # Sub-case A: migration is already complete. §11a.0 should skip to §11c.
 setup_fixture "both-populated"
-F2="$MIGRATION_TMP/.backlog/active/001-fixture-both-populated"
+F2="$MIGRATION_TMP/.simple-workflow/backlog/active/001-fixture-both-populated"
 cat > "$F2/impl-state.yaml" <<EOF
 phase: evaluator-complete
 current_round: 1
@@ -102,7 +102,7 @@ next_action: start-audit
 EOF
 cat > "$F2/phase-state.yaml" <<EOF
 version: 1
-ticket_dir: .backlog/active/001-fixture-both-populated
+ticket_dir: .simple-workflow/backlog/active/001-fixture-both-populated
 size: M
 created: 2025-04-15T09:00:00Z
 current_phase: impl
@@ -144,7 +144,7 @@ cleanup_fixture
 # --- Fixture 3: both files, phase-state.yaml.phases.impl null ---
 # Sub-case B: re-populate phases.impl from legacy file.
 setup_fixture "both-empty-impl"
-F3="$MIGRATION_TMP/.backlog/active/001-fixture-both-empty-impl"
+F3="$MIGRATION_TMP/.simple-workflow/backlog/active/001-fixture-both-empty-impl"
 cat > "$F3/impl-state.yaml" <<EOF
 phase: generator-complete
 current_round: 1
@@ -153,7 +153,7 @@ next_action: start-evaluator
 EOF
 cat > "$F3/phase-state.yaml" <<EOF
 version: 1
-ticket_dir: .backlog/active/001-fixture-both-empty-impl
+ticket_dir: .simple-workflow/backlog/active/001-fixture-both-empty-impl
 size: M
 created: 2025-04-15T09:00:00Z
 current_phase: scout
@@ -208,7 +208,7 @@ cleanup_fixture
 
 # --- Fixture 4: legacy file with unknown field (legacy_extras preservation) ---
 setup_fixture "unknown-field"
-F4="$MIGRATION_TMP/.backlog/active/001-fixture-unknown-field"
+F4="$MIGRATION_TMP/.simple-workflow/backlog/active/001-fixture-unknown-field"
 cat > "$F4/impl-state.yaml" <<EOF
 phase: generator-pending
 current_round: 1
@@ -218,7 +218,7 @@ custom_flag: true
 experimental_mode: aggressive
 size: M
 started: 2025-04-15T10:30:00Z
-ticket_dir: .backlog/active/001-fixture-unknown-field
+ticket_dir: .simple-workflow/backlog/active/001-fixture-unknown-field
 EOF
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
