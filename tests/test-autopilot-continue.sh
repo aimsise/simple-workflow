@@ -767,7 +767,7 @@ setup_test_repo
 create_autokick_fixture "feat-bump"
 
 # Run 5 times to trigger loop guard
-for i in 1 2 3 4 5; do
+for _ in 1 2 3 4 5; do
   run_autopilot_hook '{"session_id":"test-autokick-7"}' "$TEST_REPO"
 done
 # At this point, 6th would allow stop. Touch auto-kick.yaml so it's newer than counter.
