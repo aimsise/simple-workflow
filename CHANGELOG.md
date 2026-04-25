@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚠ BREAKING CHANGE — Directory consolidation
 
-PJ ルート直下の 3 ディレクトリ（`.docs/`, `.backlog/`, `.simple-wf-knowledge/`）を `.simple-workflow/` 配下へ統合しました。既存ユーザは手動マイグレーションが必要です。
+The three top-level directories (`.docs/`, `.backlog/`, `.simple-wf-knowledge/`) are consolidated under a single `.simple-workflow/` root. Existing users must perform a one-time manual migration.
 
-**Migration guide**: 詳細手順は [GitHub Discussions Announcement v5.0.0](https://github.com/aimsise/simple-workflow/discussions/40) を参照してください。
+**Migration guide**: see [GitHub Discussions Announcement v5.0.0](https://github.com/aimsise/simple-workflow/discussions/40) for the full step-by-step instructions.
 
 #### Path mapping
 
@@ -27,21 +27,21 @@ PJ ルート直下の 3 ディレクトリ（`.docs/`, `.backlog/`, `.simple-wf-
 
 #### Why
 
-- PJ ルートの汚染を 3 ディレクトリ → 1 ディレクトリへ削減
-- `.gitignore` 1 行管理 (`/.simple-workflow/`) でセットアップを単純化
-- アンインストール時 `rm -rf .simple-workflow/` で完結
+- Reduced project-root pollution from 3 directories to 1
+- `.gitignore` management collapses to a single line (`.simple-workflow/`)
+- Uninstall is now `rm -rf .simple-workflow/`
 
 #### What is NOT changed
 
-- `phase-state.yaml` などの YAML スキーマは不変
-- スキル/フック/エージェントの公開契約（引数・SW-CHECKPOINT フォーマット等）は不変
-- 本リリースに自動マイグレーションスクリプトは含まれません（手動置換）
+- YAML schemas such as `phase-state.yaml` are unchanged
+- Public contracts of skills, hooks, and agents (arguments, SW-CHECKPOINT format, etc.) are unchanged
+- This release does NOT bundle an automated migration script (manual replacement)
 
 #### Internal changes
 
-- `hooks/session-start.sh` の `.gitignore` 整備対象を 1 エントリ化
-- `skills/impl/SKILL.md` の `git stash` 除外パスを 3 → 1 個へ縮小
-- 16 テストファイル中 10 ファイルでフィクスチャパス更新
+- `hooks/session-start.sh` `.gitignore` upkeep collapses to a single entry
+- `skills/impl/SKILL.md` `git stash` exclusion shrinks from 3 patterns to 1
+- 10 of the 16 test files updated their fixture paths
 
 ## [4.2.0] - 2026-04-25
 
@@ -151,7 +151,7 @@ The refactor surface area and migration policy (which legacy artefacts are prese
 - `/autopilot` SKILL.md restored to pre-Phase-E structure: `Skill` in allowed-tools (not `Agent`), 4 individual skill entries in Mandatory Skill Invocations table (`/create-ticket`, `/scout`, `/impl`, `/ship`), per-step Skill tool calls with CHECKPOINT blocks restored to 8+
 
 ### Added (absorbed from wrapper architecture)
-- Artifact Presence Gate in `/autopilot`: after each ticket's `/ship` step, verifies 7 artifact patterns exist (`ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`); FAIL-CRITICAL/AC全ラウンドFAIL exception skips audit/quality/security checks
+- Artifact Presence Gate in `/autopilot`: after each ticket's `/ship` step, verifies 7 artifact patterns exist (`ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`); FAIL-CRITICAL / all-rounds-FAIL exception skips audit/quality/security checks
 - Skill Invocation Audit in `/autopilot`: tracks `invocation_method` per step (`skill` | `manual-bash` | `unknown`) in `autopilot-state.yaml`
 - `completed-with-warnings` status in `autopilot-log.md` `final_status` enum — triggered when all tickets completed but at least one step used manual-bash fallback
 - `## Warnings` section in `autopilot-log.md` listing manual-bash fallback steps
@@ -232,7 +232,7 @@ The refactor surface area and migration policy (which legacy artefacts are prese
 - `/ship`: pre-compute resilience for all initial git states — every bash command in the `Pre-computed Context` block now uses a `2>/dev/null || echo "<fallback>"` pattern so that no-remote, no-commit, single-commit, detached-HEAD, and uncommitted-only repositories all resolve to a meaningful fallback marker instead of halting the skill. Added a new `Pre-compute Resilience Contract` section clarifying the agent's responsibility to interpret these markers rather than falling back to ad-hoc git commands
 - `tests/test-ship-precompute.sh`: Phase 0b scenarios A-G verifying every pre-compute command exits 0 across no-remote, no-commits, single-`.gitignore`-commit, detached HEAD, uncommitted-only, remote-in-sync, and local-ahead-of-remote git states
 - SKILL.md: mandatory invocation contract for orchestrator skills — added `## Mandatory Skill Invocations` section to 7 orchestrator skills (`/autopilot`, `/create-ticket`, `/scout`, `/impl`, `/audit`, `/ship`, `/plan2doc`) with a 3-column table (Invocation Target / When / Skip consequence) and explicit MUST/NEVER/Fail binding language. Hardens the linguistic binding force against JSONL-observed failure modes (Ticket 003 skill-invocation bypass L646-L687, Ticket 002 model self-AC-judgment L554-L559) where SKILL.md instructions were interpreted as recommendations rather than contractual requirements
-- `tests/test-skill-contracts.sh`: Cat V "SKILL.md 指示強度検証" — V-1 asserts all 7 orchestrator skills have the Mandatory Skill Invocations section, V-2 asserts each has ≥ 3 MUST/NEVER/Fail strong-language markers, V-3 asserts the section includes a Skip-consequence column with real consequence language (detected/trigger/missing/etc.)
+- `tests/test-skill-contracts.sh`: Cat V "SKILL.md instruction strength verification" — V-1 asserts all 7 orchestrator skills have the Mandatory Skill Invocations section, V-2 asserts each has ≥ 3 MUST/NEVER/Fail strong-language markers, V-3 asserts the section includes a Skip-consequence column with real consequence language (detected/trigger/missing/etc.)
 
 ## [3.3.0] - 2026-04-15
 

@@ -128,7 +128,7 @@ The pre-flight gate decides whether `/autopilot` has a runnable input. The singl
 6. **State recovery**: `autopilot-state.yaml` absent at `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` (or any previously-chosen location) → `resume_mode = false`. Else `resume_mode = true`, parse:
    - Print:
      ```
-     [RESUME] 前回の /autopilot 実行が途中で停止しています。途中から再開します。
+     [RESUME] The previous /autopilot run stopped midway. Resuming from where it left off.
      [RESUME] Execution mode: {execution_mode}
      [RESUME] Progress: {completed_count}/{total_tickets} tickets completed
      ```
@@ -264,7 +264,7 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
       - **Policy guard**: `autopilot-policy.yaml` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.impl = failed`, `status = failed`, next ticket.
       - **MUST invoke `/impl .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/plan.md` via the Skill tool**. **NEVER bypass /impl** by spawning `implementer` / `ac-evaluator` directly. Fail immediately if not invokable.
       - On Bash fallback: `invocation_method.impl = manual-bash`. On failure: state `steps.impl = failed`, `status = failed`, next ticket.
-      - **Artifact verification** in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`: at least one `eval-round-*.md`; if PASS (AC passed + `/audit` ran) at least one `audit-round-*.md` AND `quality-round-*.md` (skip when `/impl` ended FAIL at AC stage, i.e. AC評価の全ラウンドでFAIL). Missing → `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
+      - **Artifact verification** in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`: at least one `eval-round-*.md`; if PASS (AC passed + `/audit` ran) at least one `audit-round-*.md` AND `quality-round-*.md` (skip when `/impl` ended FAIL at AC stage, i.e. all AC evaluation rounds FAILED). Missing → `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
       - **State update (after)**: `steps.impl = completed`.
 
       > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read the `autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
@@ -277,7 +277,7 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
       - **MUST invoke `/ship {target-branch} ticket-dir={ticket-dir}` via the Skill tool** (no `merge=true`). **NEVER bypass /ship** with direct `git commit` / `gh pr create` / `mv` — /ship is the atomic orchestrator for commit + ticket move + `/tune` + PR. Fail immediately if not invokable.
       - On Bash fallback: `invocation_method.ship = manual-bash`. On failure: state `steps.ship = failed`, `status = failed`, next ticket.
       - **Artifact verification**: `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` must exist (nested layout) — or `.simple-workflow/backlog/done/{NNN}-{slug}/` for any legacy flat-layout tickets. Missing → `[PIPELINE] ship: ARTIFACT-MISSING — done ticket-dir not found after ship`, state failed, next ticket.
-      - **Artifact Presence Gate**: Verify 7 patterns (check `done/{...}/` first, else `active/{...}/`): `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`. Missing → `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}`, ticket failed. **Exception**: Last `eval-round-*.md` FAIL or FAIL-CRITICAL (AC評価の全ラウンドでFAIL) → skip checking the last 3 patterns.
+      - **Artifact Presence Gate**: Verify 7 patterns (check `done/{...}/` first, else `active/{...}/`): `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`. Missing → `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}`, ticket failed. **Exception**: Last `eval-round-*.md` FAIL or FAIL-CRITICAL (all AC evaluation rounds FAILED) → skip checking the last 3 patterns.
       - **State update (after)**: `steps.ship = completed`, `status = completed`.
 
    f. Record PR URL and status.

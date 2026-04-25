@@ -61,7 +61,7 @@ entries:
 ```yaml
 implementer:
   - id: "entry-001"
-    summary: "1行の要約"
+    summary: "one-line summary"
     confidence: 0.92
 ```
 

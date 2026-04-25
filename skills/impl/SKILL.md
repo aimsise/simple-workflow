@@ -124,7 +124,7 @@ Current state:
    - Include: Plan path: `<path>`. Acceptance Criteria: <text>. Append: "Read the plan at the given path before drafting. The AC text above is the fixed rubric — do not re-derive it from the plan."
    - **If Evaluator fails or returns partial**:
      - **Autopilot policy check**: If `{ticket-dir}/autopilot-policy.yaml` exists, read `gates.evaluator_dry_run_fail.action`: `proceed_without` → proceed without the plan (print `[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=proceed_without`); `stop` → stop (print `[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=stop`).
-     - Else use `AskUserQuestion` "Evaluator が検証プランに合意できませんでした。続行しますか？" with yes (proceed without plan) / no (stop).
+     - Else use `AskUserQuestion` "Evaluator could not agree on a verification plan. Continue?" with yes (proceed without plan) / no (stop).
      - **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors, default to "no". Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure." and exit. Do NOT hang.
    - **On success**: Save the plan for Generator prompt (step 13g).
 
@@ -169,7 +169,7 @@ Current state:
     - Set `impl_resume_mode = true`. Read `phases.impl.*`.
     - Print resume summary:
       ```
-      [IMPL-RESUME] 前回の /impl 実行が途中で停止しています。途中から再開します。
+      [IMPL-RESUME] The previous /impl run stopped midway. Resuming from where it left off.
       [IMPL-RESUME] Round: {current_round}/{max_rounds}
       [IMPL-RESUME] Phase: {phase_sub}
       [IMPL-RESUME] Next action: {next_action}
@@ -299,7 +299,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
     - Parse `/audit`'s structured return block: `**Status**` (PASS | PASS_WITH_CONCERNS | FAIL), `**Critical**`, `**Warnings**`, `**Suggestions**`, `**Reports**`, `**Summary**`.
     - **If `/audit` itself fails** (no structured block / malformed):
      - **Autopilot policy check**: If `autopilot-policy.yaml` exists, read `gates.audit_infrastructure_fail.action`: `treat_as_fail` → **Status: FAIL**, `Critical = 1`, print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=treat_as_fail`, continue with audit failure in feedback; `stop` → stop, print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=stop`.
-     - Else use `AskUserQuestion` "/auditが失敗しました。どうしますか？" with: `stop` (exit, do NOT proceed to Phase 3); `fail` (treat as FAIL+Critical=1; combine with ac-evaluator PASS as feedback for next round; on round 3 proceed to Phase 3 with audit failure noted).
+     - Else use `AskUserQuestion` "/audit failed. How do you want to proceed?" with: `stop` (exit, do NOT proceed to Phase 3); `fail` (treat as FAIL+Critical=1; combine with ac-evaluator PASS as feedback for next round; on round 3 proceed to Phase 3 with audit failure noted).
       - **Non-interactive fallback**: If `AskUserQuestion` unavailable / errors, default to `stop` (NOT `fail` — a silent FAIL retry would mask infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure." and exit. Do NOT hang.
       - **Never** silently treat audit failure as PASS / PASS_WITH_CONCERNS — Critical / security issues must not slip through.
 

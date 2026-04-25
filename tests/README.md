@@ -38,16 +38,16 @@ Skill contract and structural integrity tests verify cross-skill/agent/hook cons
 ### Running Tests
 
 ```bash
-# Level 0 のみ（CI と同等）
+# Level 0 only (equivalent to CI)
 bash tests/run-all.sh
 
-# スパイク検証（claude -p の動作確認）
+# Spike verification (sanity check for the claude -p subprocess)
 bash tests/spike-claude-p.sh
 ```
 
 ### 13 Skill x Verification Category Matrix
 
-| Skill | A: dmi | B: AskUQ | C: Skill委譲 | D: Agent委譲 | E: args | F: fork | G: Status | H: hook | I: KB | J: Policy | K: kb-suggested | L: v2.2.0 | M: WF分離 | N: safety |
+| Skill | A: dmi | B: AskUQ | C: Skill delegation | D: Agent delegation | E: args | F: fork | G: Status | H: hook | I: KB | J: Policy | K: kb-suggested | L: v2.2.0 | M: WF separation | N: safety |
 |-------|--------|----------|-------------|-------------|---------|---------|-----------|---------|-------|-----------|-----------------|-----------|-----------|-----------|
 | investigate | x | | | x | x | x | | | | | | | | |
 | test | x | | | x | x | x | | | | | | | | |
