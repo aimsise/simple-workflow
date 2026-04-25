@@ -372,6 +372,15 @@ Instruct the planner to evaluate whether the ticket should be split:
         - Proceed → Common Write Path with issues noted; Stop → print ticket path + issues.
         - **Non-interactive fallback**: If `AskUserQuestion` unavailable / errors, default to **stop**. Print "Stopped: /create-ticket cannot resolve FAIL gates non-interactively. Ticket saved at <path>. Re-run interactively." and exit. Do NOT hang.
 
+#### Canonical Gate 1 / Gate 2 examples
+
+The ticket-evaluator's canonical criteria file (`skills/create-ticket/references/ac-quality-criteria.md`) anchors these BAD/GOOD example strings. They are duplicated here verbatim — the plugin architecture does not support cross-file interpolation, so Cat Z (AC example drift guard) verifies both copies stay in sync.
+
+- BAD: "Improve performance" (no threshold)
+- GOOD: "Response time under 200ms for 95th percentile"
+- BAD: "Support large files" ("large" undefined)
+- GOOD: "Stream files over 100MB without loading into memory"
+
 ---
 
 ## Common Write Path

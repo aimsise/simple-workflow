@@ -795,11 +795,16 @@ fi
 
 echo ""
 
-# --- Category 24: /ship staging exclusion for .backlog/briefs/ ---
-echo "--- /ship staging exclusion for .backlog/briefs/ ---"
+# --- Category 24: /ship Step 3b — gitignore handles .backlog/ exclusion ---
+# v4.1.0 (commit 01b7584) intentionally removed the explicit `.backlog/briefs/`
+# exclusion clause from ship/SKILL.md Step 3.b: `.backlog/` is gitignored via
+# hooks/session-start.sh setup, so an in-prose carve-out is redundant. This
+# assertion guards the new contract — the literal substring `.backlog/briefs/`
+# MUST NOT reappear in ship/SKILL.md (gitignore is the single mechanism).
+echo "--- /ship Step 3b stages all relevant files (no .backlog/briefs/ exclusion clause; gitignore handles it) ---"
 
-assert_file_contains \
-  "ship/SKILL.md Step 3b excludes .backlog/briefs/ from staging" \
+assert_file_not_contains \
+  "ship/SKILL.md Step 3b stages all relevant files (no .backlog/briefs/ exclusion clause; gitignore handles it)" \
   "$REPO_DIR/skills/ship/SKILL.md" \
   '\.backlog/briefs/'
 

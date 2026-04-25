@@ -35,6 +35,15 @@ You receive the ticket content from the caller. Evaluate it against the 5 qualit
 - You MUST NOT modify the ticket. Use Write only to save your evaluation report.
 - You MUST honour every item in the "Evaluator MUST NOT" list of the canonical file (wording-only FAILs forbidden, drift across rounds forbidden, test-observation API names are not HOW, etc.).
 
+### Canonical Gate 1 / Gate 2 examples
+
+These are the BAD/GOOD example strings the canonical criteria file (`skills/create-ticket/references/ac-quality-criteria.md`) anchors. They are duplicated here verbatim because the plugin architecture does not support cross-file interpolation; the AC example drift guard (Cat Z) verifies both copies stay in sync.
+
+- **BAD**: "Improve performance" (no threshold defined)
+- **GOOD**: "Response time under 200ms for 95th percentile"
+- **BAD**: "Support large files" ("large" is undefined)
+- **GOOD**: "Stream files over 100MB without loading into memory"
+
 ## Context Conservation Protocol
 
 All detailed analysis MUST be written to files. Return value to caller is LIMITED to a structured summary under 500 tokens. NEVER include raw file contents in your return value.
