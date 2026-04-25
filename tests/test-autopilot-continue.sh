@@ -726,7 +726,7 @@ setup_test_repo
 create_autokick_fixture "feat-loop"
 
 LOOP_BLOCKED=0
-for i in 1 2 3 4 5; do
+for _ in 1 2 3 4 5; do
   run_autopilot_hook '{"session_id":"test-autokick-6"}' "$TEST_REPO"
   DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
   if [ "$DECISION" = "block" ]; then
