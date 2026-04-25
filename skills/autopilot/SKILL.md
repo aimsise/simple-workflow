@@ -148,7 +148,18 @@ There is no longer a "no split-plan.md → Single Ticket Flow" branch. `/autopil
 
 Skip if `resume_mode = true` (state exists). This brief-level / parent-level `autopilot-state.yaml` is distinct from each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
 
-Write `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` (or, when no brief dir exists, `.simple-workflow/backlog/product_backlog/{parent-slug}/autopilot-state.yaml` — `/autopilot` chooses whichever parent directory is present on disk; both locations are valid for state):
+#### `autopilot-state.yaml` location precedence
+
+`/autopilot` chooses **one** location based on what is already on disk. Both locations are valid for state; the choice is determined at runtime, not configured.
+
+| Order | Path | Selected when |
+|-------|------|---------------|
+| 1 | `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` | The brief directory exists (i.e. the run originated from `/brief` -> `/create-ticket brief=<path>`). |
+| 2 | `.simple-workflow/backlog/product_backlog/{parent-slug}/autopilot-state.yaml` | The brief directory does not exist on disk (i.e. `/create-ticket` was invoked without `brief=<path>`, or the brief directory was never created). |
+
+Resolution rule on resume: read whichever of the two paths exists. If neither exists, `resume_mode = false` and a fresh state file is written at the active location above. The two paths are never both authoritative simultaneously — `/autopilot` always commits to one location for a given run, then mirrors the same location to `briefs/done/` at the end of the run (see Split Brief Lifecycle below).
+
+Write the state file:
 
 ```yaml
 version: 1

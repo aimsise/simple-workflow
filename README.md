@@ -198,6 +198,25 @@ If you want to share ticket numbering across a team, use this surgical opt-out i
 
 That tracks only the counter; briefs, active tickets, and the knowledge base stay local. Concurrent ticket creation by multiple developers will produce git conflicts on the counter — that is the expected trade-off for team-shared numbering.
 
+### Tracking other paths under `.simple-workflow/`
+
+The same opt-out pattern works for any path you want to keep in version control — for example, shared spec or template files maintained by your team. The structure is always:
+
+1. Un-ignore the directory so git can descend into it.
+2. Re-ignore everything by default.
+3. Selectively un-ignore only the path(s) you actually want tracked.
+
+Example — share project-wide spec docs but keep everything else local:
+
+    !.simple-workflow/                            # un-ignore the directory
+    .simple-workflow/*                            # re-ignore all contents
+    !.simple-workflow/docs/                       # …except docs/
+    .simple-workflow/docs/*                       # …re-ignore its contents
+    !.simple-workflow/docs/specs/                 # …except specs/
+    !.simple-workflow/docs/specs/**               # …including everything under specs/
+
+Anything you do NOT explicitly un-ignore stays gitignored, so research notes, plans, eval logs, and the knowledge base remain private. simple-workflow's own behavior does not depend on whether files are tracked — these patterns are purely a per-team policy decision.
+
 ## Core Workflow
 
 A typical development flow follows these five steps:

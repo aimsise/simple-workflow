@@ -3,6 +3,12 @@ set -euo pipefail
 cat > /dev/null  # consume stdin
 
 # --- Cleanup old session logs (30+ days) ---
+# Rationale: only ephemeral state (compact-state, session-log) is aged out.
+# These files capture transient session context that loses value once the
+# session is gone. Evaluation logs (eval-round-*.md, audit-round-*.md,
+# quality-round-*.md, security-scan-*.md) and reviews/ are permanent
+# records of ticket-level decisions and are NEVER auto-deleted — they
+# stay forever inside their ticket directory (active/ or done/).
 if [ -d ".simple-workflow/docs/compact-state" ]; then
   find .simple-workflow/docs/compact-state -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
