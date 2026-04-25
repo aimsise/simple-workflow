@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-04-25
+
+### Changed
+- **License switched from MIT to Apache License 2.0**: starting with v4.2.0, simple-workflow is distributed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). Apache-2.0 preserves every permission previously granted under MIT (free use, modification, redistribution, sublicensing) and adds: (1) an **explicit patent grant** from each contributor for any patents necessarily infringed by their contributions (Section 3); (2) a **defensive termination clause** that revokes the patent license if a user files patent litigation alleging that the Work infringes their patents; (3) explicit **trademark exclusion** (Section 6) — the license does not grant any rights to the project name or marks; (4) a clear **contribution-licensing rule** (Section 5) — submitted contributions are automatically under Apache-2.0 unless explicitly stated otherwise, removing the need for a separate Contributor License Agreement. Versions up to and including v4.1.0 remain available under MIT (existing users of those versions retain their MIT rights forever); only new versions starting from v4.2.0 are under Apache-2.0. A `NOTICE` file has been added at the repo root per Apache-2.0 convention to document the license history. README badge updated; `.claude-plugin/plugin.json` `license` field updated to `Apache-2.0` (SPDX identifier).
+
+### Added
+- `NOTICE` file at the repo root (Apache-2.0 convention) documenting the copyright owner and the v4.1.0 → v4.2.0 license transition.
+
 ## [4.1.0] - 2026-04-24
 
 ### Added
@@ -454,6 +462,7 @@ The refactor surface area and migration policy (which legacy artefacts are prese
 - Ticket quality evaluation with 5 quality gates
 - Test suite for all hook scripts
 
+[4.2.0]: https://github.com/aimsise/simple-workflow/releases/tag/v4.2.0
 [4.1.0]: https://github.com/aimsise/simple-workflow/releases/tag/v4.1.0
 [4.0.0]: https://github.com/aimsise/simple-workflow/releases/tag/v4.0.0
 [3.8.0]: https://github.com/aimsise/simple-workflow/releases/tag/v3.8.0
