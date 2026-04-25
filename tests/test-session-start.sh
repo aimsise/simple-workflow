@@ -311,9 +311,15 @@ case_c5() {
 
   local mid_cnt
   mid_cnt="$(commit_count "$dir")"
-  # Capture mtime after first run in a portable way (nanoseconds on GNU, seconds on BSD).
+  # Capture mtime after first run in a portable way. Order matters:
+  # `stat -c %Y` (GNU coreutils) first because BSD/macOS `stat` rejects `-c`
+  # cleanly (non-zero exit, no stdout), letting the `||` fall through. The
+  # reverse order is broken on Linux: `stat -f %m FILE` is interpreted as
+  # `stat --file-system %m FILE`, which prints non-deterministic filesystem
+  # stats (Free/Available block counts) to stdout AND exits non-zero, causing
+  # the `||` to ALSO run and concatenate two different outputs.
   local mtime_before
-  mtime_before="$(stat -f %m "$dir/.gitignore" 2>/dev/null || stat -c %Y "$dir/.gitignore" 2>/dev/null || echo 0)"
+  mtime_before="$(stat -c %Y "$dir/.gitignore" 2>/dev/null || stat -f %m "$dir/.gitignore" 2>/dev/null || echo 0)"
 
   # Sleep long enough to expose an unwanted mtime change on 1-sec-resolution filesystems.
   sleep 1
@@ -326,7 +332,7 @@ case_c5() {
   if [ "$after_cnt" -eq "$mid_cnt" ]; then report_pass "$name"; else report_fail "$name"; fi
 
   local mtime_after
-  mtime_after="$(stat -f %m "$dir/.gitignore" 2>/dev/null || stat -c %Y "$dir/.gitignore" 2>/dev/null || echo 0)"
+  mtime_after="$(stat -c %Y "$dir/.gitignore" 2>/dev/null || stat -f %m "$dir/.gitignore" 2>/dev/null || echo 0)"
   name=".gitignore mtime unchanged across second run"
   if [ "$mtime_before" = "$mtime_after" ]; then report_pass "$name"; else report_fail "$name" "before=$mtime_before after=$mtime_after"; fi
 
