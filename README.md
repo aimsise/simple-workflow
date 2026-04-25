@@ -11,6 +11,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [GitHub Copilo
 - [Why simple-workflow?](#why-simple-workflow)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+- [Setup](#setup)
 - [Building Blocks](#building-blocks)
 - [Core Workflow](#core-workflow)
 - [All Skills](#all-skills)
@@ -171,6 +172,27 @@ Once installed, all slash commands work the same on both platforms:
 ```
 
 > **Note**: Session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire on Copilot CLI. Context recovery via `/catchup` after compaction works best on Claude Code.
+
+## Setup
+
+On your first `/brief`, `/autopilot`, or other git-dependent skill, simple-workflow's `SessionStart` hook prepares the target project:
+
+1. `git init -b main` if there is no repo (falls back to plain `git init` on git <2.28)
+2. An initial commit if the repo has no HEAD
+3. Appends `.docs/`, `.backlog/`, `.simple-wf-knowledge/` to `.gitignore` (idempotent — only missing entries are added) and commits with `chore: add simple-workflow artifacts to .gitignore`
+4. Writes `.simple-wf-knowledge/.gitignore-setup-done` as the idempotency marker — once present, simple-workflow will **never** touch your `.gitignore` again, even across sessions. If you delete an entry manually, that decision is permanent.
+
+### Ticket counter is per-developer
+
+`.backlog/.ticket-counter` lives under the gitignored `.backlog/` tree, so each developer starts independently at T-001. This is deliberate for individual productivity workflows.
+
+If you want to share ticket numbering across a team, use this surgical opt-out in your `.gitignore` (the single-line `!.backlog/.ticket-counter` does **not** work — git does not descend into an ignored parent directory):
+
+    !.backlog/                 # un-ignore the directory so git descends into it
+    .backlog/*                 # re-ignore all contents by default
+    !.backlog/.ticket-counter  # …except the counter
+
+That tracks only the counter; briefs, active tickets, and the knowledge base stay local. Concurrent ticket creation by multiple developers will produce git conflicts on the counter — that is the expected trade-off for team-shared numbering.
 
 ## Core Workflow
 

@@ -54,9 +54,11 @@ If `$ARGUMENTS` is empty, proceed with full recovery (Steps 1-pre and 1-4).
 
 `phase-state.yaml` is the **primary** source of truth for ticket lifecycle state, read **before** the compact-state / session-log sources in Step 1. See `skills/create-ticket/references/phase-state-schema.md` for the canonical schema.
 
-Use the `Glob` tool to enumerate state files across **both** ticket locations:
-- `.backlog/active/*/phase-state.yaml`
-- `.backlog/product_backlog/*/phase-state.yaml`
+Use the `Glob` tool to enumerate state files across **both** ticket locations. Patterns are **depth-agnostic** so both the legacy flat layout (`.backlog/active/{NNN}-{slug}/`) and the nested layouts (`.backlog/active/{parent-slug}/{NNN}-{slug}/`, or deeper) are discovered with a single Glob call per location:
+- `.backlog/active/**/phase-state.yaml`
+- `.backlog/product_backlog/**/phase-state.yaml`
+
+After collecting matches, **deduplicate** by the resolved file path — if the same `phase-state.yaml` is returned by two Glob patterns (e.g. because a fallback pattern also fires), render it exactly once. Depth-agnostic globs plus the dedup step together guarantee that a triple-nested ticket (`.backlog/active/alpha/beta/003-deep/phase-state.yaml`) is listed once, not three times.
 
 Product-backlog tickets sit at `last_completed_phase: create_ticket` with `overall_status: in-progress` — they are real in-progress records that Rule 0 must be able to recommend `/scout` for. Missing this location caused the pre-PR-E discovery gap (Reviewer B Findings 3, 4). For each match, use the `Read` tool to load the file, then use `Grep` on the in-memory content (via line-prefix matching — NOT shell pipelines; the allowed-tools of this skill do not include shell piping, consistent with AC 4.7) to extract per-ticket records:
 
@@ -72,7 +74,7 @@ Build an ordered per-ticket record list `phase_state_records = [{dir, location, 
 
 **Freshness flag**: If `phase_state_records` is non-empty (i.e. the `Glob` above found at least one valid `phase-state.yaml`), set `phase_state_fresh = true`; otherwise `phase_state_fresh = false`. The flag is consumed in Step 2 to decide whether to skip the researcher subagent — when the unified state file is present it already carries the per-phase records forward, so there is nothing a deep research pass would add. This simpler rule (presence, not mtime) replaces the prior 1-hour mtime check; it removes the need for the `Bash(stat:*)` permission without weakening the researcher-skip guarantee, because every state-file update is accompanied by a CHECKPOINT emission that is already the strongest "recently touched" signal available in the catchup flow.
 
-**Dual-state precedence check (autopilot-state.yaml)**: After building `phase_state_records`, additionally `Glob` for `autopilot-state.yaml` under `.backlog/briefs/active/*/` and `.backlog/active/*/`. For each hit, apply the precedence rule documented in `skills/create-ticket/references/phase-state-schema.md` §5 ("Dual-state precedence"):
+**Dual-state precedence check (autopilot-state.yaml)**: After building `phase_state_records`, additionally `Glob` for `autopilot-state.yaml` under `.backlog/briefs/active/**/` and `.backlog/active/**/` (depth-agnostic — nested parent-slug layouts are common). For each hit, apply the precedence rule documented in `skills/create-ticket/references/phase-state-schema.md` §5 ("Dual-state precedence"):
 
 - During `/autopilot` execution, `autopilot-state.yaml` is authoritative for pipeline orchestration; `phase-state.yaml` is maintained in parallel.
 - Outside autopilot, `phase-state.yaml` is authoritative.
@@ -182,12 +184,12 @@ Detect the current development phase by checking these conditions **in order**. 
 
 2. **Research exists, no plans** → suggest **plan**
    - Check: `.docs/research/` has files BUT `.docs/plans/` has no related files
-   - Also check: `.backlog/active/*/investigation.md` exists BUT `.backlog/active/*/plan.md` does not
+   - Also check: `.backlog/active/**/investigation.md` exists BUT `.backlog/active/**/plan.md` does not (depth-agnostic; covers nested layouts)
    - Guidance: Read the research first, then use `/plan2doc <feature>`. `/plan2doc` automatically uses sonnet for S-size and opus for M/L/XL.
 
 3. **Plans exist, no code diff from default branch** → suggest **implement**
    - Check: `.docs/plans/` has files BUT `git diff <default-branch> --name-only` shows no changes outside `.docs/` and `.backlog/`
-   - Also check: `.backlog/active/*/plan.md` exists BUT no code changes outside `.backlog/`
+   - Also check: `.backlog/active/**/plan.md` exists BUT no code changes outside `.backlog/` (depth-agnostic)
    - Guidance: Read the plan first, then use `/impl`.
 
 4. **Code diff exists, no test changes** → suggest **test**
@@ -195,7 +197,7 @@ Detect the current development phase by checking these conditions **in order**. 
    - Guidance: Use `/test <changed files>`.
 
 5. **Tests exist, no review files** → suggest **review**
-   - Check: Both source and test changes exist BUT no recent review in `.docs/reviews/` or `.backlog/active/*/quality-round-*.md`
+   - Check: Both source and test changes exist BUT no recent review in `.docs/reviews/` or `.backlog/active/**/quality-round-*.md` (depth-agnostic)
    - Guidance: Use `/audit` to check all changes (code quality + security).
 
 6. **Review done, uncommitted changes** → suggest **commit**

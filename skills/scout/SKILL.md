@@ -73,7 +73,7 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
 ## Instructions
 
 1. Before calling /investigate, attempt to read the ticket file directly:
-   - Search `.backlog/product_backlog/` and `.backlog/active/` for ticket files matching `$ARGUMENTS` keyword using Glob (e.g., `.backlog/product_backlog/*<keyword>*/ticket.md` and `.backlog/active/*<keyword>*/ticket.md`).
+   - Search `.backlog/product_backlog/` and `.backlog/active/` for ticket files matching `$ARGUMENTS` keyword using Glob. Patterns are **depth-agnostic** so nested layouts (`.backlog/active/{parent-slug}/{NNN}-{slug}/`) as well as the legacy flat layout are covered: `.backlog/product_backlog/**/*<keyword>*/ticket.md` and `.backlog/active/**/*<keyword>*/ticket.md`.
    - If multiple matches, use the first. If zero matches or the directories do not exist, skip to step 3 (Size stays unset, non-ticket flow).
    - If found, read the `| Size |` table row to extract the Size value (S/M/L/XL).
 2. If the matched ticket is in `.backlog/product_backlog/{ticket-dir}`, move it to active: `mv .backlog/product_backlog/{ticket-dir} .backlog/active/{ticket-dir}`. If already in `.backlog/active/{ticket-dir}`, use it as-is. Record the ticket directory as `ticket-dir` (`.backlog/active/{ticket-dir}`). Because `phase-state.yaml` (if present) lives inside the ticket directory, the `mv` moves it along with `ticket.md`.

@@ -1,440 +1,508 @@
 #!/usr/bin/env bash
+# tests/test-session-start.sh
+#
+# v4.1.0 gitignore-setup behavior matrix for hooks/session-start.sh.
+#
+# Test matrix for hooks/session-start.sh gitignore-setup block
+# Covers: no git, empty repo, existing repo w/o entries, existing repo w/ all
+# entries, flag present.
+#
+# Each case:
+#   - Uses `mktemp -d` for isolated FS state
+#   - Sets local `user.email`/`user.name` (or GIT_AUTHOR_*/GIT_COMMITTER_* env)
+#     so commits succeed regardless of the host's git config
+#   - Cleans up via trap
+#
+# Exits 0 only when every C1-C6 case reports PASS.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/test-helper.sh"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+HOOK="$REPO_ROOT/hooks/session-start.sh"
 
-echo "=== session-start.sh Tests ==="
-echo ""
+if [ ! -x "$HOOK" ]; then
+  echo "ERROR: hook not executable: $HOOK" >&2
+  exit 2
+fi
 
-HOOK="$HOOK_DIR/session-start.sh"
+# ---------- Isolation harness ----------
+# A single sandbox dir that owns a fake HOME and a scratch area for per-case
+# workdirs. Everything is removed by the EXIT trap.
 
-# Trap to ensure cleanup on exit
-trap 'cleanup_test_repo' EXIT
+SANDBOX="$(mktemp -d)"
+FAKE_HOME="$SANDBOX/home"
+CASE_ROOT="$SANDBOX/cases"
+mkdir -p "$FAKE_HOME" "$CASE_ROOT"
 
-# Helper: alias for setup_test_repo (basic git repo with initial commit)
-setup_session_repo() {
-  setup_test_repo
+# Never let host git configuration leak in; GIT_CONFIG_GLOBAL=/dev/null
+# neutralises ~/.gitconfig even when tests run under other users.
+export HOME="$FAKE_HOME"
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+export GIT_AUTHOR_NAME="simple-workflow test"
+export GIT_AUTHOR_EMAIL="test@example.invalid"
+export GIT_COMMITTER_NAME="simple-workflow test"
+export GIT_COMMITTER_EMAIL="test@example.invalid"
+
+cleanup() {
+  rm -rf "$SANDBOX" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# ---------- Reporting ----------
+
+PASS_COUNT=0
+FAIL_COUNT=0
+FAILURES=()
+
+report_pass() {
+  local name="$1"
+  PASS_COUNT=$((PASS_COUNT + 1))
+  printf '  [PASS] %s\n' "$name"
 }
 
-# Test 1: Valid JSON output in a normal git repo
-setup_session_repo
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$LAST_STDOUT" | jq . > /dev/null 2>&1; then
-  echo -e "  ${GREEN}PASS${NC} Output is valid JSON"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Output is valid JSON"
-  echo -e "       Output: $LAST_STDOUT"
-  echo -e "       Stderr: $LAST_STDERR"
-  echo -e "       Exit code: $LAST_EXIT_CODE"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test 2: additionalContext contains "Branch:"
-setup_session_repo
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if echo "$CONTEXT" | grep -qF "Branch:"; then
-  echo -e "  ${GREEN}PASS${NC} additionalContext contains 'Branch:'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} additionalContext contains 'Branch:'"
-  echo -e "       Context: $CONTEXT"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test 3: additionalContext contains "Changed files:"
-setup_session_repo
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if echo "$CONTEXT" | grep -qF "Changed files:"; then
-  echo -e "  ${GREEN}PASS${NC} additionalContext contains 'Changed files:'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} additionalContext contains 'Changed files:'"
-  echo -e "       Context: $CONTEXT"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test 4: On main branch, contains "Branch: main"
-setup_session_repo
-cd "$TEST_REPO" && git branch -M main
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if echo "$CONTEXT" | grep -qF "Branch: main"; then
-  echo -e "  ${GREEN}PASS${NC} On main branch, shows 'Branch: main'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} On main branch, shows 'Branch: main'"
-  echo -e "       Context: $CONTEXT"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test 5: Changed files count is correct after modifications
-setup_session_repo
-# Pre-seed .gitignore so session-start hook won't create one (which would inflate the count)
-printf '.docs/\n.backlog/\n.simple-wf-knowledge/\n' > "$TEST_REPO/.gitignore"
-cd "$TEST_REPO" && git add .gitignore && git commit -q -m "add gitignore"
-echo "change1" > "$TEST_REPO/file1.txt"
-echo "change2" > "$TEST_REPO/file2.txt"
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if echo "$CONTEXT" | grep -qF "Changed files: 2"; then
-  echo -e "  ${GREEN}PASS${NC} Changed files count is correct (2 new files)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Changed files count is correct (2 new files)"
-  echo -e "       Context: $CONTEXT"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test 6: Outside git repo, hook exits 0 with a graceful fallback context
-# (guarded by `git rev-parse --git-dir` so the hook never aborts on non-git dirs)
-NON_GIT_DIR=$(mktemp -d)
-run_hook "$HOOK" "" "$NON_GIT_DIR"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -eq 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} Outside git repo, hook exits 0"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Outside git repo, expected exit 0 but got $LAST_EXIT_CODE"
-  echo -e "       Stdout: $LAST_STDOUT"
-  echo -e "       Stderr: $LAST_STDERR"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if echo "$CONTEXT" | grep -qF "(not a git repo)"; then
-  echo -e "  ${GREEN}PASS${NC} Outside git repo, additionalContext reports '(not a git repo)'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Outside git repo, expected '(not a git repo)' marker in context"
-  echo -e "       Context: $CONTEXT"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-rm -rf "$NON_GIT_DIR"
-
-# Test 7: Output does not contain "Latest Plan:" or "Active:" (simplified hook)
-setup_session_repo
-mkdir -p "$TEST_REPO/.backlog/active/test"
-echo "# Plan" > "$TEST_REPO/.backlog/active/test/plan.md"
-run_hook "$HOOK" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
-if ! echo "$CONTEXT" | grep -qE "Latest Plan:|Active:"; then
-  echo -e "  ${GREEN}PASS${NC} Simplified hook does not contain 'Latest Plan:' or 'Active:'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Simplified hook should not contain 'Latest Plan:' or 'Active:'"
-  echo -e "       Context: $CONTEXT"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-echo ""
-
-echo "--- Session log cleanup tests ---"
-
-# Test: Old session-log files (31+ days) are deleted
-setup_session_repo
-mkdir -p "$TEST_REPO/.docs/session-log"
-echo "old log" > "$TEST_REPO/.docs/session-log/session-log-20250101_000000.md"
-# Set modification time to 35 days ago
-touch -t "$(date -v-35d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '35 days ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$TEST_REPO/.docs/session-log/session-log-20250101_000000.md" 2>/dev/null || true
-mkdir -p "$TEST_REPO/.docs/compact-state"
-echo "old compact" > "$TEST_REPO/.docs/compact-state/compact-state-20250101_000000.md"
-touch -t "$(date -v-35d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '35 days ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$TEST_REPO/.docs/compact-state/compact-state-20250101_000000.md" 2>/dev/null || true
-run_hook "$HOOK_DIR/session-start.sh" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ ! -f "$TEST_REPO/.docs/session-log/session-log-20250101_000000.md" ] && [ ! -f "$TEST_REPO/.docs/compact-state/compact-state-20250101_000000.md" ]; then
-  echo -e "  ${GREEN}PASS${NC} Old session logs (31+ days) are deleted"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Old session logs (31+ days) are deleted"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Test: Recent session-log files (< 30 days) are preserved
-setup_session_repo
-mkdir -p "$TEST_REPO/.docs/session-log"
-echo "recent log" > "$TEST_REPO/.docs/session-log/session-log-recent.md"
-mkdir -p "$TEST_REPO/.docs/compact-state"
-echo "recent compact" > "$TEST_REPO/.docs/compact-state/compact-state-recent.md"
-# These files are just created so they're recent (< 30 days)
-run_hook "$HOOK_DIR/session-start.sh" "" "$TEST_REPO"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ -f "$TEST_REPO/.docs/session-log/session-log-recent.md" ] && [ -f "$TEST_REPO/.docs/compact-state/compact-state-recent.md" ]; then
-  echo -e "  ${GREEN}PASS${NC} Recent session logs (< 30 days) are preserved"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Recent session logs (< 30 days) are preserved"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-echo ""
-
-echo "--- .gitignore auto-append tests ---"
-
-# Test: session-start.sh contains .gitignore handling logic
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qF '.gitignore' "$HOOK"; then
-  echo -e "  ${GREEN}PASS${NC} session-start.sh contains .gitignore logic"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} session-start.sh contains .gitignore logic"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-# Test: session-start.sh references all three gitignore entries
-for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
-  TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if grep -qF "$entry" "$HOOK"; then
-    echo -e "  ${GREEN}PASS${NC} session-start.sh references '$entry' entry"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} session-start.sh references '$entry' entry"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
+report_fail() {
+  local name="$1"; shift
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+  FAILURES+=("$name")
+  printf '  [FAIL] %s\n' "$name"
+  if [ "$#" -gt 0 ]; then
+    while [ "$#" -gt 0 ]; do
+      printf '         %s\n' "$1"
+      shift
+    done
   fi
-done
+}
 
-# --- Behavioral tests: .gitignore auto-append ---
+# ---------- Helpers ----------
 
-# AC1 + AC2: No .gitignore exists -> hook creates it with all 3 entries and comment header
-setup_test_repo
-# Remove any .gitignore that setup_test_repo may have produced
-rm -f "$TEST_REPO/.gitignore"
-run_hook "$HOOK" "" "$TEST_REPO"
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ -f "$TEST_REPO/.gitignore" ]; then
-  echo -e "  ${GREEN}PASS${NC} .gitignore created when none existed"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} .gitignore created when none existed"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
-  TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if grep -qxF "$entry" "$TEST_REPO/.gitignore"; then
-    echo -e "  ${GREEN}PASS${NC} .gitignore contains '$entry' after creation"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} .gitignore contains '$entry' after creation"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
-done
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qF '# simple-workflow plugin' "$TEST_REPO/.gitignore"; then
-  echo -e "  ${GREEN}PASS${NC} .gitignore contains comment header '# simple-workflow plugin'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} .gitignore contains comment header '# simple-workflow plugin'"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# AC3: Idempotency - running hook twice does not duplicate entries
-setup_test_repo
-rm -f "$TEST_REPO/.gitignore"
-run_hook "$HOOK" "" "$TEST_REPO"
-run_hook "$HOOK" "" "$TEST_REPO"
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-DOCS_COUNT=$(grep -cxF '.docs/' "$TEST_REPO/.gitignore")
-BACKLOG_COUNT=$(grep -cxF '.backlog/' "$TEST_REPO/.gitignore")
-KNOWLEDGE_COUNT=$(grep -cxF '.simple-wf-knowledge/' "$TEST_REPO/.gitignore")
-if [ "$DOCS_COUNT" -eq 1 ] && [ "$BACKLOG_COUNT" -eq 1 ] && [ "$KNOWLEDGE_COUNT" -eq 1 ]; then
-  echo -e "  ${GREEN}PASS${NC} Idempotency: no duplicate entries after running hook twice"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Idempotency: entries duplicated (.docs/=$DOCS_COUNT .backlog/=$BACKLOG_COUNT .simple-wf-knowledge/=$KNOWLEDGE_COUNT)"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# AC4: Existing .gitignore with user entries is preserved
-setup_test_repo
-printf 'node_modules/\n' > "$TEST_REPO/.gitignore"
-run_hook "$HOOK" "" "$TEST_REPO"
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qxF 'node_modules/' "$TEST_REPO/.gitignore"; then
-  echo -e "  ${GREEN}PASS${NC} Existing user entry 'node_modules/' preserved after hook"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Existing user entry 'node_modules/' preserved after hook"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-for entry in ".docs/" ".backlog/" ".simple-wf-knowledge/"; do
-  TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if grep -qxF "$entry" "$TEST_REPO/.gitignore"; then
-    echo -e "  ${GREEN}PASS${NC} Plugin entry '$entry' added alongside existing entries"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} Plugin entry '$entry' added alongside existing entries"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
-done
-cleanup_test_repo
-
-# AC5: Non-git directory - .gitignore should NOT be created
-NON_GIT_DIR_GITIGNORE=$(mktemp -d)
-run_hook "$HOOK" "" "$NON_GIT_DIR_GITIGNORE"
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ ! -f "$NON_GIT_DIR_GITIGNORE/.gitignore" ]; then
-  echo -e "  ${GREEN}PASS${NC} .gitignore not created in non-git directory"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} .gitignore should not be created in non-git directory"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-rm -rf "$NON_GIT_DIR_GITIGNORE"
-
-echo ""
-
-echo "--- Initial commit auto-injection tests (Phase 0a) ---"
-
-# Helper: setup an empty git repo (init only, NO initial commit)
-setup_empty_repo() {
-  TEST_REPO=$(mktemp -d)
+# Run the hook in a target dir with a fresh HOME/git config env.
+run_hook_in() {
+  local dir="$1"
   (
-    cd "$TEST_REPO"
-    git init -q
-    git config user.email "test@test.com"
-    git config user.name "Test"
+    cd "$dir"
+    printf '{}' | "$HOOK" >/dev/null 2>&1
   )
 }
 
-# Scenario A: Empty repo + .gitignore present -> initial commit created with .gitignore staged
-setup_empty_repo
-printf 'node_modules/\n' > "$TEST_REPO/.gitignore"
-run_hook "$HOOK" "" "$TEST_REPO"
+# Count commits on HEAD (0 when no HEAD).
+commit_count() {
+  local dir="$1"
+  (
+    cd "$dir"
+    if git rev-parse HEAD >/dev/null 2>&1; then
+      git rev-list --count HEAD
+    else
+      echo 0
+    fi
+  )
+}
 
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if (cd "$TEST_REPO" && git rev-parse HEAD >/dev/null 2>&1); then
-  echo -e "  ${GREEN}PASS${NC} Scenario A: Initial commit created in empty repo with .gitignore"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario A: Initial commit should exist after hook"
-  echo -e "       Stderr: $LAST_STDERR"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
+# Make a per-case workdir and configure local git identity after init (when a
+# .git dir is present; when the case expects the hook to init, the caller can
+# skip this).
+make_case_dir() {
+  local name="$1"
+  local dir="$CASE_ROOT/$name"
+  mkdir -p "$dir"
+  printf '%s' "$dir"
+}
+
+configure_local_git() {
+  local dir="$1"
+  (
+    cd "$dir"
+    git config --local user.email "test@example.invalid"
+    git config --local user.name "simple-workflow test"
+  )
+}
+
+# ---------- C1: fresh dir, no git ----------
+# Expected: .git created, .gitignore with 3 entries, >=1 commit, flag file.
+
+case_c1() {
+  echo "=== C1: fresh dir (no git) ==="
+  local dir
+  dir="$(make_case_dir c1)"
+
+  run_hook_in "$dir"
+
+  local name=".git/ directory created"
+  if [ -d "$dir/.git" ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name=".gitignore contains .docs/"
+  if grep -qxF '.docs/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+  name=".gitignore contains .backlog/"
+  if grep -qxF '.backlog/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+  name=".gitignore contains .simple-wf-knowledge/"
+  if grep -qxF '.simple-wf-knowledge/' "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+
+  local cnt
+  cnt="$(commit_count "$dir")"
+  name="git log has >=1 commit (got $cnt)"
+  if [ "$cnt" -ge 1 ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name=".simple-wf-knowledge/.gitignore-setup-done present"
+  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- C2: git-init'd, no commits, no .gitignore ----------
+
+case_c2() {
+  echo "=== C2: git init, no commits, no .gitignore ==="
+  local dir
+  dir="$(make_case_dir c2)"
+  (cd "$dir" && git init -q -b main 2>/dev/null || git init -q)
+  configure_local_git "$dir"
+
+  run_hook_in "$dir"
+
+  local name=".gitignore created"
+  if [ -f "$dir/.gitignore" ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
+    name=".gitignore contains $entry"
+    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+  done
+
+  local cnt
+  cnt="$(commit_count "$dir")"
+  name="git log has >=1 commit (got $cnt)"
+  if [ "$cnt" -ge 1 ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name="flag file present"
+  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- C3: existing repo with commits, no entries ----------
+
+case_c3() {
+  echo "=== C3: repo with commits, no entries in .gitignore ==="
+  local dir
+  dir="$(make_case_dir c3)"
+  (
+    cd "$dir"
+    git init -q -b main 2>/dev/null || git init -q
+  )
+  configure_local_git "$dir"
+  (
+    cd "$dir"
+    echo 'hello' > README.md
+    git add README.md
+    git commit -q -m "initial"
+  )
+
+  local before_cnt
+  before_cnt="$(commit_count "$dir")"
+
+  run_hook_in "$dir"
+
+  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
+    local name=".gitignore appended with $entry"
+    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+  done
+
+  local after_cnt
+  after_cnt="$(commit_count "$dir")"
+  local name="chore commit created (commits $before_cnt -> $after_cnt)"
+  if [ "$after_cnt" -eq $((before_cnt + 1)) ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name="latest commit is 'chore: add simple-workflow artifacts to .gitignore'"
+  local subject
+  subject="$(cd "$dir" && git log -1 --format=%s)"
+  if [ "$subject" = "chore: add simple-workflow artifacts to .gitignore" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name" "got: $subject"
+  fi
+
+  name="flag file present"
+  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- C4: existing repo, 1 of 3 entries present ----------
+
+case_c4() {
+  echo "=== C4: repo with commits, 1 of 3 entries already present ==="
+  local dir
+  dir="$(make_case_dir c4)"
+  (
+    cd "$dir"
+    git init -q -b main 2>/dev/null || git init -q
+  )
+  configure_local_git "$dir"
+  (
+    cd "$dir"
+    echo 'hello' > README.md
+    printf '.docs/\n' > .gitignore
+    git add README.md .gitignore
+    git commit -q -m "initial with partial gitignore"
+  )
+
+  local before_cnt
+  before_cnt="$(commit_count "$dir")"
+
+  run_hook_in "$dir"
+
+  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
+    local name=".gitignore contains $entry"
+    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
+  done
+
+  # .docs/ must appear exactly once (no duplication).
+  local docs_count
+  docs_count="$(grep -cxF '.docs/' "$dir/.gitignore")"
+  local name=".docs/ not duplicated (count=$docs_count)"
+  if [ "$docs_count" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  local after_cnt
+  after_cnt="$(commit_count "$dir")"
+  name="chore commit created (commits $before_cnt -> $after_cnt)"
+  if [ "$after_cnt" -eq $((before_cnt + 1)) ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name="flag file present"
+  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- C5: all 3 entries already present (AC-5) ----------
+
+case_c5() {
+  echo "=== C5: repo with commits, all 3 entries already present (idempotency) ==="
+  local dir
+  dir="$(make_case_dir c5)"
+  (
+    cd "$dir"
+    git init -q -b main 2>/dev/null || git init -q
+  )
+  configure_local_git "$dir"
+  (
+    cd "$dir"
+    printf '.docs/\n.backlog/\n.simple-wf-knowledge/\n' > .gitignore
+    echo 'hello' > README.md
+    git add README.md .gitignore
+    git commit -q -m "initial with all entries"
+  )
+
+  # Remove the flag if the hook wrote it in a previous case (same sandbox
+  # tree uses separate case dirs, so this is defensive only).
+  rm -f "$dir/.simple-wf-knowledge/.gitignore-setup-done"
+
+  # First run establishes the flag. AC-5 actually asks about the SECOND run
+  # producing zero additional commits + no mtime change; record mtime and
+  # commit count AFTER the first run.
+  run_hook_in "$dir"
+
+  local mid_cnt
+  mid_cnt="$(commit_count "$dir")"
+  # Capture mtime after first run in a portable way. Order matters:
+  # `stat -c %Y` (GNU coreutils) first because BSD/macOS `stat` rejects `-c`
+  # cleanly (non-zero exit, no stdout), letting the `||` fall through. The
+  # reverse order is broken on Linux: `stat -f %m FILE` is interpreted as
+  # `stat --file-system %m FILE`, which prints non-deterministic filesystem
+  # stats (Free/Available block counts) to stdout AND exits non-zero, causing
+  # the `||` to ALSO run and concatenate two different outputs.
+  local mtime_before
+  mtime_before="$(stat -c %Y "$dir/.gitignore" 2>/dev/null || stat -f %m "$dir/.gitignore" 2>/dev/null || echo 0)"
+
+  # Sleep long enough to expose an unwanted mtime change on 1-sec-resolution filesystems.
+  sleep 1
+
+  run_hook_in "$dir"
+
+  local after_cnt
+  after_cnt="$(commit_count "$dir")"
+  local name="second run produced zero additional commits ($mid_cnt -> $after_cnt)"
+  if [ "$after_cnt" -eq "$mid_cnt" ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  local mtime_after
+  mtime_after="$(stat -c %Y "$dir/.gitignore" 2>/dev/null || stat -f %m "$dir/.gitignore" 2>/dev/null || echo 0)"
+  name=".gitignore mtime unchanged across second run"
+  if [ "$mtime_before" = "$mtime_after" ]; then report_pass "$name"; else report_fail "$name" "before=$mtime_before after=$mtime_after"; fi
+
+  # Sanity: all 3 entries appear exactly once.
+  for entry in '.docs/' '.backlog/' '.simple-wf-knowledge/'; do
+    local cnt
+    cnt="$(grep -cxF "$entry" "$dir/.gitignore")"
+    name="$entry present exactly once (count=$cnt)"
+    if [ "$cnt" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
+  done
+
+  name="flag file present"
+  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- C6: flag already present (AC-6) ----------
+
+case_c6() {
+  echo "=== C6: flag file already present -> hook is a no-op ==="
+  local dir
+  dir="$(make_case_dir c6)"
+  (
+    cd "$dir"
+    git init -q -b main 2>/dev/null || git init -q
+  )
+  configure_local_git "$dir"
+  (
+    cd "$dir"
+    echo 'hello' > README.md
+    git add README.md
+    git commit -q -m "initial"
+  )
+  # Flag exists BEFORE any simple-workflow entries are in .gitignore.
+  # .gitignore does not exist yet; hook MUST NOT create or modify it.
+  mkdir -p "$dir/.simple-wf-knowledge"
+  : > "$dir/.simple-wf-knowledge/.gitignore-setup-done"
+
+  local before_cnt
+  before_cnt="$(commit_count "$dir")"
+
+  run_hook_in "$dir"
+
+  local after_cnt
+  after_cnt="$(commit_count "$dir")"
+  local name="no additional commits ($before_cnt -> $after_cnt)"
+  if [ "$after_cnt" -eq "$before_cnt" ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name=".gitignore NOT created"
+  if [ ! -f "$dir/.gitignore" ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name=".docs/ NOT appended"
+  if ! grep -qxF '.docs/' "$dir/.gitignore" 2>/dev/null; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- C7: commit failure (no git identity) -> flag NOT written ----------
+# Regression guard for A5 from the v4.1.0 skeptical review.
+#
+# If .gitignore is mutated but the commit fails (e.g. because no git identity
+# is configured), the setup flag must NOT be written. Otherwise the repo ends
+# up in a permanent staged-but-uncommitted state (flag blocks future retries).
+#
+# Expected post-hook state (FIRST run, no identity): .gitignore contains the
+# entries (mutation happened), but no new commit (commit failed silently), and
+# no flag file exists. Second run with identity configured must finalize and
+# write the flag.
+
+case_c7() {
+  echo "=== C7: commit-failure (pre-commit hook fails) -> flag NOT written ==="
+  local dir
+  dir="$(make_case_dir c7)"
+  (
+    cd "$dir"
+    git init -q -b main 2>/dev/null || git init -q
+    echo 'hello' > README.md
+    git add README.md
+    git commit -q -m "initial"
+  )
+  configure_local_git "$dir"
+
+  # Install a pre-commit hook that always fails. This is the most portable way
+  # to force `git commit` to fail deterministically across git versions —
+  # attempting to simulate "no identity" via env unset is unreliable because
+  # modern git auto-detects identity from hostname in some configurations.
+  cat > "$dir/.git/hooks/pre-commit" << 'HOOK_EOF'
+#!/bin/sh
+echo "pre-commit: forced test failure" >&2
+exit 1
+HOOK_EOF
+  chmod +x "$dir/.git/hooks/pre-commit"
+
+  local before_cnt
+  before_cnt="$(commit_count "$dir")"
+
+  run_hook_in "$dir"
+
+  local after_cnt
+  after_cnt="$(commit_count "$dir")"
+
+  local name="no additional commits when pre-commit fails ($before_cnt -> $after_cnt)"
+  if [ "$after_cnt" -eq "$before_cnt" ]; then report_pass "$name"; else report_fail "$name"; fi
+
+  name=".gitignore was appended (mutation happened regardless of commit result)"
+  if grep -qxF '.docs/' "$dir/.gitignore" 2>/dev/null; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+
+  name="flag file NOT written when commit failed (silent state inconsistency prevented)"
+  if [ ! -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+
+  # Recovery path: remove the failing pre-commit hook, re-run. Flag must appear
+  # and HEAD must advance by exactly one commit.
+  rm -f "$dir/.git/hooks/pre-commit"
+  run_hook_in "$dir"
+
+  local final_cnt
+  final_cnt="$(commit_count "$dir")"
+
+  name="chore commit recorded on retry ($after_cnt -> $final_cnt, expect $((after_cnt + 1)))"
+  if [ "$final_cnt" -eq "$((after_cnt + 1))" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+
+  name="flag file written after retry succeeds"
+  if [ -f "$dir/.simple-wf-knowledge/.gitignore-setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name"
+  fi
+}
+
+# ---------- Run all cases ----------
+
+case_c1
+echo
+case_c2
+echo
+case_c3
+echo
+case_c4
+echo
+case_c5
+echo
+case_c6
+echo
+case_c7
+
+echo
+echo "=================================="
+echo "Results: $PASS_COUNT pass, $FAIL_COUNT fail"
+if [ "$FAIL_COUNT" -gt 0 ]; then
+  echo "Failed checks:"
+  for f in "${FAILURES[@]}"; do
+    echo "  - $f"
+  done
+  exit 1
 fi
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-FIRST_MSG=$(cd "$TEST_REPO" && git log -1 --format=%s 2>/dev/null || echo "")
-if [ "$FIRST_MSG" = "Initial commit: project baseline" ]; then
-  echo -e "  ${GREEN}PASS${NC} Scenario A: Initial commit message is 'Initial commit: project baseline'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario A: Unexpected commit message: '$FIRST_MSG'"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if (cd "$TEST_REPO" && git ls-tree -r --name-only HEAD 2>/dev/null | grep -qxF '.gitignore'); then
-  echo -e "  ${GREEN}PASS${NC} Scenario A: .gitignore is tracked in the initial commit"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario A: .gitignore should be part of initial commit"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Scenario B: Empty repo + no .gitignore -> empty initial commit created
-setup_empty_repo
-run_hook "$HOOK" "" "$TEST_REPO"
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if (cd "$TEST_REPO" && git rev-parse HEAD >/dev/null 2>&1); then
-  echo -e "  ${GREEN}PASS${NC} Scenario B: Initial commit created in empty repo without .gitignore"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario B: Initial commit should exist after hook"
-  echo -e "       Stderr: $LAST_STDERR"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-FIRST_MSG_B=$(cd "$TEST_REPO" && git log -1 --format=%s 2>/dev/null || echo "")
-if [ "$FIRST_MSG_B" = "Initial commit: project baseline" ]; then
-  echo -e "  ${GREEN}PASS${NC} Scenario B: Initial commit message is 'Initial commit: project baseline'"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario B: Unexpected commit message: '$FIRST_MSG_B'"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-# The initial commit should be empty (no tree entries) because no .gitignore was present
-TREE_COUNT=$(cd "$TEST_REPO" && git ls-tree -r --name-only HEAD 2>/dev/null | wc -l | tr -d ' ')
-if [ "$TREE_COUNT" -eq 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} Scenario B: Initial commit is empty (no tracked files)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario B: Initial commit should be empty, found $TREE_COUNT tracked file(s)"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Scenario C: Repository already has 1 commit -> hook is a no-op (idempotency)
-setup_test_repo
-BEFORE_HEAD=$(cd "$TEST_REPO" && git rev-parse HEAD)
-BEFORE_COUNT=$(cd "$TEST_REPO" && git rev-list --count HEAD)
-run_hook "$HOOK" "" "$TEST_REPO"
-AFTER_HEAD=$(cd "$TEST_REPO" && git rev-parse HEAD)
-AFTER_COUNT=$(cd "$TEST_REPO" && git rev-list --count HEAD)
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$BEFORE_HEAD" = "$AFTER_HEAD" ] && [ "$BEFORE_COUNT" = "$AFTER_COUNT" ]; then
-  echo -e "  ${GREEN}PASS${NC} Scenario C: Existing commit preserved; no new initial commit created"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario C: HEAD or commit count changed (before=$BEFORE_HEAD/$BEFORE_COUNT, after=$AFTER_HEAD/$AFTER_COUNT)"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-cleanup_test_repo
-
-# Scenario D: Non-git directory -> hook does nothing (no error, no commit)
-NON_GIT_DIR_PHASE0A=$(mktemp -d)
-run_hook "$HOOK" "" "$NON_GIT_DIR_PHASE0A"
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -eq 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} Scenario D: Non-git dir exits 0 (no error)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario D: Non-git dir should exit 0, got $LAST_EXIT_CODE"
-  echo -e "       Stderr: $LAST_STDERR"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ ! -d "$NON_GIT_DIR_PHASE0A/.git" ]; then
-  echo -e "  ${GREEN}PASS${NC} Scenario D: Non-git dir still has no .git directory"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} Scenario D: .git directory was unexpectedly created in non-git dir"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-rm -rf "$NON_GIT_DIR_PHASE0A"
-
-echo ""
-
-print_summary
+exit 0

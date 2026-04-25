@@ -11,10 +11,48 @@ SAVE_FILE=".docs/compact-state/compact-state-${TIMESTAMP}.md"
 
 mkdir -p .docs/compact-state
 
-# Collect file lists with nullglob so empty matches yield zero-length arrays.
+# Collect file lists depth-agnostically under .backlog/active/ so both the
+# legacy flat layout (.backlog/active/{NNN}-{slug}/) and the new nested
+# layouts (.backlog/active/{parent}/{NNN}-{slug}/ and deeper) are surfaced.
+# `find` with no -maxdepth walks arbitrary depth; sort -u stabilises order
+# and de-duplicates in case the same file is reachable via multiple paths.
+#
+# An "active ticket" is any directory under `.backlog/active/` that
+# contains EITHER `ticket.md` OR `phase-state.yaml` (the latter covers
+# tickets that have had their phase-state initialised before `ticket.md`
+# is persisted, and guarantees that every ticket with a live lifecycle
+# record shows up in the compact-state frontmatter). We represent each
+# active ticket by a canonical `ticket.md` path: the real file when it
+# exists, otherwise a synthetic path `{dir}/ticket.md` which downstream
+# code reduces to `dir` via `dirname` — the active_tickets list only
+# ever contains the directory, so no missing-file read is attempted.
+ACTIVE_TICKET_FILES=()
+ACTIVE_BACKLOG_PLAN_FILES=()
+if [ -d .backlog/active ]; then
+  while IFS= read -r _dir; do
+    [ -n "$_dir" ] || continue
+    # Deterministic canonical entry per ticket dir: always `{dir}/ticket.md`.
+    # When the real file is absent, downstream code only uses `dirname` on
+    # this path — the missing-file case is handled by `[ -f ... ]` guards
+    # in per-ticket eval/audit loops.
+    ACTIVE_TICKET_FILES+=("$_dir/ticket.md")
+  done < <(
+    {
+      find .backlog/active -type f -name 'ticket.md' 2>/dev/null
+      find .backlog/active -type f -name 'phase-state.yaml' 2>/dev/null
+    } | while IFS= read -r _p; do
+      [ -n "$_p" ] && dirname "$_p"
+    done | sort -u
+  )
+  unset _dir
+
+  while IFS= read -r _plan_md; do
+    [ -n "$_plan_md" ] && ACTIVE_BACKLOG_PLAN_FILES+=("$_plan_md")
+  done < <(find .backlog/active -type f -name 'plan.md' 2>/dev/null | sort -u)
+fi
+unset _plan_md
+
 shopt -s nullglob
-ACTIVE_TICKET_FILES=(.backlog/active/*/ticket.md)
-ACTIVE_BACKLOG_PLAN_FILES=(.backlog/active/*/plan.md)
 ACTIVE_DOCS_PLAN_FILES=(.docs/plans/*.md)
 shopt -u nullglob
 
@@ -28,7 +66,8 @@ TICKET_AUDIT=()
 TICKET_OUTCOME=()
 TICKET_PHASE=()
 
-for tf in "${ACTIVE_TICKET_FILES[@]}"; do
+for tf in "${ACTIVE_TICKET_FILES[@]:-}"; do
+  [ -n "$tf" ] || continue
   d=$(dirname "$tf")
 
   shopt -s nullglob
@@ -199,10 +238,20 @@ fi
   fi
   echo ""
   echo "## Evaluation State"
-  shopt -s nullglob
-  ALL_EVAL_FILES=(.backlog/active/*/eval-round-*.md)
-  ALL_AUDIT_FILES=(.backlog/active/*/audit-round-*.md)
-  shopt -u nullglob
+  # Depth-agnostic scan for eval-round-*.md / audit-round-*.md so nested
+  # ticket layouts (.backlog/active/{parent}/{NNN}-{slug}/) are surfaced
+  # alongside the legacy flat layout.
+  ALL_EVAL_FILES=()
+  ALL_AUDIT_FILES=()
+  if [ -d .backlog/active ]; then
+    while IFS= read -r _ef; do
+      [ -n "$_ef" ] && ALL_EVAL_FILES+=("$_ef")
+    done < <(find .backlog/active -type f -name 'eval-round-*.md' 2>/dev/null | sort -u)
+    while IFS= read -r _af; do
+      [ -n "$_af" ] && ALL_AUDIT_FILES+=("$_af")
+    done < <(find .backlog/active -type f -name 'audit-round-*.md' 2>/dev/null | sort -u)
+  fi
+  unset _ef _af
   if [ "${#ALL_EVAL_FILES[@]}" -eq 0 ] && [ "${#ALL_AUDIT_FILES[@]}" -eq 0 ]; then
     echo "(none)"
   else

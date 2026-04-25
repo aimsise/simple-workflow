@@ -272,12 +272,17 @@ setup_integration_brief() {
   local brief_dir=".backlog/briefs/active/test-slug"
   mkdir -p "$brief_dir"
 
+  # v4.0.0 Plan 2: brief.md no longer carries split: / ticket_count: fields.
+  # Instead it carries interview_complete so /create-ticket brief=<path> can
+  # skip its own Socratic. Decomposition itself moves downstream.
   cat > "$brief_dir/brief.md" <<'MD'
 ---
+slug: test-slug
 title: "Test Utility Files"
 status: confirmed
-size: S
-ticket_count: 2
+estimated_size: S
+estimated_category: CodeQuality
+interview_complete: true
 ---
 
 # Brief: Test Utility Files
@@ -298,25 +303,56 @@ Create two utility text files for testing.
 - AC1: world.txt exists with content "World"
 MD
 
-  cat > "$brief_dir/split-plan.md" <<'MD'
-# Split Plan
+  # v4.0.0 Plan 4: /autopilot reads split-plan.md from
+  # `.backlog/product_backlog/{parent-slug}/split-plan.md`, NOT from the
+  # brief directory. Fixture places it in the consumer-facing location so
+  # the autopilot integration test exercises the new consumer-only path.
+  local product_backlog_dir=".backlog/product_backlog/test-slug"
+  mkdir -p "$product_backlog_dir"
+
+  cat > "$product_backlog_dir/split-plan.md" <<'MD'
+---
+parent_slug: test-slug
+findings_source: ""
+ticket_count: 2
+created: 2026-04-21T00:00:00Z
+version: 1
+---
+
+# Split Plan: test-slug
+
+## Context
+
+Create two utility text files for testing.
 
 ## Tickets
 
-### 001-create-hello
-- Size: S
-- Dependencies: none
-- AC:
-  - hello.txt exists with content "Hello"
+### 1. test-slug-part-1: Create hello.txt
 
-### 002-create-world
-- Size: S
-- Dependencies: none
-- AC:
-  - world.txt exists with content "World"
+- ticket_dir: `.backlog/product_backlog/test-slug/001-create-hello`
+- size: S
+- depends_on: []
+
+hello.txt exists with content "Hello".
+
+### 2. test-slug-part-2: Create world.txt
+
+- ticket_dir: `.backlog/product_backlog/test-slug/002-create-world`
+- size: S
+- depends_on: []
+
+world.txt exists with content "World".
 MD
 
+  # Also create the ticket dirs that /scout will move into .backlog/active/.
+  mkdir -p "$product_backlog_dir/001-create-hello"
+  mkdir -p "$product_backlog_dir/002-create-world"
+
   create_autopilot_policy "$brief_dir"
+  # Policy propagation is /create-ticket's job; the fixture pre-propagates
+  # so /autopilot (which is a pure consumer in v4.0.0) can find it per-ticket.
+  create_autopilot_policy "$product_backlog_dir/001-create-hello"
+  create_autopilot_policy "$product_backlog_dir/002-create-world"
 
   echo "$repo"
 }
@@ -449,8 +485,14 @@ test_brief_fixture() {
     "brief fixture: brief.md exists" \
     "[ -f '$test_repo/.backlog/briefs/active/test-slug/brief.md' ]"
 
+  # v4.0.0 Plan 4: split-plan.md lives under product_backlog, not briefs/active.
   assert_true \
-    "brief fixture: split-plan.md exists" \
+    "brief fixture: split-plan.md exists at product_backlog location" \
+    "[ -f '$test_repo/.backlog/product_backlog/test-slug/split-plan.md' ]"
+
+  # v4.0.0 Plan 2: /brief no longer writes split-plan.md under briefs/active.
+  assert_false \
+    "brief fixture: NO split-plan.md under briefs/active (Plan 2)" \
     "[ -f '$test_repo/.backlog/briefs/active/test-slug/split-plan.md' ]"
 
   assert_true \
@@ -461,21 +503,31 @@ test_brief_fixture() {
     "brief fixture: brief.md has confirmed status" \
     "grep -q 'status: confirmed' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
 
+  # v4.0.0 Plan 2: brief.md now carries estimated_size (not size) and
+  # interview_complete; split: / ticket_count: fields removed.
   assert_true \
-    "brief fixture: brief.md has S size" \
-    "grep -q 'size: S' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "brief fixture: brief.md has estimated_size" \
+    "grep -q 'estimated_size:' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
 
   assert_true \
-    "brief fixture: brief.md has 2 tickets" \
-    "grep -q 'ticket_count: 2' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+    "brief fixture: brief.md has interview_complete: true" \
+    "grep -q 'interview_complete: true' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+
+  assert_false \
+    "brief fixture: brief.md has NO split: field (Plan 2)" \
+    "grep -qE '^split:[[:space:]]' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
+
+  assert_false \
+    "brief fixture: brief.md has NO ticket_count: field (Plan 2)" \
+    "grep -qE '^ticket_count:[[:space:]]' '$test_repo/.backlog/briefs/active/test-slug/brief.md'"
 
   assert_true \
     "brief fixture: split-plan.md has 001-create-hello" \
-    "grep -q '001-create-hello' '$test_repo/.backlog/briefs/active/test-slug/split-plan.md'"
+    "grep -q '001-create-hello' '$test_repo/.backlog/product_backlog/test-slug/split-plan.md'"
 
   assert_true \
     "brief fixture: split-plan.md has 002-create-world" \
-    "grep -q '002-create-world' '$test_repo/.backlog/briefs/active/test-slug/split-plan.md'"
+    "grep -q '002-create-world' '$test_repo/.backlog/product_backlog/test-slug/split-plan.md'"
 
   # Cleanup
   rm -rf "$test_repo"

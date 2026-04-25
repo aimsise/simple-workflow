@@ -779,17 +779,32 @@ for skill_slug in $POLICY_SKILLS; do
     '\[AUTOPILOT-POLICY\]'
 done
 
-# J-4: brief SKILL.md に split-plan.md への参照がある
-assert_file_contains \
-  "brief SKILL.md に split-plan.md への参照がある" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
-  "split-plan\\.md"
+# J-4 (v4.0.0 Plan 2): brief SKILL.md MUST NOT actively write split-plan.md.
+# Phase 5 (Split Analysis) has been removed; ticket decomposition now lives in
+# /create-ticket (planner Split Judgment or findings-mode decomposer). We
+# accept narrative mentions ("/brief no longer writes split-plan.md") but
+# reject write-intent headings like "Generate split-plan.md" / "Write to
+# <path>/split-plan.md" that would indicate an actual write step.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE '(Generate split-plan|Write (to )?.*/split-plan\.md)' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${RED}FAIL${NC} brief SKILL.md should NOT contain write-intent prose for split-plan.md (Phase 5 removed)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} brief SKILL.md has no write-intent prose for split-plan.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
 
-# J-5: brief SKILL.md に分割トリガー条件の記述がある
-assert_file_contains \
-  "brief SKILL.md に estimated_size と L/XL の分割判定がある" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
-  "estimated_size.*L.*XL|L or XL|L/XL"
+# J-5 (v4.0.0 Plan 2): brief SKILL.md MUST NOT reference `Phase 5` (the
+# Split Analysis phase has been removed; its responsibilities moved to
+# /create-ticket). The last phase is now renamed "Finalization".
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'Phase 5' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${RED}FAIL${NC} brief SKILL.md should NOT reference 'Phase 5' (removed in v4.0.0)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} brief SKILL.md has no 'Phase 5' reference"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
 
 # J-6: autopilot SKILL.md に split-plan.md の検出手順がある
 assert_file_contains \
@@ -1103,12 +1118,23 @@ assert_file_contains \
   "$REPO_DIR/skills/create-ticket/SKILL.md" \
   "counter.*N.*ticket-counter"
 
-# M-9: /autopilot は /create-ticket に委譲してチケット番号を割り当てる（共有カウンターメカニズム）
-# Note: Phase 0c strengthened "Invoke" to "MUST invoke" — regex made case-insensitive to match either form.
-assert_file_contains \
-  "autopilot SKILL.md delegates to /create-ticket for ticket numbering" \
-  "$REPO_DIR/skills/autopilot/SKILL.md" \
-  "[Ii]nvoke.*/create-ticket"
+# M-9: Plan 4 で /autopilot は /create-ticket への委譲を撤去。
+#       /autopilot は split-plan.md の pure consumer となり、チケット起票は
+#       upstream の /create-ticket が事前に完了させる。AC #1 は「stdout に
+#       ^/create-ticket で始まる行が現れないこと」を要求する。
+#       旧 M-9 "autopilot delegates to /create-ticket" は Plan 4 で反転し、
+#       "autopilot does NOT invoke /create-ticket (no ^/create-ticket line in
+#       prose)" を検証する。
+M9_BAD=$(grep -cE '^/create-ticket' "$REPO_DIR/skills/autopilot/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$M9_BAD" = "0" ]; then
+  echo -e "  ${GREEN}PASS${NC} M-9: autopilot SKILL.md has zero lines matching ^/create-ticket (Plan 4 AC #1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} M-9: autopilot SKILL.md has $M9_BAD lines matching ^/create-ticket (expected 0 per Plan 4 AC #1)"
+  grep -nE '^/create-ticket' "$REPO_DIR/skills/autopilot/SKILL.md" | sed 's/^/       /'
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 
@@ -1181,14 +1207,17 @@ assert_file_contains \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "State file cleanup"
 
-# O-5: CHECKPOINT — RE-ANCHOR が Single/Split 両方にある (最低8箇所 — 4 single + 4 split)
+# O-5: CHECKPOINT — RE-ANCHOR が Split per-ticket flow 内に最低 3 箇所ある
+# 差分: Plan 4 で /autopilot が split-only pure-consumer になり single-ticket flow が消えた。
+#        旧 layout は 4 single + 4 split = 8 箇所だったが、新 layout は split per-ticket の
+#        scout/impl/ship 各 1 の計 3 箇所が正規（iteration のたびに 3 回実行される）。
 CHECKPOINT_COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/autopilot/SKILL.md" || true)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$CHECKPOINT_COUNT" -ge 8 ]; then
-  echo -e "  ${GREEN}PASS${NC} autopilot has >= 8 CHECKPOINT — RE-ANCHOR blocks ($CHECKPOINT_COUNT found)"
+if [ "$CHECKPOINT_COUNT" -ge 3 ]; then
+  echo -e "  ${GREEN}PASS${NC} autopilot has >= 3 CHECKPOINT — RE-ANCHOR blocks ($CHECKPOINT_COUNT found)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} autopilot has >= 8 CHECKPOINT — RE-ANCHOR blocks ($CHECKPOINT_COUNT found, expected >= 8)"
+  echo -e "  ${RED}FAIL${NC} autopilot has >= 3 CHECKPOINT — RE-ANCHOR blocks ($CHECKPOINT_COUNT found, expected >= 3)"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -1256,14 +1285,15 @@ assert_file_contains \
   "$REPO_DIR/skills/impl/SKILL.md" \
   "(cleanup|[Dd]elete).*impl-state\.yaml|impl-state\.yaml.*(cleanup|[Dd]elete)"
 
-# P-8: CHECKPOINT — RE-ANCHOR が autopilot に最低 8 箇所ある (4 single + 4 split)
+# P-8: CHECKPOINT — RE-ANCHOR が autopilot に最低 3 箇所ある (split per-ticket の scout/impl/ship)
+# 差分: Plan 4 で single-ticket flow が撤去されたため旧 "8 (4+4)" → "3 (per-ticket iteration)"。
 COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/autopilot/SKILL.md" || true)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$COUNT" -ge 8 ]; then
-  echo -e "  ${GREEN}PASS${NC} P-8: autopilot CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 8)"
+if [ "$COUNT" -ge 3 ]; then
+  echo -e "  ${GREEN}PASS${NC} P-8: autopilot CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 3)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} P-8: autopilot CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 8)"
+  echo -e "  ${RED}FAIL${NC} P-8: autopilot CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 3)"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -1736,11 +1766,14 @@ X_TARGETS_impl=(
 )
 
 X_TARGETS_autopilot=(
-  "\`/create-ticket\` (Skill)"
   "\`/scout\` (Skill)"
   "\`/impl\` (Skill)"
   "\`/ship\` (Skill)"
 )
+# 差分: Plan 4 (v4.0.0 findings-mode refactor) で /autopilot は ticket 起票責務を
+#        手放し、/create-ticket の呼び出しは consumer flow に含まれない。旧
+#        X_TARGETS_autopilot には "/create-ticket" (Skill) が入っていたが、Plan 4
+#        AC #1 ("stdout does NOT contain ^/create-ticket") に準じて削除。
 
 X_TARGETS_create_ticket=(
   "\`researcher\` agent (Agent tool)"
