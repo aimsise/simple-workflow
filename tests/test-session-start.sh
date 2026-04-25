@@ -169,10 +169,9 @@ case_c2() {
   local name=".gitignore created"
   if [ -f "$dir/.gitignore" ]; then report_pass "$name"; else report_fail "$name"; fi
 
-  for entry in '.simple-workflow/'; do
-    name=".gitignore contains $entry"
-    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
-  done
+  local entry='.simple-workflow/'
+  name=".gitignore contains $entry"
+  if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
 
   local cnt
   cnt="$(commit_count "$dir")"
@@ -210,10 +209,9 @@ case_c3() {
 
   run_hook_in "$dir"
 
-  for entry in '.simple-workflow/'; do
-    local name=".gitignore appended with $entry"
-    if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
-  done
+  local entry='.simple-workflow/'
+  local name=".gitignore appended with $entry"
+  if grep -qxF "$entry" "$dir/.gitignore" 2>/dev/null; then report_pass "$name"; else report_fail "$name"; fi
 
   local after_cnt
   after_cnt="$(commit_count "$dir")"
@@ -344,12 +342,11 @@ case_c5() {
   if [ "$mtime_before" = "$mtime_after" ]; then report_pass "$name"; else report_fail "$name" "before=$mtime_before after=$mtime_after"; fi
 
   # Sanity: required entry appears exactly once.
-  for entry in '.simple-workflow/'; do
-    local cnt
-    cnt="$(grep -cxF "$entry" "$dir/.gitignore")"
-    name="$entry present exactly once (count=$cnt)"
-    if [ "$cnt" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
-  done
+  local entry='.simple-workflow/'
+  local cnt
+  cnt="$(grep -cxF "$entry" "$dir/.gitignore")"
+  name="$entry present exactly once (count=$cnt)"
+  if [ "$cnt" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
   name="flag file present"
   if [ -f "$dir/.simple-workflow/.setup-done" ]; then
