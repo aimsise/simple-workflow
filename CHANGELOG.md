@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 PJ ルート直下の 3 ディレクトリ（`.docs/`, `.backlog/`, `.simple-wf-knowledge/`）を `.simple-workflow/` 配下へ統合しました。既存ユーザは手動マイグレーションが必要です。
 
-**Migration guide**: 詳細手順は [GitHub Discussions Announcement v5.0.0](<DISCUSSION_URL>) を参照してください。
+**Migration guide**: 詳細手順は [GitHub Discussions Announcement v5.0.0](https://github.com/aimsise/simple-workflow/discussions/40) を参照してください。
 
 #### Path mapping
 

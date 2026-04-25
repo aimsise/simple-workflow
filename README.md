@@ -175,7 +175,7 @@ Once installed, all slash commands work the same on both platforms:
 
 ## Migrating from v4.x
 
-v5.0.0 consolidates the 3 top-level directories (`.docs/`, `.backlog/`, `.simple-wf-knowledge/`) into a single `.simple-workflow/` directory. See the [v5.0.0 Migration Announcement](<DISCUSSION_URL>) for the full step-by-step guide. Existing users must perform a one-time manual move; new installs need no action.
+v5.0.0 consolidates the 3 top-level directories (`.docs/`, `.backlog/`, `.simple-wf-knowledge/`) into a single `.simple-workflow/` directory. See the [v5.0.0 Migration Announcement](https://github.com/aimsise/simple-workflow/discussions/40) for the full step-by-step guide. Existing users must perform a one-time manual move; new installs need no action.
 
 ## Setup
 
