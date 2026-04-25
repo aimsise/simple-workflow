@@ -1,0 +1,12 @@
+simple-workflow
+Copyright 2026 aimsise
+
+This product is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Versions up to and including v4.1.0 were distributed under the MIT License.
+Starting with v4.2.0, the project is licensed under Apache License 2.0,
+which adds an explicit patent grant and defensive termination clause while
+preserving all permissions previously granted under MIT.
