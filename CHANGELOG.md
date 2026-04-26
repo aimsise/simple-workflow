@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.1] — 2026-04-26
+
+### Added
+- `CLAUDE.md` at the repository root, capturing two project-wide conventions for every Claude Code session that runs in this tree: (1) a Language policy stating that all Git / GitHub artifacts (commit messages, branch names, tag names and annotations, PR titles and bodies, PR review comments, Issue titles and bodies, Issue comments, Discussions posts, GitHub Release notes) and every tracked file (anything not matched by `.gitignore`) MUST be written in English; (2) a Release discipline section codifying SemVer with the `v` prefix, `plugin.json` ↔ CHANGELOG version alignment (CT-MODE-14), no `YYYY-MM-DD` placeholders (CT-MODE-13), Conventional-Commits-style `release(vX.Y.Z)[!]:` subject lines, mandatory annotated tags for new releases (lightweight tags do not propagate to forks and are ignored by `git describe`), GitHub Release creation for every released tag, and a Discussions-based migration-guide requirement for breaking changes. The file follows the official Claude Code memory guidance (target under 200 lines; this one is ~37) and uses bullet-dense, verifiable instructions per Anthropic best practices.
+
+### Fixed
+- `tests/test-skill-contracts.sh` CT-MODE-14 used a hard-coded `6.0.0` literal as the expected `plugin.json` version, so the assertion would have silently failed on any subsequent bump (it did, in fact, fail locally on this very release before being fixed). The check now reads the newest `## [X.Y.Z]` header from `CHANGELOG.md` dynamically and compares it against `plugin.json` `version`, keeping the guard correct across all future patch / minor / major bumps with no source-edit churn.
+
 ## [6.0.0] — 2026-04-26
 
 ### BREAKING CHANGES
