@@ -2349,16 +2349,19 @@ fi
 
 echo ""
 
-# CT-MODE-14 (release guard): plugin.json version must match the latest CHANGELOG entry.
-# Guards against shipping with a stale plugin.json version.
+# CT-MODE-14 (release guard): plugin.json version must match the newest CHANGELOG entry.
+# Guards against shipping with a stale plugin.json version. The expected version is read
+# dynamically from the first `## [X.Y.Z]` header in CHANGELOG.md so this test stays correct
+# across patch / minor / major bumps without source-edit churn.
 echo "--- CT-MODE-14 ---"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ct_mode_14_plugin_version=$(grep -E '^[[:space:]]*"version":' "$REPO_DIR/.claude-plugin/plugin.json" | head -1 | sed -E 's/.*"version":[[:space:]]*"([^"]+)".*/\1/')
-if [ "$ct_mode_14_plugin_version" = "6.0.0" ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-MODE-14: plugin.json version is 6.0.0, aligned with CHANGELOG [6.0.0]"
+ct_mode_14_changelog_version=$(grep -E '^## \[[0-9]' "$REPO_DIR/CHANGELOG.md" | head -1 | sed -E 's/^## \[([^]]+)\].*/\1/')
+if [ -n "$ct_mode_14_plugin_version" ] && [ "$ct_mode_14_plugin_version" = "$ct_mode_14_changelog_version" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-14: plugin.json version is $ct_mode_14_plugin_version, aligned with CHANGELOG [$ct_mode_14_changelog_version]"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} CT-MODE-14: plugin.json version is '$ct_mode_14_plugin_version' but CHANGELOG advertises [6.0.0] — bump plugin.json"
+  echo -e "  ${RED}FAIL${NC} CT-MODE-14: plugin.json version is '$ct_mode_14_plugin_version' but CHANGELOG advertises [$ct_mode_14_changelog_version] — bump plugin.json or add a CHANGELOG entry"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
