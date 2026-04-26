@@ -114,7 +114,8 @@ The pre-flight gate decides whether `/autopilot` has a runnable input. The singl
 2. **Brief optionality (Plan 4)**: A brief is no longer required for `/autopilot` to proceed. When `SPLIT_PLAN` exists, `/autopilot` runs even if `.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md` is absent. Policy propagation is upstream (`/create-ticket brief=<path>` copied `autopilot-policy.yaml` into each ticket dir, Plan 1). If a ticket dir has no policy, the Policy guard below aborts that ticket — explicit "not autopilot-eligible" signal.
 
 3. If the brief does exist, read it for decision logging and status verification:
-   - `status` must be `confirmed` (if `draft`, print "ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with auto=true." and stop). If the brief is absent (split-plan-only runs), skip this step — there is no brief status to check.
+   - `status` must be `confirmed` (if `draft`, print "ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with mode=auto." and stop). If the brief is absent (split-plan-only runs), skip this step — there is no brief status to check.
+   - Read the `mode` field from brief frontmatter (default `auto` when absent — legacy compat). If `mode: manual` AND `/autopilot` was nonetheless invoked against this slug (manual-mode briefs do not auto-chain `/autopilot`, so reaching this branch indicates an explicit user override), emit a single warning line to stdout for audit trail: `[WARN] brief mode=manual but /autopilot was invoked; per-ticket autopilot-policy.yaml is absent (only brief-level policy is in effect).` This is informational only — `/autopilot` continues running using the brief-level `autopilot-policy.yaml` (the rescue path preserved by `/brief` Phase 4).
 
 4. If `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-policy.yaml` exists, read it for decision logging; otherwise per-ticket policy files (copied in by `/create-ticket`) serve the same role.
 
