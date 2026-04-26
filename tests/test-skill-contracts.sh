@@ -2172,5 +2172,197 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category AC: /brief mode={auto|manual} v6.0.0 contract (CT-MODE-1..10)
+# Diff: New category for v6.0.0. Verifies the static contract of the
+#        /brief mode= argument refactor:
+#          - argument-hint advertises the new mode= form
+#          - frontmatter contract documents the mode: scalar
+#          - Finalization Steps 2/3 are gated on mode=auto / mode=manual
+#          - v6.0.0 removal error message for legacy auto=true is documented
+#          - invalid mode= error message is documented
+#          - create-ticket Step W-8 gates propagation on brief_mode == auto
+#          - autopilot draft-status error message points to mode=auto
+#          - README Full Automation section documents mode=auto|manual
+#          - CHANGELOG has a [6.0.0] entry with BREAKING CHANGES
+# Each CT-MODE-N corresponds to AC-S(N) per the plan's mapping table.
+# =============================================================================
+echo "--- Cat AC: /brief mode={auto|manual} v6.0.0 contract ---"
+
+# CT-MODE-1 (AC-S1): brief argument-hint contains 'mode=auto|manual'
+echo "--- CT-MODE-1 ---"
+ct_mode_1_hint=$(extract_frontmatter_field "$REPO_DIR/skills/brief/SKILL.md" "argument-hint")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$ct_mode_1_hint" | grep -qF 'mode=auto|manual'; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-1: skills/brief/SKILL.md argument-hint contains 'mode=auto|manual' (AC-S1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-1: skills/brief/SKILL.md argument-hint does NOT contain 'mode=auto|manual' (AC-S1)"
+  echo -e "       argument-hint value: '$ct_mode_1_hint'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-2 (AC-S2): brief body documents `mode: {auto|manual}` in the frontmatter contract
+echo "--- CT-MODE-2 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'mode: {auto|manual}' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-2: skills/brief/SKILL.md frontmatter contract has 'mode: {auto|manual}' (AC-S2)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-2: skills/brief/SKILL.md missing 'mode: {auto|manual}' in frontmatter contract (AC-S2)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-3 (AC-S3): Step 2 chain handoff is gated by 'Only runs when mode=auto'
+echo "--- CT-MODE-3 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'Only runs when mode=auto' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-3: skills/brief/SKILL.md Step 2 contains 'Only runs when mode=auto' (AC-S3)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-3: skills/brief/SKILL.md Step 2 missing 'Only runs when mode=auto' (AC-S3)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-4 (AC-S4): Step 3 heading uses the literal "Step 3 — `mode=manual`"
+echo "--- CT-MODE-4 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'Step 3 — `mode=manual`' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-4: skills/brief/SKILL.md Step 3 heading contains 'Step 3 — \`mode=manual\`' (AC-S4)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-4: skills/brief/SKILL.md Step 3 heading missing literal 'Step 3 — \`mode=manual\`' (AC-S4)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-5 (AC-S5): brief Argument Parsing has the v6.0.0 auto=true removal error
+echo "--- CT-MODE-5 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF "'auto=true' has been removed" "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-5: skills/brief/SKILL.md contains \"'auto=true' has been removed\" rejection error (AC-S5)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-5: skills/brief/SKILL.md missing v6.0.0 auto=true rejection error (AC-S5)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-6 (AC-S6): brief Argument Parsing has 'ERROR: invalid mode=' literal
+echo "--- CT-MODE-6 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'ERROR: invalid mode=' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-6: skills/brief/SKILL.md contains 'ERROR: invalid mode=' (AC-S6)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-6: skills/brief/SKILL.md missing 'ERROR: invalid mode=' rejection (AC-S6)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-7 (AC-S7): create-ticket Step W-8 references mode: auto OR brief_mode == auto
+echo "--- CT-MODE-7 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'mode:[[:space:]]*auto|brief_mode[[:space:]]*==[[:space:]]*"?auto"?' "$REPO_DIR/skills/create-ticket/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-7: skills/create-ticket/SKILL.md Step W-8 references 'mode: auto' or 'brief_mode == auto' (AC-S7)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-7: skills/create-ticket/SKILL.md Step W-8 missing 'mode: auto' / 'brief_mode == auto' precondition (AC-S7)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-8 (AC-S8): autopilot brief-draft error message points to 'run /brief with mode=auto'
+echo "--- CT-MODE-8 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'run /brief with mode=auto' "$REPO_DIR/skills/autopilot/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-8: skills/autopilot/SKILL.md draft-status error contains 'run /brief with mode=auto' (AC-S8)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-8: skills/autopilot/SKILL.md draft-status error missing 'run /brief with mode=auto' (AC-S8)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-9 (AC-S9): README Full Automation section documents mode=auto|manual
+echo "--- CT-MODE-9 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'mode=auto|manual' "$REPO_DIR/README.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-9: README.md contains 'mode=auto|manual' (AC-S9)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-9: README.md missing 'mode=auto|manual' notation (AC-S9)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-10 (AC-S10): CHANGELOG has a [6.0.0] entry with a BREAKING CHANGES subsection
+echo "--- CT-MODE-10 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ct_mode_10_section=$(awk '/^## \[6\.0\.0\]/{flag=1; next} /^## \[/{flag=0} flag' "$REPO_DIR/CHANGELOG.md")
+if printf '%s' "$ct_mode_10_section" | grep -q 'BREAKING CHANGES'; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-10: CHANGELOG.md [6.0.0] entry contains 'BREAKING CHANGES' subsection (AC-S10)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-10: CHANGELOG.md [6.0.0] entry missing or has no 'BREAKING CHANGES' subsection (AC-S10)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# CT-MODE-11 (drift guard): brief SKILL.md must contain the literal `next_recommended_auto: ""`
+# in the mode=manual SW-CHECKPOINT branch. Guards against silent drift of the negative-AC literal
+# that keeps the Stop hook autopilot regex from matching.
+echo "--- CT-MODE-11 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -F 'next_recommended_auto: ""' "$REPO_DIR/skills/brief/SKILL.md" >/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-11: brief SKILL.md retains the literal 'next_recommended_auto: \"\"' for mode=manual"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-11: brief SKILL.md missing the literal 'next_recommended_auto: \"\"' — the AC-N2 invariant is unguarded"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# CT-MODE-12 (drift guard): create-ticket SKILL.md must contain the literal
+# `[POLICY-PROPAGATION] skipped: brief mode=manual` audit trace. Keeps brief↔create-ticket
+# narrative in lockstep on the Step W-8 skip line.
+echo "--- CT-MODE-12 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -F '[POLICY-PROPAGATION] skipped: brief mode=manual' "$REPO_DIR/skills/create-ticket/SKILL.md" >/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-12: create-ticket SKILL.md retains the '[POLICY-PROPAGATION] skipped: brief mode=manual' literal"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-12: create-ticket SKILL.md missing the '[POLICY-PROPAGATION] skipped: brief mode=manual' literal — Step W-8 audit trace drifted"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# CT-MODE-13 (release guard): the [6.0.0] CHANGELOG entry must NOT carry the
+# YYYY-MM-DD placeholder. Catches an unfinalized release date before it ships.
+echo "--- CT-MODE-13 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ct_mode_13_header=$(awk '/^## \[6\.0\.0\]/{print; exit}' "$REPO_DIR/CHANGELOG.md")
+if printf '%s' "$ct_mode_13_header" | grep -q 'YYYY-MM-DD'; then
+  echo -e "  ${RED}FAIL${NC} CT-MODE-13: CHANGELOG.md [6.0.0] header still has the 'YYYY-MM-DD' placeholder — set the release date before shipping"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-13: CHANGELOG.md [6.0.0] header has a concrete release date"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+echo ""
+
+# CT-MODE-14 (release guard): plugin.json version must match the latest CHANGELOG entry.
+# Guards against shipping with a stale plugin.json version.
+echo "--- CT-MODE-14 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ct_mode_14_plugin_version=$(grep -E '^[[:space:]]*"version":' "$REPO_DIR/.claude-plugin/plugin.json" | head -1 | sed -E 's/.*"version":[[:space:]]*"([^"]+)".*/\1/')
+if [ "$ct_mode_14_plugin_version" = "6.0.0" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-14: plugin.json version is 6.0.0, aligned with CHANGELOG [6.0.0]"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-14: plugin.json version is '$ct_mode_14_plugin_version' but CHANGELOG advertises [6.0.0] — bump plugin.json"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary

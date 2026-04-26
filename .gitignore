@@ -6,6 +6,9 @@ CLAUDE.local.md
 # simple-workflow plugin runtime artifacts (docs, backlog, knowledge base)
 .simple-workflow/
 
+# Plugin-development scratch / planning notes (never tracked)
+.docs/
+
 # Environment
 .env
 .env.local

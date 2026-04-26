@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] — 2026-04-26
+
+### BREAKING CHANGES
+- **`/brief` argument syntax**: `auto=true` has been removed. Use `mode=auto` (default) or `mode=manual`. Invocations with the old `auto=true` token now exit with an `ERROR:` message instead of being silently rewritten. Migration: replace every `auto=true` with `mode=auto`. Note that `mode=auto` is **not** strictly identical to the prior `auto=true` semantics — pre-v6.0.0 `auto=true` required an interactive yes/no confirmation before chaining, whereas v6.0.0 `mode=auto` chains unconditionally. Non-interactive callers (e.g. `claude -p`, CI) see equivalent end-to-end behavior; interactive callers who relied on the confirmation prompt must adjust their workflows.
+- **`/brief` default behavior reversal**: bare `/brief <text>` now chains to `/create-ticket → /autopilot` (formerly: bare `/brief` produced artifacts and stopped). To preserve the old "produce artifacts and stop" behavior, pass `mode=manual` explicitly.
+
+### Added
+- **`/brief mode=manual`**: makes `/brief` a first-class entry point for the manual `/scout → /impl → /ship` flow. Manual-mode briefs:
+  - skip the auto-chain handoff (no `auto-kick.yaml` is written)
+  - propagate no `autopilot-policy.yaml` to ticket directories (so `/impl`'s FIFO auto-select picks them up)
+  - still preserve the brief-level `autopilot-policy.yaml`, allowing a later opt-in to `/autopilot {slug}`
+- `mode:` field added to `brief.md` frontmatter (`auto` or `manual`).
+
+### Changed
+- `/create-ticket brief=<path>` Step W-8 (autopilot-policy propagation) now runs only when the brief frontmatter resolves `mode: auto` (legacy briefs without `mode:` are treated as `auto` for backward compatibility). When `mode: manual`, propagation is skipped and a `[POLICY-PROPAGATION] skipped: brief mode=manual` audit-trace line is emitted.
+- `/create-ticket brief=<path>` Phase 4 ticket-evaluator's `gates.ticket_quality_fail` brief-parent policy lookup is skipped when `mode: manual`.
+- `/autopilot` error message updated: "run /brief with auto=true" → "run /brief with mode=auto".
+- `/autopilot` emits `[WARN] brief mode=manual but /autopilot was invoked; per-ticket autopilot-policy.yaml is absent (only brief-level policy is in effect).` when invoked against a `mode: manual` brief — informational only; the run continues using the brief-level policy.
+
+### Removed
+- `auto=true` argument form for `/brief`.
+
 ## [5.0.0] — 2026-04-25
 
 ### ⚠ BREAKING CHANGE — Directory consolidation

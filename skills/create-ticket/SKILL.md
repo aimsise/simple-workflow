@@ -223,9 +223,14 @@ If the brief path does not exist, print `ERROR: Brief file not found at <path>` 
 
 Read the brief's YAML frontmatter. Extract:
 - `slug` → `{brief_slug}` (used as `{parent-slug}` unless overridden)
+- `mode` → `{brief_mode}`. Required field as of v6.0.0 (`auto` or `manual`). **Value normalization**: read the raw scalar after the `mode:` key, strip surrounding double or single quotes if present (`"auto"`, `'manual'` are accepted), trim leading/trailing whitespace, and lowercase the result before comparison (`AUTO`, `Manual`, ` auto ` all normalize to `auto` / `manual`). After normalization, only the literal strings `auto` and `manual` are accepted. If the key is **absent** (legacy brief written before v6.0.0), default to `brief_mode = auto` for backward compatibility (i.e. `mode: auto` is the implicit value when the frontmatter has no `mode:` line). Any value that does not normalize to `auto` or `manual` → print `ERROR: brief frontmatter has invalid mode=<value>. Expected 'auto' or 'manual'` and exit non-zero.
 - `interview_complete` (if `true`, Phase 2 Socratic Refinement is SKIPPED entirely — no `AskUserQuestion` call, no stdin read; if `false` or absent, run the capped Socratic interview per Phase 2 below).
 
 The `{parent-slug}` for brief mode defaults to `{brief_slug}`.
+
+The `{brief_mode}` value gates two downstream behaviors:
+- **Step W-8 autopilot-policy propagation**: only runs when `brief_mode == auto` (the legacy default). When `brief_mode == manual`, propagation is skipped — see Step W-8 for the audit-trace stdout line.
+- **Phase 4 ticket-evaluator's `gates.ticket_quality_fail` brief-parent fallback**: only consulted when `brief_mode == auto`. When `brief_mode == manual`, the brief-parent `autopilot-policy.yaml` lookup is skipped — manual-mode runs do not pull retry-strategy from autopilot policy.
 
 **Stdin independence (`interview_complete: true`)**: when the brief frontmatter contains `interview_complete: true`, `/create-ticket` MUST be able to produce a ticket file under `.simple-workflow/backlog/` within 10 seconds even if stdin is a closed file descriptor. This is verified by AC #7 of the findings-mode Plan 2. When `interview_complete: false` (or absent), the skill blocks on `AskUserQuestion` / stdin until at least one answer arrives (AC #8).
 
@@ -365,7 +370,7 @@ Instruct the planner to evaluate whether the ticket should be split:
      b. Re-spawn the **planner** with: original ticket content; evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
      c. Re-spawn the **ticket-evaluator** on the revised ticket. **MUST** again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair, sourced from the Pre-computed Context above. Missing the marker block causes the evaluator to fail-fast with ERROR.
      d. Max 2 rounds (initial + 1 revision). If still FAIL:
-        - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.simple-workflow/backlog/product_backlog/{parent-slug}/{ticket-dir}/`. If missing **and** `brief=<path>` was given, also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.simple-workflow/backlog/briefs/active/{slug}/`).
+        - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.simple-workflow/backlog/product_backlog/{parent-slug}/{ticket-dir}/`. If missing **and** `brief=<path>` was given **AND** `brief_mode == auto` (parsed in Step B-2; legacy briefs without `mode:` are treated as `auto`), also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.simple-workflow/backlog/briefs/active/{slug}/`). When `brief_mode == manual`, the brief-parent `autopilot-policy.yaml` fallback is **skipped** — manual-mode runs do not pull retry-strategy from autopilot policy and proceed directly to the interactive flow below.
           - If present, read `gates.ticket_quality_fail`: `retry_with_feedback` + retry count < `max_retries` → continue retrying (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=retry_with_feedback round={n}`); else stop (print `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=stop`).
           - Else interactive flow below.
         - `AskUserQuestion`: "The ticket has unresolved quality issues: [list]. Proceed anyway or stop to revise manually?"
@@ -562,7 +567,20 @@ On validation failure, print `ERROR: split-plan validation failed — <reason>` 
 
 This step replaces the legacy `/autopilot` responsibility of copying the policy into each ticket dir.
 
-Only runs if `brief=<path>` was passed AND the file `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk.
+Only runs if **ALL** of the following conditions hold:
+- `brief=<path>` was passed (i.e. Brief Mode);
+- the brief frontmatter `mode:` resolves to `auto` (i.e. `brief_mode == auto`, as parsed in Step B-2; legacy briefs without `mode:` are treated as `auto` for backward compatibility); and
+- the file `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists on disk.
+
+When `brief_mode == manual` (v6.0.0+), this step is **skipped** even if the source policy file exists on disk. In that case emit exactly one stdout line for the audit trail:
+
+```
+[POLICY-PROPAGATION] skipped: brief mode=manual
+```
+
+This line MUST appear in the run summary so a reviewer can confirm the manual-mode propagation suppression. Per-ticket directories receive **no** `autopilot-policy.yaml`, which makes manual-mode tickets indistinguishable from bare-description tickets to `/impl`'s FIFO selector — they are picked up by manual `/impl` and processed via the standard `/scout → /impl → /ship` flow.
+
+When the conditions DO hold (i.e. `brief=<path>` AND `brief_mode == auto` AND the source policy file exists), perform the byte-identical copy:
 
 ```bash
 for ticket_dir_path_i in {ticket_dir_path_0} {ticket_dir_path_1} ...; do
@@ -575,7 +593,7 @@ Byte-identical copy (use `cp -p` to preserve timestamps and permissions; SHA-256
 
 **Do NOT copy if `brief=<path>` was not passed** — findings-only and bare-description modes MUST NOT emit `autopilot-policy.yaml` in any ticket dir (AC #15). The absence is an explicit signal to `/autopilot`'s downstream Policy guard: those tickets are "not autopilot-eligible".
 
-**Do NOT copy if the source policy file is absent**, even when `brief=<path>` was passed. Missing source → tickets still created, no `autopilot-policy.yaml` placed. This matches the edge case: "`brief=<path>` where policy file is absent: tickets still created, no `autopilot-policy.yaml` in them (not an error)".
+**Do NOT copy if the source policy file is absent**, even when `brief=<path>` was passed and `brief_mode == auto`. Missing source → tickets still created, no `autopilot-policy.yaml` placed. This matches the edge case: "`brief=<path>` where policy file is absent: tickets still created, no `autopilot-policy.yaml` in them (not an error)".
 
 ### Step W-9: Brief metadata injection
 

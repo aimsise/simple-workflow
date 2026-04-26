@@ -303,13 +303,31 @@ If no prior review via `/audit` is detected, a review gate recommends running on
 
 ### Full Automation with /brief + /autopilot
 
-For a fully automated pipeline from idea to PR:
+`/brief` is the single entry point for both fully automated and manual flows. The `mode=auto|manual` argument selects the behavior; `mode=auto` is the default when omitted.
 
-1. **`/brief <what-to-build>`** — Investigates the codebase and conducts a structured interview to gather all requirements. Generates a brief document and an autopilot-policy.yaml defining autonomous decision rules.
+```
+/brief <what-to-build> [mode=auto|manual]
+```
+
+1. **`/brief <what-to-build>`** (or `/brief <what-to-build> mode=auto`) — Investigates the codebase, conducts a structured interview to gather all requirements, and generates a brief document plus an `autopilot-policy.yaml` defining autonomous decision rules. In `mode=auto`, `/brief` then chains automatically into `/create-ticket → /autopilot` for a fully automated pipeline from idea to PR.
 
 2. **`/autopilot <slug>`** — Reads the brief and executes the full pipeline (`create-ticket → scout → impl → ship`) with zero human intervention. Decision points are resolved by the autopilot-policy. Large scopes are automatically split into multiple tickets and executed in dependency order. Quality safeguards run at each pipeline step: an **Artifact Presence Gate** validates that all expected artifacts (investigation, plan, evaluation logs, etc.) exist before marking a step complete, and a **Skill Invocation Audit** tracks whether each step used proper Skill tool dispatch. Steps that fell back to manual bash invocation are flagged as `completed-with-warnings`.
 
-> **Note**: Workflow isolation is bidirectional. `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `.simple-workflow/backlog/product_backlog/`. Conversely, manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO). To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`.
+#### Manual flow with /brief
+
+`/brief <what-to-build> mode=manual` produces the same brief + `autopilot-policy.yaml` artifacts but **stops** there: no chained `/create-ticket`, no `/autopilot`, no `auto-kick.yaml` written. The brief is the structured starting point for the standard manual flow:
+
+```
+/brief <what-to-build> mode=manual
+/create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md
+# /create-ticket places tickets under .simple-workflow/backlog/product_backlog/{slug}/.
+# Pass that ticket.md path to /scout — /scout itself moves the ticket into active/.
+/scout .simple-workflow/backlog/product_backlog/{slug}/{NNN}-{ticket-slug}/ticket.md
+/impl    # bare /impl auto-selects the lowest-numbered active ticket (FIFO), since manual-mode tickets carry no autopilot-policy.yaml
+/ship
+```
+
+> **Note**: Workflow isolation is bidirectional. `/autopilot` requires a brief as its starting point — it creates tickets internally and processes only those tickets. It does not pick up existing tickets from `.simple-workflow/backlog/product_backlog/`. Conversely, manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO). To process tickets created manually via `/create-ticket`, use the individual skill flow: `/scout → /impl → /ship`. **`/brief mode=manual` is consistent with this rule**: tickets produced from a `mode=manual` brief do **not** receive a per-ticket `autopilot-policy.yaml`, so `/impl`'s FIFO auto-select picks them up correctly. The brief-level `autopilot-policy.yaml` is preserved on disk under `.simple-workflow/backlog/briefs/active/{slug}/` as a rescue path, so a user can later opt into autopilot by running `/autopilot {slug}` directly.
 
 The autopilot-policy evolves over time: `/tune` extracts decision patterns from execution logs, and future `/brief` runs use these patterns to suggest more accurate defaults.
 
