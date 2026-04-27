@@ -2822,5 +2822,200 @@ fi
 
 echo ""
 
+# --- Category AG: Audit Summary embedding contract ---
+# /ship MUST embed `Audit Summary: <Status> (Critical=<N>, Warnings=<N>, Suggestions=<N>)`
+# into both commit body and PR body when the latest audit-round-N.md exists.
+# Because /ship is a Claude Code skill (prompt), the contract is realized
+# through prompt-time documentation. This category statically verifies that
+# skills/ship/SKILL.md documents the canonical literals AND exercises the
+# parser helper (tests/helpers/audit-summary.sh) against fixtures so that
+# Edge Case 1 (missing Status), Edge Case 2 (count mismatch), and the
+# numeric-ordering rule (round-10 over round-2) are mechanically verifiable
+# without a real /ship run.
+echo "--- Audit Summary embedding contract ---"
+
+SHIP_MD="$REPO_DIR/skills/ship/SKILL.md"
+
+# AC: SKILL.md documents the canonical Audit Summary line shape.
+assert_file_contains \
+  "ship/SKILL.md documents canonical 'Audit Summary:' line shape" \
+  "$SHIP_MD" \
+  'Audit Summary: <Status> \(Critical=<N>, Warnings=<N>, Suggestions=<N>\)'
+
+# AC: SKILL.md documents the missing-Status stderr literal (Edge Case 1).
+assert_file_contains \
+  "ship/SKILL.md documents 'audit-summary: missing Status line' stderr" \
+  "$SHIP_MD" \
+  'audit-summary: missing Status line in audit-round-'
+
+# AC: SKILL.md documents the count-mismatch stderr literal (Edge Case 2).
+assert_file_contains \
+  "ship/SKILL.md documents 'audit-summary: count-mismatch' stderr" \
+  "$SHIP_MD" \
+  'audit-summary: count-mismatch \(Warnings declared=<X>, headings=<Y>\)'
+
+# AC 6: no-audit fallback substring is documented.
+assert_file_contains \
+  "ship/SKILL.md documents '[shipped without /audit]' fallback" \
+  "$SHIP_MD" \
+  '\[shipped without /audit\]'
+
+# AC 7: numeric ordering is documented (round-10 beats round-2).
+assert_file_contains \
+  "ship/SKILL.md documents numeric ordering (round-10 beats round-2)" \
+  "$SHIP_MD" \
+  'audit-round-10\.md`? is later than `?audit-round-2\.md'
+
+# Negative AC 2: fenced-code masking is documented.
+assert_file_contains \
+  "ship/SKILL.md documents fenced code-block masking" \
+  "$SHIP_MD" \
+  'triple-backtick fenced code blocks'
+
+# Negative AC 3: HTML-comment masking is documented.
+assert_file_contains \
+  "ship/SKILL.md documents HTML-comment masking" \
+  "$SHIP_MD" \
+  '<!-- \.\.\. -->'
+
+# Edge Case 3: backtick preservation in titles is documented.
+assert_file_contains \
+  "ship/SKILL.md documents backtick preservation in warning titles" \
+  "$SHIP_MD" \
+  'propagated verbatim'
+
+# Helper presence and executability.
+HELPER="$REPO_DIR/tests/helpers/audit-summary.sh"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -x "$HELPER" ]; then
+  echo -e "  ${GREEN}PASS${NC} tests/helpers/audit-summary.sh exists and is executable"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tests/helpers/audit-summary.sh missing or not executable"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+FIX_DIR="$REPO_DIR/tests/fixtures/audit-rounds"
+
+# Helper assertion: run the parser and compare stdout against an expected line.
+assert_helper_stdout() {
+  local description="$1"
+  local expected="$2"
+  shift 2
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local actual rc
+  set +e
+  actual=$(bash "$HELPER" "$@" 2>/dev/null)
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] && [ "$actual" = "$expected" ]; then
+    echo -e "  ${GREEN}PASS${NC} $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $description"
+    echo -e "       Expected (rc=0): $expected"
+    echo -e "       Got (rc=$rc): $actual"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+# Helper assertion: parser MUST exit non-zero with a stderr substring.
+assert_helper_error() {
+  local description="$1"
+  local expected_substr="$2"
+  shift 2
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local stderr_file rc stderr_content
+  stderr_file=$(mktemp)
+  set +e
+  bash "$HELPER" "$@" >/dev/null 2>"$stderr_file"
+  rc=$?
+  set -e
+  stderr_content=$(cat "$stderr_file")
+  rm -f "$stderr_file"
+  if [ "$rc" -ne 0 ] && echo "$stderr_content" | grep -qF -- "$expected_substr"; then
+    echo -e "  ${GREEN}PASS${NC} $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $description"
+    echo -e "       Expected: rc!=0 AND stderr contains '$expected_substr'"
+    echo -e "       Got: rc=$rc, stderr='$stderr_content'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+assert_helper_stdout \
+  "parser: PASS_WITH_CONCERNS fixture emits canonical line (AC 1)" \
+  "Audit Summary: PASS_WITH_CONCERNS (Critical=0, Warnings=2, Suggestions=1)" \
+  "$FIX_DIR/pass-with-concerns.md"
+
+assert_helper_stdout \
+  "parser: PASS clean fixture emits zero-count line (AC 4)" \
+  "Audit Summary: PASS (Critical=0, Warnings=0, Suggestions=0)" \
+  "$FIX_DIR/pass-clean.md"
+
+assert_helper_stdout \
+  "parser: FAIL Critical=3 fixture emits canonical line (AC 5)" \
+  "Audit Summary: FAIL (Critical=3, Warnings=0, Suggestions=0)" \
+  "$FIX_DIR/fail-critical.md"
+
+assert_helper_stdout \
+  "parser: fenced-block 'Status: FAIL' is masked; outer PASS wins (Negative AC 2)" \
+  "Audit Summary: PASS (Critical=0, Warnings=0, Suggestions=0)" \
+  "$FIX_DIR/fenced-status.md"
+
+assert_helper_stdout \
+  "parser: HTML-commented 'Status: PASS_WITH_CONCERNS' is masked; outer PASS wins (Negative AC 3)" \
+  "Audit Summary: PASS (Critical=0, Warnings=0, Suggestions=0)" \
+  "$FIX_DIR/html-comment-status.md"
+
+assert_helper_stdout \
+  "parser: numeric-ordered --dir picks audit-round-10.md over audit-round-2.md (AC 7)" \
+  "Audit Summary: PASS (Critical=0, Warnings=0, Suggestions=0)" \
+  "--dir" "$FIX_DIR/multi-round-ticket"
+
+assert_helper_stdout \
+  "parser: backtick-quoted warning title round-trips (Edge Case 3)" \
+  "Audit Summary: PASS_WITH_CONCERNS (Critical=0, Warnings=1, Suggestions=0)" \
+  "$FIX_DIR/backtick-title.md"
+
+# Probe the warning-titles channel — backticks MUST round-trip.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+warning_out=$(bash "$HELPER" --warning-titles "$FIX_DIR/backtick-title.md" 2>/dev/null || true)
+if echo "$warning_out" | grep -qF '`SECRET_TOKEN`'; then
+  echo -e "  ${GREEN}PASS${NC} parser: --warning-titles preserves backticks in title (Edge Case 3)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} parser: --warning-titles must preserve backticks; got: $warning_out"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+assert_helper_error \
+  "parser: missing-Status fixture exits non-zero with stderr literal (Edge Case 1)" \
+  "audit-summary: missing Status line in audit-round-" \
+  "$FIX_DIR/audit-round-missing-status.md"
+
+assert_helper_error \
+  "parser: count-mismatch fixture exits non-zero with stderr literal (Edge Case 2)" \
+  "audit-summary: count-mismatch (Warnings declared=0, headings=1)" \
+  "$FIX_DIR/count-mismatch.md"
+
+# Final marker — emitted to stdout when SKILL.md documents the contract
+# correctly AND every parser probe has run. Downstream tooling can grep for
+# this exact line to assert the contract was checked.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'Audit Summary: <Status>' "$SHIP_MD" \
+   && grep -qF 'audit-summary: missing Status line in audit-round-' "$SHIP_MD" \
+   && grep -qF 'audit-summary: count-mismatch (Warnings declared=<X>, headings=<Y>)' "$SHIP_MD"; then
+  echo "audit-summary: contract-declared"
+  echo -e "  ${GREEN}PASS${NC} ship/SKILL.md emits 'audit-summary: contract-declared' marker"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ship/SKILL.md is missing one of the required Audit Summary literals"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary
