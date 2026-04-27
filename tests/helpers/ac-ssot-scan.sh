@@ -72,7 +72,7 @@ has_ac_heading() {
 EXIT_CODE=0
 
 # Iterate over every plan.md under the three backlog buckets.
-for bucket in active product_backlog done; do
+for bucket in active product_backlog "done"; do
   bucket_dir="$ROOT/backlog/$bucket"
   [ -d "$bucket_dir" ] || continue
 
