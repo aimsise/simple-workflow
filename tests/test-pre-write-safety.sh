@@ -207,4 +207,120 @@ fi
 
 echo ""
 
+# --- PII / absolute-home-path tests ---
+echo "--- PII (absolute home path) ---"
+
+# Helper: invoke the hook with file_path + content
+run_write_hook_with_content() {
+  local file_path="$1"
+  local content="$2"
+  local json
+  json=$(jq -n --arg fp "$file_path" --arg c "$content" \
+    '{"tool_input": {"file_path": $fp, "content": $c}}')
+  run_hook "$HOOK" "$json"
+}
+
+# Assertion helpers scoped to the PII suite
+assert_pii_block() {
+  local description="$1"
+  local file_path="$2"
+  local content="$3"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  run_write_hook_with_content "$file_path" "$content"
+  if [ "$LAST_EXIT_CODE" -ne 0 ] && echo "$LAST_STDERR" | grep -qF "pii: absolute home path detected"; then
+    echo -e "  ${GREEN}PASS${NC} BLOCK (pii): $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} BLOCK (pii): $description"
+    echo -e "       Expected: non-zero exit + 'pii: absolute home path detected' in stderr"
+    echo -e "       Got: exit $LAST_EXIT_CODE; stderr=$LAST_STDERR"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+assert_pii_allow() {
+  local description="$1"
+  local file_path="$2"
+  local content="$3"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  run_write_hook_with_content "$file_path" "$content"
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! echo "$LAST_STDERR" | grep -qF "pii:"; then
+    echo -e "  ${GREEN}PASS${NC} ALLOW (pii): $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} ALLOW (pii): $description"
+    echo -e "       Expected: exit 0 with no 'pii:' in stderr"
+    echo -e "       Got: exit $LAST_EXIT_CODE; stderr=$LAST_STDERR"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+# AC 1: /Users/<name>/ in plain content is rejected
+assert_pii_block "AC1: /Users/<name>/ rejected" \
+  ".simple-workflow/backlog/active/foo/bar/plan.md" \
+  "see /Users/alice/projects/foo/bar.md"
+
+# AC 2: /home/<name>/ in plain content is rejected
+assert_pii_block "AC2: /home/<name>/ rejected" \
+  "notes/example.md" \
+  "log path: /home/bob/work/output.log"
+
+# AC 4: <repo>/... only content is allowed
+assert_pii_allow "AC4: <repo>/... only content allowed" \
+  "notes/example.md" \
+  "see <repo>/some/path/foo.md"
+
+# Negative AC 1: /Users/runner/work/ inside fenced code block is allowed
+fenced_block_content='outside line
+```
+build log: /Users/runner/work/repo/file.txt
+```
+trailing'
+assert_pii_allow "Neg AC1: fenced /Users/runner/work/ allowed" \
+  "CHANGELOG.md" \
+  "$fenced_block_content"
+
+# Negative AC 3: .gitignore filename is allowlisted even with /Users/runner/work/
+assert_pii_allow "Neg AC3: .gitignore allowlist" \
+  ".gitignore" \
+  "/Users/runner/work/cache"
+
+# Negative AC 4: Windows backslash path is not flagged
+assert_pii_allow "Neg AC4: Windows C:\\Users\\foo\\ allowed" \
+  "notes/win.md" \
+  'reference: C:\Users\foo\file.txt'
+
+# Negative AC 2/5: lowercase /users/ is not flagged (case-sensitive)
+assert_pii_allow "Neg AC2/5: lowercase /users/ allowed" \
+  "notes/case.md" \
+  "see /users/foo/bar"
+
+# Edge Case 1: /Users/ followed by EOL (no username segment) is allowed
+assert_pii_allow "Edge1: /Users/ at EOL allowed" \
+  "notes/eol.md" \
+  "trailing token: /Users/"
+
+# Edge Case 2: home path AND <repo> on different lines still rejected
+assert_pii_block "Edge2: <repo> does not whitelist real home path" \
+  "notes/mixed.md" \
+  "first line: <repo>/foo.md
+second line: /Users/charlie/bin/tool"
+
+# Edge Case 3: empty content is allowed
+assert_pii_allow "Edge3: empty content allowed" \
+  "notes/empty.md" \
+  ""
+
+# Negative AC 6 (mirrors fenced exemption for write side): fenced /Users/runner/work/
+nested_fence='preamble
+```bash
+echo /Users/runner/work/build/output
+```
+postamble'
+assert_pii_allow "Neg AC6 (write): fenced /Users/runner/work/ in code block allowed" \
+  "docs/log.md" \
+  "$nested_fence"
+
+echo ""
+
 print_summary

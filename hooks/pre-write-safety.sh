@@ -11,4 +11,32 @@ if echo "$FILE_PATH" | grep -qiE "$SENSITIVE"; then
   exit 2
 fi
 
+# PII guard: reject absolute home paths ( /Users/<name>/... or /home/<name>/... )
+# in the target file content. Triple-backtick fenced code blocks are skipped, and
+# `.gitignore` is allowlisted (it legitimately stores absolute paths).
+BASENAME=$(basename "$FILE_PATH")
+if [ "$BASENAME" != ".gitignore" ]; then
+  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // empty')
+  if [ -n "$CONTENT" ]; then
+    if printf '%s' "$CONTENT" | awk '
+      BEGIN {
+        fenced = 0
+        hit = 0
+        re = "(/Users/[^/]+/|/home/[^/]+/)"
+      }
+      /^[[:space:]]*```/ { fenced = 1 - fenced; next }
+      {
+        if (!fenced && match($0, re)) {
+          hit = 1
+          exit
+        }
+      }
+      END { exit (hit ? 0 : 1) }
+    '; then
+      echo "pii: absolute home path detected in $FILE_PATH" >&2
+      exit 2
+    fi
+  fi
+fi
+
 exit 0

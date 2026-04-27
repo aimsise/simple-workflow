@@ -35,3 +35,13 @@ Conversations with the user may be in any language — translate before writing 
 4. Post the Discussions migration guide for breaking changes.
 
 When in doubt about whether a change is breaking, treat it as breaking.
+
+## PII
+
+Never write personally identifying machine paths into tracked files. Specifically, an **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout, and is rejected by the `pre-write-safety.sh` and `pre-edit-safety.sh` hooks.
+
+- Use the `<repo>` placeholder for repository-relative documentation paths (e.g. `<repo>/.simple-workflow/backlog/active/...`).
+- Use `~`, `$HOME`, or relative paths inside code and shell snippets where a literal home prefix would otherwise appear.
+- Triple-backtick fenced code blocks are exempt from the absolute-home-path scan, so verbatim CI logs (e.g. `/Users/runner/work/...`) may be quoted inside fenced blocks. Do not abuse this exemption for project-authored paths.
+- The `.gitignore` file is allowlisted because it legitimately stores absolute paths.
+- The detection regex is case-sensitive and POSIX-only: lowercase `/users/` and Windows-style `C:\Users\...` paths are out of scope.
