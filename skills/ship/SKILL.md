@@ -161,7 +161,23 @@ Commits ahead of default branch:
       2. Write the updated phase-state.yaml (with the 5a `in-progress` update) directly to `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml`. **After this sub-step the destination state file is self-consistent even if interrupted.**
       3. For each file in `.simple-workflow/backlog/active/{ticket-dir}/` other than `phase-state.yaml`, `mv` to `.simple-workflow/backlog/done/{ticket-dir}/`. Do NOT re-write `phase-state.yaml` — already written in sub-step 2.
       4. `rmdir .simple-workflow/backlog/active/{ticket-dir}`. If non-empty, list remaining files and stop (recoverable; needs manual attention).
-   c. No post-move rewrite needed — 5.b.2 serialized phase-state.yaml to its destination before any other move.
+   c. No post-move rewrite needed for `phase-state.yaml` — 5.b.2 serialized it to its destination before any other move.
+
+   d. **Post-move path rewrite (audit reports, brief-side autopilot state, autopilot log)** — three other surfaces still embed the OLD source-path string after `mv`. Rewrite each in place so no residual `.simple-workflow/backlog/active/{ticket-dir}/` or `.simple-workflow/backlog/product_backlog/{ticket-dir}/` substring survives outside fenced code blocks and HTML comments.
+
+      **Surfaces** (rewrite ONLY these, ONLY for the moved ticket):
+      1. `.simple-workflow/backlog/done/{ticket-dir}/audit-round-*.md` — every match, prose only.
+      2. The brief-side `autopilot-state.yaml` under the parent-slug's done directory (`<briefs-done>/{parent-slug}/autopilot-state.yaml` per the autopilot Split Brief Lifecycle) — set the moved ticket's `tickets[].ticket_dir` value to `.simple-workflow/backlog/done/{ticket-dir}/` (trailing slash inclusive). Other ticket entries in the same file MUST NOT be touched.
+      3. `.simple-workflow/backlog/done/{ticket-dir}/autopilot-log.md` — every match, prose only.
+
+      **Rewrite rules**:
+      - Replace every literal occurrence of the OLD path (active or product_backlog form) with the NEW done path.
+      - **OUTSIDE fenced code blocks** (delimited by triple-backtick lines) AND **OUTSIDE HTML comments** (delimited by `<!--` / `-->`). Substrings inside these zones are intentionally left alone — they are documentation, regex examples, or historical narrative.
+      - **Moved-ticket scope only**: do NOT rewrite paths that reference a different `{slug}` or different `{ticket-id}` (cross-ticket references stay verbatim).
+      - **Idempotent**: a second invocation against the same already-moved ticket produces zero further edits (the OLD-path substring is already absent in prose).
+      - If a target file does not exist (e.g., no audit reports were produced), skip silently — absent files are not drift.
+
+      The regression guard `tests/test-path-consistency.sh` (Category 25) verifies these contracts on synthetic fixtures.
 
    **Post-move commit policy**: After the `mv` in step 5.b.3, `git status --short` should be clean (the moved files are gitignored). If status is still dirty, investigate — do NOT create a `chore: move ticket artifacts` follow-up commit. The ticket lifecycle produces exactly ONE commit per ticket (step 3's `feat:` / `fix:` commit).
 
