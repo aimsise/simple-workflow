@@ -2367,5 +2367,103 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category AD: /audit per-Category checklist references contract
+# Diff: New category. Verifies that the canonical per-Category checklist
+#        source `skills/audit/references/categories.md` exists, has every
+#        required `## Category: <name>` header (CodeQuality, Security,
+#        Performance, Reliability, Documentation, Testing), and at least
+#        three `- [ ] <Capitalized item>` items under each header.
+#
+# Status markers (literal stdout/stderr lines for downstream tooling and
+# for the test-the-test guards in the plan's AC 3-5 + Edge Case 2):
+#   - stdout: 'audit-references: present'              (all checks pass)
+#   - stderr: 'audit-references: missing'              (file absent)
+#   - stderr: 'audit-references: incomplete-headers'   (file present but
+#             at least one of the six required headers is missing)
+#   - stderr: 'audit-references: empty'                (file is exactly
+#             zero bytes)
+# An extra seventh `## Category: <name>` (e.g. Accessibility) MUST NOT
+# trigger any of these errors — only the six required headers are enforced.
+# =============================================================================
+echo "--- Cat AD: /audit per-Category checklist references contract ---"
+
+AD_CATEGORIES_FILE="$REPO_DIR/skills/audit/references/categories.md"
+AD_REQUIRED_CATEGORIES="CodeQuality Security Performance Reliability Documentation Testing"
+
+# AD-1: file present
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ ! -e "$AD_CATEGORIES_FILE" ]; then
+  echo "audit-references: missing" >&2
+  echo -e "  ${RED}FAIL${NC} AD-1: skills/audit/references/categories.md is absent (audit-references: missing)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+elif [ ! -s "$AD_CATEGORIES_FILE" ]; then
+  # AD-2: file present but exactly zero bytes
+  echo "audit-references: empty" >&2
+  echo -e "  ${RED}FAIL${NC} AD-1/2: skills/audit/references/categories.md is exactly zero bytes (audit-references: empty)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  # AD-3: file present and non-empty -> verify every required header and
+  # at least three checklist items under each.
+  ad_missing_headers=""
+  ad_underfilled_categories=""
+  for ad_cat in $AD_REQUIRED_CATEGORIES; do
+    if ! grep -qE "^## Category: ${ad_cat}\$" "$AD_CATEGORIES_FILE"; then
+      ad_missing_headers="$ad_missing_headers $ad_cat"
+      continue
+    fi
+    # Extract body of this section: from the matching header to the next
+    # `## Category:` header (or EOF). Count `- [ ] <Capitalized item>` lines.
+    ad_section_body=$(awk -v cat="$ad_cat" '
+      BEGIN { in_section = 0 }
+      /^## Category: / {
+        if (in_section) { exit }
+        if ($0 == "## Category: " cat) { in_section = 1; next }
+      }
+      in_section { print }
+    ' "$AD_CATEGORIES_FILE")
+    ad_item_count=$(printf '%s\n' "$ad_section_body" | grep -cE '^- \[ \] [A-Z].+$' || true)
+    if [ "${ad_item_count:-0}" -lt 3 ]; then
+      ad_underfilled_categories="$ad_underfilled_categories ${ad_cat}(${ad_item_count})"
+    fi
+  done
+
+  if [ -n "$ad_missing_headers" ]; then
+    echo "audit-references: incomplete-headers" >&2
+    echo -e "  ${RED}FAIL${NC} AD-1: skills/audit/references/categories.md missing required header(s):${ad_missing_headers} (audit-references: incomplete-headers)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  elif [ -n "$ad_underfilled_categories" ]; then
+    echo -e "  ${RED}FAIL${NC} AD-1: skills/audit/references/categories.md has under-filled categories (need >=3 '- [ ] <Capitalized item>' each):${ad_underfilled_categories}"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  else
+    echo "audit-references: present"
+    echo -e "  ${GREEN}PASS${NC} AD-1: skills/audit/references/categories.md has all 6 required headers with >=3 items each (audit-references: present)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  fi
+fi
+
+# AD-4: SKILL.md documents the dispatch-log key=value format. Guards that the
+# dispatch contract (the Category propagation surface that the agents and any
+# downstream tooling read) is not silently dropped from the skill prompt.
+assert_file_contains \
+  "AD-4: skills/audit/SKILL.md documents 'category=' dispatch-log line" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  '^category=<value>$'
+
+assert_file_contains \
+  "AD-4: skills/audit/SKILL.md documents 'checklist_source=skills/audit/references/categories.md'" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  'checklist_source=skills/audit/references/categories\.md'
+
+# AD-5: SKILL.md documents the Category-tagged checkbox line format that the
+# audit-round-{n}.md report MUST contain when the ticket Category matches one
+# of the canonical six.
+assert_file_contains \
+  "AD-5: skills/audit/SKILL.md documents '(Category: <CategoryName>)' report line" \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  '\(Category: <CategoryName>\)'
+
+echo ""
+
 # --- Summary ---
 print_summary
