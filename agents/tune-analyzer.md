@@ -48,11 +48,12 @@ You receive from the caller:
 
 If `autopilot-log.md` exists in the ticket directory, extract decision patterns:
 
-1. Read the "Decisions Made" section of autopilot-log.md
+1. Read the "Decisions Made" section of autopilot-log.md. Each row matches the `decisions-table-row` regex `^\| [a-z][a-z0-9_-]* \| (allow|deny|skip) \| (evaluated|not_reached|condition_unmet|dependency_skipped) \| .+ \|$` (see `skills/autopilot/SKILL.md` Gate-decision canonical format).
 2. For each decision entry, extract:
-   - gate name (e.g., `ac_eval_fail`, `ship_review_gate`)
-   - action taken (e.g., `retry`, `proceed_without`)
-   - outcome (e.g., `success`, `failure`)
+   - gate name (e.g., `ac_eval_fail`, `ship_review_gate`, or one of the five canonical pipeline gates `scout` / `plan` / `build` / `verify` / `retro`)
+   - action taken (one of `allow`, `deny`, `skip`)
+   - reason (one of `evaluated`, `not_reached`, `condition_unmet`, `dependency_skipped`)
+   - outcome (e.g., `success`, `failure`) — derived from downstream artifacts (e.g. `eval-round-*.md` Status, ship PR merged?)
    - ticket size (from ticket.md or brief.md `estimated_size`)
 
 3. Create candidate patterns in the format:
@@ -90,6 +91,25 @@ If `autopilot-log.md` exists in the ticket directory, extract decision patterns:
    ```
 
 8. If `autopilot-log.md` does not exist in the ticket directory, skip this section entirely (do not error).
+
+### Persistently Unreached Gate Surfacing
+
+A gate that consistently emits `reason=not_reached` across a brief's run history indicates a misconfigured pipeline (e.g., `verify` is gated behind a precondition that the policy never satisfies, so the gate is never evaluated). When `autopilot-log.md` files for the same brief / parent slug are available across multiple sequential runs, count consecutive `not_reached` runs per gate:
+
+1. Collect, in chronological order (oldest → newest), every `autopilot-log.md` for the target brief / parent slug. Sources:
+   - `## Decisions Made` rows where `reason` equals `not_reached` (column 3).
+   - `## Unreached Gates` enumeration lines matching `^- <gate>: not_reached$`.
+   Both sources count as a `not_reached` observation for that gate in that run.
+2. For each canonical gate (`scout`, `plan`, `build`, `verify`, `retro`) and any policy gate that appears at least once, compute the **consecutive trailing `not_reached` run count** — i.e., starting from the most recent run and walking backwards, the number of contiguous runs where the gate was `not_reached`. The walk stops at the first run where the gate has a row in `## Decisions Made` with `reason != not_reached`, or where the gate is missing entirely from both sections (no signal).
+3. **Threshold**: when the consecutive count is **`>= 3`**, surface the gate as a tuning candidate by emitting one line to stdout matching the **`tune-candidate-line`** regex:
+
+   ```
+   candidate: gate=<name> reason=not_reached consecutive=<count>
+   ```
+
+   The line MUST match regex `^candidate: gate=[a-z][a-z0-9_-]* reason=not_reached consecutive=[0-9]+$` exactly. Emit one line per qualifying gate. Do **not** emit a line for any gate whose consecutive count is `< 3`.
+4. The threshold is a strict `>=` — exactly 2 consecutive `not_reached` runs MUST emit zero `tune-candidate-line` records; exactly 3 MUST emit one. As more consecutive `not_reached` runs accumulate (4, 5, …) the same gate continues to surface with the updated `consecutive=<N>` count on each invocation.
+5. Persistently-unreached gates are recorded as candidate patterns in `candidates.yaml` with `category: decision`, `roles: ["autopilot"]`, and an explanatory `pattern` field (e.g., `"verify gate is consistently not_reached — investigate upstream gate denial or precondition"`). The `confidence` follows the decision-pattern initial value `0.35`.
 
 ### Human Override Learning
 
