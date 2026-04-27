@@ -207,4 +207,114 @@ fi
 
 echo ""
 
+# --- PII / absolute-home-path tests ---
+echo "--- PII (absolute home path) ---"
+
+# Helper: invoke the hook with file_path + new_string (old_string left empty)
+run_edit_hook_with_new_string() {
+  local file_path="$1"
+  local new_string="$2"
+  local json
+  json=$(jq -n --arg fp "$file_path" --arg ns "$new_string" \
+    '{"tool_input": {"file_path": $fp, "old_string": "", "new_string": $ns}}')
+  run_hook "$HOOK" "$json"
+}
+
+assert_pii_block_edit() {
+  local description="$1"
+  local file_path="$2"
+  local new_string="$3"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  run_edit_hook_with_new_string "$file_path" "$new_string"
+  if [ "$LAST_EXIT_CODE" -ne 0 ] && echo "$LAST_STDERR" | grep -qF "pii: absolute home path detected"; then
+    echo -e "  ${GREEN}PASS${NC} BLOCK (pii): $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} BLOCK (pii): $description"
+    echo -e "       Expected: non-zero exit + 'pii: absolute home path detected' in stderr"
+    echo -e "       Got: exit $LAST_EXIT_CODE; stderr=$LAST_STDERR"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+assert_pii_allow_edit() {
+  local description="$1"
+  local file_path="$2"
+  local new_string="$3"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  run_edit_hook_with_new_string "$file_path" "$new_string"
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! echo "$LAST_STDERR" | grep -qF "pii:"; then
+    echo -e "  ${GREEN}PASS${NC} ALLOW (pii): $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} ALLOW (pii): $description"
+    echo -e "       Expected: exit 0 with no 'pii:' in stderr"
+    echo -e "       Got: exit $LAST_EXIT_CODE; stderr=$LAST_STDERR"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+# AC 3: /Users/<name>/ in new_string is rejected
+assert_pii_block_edit "AC3: /Users/<name>/ in new_string rejected" \
+  "notes/example.md" \
+  "see /Users/alice/projects/foo/bar.md"
+
+# AC 2 (edit-side mirror): /home/<name>/ rejected
+assert_pii_block_edit "AC2-edit: /home/<name>/ rejected" \
+  "notes/example.md" \
+  "deploy: /home/bob/work/output.log"
+
+# AC 5: <repo>/... only new_string is allowed
+assert_pii_allow_edit "AC5: <repo>/... only new_string allowed" \
+  "notes/example.md" \
+  "see <repo>/some/path/foo.md"
+
+# Negative AC 6: fenced /Users/runner/work/ inside new_string is allowed
+fenced_ns='outside line
+```
+build log: /Users/runner/work/repo/file.txt
+```
+trailing'
+assert_pii_allow_edit "Neg AC6: fenced /Users/runner/work/ allowed" \
+  "CHANGELOG.md" \
+  "$fenced_ns"
+
+# Negative AC 2: lowercase /users/foo/bar is not flagged
+assert_pii_allow_edit "Neg AC2: lowercase /users/foo/bar allowed" \
+  "notes/case.md" \
+  "see /users/foo/bar"
+
+# Negative AC 5: lowercase /users/runner/work/ is not flagged
+assert_pii_allow_edit "Neg AC5: lowercase /users/runner/work/ allowed" \
+  "notes/case.md" \
+  "see /users/runner/work/"
+
+# Edit-side .gitignore allowlist
+assert_pii_allow_edit "Neg AC3 (edit): .gitignore allowlist" \
+  ".gitignore" \
+  "/Users/runner/work/cache"
+
+# Windows backslash path
+assert_pii_allow_edit "Neg AC4 (edit): Windows C:\\Users\\foo\\ allowed" \
+  "notes/win.md" \
+  'reference: C:\Users\foo\file.txt'
+
+# Edge Case 1: /Users/ at EOL
+assert_pii_allow_edit "Edge1 (edit): /Users/ at EOL allowed" \
+  "notes/eol.md" \
+  "trailing token: /Users/"
+
+# Edge Case 2: <repo> + real home path on different lines still rejected
+assert_pii_block_edit "Edge2 (edit): <repo> does not whitelist real home path" \
+  "notes/mixed.md" \
+  "first line: <repo>/foo.md
+second line: /Users/charlie/bin/tool"
+
+# Edge Case 3: empty new_string is allowed
+assert_pii_allow_edit "Edge3 (edit): empty new_string allowed" \
+  "notes/empty.md" \
+  ""
+
+echo ""
+
 print_summary

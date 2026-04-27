@@ -2465,5 +2465,31 @@ assert_file_contains \
 
 echo ""
 
+# CT-PII-1 (policy guard): CLAUDE.md must declare the PII / absolute-home-path policy.
+# Required tokens: literal heading `## PII`, the `<repo>` placeholder, and the phrase
+# `absolute home path` (the substring the pre-write/pre-edit hooks emit on rejection).
+# Mirrors the pre-write-safety.sh / pre-edit-safety.sh PII guard so the hook contract
+# and the human-readable policy stay in lockstep.
+echo "--- CT-PII-1 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ct_pii_claudemd="$REPO_DIR/CLAUDE.md"
+ct_pii_missing=""
+for ct_pii_token in '## PII' '<repo>' 'absolute home path'; do
+  if ! grep -qF -- "$ct_pii_token" "$ct_pii_claudemd"; then
+    ct_pii_missing="${ct_pii_missing}${ct_pii_missing:+, }$ct_pii_token"
+  fi
+done
+if [ -z "$ct_pii_missing" ]; then
+  printf "pii-policy: declared\n"
+  echo -e "  ${GREEN}PASS${NC} CT-PII-1: CLAUDE.md declares the PII policy (## PII, <repo>, absolute home path)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  printf "pii-policy: missing in CLAUDE.md (%s)\n" "$ct_pii_missing" >&2
+  echo -e "  ${RED}FAIL${NC} CT-PII-1: CLAUDE.md missing PII policy token(s): $ct_pii_missing"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary
