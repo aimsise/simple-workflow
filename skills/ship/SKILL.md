@@ -127,6 +127,67 @@ Commits ahead of default branch:
 
 **Note**: `<default-branch>` denotes the repo default branch from `Default branch:` in the pre-computed context (resolves `git symbolic-ref refs/remotes/origin/HEAD`; falls back to `main` if unset). Use this value wherever `<default-branch>` appears — never hardcode `main`.
 
+## Audit Summary embedding
+
+When a ticket was moved to `.simple-workflow/backlog/done/{ticket-dir}/` in Phase 1 step 5, `/ship` MUST embed a structured audit summary into BOTH the commit message body (Phase 1 step 3.e) AND the PR body (Phase 2 step 14) so reviewers without access to gitignored `.simple-workflow/` artifacts can see the audit verdict from GitHub alone. Reference helper: `tests/helpers/audit-summary.sh` mirrors the parsing rules below and is the canonical contract test fixture.
+
+### Selecting the latest audit-round-N.md
+
+Search `.simple-workflow/backlog/done/{ticket-dir}/audit-round-*.md`. The latest file is selected by **numeric** ordering of `N`, NOT lexicographic: `audit-round-10.md` is later than `audit-round-2.md`. Implementation hint: extract `N` from each filename, sort numerically descending, pick the head. A pure-bash reference is in `tests/helpers/audit-summary.sh` (the `--dir` mode).
+
+### Parsing the audit-round file
+
+From the latest `audit-round-N.md`, parse four fields by line:
+- `Status:` value — one of `PASS`, `PASS_WITH_CONCERNS`, `FAIL`. Optional surrounding `**` markdown bold markers around the field name are tolerated (`**Status**: PASS` and `Status: PASS` parse identically; `/audit` writes the bold form, see `skills/audit/SKILL.md` Step 4a).
+- `Critical:` integer count.
+- `Warnings:` integer count.
+- `Suggestions:` integer count.
+
+Additionally, parse every `### Warning: <title>` heading line — each is one warning title. Backticks inside the title (e.g. `` ### Warning: `SECRET_TOKEN` exposed in logs ``) MUST be propagated verbatim to the PR body; do not strip them.
+
+**Masking rules** (before parsing, remove these regions):
+- Lines inside triple-backtick fenced code blocks (` ``` ... ``` `) — illustrative example outputs MUST NOT be parsed as the active verdict.
+- Lines (or inline segments) inside `<!-- ... -->` HTML comments — multi-line HTML comments mask every line until their closing marker.
+
+### Embedding the canonical line
+
+After parsing, embed exactly one line of the form:
+
+```
+Audit Summary: <Status> (Critical=<N>, Warnings=<N>, Suggestions=<N>)
+```
+
+Embed this line into:
+- The commit message body produced in Phase 1 step 3.e (verifiable via `git log -1 --format=%B HEAD`).
+- The PR body produced in Phase 2 step 14 (verifiable via `gh pr view --json body --jq .body`).
+
+In addition, append every `### Warning: <title>` heading verbatim into the PR body so warning titles propagate to GitHub. The commit message MAY include warning titles for context but is only required to carry the canonical `Audit Summary:` line.
+
+### Error contracts (non-zero exit, message to stderr)
+
+`/ship` MUST stop with a non-zero exit when:
+- The latest `audit-round-N.md` lacks a `Status:` line. Stderr contains the literal substring:
+  ```
+  audit-summary: missing Status line in audit-round-
+  ```
+- The declared `Warnings:` count differs from the number of `### Warning:` headings actually present (after masking). Stderr contains the literal substring:
+  ```
+  audit-summary: count-mismatch (Warnings declared=<X>, headings=<Y>)
+  ```
+
+### No-audit fallback
+
+If no `audit-round-*.md` file exists under `.simple-workflow/backlog/done/{ticket-dir}/`, /ship MUST NOT fabricate an `Audit Summary:` line. Instead the PR body MUST contain the literal substring `[shipped without /audit]` (already produced by Phase 2 step 9's review gate — autopilot policy or interactive flow appends it) and MUST contain zero occurrences of the substring `Audit Summary:`. The commit message body in this no-audit path likewise carries no `Audit Summary:` line.
+
+### Static contract literals
+
+The literal strings below are verified by `tests/test-skill-contracts.sh` Category 25 ("Audit Summary embedding contract") to guard against silent drift:
+
+- `Audit Summary: <Status> (Critical=<N>, Warnings=<N>, Suggestions=<N>)`
+- `audit-summary: missing Status line in audit-round-`
+- `audit-summary: count-mismatch (Warnings declared=<X>, headings=<Y>)`
+- `[shipped without /audit]`
+
 ## Phase 1: Commit
 
 **Destructive shortcut prohibition**: If a git command fails with an error message suggesting a non-destructive remediation (e.g. `use -f to force removal`, `use --allow-empty-message`), apply that suggestion first. NEVER use `rm -f .git/index`, `git reset --hard`, `git clean -f` as an error-recovery shortcut.
@@ -140,7 +201,7 @@ Commits ahead of default branch:
    b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new user-code files. `.simple-workflow/` is expected to be gitignored via the `hooks/session-start.sh` setup; do NOT attempt to force-add it with `-f`. If it appears in `git status`, the setup hook failed — warn the user rather than paper over. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files (gitignore handles exclusion).
    c. `git add` selected files.
    d. Conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"; `git log --oneline -5` for style.
-   e. Commit via HEREDOC.
+   e. Commit via HEREDOC. **Audit Summary embedding**: when a ticket-dir is detected in step 5 and a `.simple-workflow/backlog/done/{ticket-dir}/audit-round-*.md` exists, the canonical `Audit Summary: <Status> (Critical=<N>, Warnings=<N>, Suggestions=<N>)` line MUST appear in the commit message body per the "Audit Summary embedding" section above. Note: this commit is created in step 3 BEFORE the ticket move in step 5.b — to satisfy the contract, resolve `ticket-dir` first (step 5 lookup logic), then read the audit-round file from `.simple-workflow/backlog/active/{ticket-dir}/` (its pre-move location) when building the commit message body. The contract is on the final committed message text, not on filesystem ordering.
    f. `git status` to verify.
 
 4. **Post-commit verification**: `git status`. If tree still dirty or `git log -1 --format=%H` unchanged, report and stop.
@@ -207,7 +268,7 @@ Proceed to Phase 2.
 11. `git log origin/<target>..HEAD --oneline`. If no commits ahead, print "No commits ahead of target branch." and stop.
 12. `gh pr list --head <current-branch> --state open`. If a PR exists, capture URL, print it, and skip to Phase 3 (if merge enabled) or stop.
 13. `git push origin HEAD`. On failure, show the error and stop.
-14. Generate PR title (conventional commit, single line) and body (summary of changes + scope) from commit log and diff.
+14. Generate PR title (conventional commit, single line) and body (summary of changes + scope) from commit log and diff. **Audit Summary embedding**: when a ticket was moved in step 5, embed the canonical `Audit Summary: <Status> (Critical=<N>, Warnings=<N>, Suggestions=<N>)` line plus every `### Warning: <title>` heading from `.simple-workflow/backlog/done/{ticket-dir}/audit-round-{latest-N}.md` into the PR body per the "Audit Summary embedding" section above. If no `audit-round-*.md` exists, the PR body carries `[shipped without /audit]` (from Step 9) and zero occurrences of `Audit Summary:`.
 15. `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
 15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY (read-modify-write):
      - `phases.ship.status: completed`
