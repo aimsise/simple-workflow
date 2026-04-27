@@ -55,6 +55,28 @@ The following agent invocation is **contractual** — `/plan2doc` MUST delegate 
 - `NEVER bypass the planner via direct file operations` — `/plan2doc` must NOT write the plan content itself; the planner agent is the sole author.
 - `Fail the task immediately if the planner agent cannot be invoked via the Agent tool` — print the failure reason and the resolved output path so the user can retry.
 
+## AC Single Source of Truth (SSoT)
+
+`ticket.md` is the **Single Source of Truth** for the Acceptance Criteria of any ticket. When `/plan2doc` runs against a ticket directory (i.e. `ticket-dir` is resolved and `{ticket-dir}/ticket.md` exists), the resulting `{ticket-dir}/plan.md` MUST contain a `## Acceptance Criteria` section that is a **verbatim copy** of the ticket's AC list. The planner agent rewrites no AC body text; it transcribes.
+
+Verbatim copy is defined item-by-item:
+
+- Item count: the number of list items under `## Acceptance Criteria` in `plan.md` MUST equal the number of list items under `## Acceptance Criteria` in `ticket.md`.
+- Item body: after stripping each leading list marker — one of `- `, `* `, or `[0-9]+\. ` — the remaining bytes of every item in `plan.md` MUST be byte-identical to the corresponding item in `ticket.md`. Backtick-quoted code spans, punctuation, capitalization, and surrounding whitespace inside the body all count as bytes.
+
+What is NOT drift:
+
+- List-marker style differences alone. `plan.md` may use `1. `, `2. ` numbered markers while `ticket.md` uses `- ` bullets, as long as item bodies match after marker stripping.
+- Sections other than `## Acceptance Criteria`. `plan.md` legitimately carries planning-specific sections (`## Overview`, `## Affected files`, `## Step-by-step implementation plan`, `## Risk assessment`, `### Claude Code Workflow`, etc.) that do not exist in `ticket.md`. `ticket.md` may have its own non-AC sections (`## Negative AC`, `## Edge Cases`) that the plan does not mirror. Only the `## Acceptance Criteria` section is compared.
+
+The drift guard is enforced by `tests/test-skill-contracts.sh` Cat AD (AC-SSoT contract), which walks every `plan.md`/`ticket.md` pair under `.simple-workflow/backlog/{active,product_backlog,done}/<slug>/<ticket-id>/` and compares the two AC lists per the rules above. Drift produces a non-zero exit and a stderr line containing both file paths.
+
+## Observable Contract: `ssot-line`
+
+Every `/plan2doc` invocation MUST emit **exactly one line** to stdout that matches the regex `^plan2doc: ac-source=ticket\.md verbatim=true$`. This is the `ssot-line` Observable Contract. The line is the runtime declaration that the AC list in the generated `plan.md` was sourced verbatim from `ticket.md`. `/plan2doc` itself prints this line at the start of Step 5 (Return summary), after the planner agent has written `plan.md` and before the human-readable summary. No other line on stdout may match this regex during a single invocation — exactly one ssot-line per run.
+
+When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is being written to `.simple-workflow/docs/plans/{feature}.md` with no ticket pair), the ssot-line is still emitted because the AC SSoT discipline is unconditional: even in the no-ticket case, the line documents that the skill respects the ticket-as-SSoT contract whenever a ticket exists, and that no AC was fabricated outside that boundary.
+
 ## Instructions
 
 0a. **Size detection**. Parse `$ARGUMENTS` for `(ticket-dir: <path>)`. If `ticket-dir` is specified, read `{ticket-dir}/ticket.md` and extract the Size value from the `| Size |` table row (S/M/L/XL). If `ticket.md` does not exist, or no `| Size |` row is found, default `Size = M`. If no `ticket-dir` is specified at all, default `Size = M`. Record the resolved Size for use in Step 4.
@@ -87,10 +109,16 @@ The following agent invocation is **contractual** — `/plan2doc` MUST delegate 
        - **Affected files** and components
        - **Step-by-step implementation plan** (numbered)
        - **Risk assessment** and testing strategy
-       - **Acceptance Criteria** (bullet list of measurable, verifiable criteria)
+       - **Acceptance Criteria** (bullet list of measurable, verifiable criteria) — when `ticket.md` exists at `{ticket-dir}/ticket.md`, the planner MUST copy the AC list verbatim from `ticket.md` per the AC SSoT discipline above (item count equal; each item body byte-identical after stripping leading list markers `- `, `* `, or `[0-9]+\. `). The planner MAY swap list-marker style (e.g. `- ` → `1. `) but MUST NOT rewrite, paraphrase, or augment item bodies.
        - `### Claude Code Workflow` section with a phase/command/agent table referencing the scanned skills/agents
 
-5. **Return summary**. After the planner agent returns, verify the plan file exists at the resolved output path, then print a short summary to the user containing:
+5. **Return summary**. After the planner agent returns, verify the plan file exists at the resolved output path. Then emit the `ssot-line` Observable Contract event as the **first** line of stdout for this step:
+
+   ```
+   plan2doc: ac-source=ticket.md verbatim=true
+   ```
+
+   The line MUST appear exactly once per invocation and MUST match `^plan2doc: ac-source=ticket\.md verbatim=true$` (no leading or trailing whitespace, no extra tokens). Then print a short human-readable summary to the user containing:
    - The resolved Size and model used (sonnet or opus)
    - The plan file path
    - A one-line synopsis from the planner's return value

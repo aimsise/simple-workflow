@@ -2747,5 +2747,80 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category AF: AC SSoT (Single Source of Truth) contract
+# Diff: Existing categories cover skill frontmatter, delegation graphs, and
+#        prompt-time literals. This category is the first runtime data-shape
+#        guard — it walks every plan.md/ticket.md pair under
+#        `.simple-workflow/backlog/{active,product_backlog,done}/<slug>/<ticket-id>/`
+#        and verifies that the `## Acceptance Criteria` list in plan.md is a
+#        verbatim copy (per byte, after stripping leading list markers `- `,
+#        `* `, or `[0-9]+. `) of the AC list in the sibling ticket.md.
+# Plan: .docs/discovery/test_simple_workflow12/pipeline/20260427041937_sw-plugin-pipeline-renovation_part-3.md
+# =============================================================================
+echo "--- Cat AF: AC SSoT contract ---"
+
+AF_SCANNER="$SCRIPT_DIR/helpers/ac-ssot-scan.sh"
+AF_ROOT="$REPO_DIR/.simple-workflow"
+
+# AF-1: scanner exists and is executable.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -x "$AF_SCANNER" ]; then
+  echo -e "  ${GREEN}PASS${NC} AF-1: ac-ssot-scan.sh helper is present and executable"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AF-1: ac-ssot-scan.sh helper is missing or not executable at $AF_SCANNER"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AF-2 (AC 3 of the plan): scanner exits 0 against the live brief tree AND
+# stdout contains the literal line `ac-ssot: synced`.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+af_stdout_file=$(mktemp)
+af_stderr_file=$(mktemp)
+set +e
+bash "$AF_SCANNER" "$AF_ROOT" >"$af_stdout_file" 2>"$af_stderr_file"
+af_exit=$?
+set -e
+if [ "$af_exit" -eq 0 ] && grep -qx 'ac-ssot: synced' "$af_stdout_file"; then
+  # Re-emit the scanner's literal line on the harness's own stdout so AC 3's
+  # "stdout contains the literal line `ac-ssot: synced`" is satisfied at the
+  # harness level, not just inside the AF-2 PASS message.
+  echo "ac-ssot: synced"
+  echo -e "  ${GREEN}PASS${NC} AF-2: ac-ssot-scan against live brief tree exits 0 with 'ac-ssot: synced'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AF-2: ac-ssot-scan failed against live brief tree (exit=$af_exit)"
+  echo -e "       stdout: $(cat "$af_stdout_file")"
+  echo -e "       stderr: $(cat "$af_stderr_file")"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$af_stdout_file" "$af_stderr_file"
+
+# AF-3: plan2doc/SKILL.md documents the SSoT discipline (ticket.md as SSoT).
+assert_file_contains \
+  "AF-3: plan2doc/SKILL.md documents 'AC Single Source of Truth' discipline" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "AC Single Source of Truth"
+
+# AF-4: plan2doc/SKILL.md documents the ssot-line Observable Contract literal.
+assert_file_contains \
+  "AF-4: plan2doc/SKILL.md documents the 'plan2doc: ac-source=ticket.md verbatim=true' ssot-line" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "plan2doc: ac-source=ticket\\.md verbatim=true"
+
+# AF-5: plan2doc/SKILL.md documents the byte-equality rule with the marker set.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'byte-identical' "$REPO_DIR/skills/plan2doc/SKILL.md" \
+   && grep -qF '[0-9]+\. ' "$REPO_DIR/skills/plan2doc/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} AF-5: plan2doc/SKILL.md documents byte-equality after marker-stripping"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AF-5: plan2doc/SKILL.md missing byte-equality / list-marker stripping documentation"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary
