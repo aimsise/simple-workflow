@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.2] — 2026-04-27
+
 ### Added
 - `skills/audit/references/categories.md`: canonical per-Category checklist source for `/audit`, with the six required `## Category: <name>` sections (`CodeQuality`, `Security`, `Performance`, `Reliability`, `Documentation`, `Testing`) and at least three `- [ ] <Capitalized item>` checklist items under each. Adding a seventh `## Category: <name>` (e.g. `Accessibility`) is permitted and is not flagged as drift.
 - `tests/test-skill-contracts.sh` Category AD: contract test for the new checklist source. Emits the literal stdout line `audit-references: present` when the file has all six required headers and >=3 items each, and emits the literal stderr lines `audit-references: missing`, `audit-references: empty`, or `audit-references: incomplete-headers` for the corresponding failure modes. Guards (`AD-4`, `AD-5`) verify that `skills/audit/SKILL.md` continues to document the `category=<value>` / `checklist_source=...` dispatch-log format and the `(Category: <CategoryName>)` report-line format.
