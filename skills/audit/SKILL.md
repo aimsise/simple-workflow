@@ -89,15 +89,106 @@ Parse `$ARGUMENTS` for the following:
   - Security-scanner output (always invoked): `{ticket-dir}/security-scan-{n}.md`
 - If no match: use defaults (code-reviewer: `.simple-workflow/docs/reviews/{topic}.md`, security-scanner: `.simple-workflow/docs/reviews/security-{topic}.md`) where `{topic}` is derived from the current branch name.
 
+### 1a. Resolve Category and Checklist Body
+
+Before spawning agents, resolve the per-ticket Category and the matching
+checklist body that will be propagated to each agent. The canonical
+checklist source is `skills/audit/references/categories.md`; this path is
+recorded verbatim in the dispatch log so the propagation is auditable.
+
+When `ticket-dir` is set (Step 1 resolved a path under
+`.simple-workflow/backlog/active/{dir-name}`), read `{ticket-dir}/ticket.md`
+and locate the row whose first cell is exactly `Category` (the ticket
+metadata table uses Markdown table rows of the form
+`| Category | <value> |`).
+
+Apply the following parsing rules:
+
+- **Multiple Category rows** (Edge Case 1): if `ticket.md` contains more
+  than one row whose first cell is `Category`, use the **first**
+  occurrence's value verbatim AND emit the literal line
+  `warn: multiple Category rows in ticket.md` to stderr. Do NOT abort.
+- **Trailing whitespace** (Edge Case 3): strip leading and trailing
+  whitespace from the extracted Category value before any further use
+  (e.g., `Security ` becomes `Security`; the dispatch log MUST record
+  the stripped form).
+- **No Category row** (Negative AC 1): if no row matches, treat the
+  Category as `unspecified` for dispatch-log purposes and skip checklist
+  selection.
+- **Unknown / lowercase Category** (Negative AC 4): the value is passed
+  through verbatim. No rejection. No mapping. If the value does not
+  match one of the six canonical `## Category: <name>` headers in
+  `skills/audit/references/categories.md`, no checklist body is
+  selected; the agents receive the file path and the verbatim Category
+  value, and they fall back to their default review heuristics.
+
+Selecting the checklist body (canonical six only):
+
+- The canonical six values are `CodeQuality`, `Security`, `Performance`,
+  `Reliability`, `Documentation`, `Testing`.
+- When the resolved Category exactly matches one of the six, extract the
+  body of `skills/audit/references/categories.md` between the line
+  `## Category: <CategoryName>` and the next `## Category:` header (or
+  end-of-file). This body — including its `- [ ] <item>` checklist
+  items — is the **selected checklist body**.
+- The selected checklist body MUST be passed verbatim to both
+  `code-reviewer` and `security-scanner` as part of the agent prompt,
+  with explicit instruction to evaluate each item and to emit a line of
+  the form `- [ ] <item> (Category: <CategoryName>)` (or `- [x] ...`
+  for items addressed by the changes) into its report file.
+
+When `ticket-dir` is NOT set (no active ticket detected): skip the
+ticket.md read, skip checklist selection, and skip the dispatch-log
+write described in Step 1b. Audit proceeds without category
+propagation.
+
+### 1b. Write Dispatch Log
+
+When `ticket-dir` is set, write the dispatch log to
+`{ticket-dir}/audit-dispatch.log` BEFORE spawning the agents. The file
+is a plain text key=value log used by tests and downstream tooling to
+verify the propagation contract.
+
+Content format (exact, no extra fields, one key per line):
+
+```
+category=<value>
+checklist_source=skills/audit/references/categories.md
+```
+
+Rules:
+
+- `<value>` is the verbatim Category value resolved in Step 1a (after
+  trailing-whitespace stripping). If no Category row was present in
+  `ticket.md`, write `category=unspecified`.
+- The literal string `checklist_source=skills/audit/references/categories.md`
+  MUST appear on its own line, even when the resolved category is
+  `unspecified` or an unknown value. The log records that this is the
+  source consulted, not that a body was selected.
+- Use UTF-8, LF line endings, no surrounding quotes.
+- The file is overwritten on every `/audit` invocation against the
+  same ticket directory (one log per audit run; the round number is
+  captured in `audit-round-{n}.md` instead).
+
+When `ticket-dir` is NOT set, do NOT write a dispatch log.
+
 ### 2. Spawn Agents
 
 **MUST invoke the `security-scanner` agent via the Agent tool** (sonnet) — **NEVER bypass security-scanner** even when changes appear security-irrelevant; the agent itself decides what is in scope. Fail this audit immediately if security-scanner cannot be invoked.
 - Pass the changed files list and the security-scan output path determined in step 1.
+- When a checklist body was selected in Step 1a, pass it verbatim as part
+  of the agent prompt and instruct security-scanner to evaluate each
+  `- [ ] <item>` line and emit `- [ ] <item> (Category: <CategoryName>)`
+  (or `- [x] ...`) lines into its report.
 - Receive Critical / Warnings / Suggestions counts and a summary.
 - Note: security-scanner is always invoked regardless of whether sensitive files appear to be touched. The agent itself decides what is security-relevant.
 
 **If** `only_security_scan` is `false` (default), you **MUST also invoke the `code-reviewer` agent via the Agent tool** (sonnet) **in parallel** with security-scanner. **NEVER bypass code-reviewer via direct file inspection** from within `/audit`. Fail this audit immediately if code-reviewer cannot be invoked (treat as Critical = 1 per the Error Handling section):
 - Pass the changed files list and the quality-round output path determined in step 1.
+- When a checklist body was selected in Step 1a, pass it verbatim as part
+  of the agent prompt and instruct code-reviewer to evaluate each
+  `- [ ] <item>` line and emit `- [ ] <item> (Category: <CategoryName>)`
+  (or `- [x] ...`) lines into its report.
 - Receive Critical / Warnings / Suggestions counts and a summary.
 
 If `only_security_scan` is `true`, the code-reviewer is **skipped** (security-only mode).
@@ -139,7 +230,18 @@ Then, print exactly the following structured block at the end of your output (th
 
 If an active ticket directory was detected in Step 1 (`ticket-dir`):
 - Write the structured result block below to `{ticket-dir}/audit-round-{n}.md`, where `{n}` is the same round number used for `quality-round-{n}.md` / `security-scan-{n}.md` in Step 1 (the explicit `round=N` value if provided, else the auto-incremented value).
-- The file content is exactly the same 7-line `**Status**:...**Summary**:...` block printed in Step 4 (no extra header, no extra text).
+- The file content is the same 7-line `**Status**:...**Summary**:...` block printed in Step 4.
+- **Category-tagged checklist transcription** (when a checklist body was
+  selected in Step 1a): append, after the structured block, the
+  evaluated checklist items reported by the spawned agents. Each
+  transcribed item MUST appear on its own line, outside fenced code
+  blocks and outside HTML comments, in the exact form
+  `- [ ] <item> (Category: <CategoryName>)` for unaddressed items or
+  `- [x] <item> (Category: <CategoryName>)` for items the changes
+  addressed. At least one such line MUST be present whenever the
+  ticket's Category matches one of the canonical six. When the
+  Category is `unspecified` or an unknown value, no such lines are
+  required.
 - This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0 (impl-loop resume detection).
 
 If no ticket directory was detected, skip this persistence step (no audit-round file is written for non-ticket flows).

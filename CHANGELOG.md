@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `skills/audit/references/categories.md`: canonical per-Category checklist source for `/audit`, with the six required `## Category: <name>` sections (`CodeQuality`, `Security`, `Performance`, `Reliability`, `Documentation`, `Testing`) and at least three `- [ ] <Capitalized item>` checklist items under each. Adding a seventh `## Category: <name>` (e.g. `Accessibility`) is permitted and is not flagged as drift.
+- `tests/test-skill-contracts.sh` Category AD: contract test for the new checklist source. Emits the literal stdout line `audit-references: present` when the file has all six required headers and >=3 items each, and emits the literal stderr lines `audit-references: missing`, `audit-references: empty`, or `audit-references: incomplete-headers` for the corresponding failure modes. Guards (`AD-4`, `AD-5`) verify that `skills/audit/SKILL.md` continues to document the `category=<value>` / `checklist_source=...` dispatch-log format and the `(Category: <CategoryName>)` report-line format.
+
+### Changed
+- `skills/audit/SKILL.md`: wired per-ticket Category propagation. `/audit` now reads the ticket's `| Category |` table row (first occurrence on multi-row tickets, with a `warn: multiple Category rows in ticket.md` stderr line; trailing whitespace stripped; missing row resolves to `unspecified`; unknown values like lowercase `accessibility` pass through verbatim with no rejection), selects the matching `## Category: <name>` body from `skills/audit/references/categories.md` for the canonical six, writes a `audit-dispatch.log` with `category=<value>` and `checklist_source=skills/audit/references/categories.md` keys before spawning agents, and propagates the selected checklist body to both `code-reviewer` and `security-scanner`. The aggregated `audit-round-{n}.md` report now transcribes evaluated checklist items as `- [ ] <item> (Category: <CategoryName>)` lines (or `- [x] ...`) outside fenced and HTML-comment regions when the Category matches one of the canonical six.
+
 ## [6.0.1] — 2026-04-26
 
 ### Added
