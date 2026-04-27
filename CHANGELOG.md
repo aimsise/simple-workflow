@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.3] — 2026-04-28
+
+### Changed
+- `README.md` refactored end-to-end for clarity and brevity (380 → 200 lines, ~47% reduction). Restructured the document so readers reach `## Quick Start` within the first 25 lines instead of after ~155 lines of "Why" prose. Removed `## Table of Contents` (GitHub auto-anchors cover it). Added two new top-level sections: `## At a Glance` (one-paragraph functional summary plus three differentiator bullets — Generator-Evaluator firewall, Context Conservation, cross-session learning) and `## Three Ways to Run` (a single comparison table that consolidates the previously-scattered `Full Automation with /brief + /autopilot` and `Manual flow with /brief` subsections into one place). Compressed `### Harness Engineering`, `### Knowledge Base`, and `### Ticket Management` while preserving every load-bearing claim — the Four Threats table, the full three-bullet `### Context Conservation Protocol` block, and the literal phrase `weights × context = output` are all retained verbatim. Merged the previous `## Setup` and `## Configuration` H2 sections into `## Setup & Configuration` and collapsed the two prior `.gitignore` opt-out examples (ticket-counter sharing and shared-spec sharing) into a single parameterized fenced block. Renamed `## All Skills` to `## Skill Reference` (same 13-row table). Reduced the standalone `## Migrating from v4.x` H2 to a one-line blockquote footer that still links to the v5.0.0 migration announcement. No Mermaid diagrams introduced — kept the README in pure ASCII / Markdown for renderer-independent display. No changes to skills, agents, hooks, tests, or any other tracked file.
+
 ## [6.0.2] — 2026-04-27
 
 ### Added
