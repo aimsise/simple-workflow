@@ -811,4 +811,287 @@ assert_file_not_contains \
 
 echo ""
 
+# --- Category 25: post-/ship path-rewrite drift on three reference surfaces ---
+#
+# After /ship moves a ticket from .simple-workflow/backlog/active/<slug>/<ticket-id>/
+# (or .../product_backlog/<slug>/<ticket-id>/) into .simple-workflow/backlog/done/,
+# three other surfaces still embed the OLD source-path string:
+#
+#   1. .simple-workflow/backlog/done/<slug>/<ticket-id>/audit-round-*.md
+#   2. <briefs-done>/<slug>/autopilot-state.yaml (the moved ticket's
+#      tickets[].ticket_dir entry)
+#   3. .simple-workflow/backlog/done/<slug>/<ticket-id>/autopilot-log.md
+#
+# The /ship skill (skills/ship/SKILL.md, Phase 1 step 5d) is the documented
+# rewriter. This category invokes the regression scanner
+# (tests/helpers/check-ticket-move-drift.sh) against synthetic fixtures and
+# verifies the contract:
+#
+# - clean fixture           -> exit 0 (AC 6)
+# - active-residual fixture -> exit 1, stderr contains 'drift:' (AC 7)
+# - product_backlog residual -> exit 1, stderr contains 'drift:' (Edge Case 1)
+# - fenced-only residual    -> exit 0 (Negative AC 1)
+# - cross-ticket residual   -> exit 0 (Negative AC 2)
+# - absent audit reports    -> exit 0 (Negative AC 3)
+# - HTML-comment-only       -> exit 0 (Negative AC 4)
+# - regex-in-fence          -> exit 0 (Edge Case 3)
+# - idempotent rerun        -> exit 0, zero 'drift:' on stderr (Edge Case 2)
+echo "--- post-/ship path-rewrite drift on three reference surfaces ---"
+
+DRIFT_PROBE="$REPO_DIR/tests/helpers/check-ticket-move-drift.sh"
+FIXTURE_SLUG="sample-slug"
+FIXTURE_TID="001-add-search"
+
+# build_clean_fixture <fixture-root>
+#
+# All three surfaces present, all using the NEW done path. No residual
+# OLD-path substring anywhere in prose.
+build_clean_fixture() {
+  local root="$1"
+  local done_dir="$root/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID"
+  local briefs_dir="$root/.simple-workflow/backlog/briefs/done/$FIXTURE_SLUG"
+  mkdir -p "$done_dir" "$briefs_dir"
+  cat > "$done_dir/audit-round-1.md" <<MD
+# Audit round 1
+Ticket lives at .simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/.
+MD
+  cat > "$done_dir/autopilot-log.md" <<MD
+# Autopilot log
+Final location: .simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/.
+MD
+  cat > "$briefs_dir/autopilot-state.yaml" <<YML
+version: 1
+parent_slug: $FIXTURE_SLUG
+tickets:
+  - logical_id: $FIXTURE_SLUG-part-1
+    ticket_dir: .simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/
+    status: completed
+YML
+}
+
+# run_drift_probe <fixture-root> <description> <expected-exit> <expect-drift-stderr>
+#
+# expected-exit       : "0" or "nonzero"
+# expect-drift-stderr : "yes" or "no" — whether stderr should contain 'drift:'
+run_drift_probe() {
+  local root="$1"
+  local desc="$2"
+  local expected="$3"
+  local expect_drift="$4"
+
+  local stderr_file
+  stderr_file=$(mktemp)
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+  set +e
+  bash "$DRIFT_PROBE" "$root" "$FIXTURE_SLUG" "$FIXTURE_TID" 2>"$stderr_file" >/dev/null
+  local rc=$?
+  set -e
+
+  local stderr_content
+  stderr_content=$(cat "$stderr_file")
+  rm -f "$stderr_file"
+
+  local exit_ok=0
+  if [ "$expected" = "0" ] && [ "$rc" -eq 0 ]; then
+    exit_ok=1
+  elif [ "$expected" = "nonzero" ] && [ "$rc" -ne 0 ]; then
+    exit_ok=1
+  fi
+
+  local drift_ok=0
+  local drift_seen="no"
+  if echo "$stderr_content" | grep -qF "drift:"; then
+    drift_seen="yes"
+  fi
+  if [ "$expect_drift" = "$drift_seen" ]; then
+    drift_ok=1
+  fi
+
+  if [ "$exit_ok" -eq 1 ] && [ "$drift_ok" -eq 1 ]; then
+    echo -e "  ${GREEN}PASS${NC} $desc"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $desc"
+    [ "$exit_ok" -ne 1 ] && echo -e "       expected exit=$expected, got rc=$rc"
+    [ "$drift_ok" -ne 1 ] && echo -e "       expected drift_in_stderr=$expect_drift, got=$drift_seen"
+    [ -n "$stderr_content" ] && echo -e "       stderr: $stderr_content"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+# 25.1 Clean fixture: all three surfaces use the NEW done path -> exit 0.
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  run_drift_probe "$fix" "clean fixture (all three surfaces NEW-path) -> exit 0 (AC 6)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.2 Active-residual: audit-round-1.md still references the OLD active path
+#      in prose -> exit non-zero with 'drift:' on stderr.
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/audit-round-1.md" <<MD
+Stale prose: was .simple-workflow/backlog/active/$FIXTURE_SLUG/$FIXTURE_TID/ before move.
+MD
+  run_drift_probe "$fix" "active-residual in audit -> exit nonzero + 'drift:' on stderr (AC 7)" "nonzero" "yes"
+  rm -rf "$fix"
+}
+
+# 25.3 product_backlog-residual: same as 25.2 but with the product_backlog form.
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/audit-round-1.md" <<MD
+Stale prose: was .simple-workflow/backlog/product_backlog/$FIXTURE_SLUG/$FIXTURE_TID/ before move.
+MD
+  run_drift_probe "$fix" "product_backlog-residual in audit -> exit nonzero + 'drift:' on stderr (Edge Case 1)" "nonzero" "yes"
+  rm -rf "$fix"
+}
+
+# 25.4 Fenced-only: OLD path appears only inside a triple-backtick fenced
+#      block -> exit 0 (Negative AC 1).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/audit-round-1.md" <<MD
+
+\`\`\`
+example: .simple-workflow/backlog/active/$FIXTURE_SLUG/$FIXTURE_TID/ was the OLD path
+\`\`\`
+MD
+  run_drift_probe "$fix" "fenced-only OLD-path occurrence -> exit 0 (Negative AC 1)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.5 Cross-ticket: audit references a DIFFERENT ticket's active path
+#      (different slug AND different ticket-id) -> exit 0 (Negative AC 2).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/audit-round-1.md" <<MD
+Cross-ref: see .simple-workflow/backlog/active/other-slug/002-other-ticket/ for context.
+MD
+  run_drift_probe "$fix" "cross-ticket residual -> exit 0 (Negative AC 2)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.6 Absent audit reports: clean fixture but no audit-round-*.md at all
+#      -> exit 0 (Negative AC 3).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  rm -f "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/audit-round-1.md"
+  run_drift_probe "$fix" "absent audit reports -> exit 0 (Negative AC 3)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.7 HTML-comment-only in autopilot-log.md: OLD path appears only inside
+#      <!-- ... --> -> exit 0 (Negative AC 4).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/autopilot-log.md" <<MD
+<!-- historical: previously at .simple-workflow/backlog/active/$FIXTURE_SLUG/$FIXTURE_TID/ -->
+MD
+  run_drift_probe "$fix" "HTML-comment-only residual in log -> exit 0 (Negative AC 4)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.8 Regex example inside a fenced block -> exit 0 (Edge Case 3).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/audit-round-1.md" <<MD
+
+\`\`\`regex
+\\.simple-workflow/backlog/active/
+\`\`\`
+MD
+  run_drift_probe "$fix" "regex example in fenced block -> exit 0 (Edge Case 3)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.9 Idempotent re-move: a clean fixture stays clean on the second probe
+#      (zero 'drift:' substring on stderr) -> exit 0 (Edge Case 2).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  # First probe — establish baseline.
+  bash "$DRIFT_PROBE" "$fix" "$FIXTURE_SLUG" "$FIXTURE_TID" 2>/dev/null >/dev/null || true
+  # Second probe — must remain clean.
+  run_drift_probe "$fix" "idempotent re-move (clean fixture, second probe) -> exit 0 + zero 'drift:' (Edge Case 2)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.10 Cross-ticket entry inside the brief-side autopilot-state.yaml is not
+#       flagged: another ticket's active path coexists with the moved ticket's
+#       new done path, scoped scan must ignore the cross-ticket entry.
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  cat >> "$fix/.simple-workflow/backlog/briefs/done/$FIXTURE_SLUG/autopilot-state.yaml" <<YML
+  - logical_id: $FIXTURE_SLUG-part-2
+    ticket_dir: .simple-workflow/backlog/active/$FIXTURE_SLUG/002-other-ticket/
+    status: pending
+YML
+  run_drift_probe "$fix" "cross-ticket entry in state file -> exit 0 (moved-ticket scope)" "0" "no"
+  rm -rf "$fix"
+}
+
+# 25.11 Direct value-shape check: clean fixture's autopilot-state.yaml carries
+#       the literal NEW-path with trailing slash for the moved ticket (AC 4).
+{
+  fix=$(mktemp -d)
+  build_clean_fixture "$fix"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  state_file="$fix/.simple-workflow/backlog/briefs/done/$FIXTURE_SLUG/autopilot-state.yaml"
+  expected_value=".simple-workflow/backlog/done/$FIXTURE_SLUG/$FIXTURE_TID/"
+  if grep -qF "ticket_dir: $expected_value" "$state_file"; then
+    echo -e "  ${GREEN}PASS${NC} state file's ticket_dir uses NEW done path with trailing slash (AC 4)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} state file's ticket_dir does NOT use NEW done path with trailing slash (AC 4)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+  rm -rf "$fix"
+}
+
+# 25.12 ship/SKILL.md documents the post-move path-rewrite contract for the
+#       three surfaces. The skill is the documented rewriter; this assertion
+#       guards against the contract clause being silently removed.
+assert_file_contains \
+  "ship/SKILL.md Phase 1 step 5d documents post-move path rewrite" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "Post-move path rewrite"
+
+assert_file_contains \
+  "ship/SKILL.md step 5d names audit-round-*.md as a rewrite surface" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "audit-round-\*\.md"
+
+assert_file_contains \
+  "ship/SKILL.md step 5d names autopilot-state.yaml as a rewrite surface" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "autopilot-state\.yaml"
+
+assert_file_contains \
+  "ship/SKILL.md step 5d names autopilot-log.md as a rewrite surface" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "autopilot-log\.md"
+
+assert_file_contains \
+  "ship/SKILL.md step 5d documents fenced/HTML-comment carve-out" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "fenced code blocks"
+
+assert_file_contains \
+  "ship/SKILL.md step 5d documents idempotent property" \
+  "$REPO_DIR/skills/ship/SKILL.md" \
+  "[Ii]dempotent"
+
+echo ""
+
 print_summary
