@@ -366,8 +366,59 @@ Every `autopilot-log.md` (overall or per-ticket) includes the following sections
 - `## Warnings` (only on `completed-with-warnings`): replay every ticket's `manual_bash_fallbacks[]` entries verbatim (`timestamp | command | reason | exit_code | destructive`). Each entry MUST appear; silent drops are a contract violation. The structured list is the single source of truth — do NOT derive the Warnings section from `invocation_method` flags alone.
 - `## Human Overrides`: step-5 `human_override` rows `| {gate} | {expected_action} | {actual_action} | human_override |`. **Exclude `kb_override` rows** from this section — they go to `## KB Overrides` instead. None → "No human overrides detected."
 - `## KB Overrides`: step-5 `kb_override` rows `| {gate} | {expected_action} | {actual_action} | kb_override |` (gates where the value differs from the risk_tolerance default AND a `# kb-suggested` comment is attached in the policy file). None → "No KB overrides detected."
-- `## Decisions Made` table: parse `[AUTOPILOT-POLICY]` lines; "No policy decisions were triggered" if none. Include step-5 overrides — **distinguish `human_override` and `kb_override` type** via the final column so a reviewer can tell which differences came from the user and which came from the KB suggestion layer.
+- `## Decisions Made` table: parse `[AUTOPILOT-POLICY]` lines and emit one row per gate following the **gate-decision canonical format** (see below); "No policy decisions were triggered" if none. Include step-5 overrides — **distinguish `human_override` and `kb_override` type** via the free-form notes column so a reviewer can tell which differences came from the user and which came from the KB suggestion layer.
+- `## Unreached Gates` (only when at least one gate was not considered before the run terminated): see **Unreached gate enumeration discipline** below. The literal heading `## Unreached Gates` MUST NOT appear when every gate was evaluated.
 - `## Stop Reason` (only on stopped/failed).
+
+### Gate-decision canonical format
+
+The autopilot canonical gate set is `scout`, `plan`, `build`, `verify`, `retro` (the five pipeline gates). Policy gates emitted by `/scout`, `/impl`, `/ship` (e.g. `ac_eval_fail`, `ship_review_gate`, `ticket_quality_fail`, `unexpected_error`) are also rendered using the same canonical line and table-row shapes — the regexes below admit any `[a-z][a-z0-9_-]*` gate name.
+
+**`gate-decision-line` (stdout, one line per decision)** — emitted as autopilot decides each gate:
+
+```
+[AUTOPILOT-POLICY] gate=<name> action=<allow|deny|skip> reason=<evaluated|not_reached|condition_unmet|dependency_skipped>
+```
+
+The line MUST match regex `^\[AUTOPILOT-POLICY\] gate=[a-z][a-z0-9_-]* action=(allow|deny|skip) reason=(evaluated|not_reached|condition_unmet|dependency_skipped)$` exactly. No trailing whitespace, no extra fields. The line is also written verbatim into `autopilot-log.md` (non-fenced lines only — illustrative `[AUTOPILOT-POLICY]` lines inside triple-backtick fences or HTML comments are documentation, not contract events, and are ignored by readers).
+
+**`decisions-table-row` (autopilot-log.md, one row per gate)** — emitted under the `## Decisions Made` heading:
+
+```
+| <gate> | <action> | <reason> | <free-form notes> |
+```
+
+Each row MUST match regex `^\| [a-z][a-z0-9_-]* \| (allow|deny|skip) \| (evaluated|not_reached|condition_unmet|dependency_skipped) \| .+ \|$` exactly. The fourth column is free-form notes (e.g., `human_override`, `kb_override`, `eval_status=PASS`, the cited policy path) and MUST be non-empty.
+
+**Reason semantics** (the only four canonical values):
+
+| reason | When to emit |
+|---|---|
+| `evaluated` | The gate's conditions were considered and the decision (`allow` / `deny` / `skip`) follows from that evaluation. This is the default outcome for any gate that runs. |
+| `not_reached` | The run terminated (stop, fatal failure, exhausted iteration budget, etc.) before this gate was considered. The gate was never evaluated against its policy. |
+| `condition_unmet` | The gate's preconditions were not satisfied (e.g., `retro` requires the upstream `build` to have emitted `action=allow`). The action will always be `skip`. |
+| `dependency_skipped` | An upstream gate emitted `action=deny` and this gate is skipped as a cascade. The action will always be `skip`. |
+
+`reason=evaluated` is paired with any of the three actions (`allow` / `deny` / `skip`). The other three reasons (`not_reached`, `condition_unmet`, `dependency_skipped`) are paired with `action=skip` only — they describe a non-evaluation, not a deny.
+
+### Unreached gate enumeration discipline
+
+When the run terminates **before considering** one or more canonical gates (e.g., a fatal failure during `build` short-circuits `verify` and `retro`, or `scout` exits with `ERROR:` so `plan`/`build`/`verify`/`retro` are never considered), `autopilot-log.md` MUST contain an `## Unreached Gates` section enumerating each unreached gate on its own line:
+
+```
+## Unreached Gates
+
+- plan: not_reached
+- build: not_reached
+- verify: not_reached
+- retro: not_reached
+```
+
+Each enumerated line MUST match regex `^- (scout|plan|build|verify|retro): not_reached$`. The number of enumerated lines equals the count of canonical gates that have **zero** corresponding `decisions-table-row` in the `## Decisions Made` table. When every canonical gate has a row in `## Decisions Made`, the literal heading `## Unreached Gates` MUST NOT appear anywhere in the log body — its presence-without-need is a contract violation flagged by `tests/test-skill-contracts.sh`.
+
+**Edge — empty decisions table**: if `## Decisions Made` contains zero rows (e.g., the run aborted in pre-flight before any gate was decided), the `## Unreached Gates` section enumerates **all five** canonical gates `scout`, `plan`, `build`, `verify`, `retro` each on a separate line followed by `: not_reached`.
+
+**Relationship to runtime gate-decision lines**: an unreached gate has no `[AUTOPILOT-POLICY]` line on stdout (it was never decided). The `## Unreached Gates` section is the only mechanism that records its non-evaluation. Tooling (`/tune`, `tune-analyzer`) reads both the `## Decisions Made` table and the `## Unreached Gates` enumeration to compute consecutive-`not_reached` counts per gate across runs.
 
 **`completed-with-warnings`**: all tickets completed AND at least one ticket has a non-empty `manual_bash_fallbacks[]` in its state (equivalently: at least one step with `invocation_method == manual-bash`, which is derived from the structured list). Log fallbacks in `## Warnings` by replaying every `manual_bash_fallbacks[]` entry — the structured list is authoritative, the per-step flag is derived.
 

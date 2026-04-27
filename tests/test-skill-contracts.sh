@@ -2491,5 +2491,261 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category AE: Autopilot gate-logging canonical format (Plan 6 part-6)
+# Diff: New category. The autopilot canonical gate-decision lines and the
+#        `## Decisions Made` table rows in `autopilot-log.md` follow a fixed
+#        regex-validated shape with four reason values: evaluated, not_reached,
+#        condition_unmet, dependency_skipped. This category validates a fixture
+#        file under tests/fixtures/ — when the fixture is canonical, prints the
+#        literal stdout line `gate-logging: canonical`. When the fixture
+#        contains a `## Decisions Made` row whose third column is not in the
+#        canonical reason set, emits a stderr line matching
+#        `^gate-logging: invalid line at .+:[0-9]+$` and the assertion fails.
+#        HTML comments and triple-backtick fenced blocks are skipped (false-
+#        positive guard for documentation examples).
+# =============================================================================
+echo "--- Cat AE: Autopilot gate-logging canonical format ---"
+
+AE_FIXTURE="$REPO_DIR/tests/fixtures/autopilot-log-canonical.md"
+
+# ae_scan_decisions_table — awk scanner that:
+#   1. Tracks fenced-code state (toggled by ^``` ... ^```) and HTML-comment
+#      state (toggled by <!-- and --> spans, including multi-line).
+#   2. Inside the body that follows the literal heading `## Decisions Made`
+#      and before the next `^## ` heading, validates every line that
+#      "looks like" a table row (starts with `| ` and is not a header
+#      separator `|---|`).
+#   3. Emits one of:
+#        OK <reason>           — for canonical rows, where <reason> is the
+#                                third column value.
+#        INVALID <line> <col3> — for table rows whose third column is not in
+#                                the canonical reason set.
+#      Non-row lines and lines inside fences / HTML comments are ignored.
+ae_scan_decisions_table() {
+  local file="$1"
+  awk '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    BEGIN {
+      in_fence = 0
+      in_cmt = 0
+      in_decisions = 0
+    }
+    {
+      line = $0
+
+      # Strip / track HTML comments. We process the line in pieces so a
+      # single-line <!-- ... --> is removed entirely before further checks.
+      stripped = ""
+      rest = line
+      while (length(rest) > 0) {
+        if (in_cmt == 0) {
+          idx = index(rest, "<!--")
+          if (idx == 0) { stripped = stripped rest; rest = ""; break }
+          stripped = stripped substr(rest, 1, idx - 1)
+          rest = substr(rest, idx + 4)
+          in_cmt = 1
+        } else {
+          idx = index(rest, "-->")
+          if (idx == 0) { rest = ""; break }
+          rest = substr(rest, idx + 3)
+          in_cmt = 0
+        }
+      }
+      effective = stripped
+
+      # Track fenced code blocks (toggle on lines that start with ```).
+      if (effective ~ /^```/) {
+        in_fence = !in_fence
+        next
+      }
+      if (in_fence) { next }
+
+      # Detect entry/exit of the `## Decisions Made` section.
+      if (effective ~ /^## Decisions Made[[:space:]]*$/) {
+        in_decisions = 1
+        next
+      }
+      if (effective ~ /^## /) {
+        in_decisions = 0
+      }
+
+      if (!in_decisions) { next }
+
+      # Skip blank lines and non-row lines inside the section.
+      if (effective ~ /^[[:space:]]*$/) { next }
+      # Skip the table header row `| gate | action | reason | notes |`.
+      if (effective ~ /^\|[[:space:]]*gate[[:space:]]*\|/) { next }
+      # Skip header separator `|---|---|---|---|`.
+      if (effective ~ /^\|[[:space:]]*-+/) { next }
+      # Only validate lines that look like table rows.
+      if (effective !~ /^\| /) { next }
+
+      # Split row into columns by `|`. Expect: "", col1, col2, col3, col4, "" (6 fields).
+      n = split(effective, parts, "|")
+      if (n < 6) {
+        printf "INVALID line=%d col3=<malformed>\n", NR
+        next
+      }
+      gate = trim(parts[2])
+      action = trim(parts[3])
+      reason = trim(parts[4])
+
+      # Validate against the canonical regexes.
+      gate_ok = (gate ~ /^[a-z][a-z0-9_-]*$/)
+      action_ok = (action == "allow" || action == "deny" || action == "skip")
+      reason_ok = (reason == "evaluated" || reason == "not_reached" \
+                   || reason == "condition_unmet" || reason == "dependency_skipped")
+
+      if (!gate_ok || !action_ok || !reason_ok) {
+        printf "INVALID line=%d col3=%s\n", NR, reason
+      } else {
+        printf "OK %s\n", reason
+      }
+    }
+  ' "$file"
+}
+
+# AE-1: fixture file exists.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$AE_FIXTURE" ]; then
+  echo -e "  ${GREEN}PASS${NC} AE-1: gate-logging fixture present at tests/fixtures/autopilot-log-canonical.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AE-1: gate-logging fixture missing at $AE_FIXTURE"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AE-2: scan the fixture; if canonical (no INVALID and >=1 occurrence of each
+#       canonical reason), emit literal stdout line `gate-logging: canonical`.
+#       If any INVALID row is detected, emit a stderr line matching
+#       `^gate-logging: invalid line at <file>:<lineno>$` and FAIL.
+if [ -f "$AE_FIXTURE" ]; then
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  ae_scan=$(ae_scan_decisions_table "$AE_FIXTURE")
+  ae_invalid_lines=$(printf '%s\n' "$ae_scan" | grep '^INVALID' || true)
+  ae_seen_evaluated=$(printf '%s\n' "$ae_scan" | grep -c '^OK evaluated$' || true)
+  ae_seen_not_reached=$(printf '%s\n' "$ae_scan" | grep -c '^OK not_reached$' || true)
+  ae_seen_condition_unmet=$(printf '%s\n' "$ae_scan" | grep -c '^OK condition_unmet$' || true)
+  ae_seen_dependency_skipped=$(printf '%s\n' "$ae_scan" | grep -c '^OK dependency_skipped$' || true)
+
+  if [ -n "$ae_invalid_lines" ]; then
+    # Emit one stderr line per invalid row, matching the AC 11 regex.
+    while IFS= read -r ae_inv; do
+      ae_lineno=$(printf '%s' "$ae_inv" | sed -E 's/^INVALID line=([0-9]+).*/\1/')
+      printf 'gate-logging: invalid line at %s:%s\n' "$AE_FIXTURE" "$ae_lineno" >&2
+    done <<< "$ae_invalid_lines"
+    echo -e "  ${RED}FAIL${NC} AE-2: gate-logging fixture contains non-canonical reason values (see stderr)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  elif [ "$ae_seen_evaluated" -ge 1 ] \
+    && [ "$ae_seen_not_reached" -ge 1 ] \
+    && [ "$ae_seen_condition_unmet" -ge 1 ] \
+    && [ "$ae_seen_dependency_skipped" -ge 1 ]; then
+    echo "gate-logging: canonical"
+    echo -e "  ${GREEN}PASS${NC} AE-2: gate-logging fixture covers all four canonical reason values"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AE-2: gate-logging fixture missing one or more canonical reason values (evaluated=$ae_seen_evaluated, not_reached=$ae_seen_not_reached, condition_unmet=$ae_seen_condition_unmet, dependency_skipped=$ae_seen_dependency_skipped)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+fi
+
+# AE-3 (test-the-test): the same scanner, applied to the invalid-reason
+# fixture, MUST produce at least one INVALID record. Guards against scanner
+# regressions that would silently let through non-canonical reasons.
+AE_INVALID_FIXTURE="$REPO_DIR/tests/fixtures/autopilot-log-invalid-reason.md"
+if [ -f "$AE_INVALID_FIXTURE" ]; then
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  ae_inv_scan=$(ae_scan_decisions_table "$AE_INVALID_FIXTURE")
+  if printf '%s\n' "$ae_inv_scan" | grep -q '^INVALID '; then
+    echo -e "  ${GREEN}PASS${NC} AE-3 (test-the-test): scanner detects non-canonical reason in tests/fixtures/autopilot-log-invalid-reason.md"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AE-3 (test-the-test): scanner did NOT detect non-canonical reason — AE-2 detector regressed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+fi
+
+# AE-4 (negative AC 1, false-positive guard): a fixture containing an HTML
+# comment with `reason=foo` MUST NOT trigger an INVALID record (HTML-comment-
+# scoped illegal tokens are documentation, not contract events).
+ae_neg1_tmp=$(mktemp -t ae_neg1.XXXXXX.md) || ae_neg1_tmp="/tmp/ae_neg1_$$.md"
+cat > "$ae_neg1_tmp" <<'AE_NEG1_EOF'
+## Decisions Made
+
+| gate | action | reason | notes |
+|------|--------|--------|-------|
+| scout | allow | evaluated | ok row |
+
+<!-- illustrative comment: reason=foo would be rejected if this comment
+     were not stripped by the scanner. -->
+AE_NEG1_EOF
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ae_neg1_scan=$(ae_scan_decisions_table "$ae_neg1_tmp")
+if printf '%s\n' "$ae_neg1_scan" | grep -q '^INVALID '; then
+  echo -e "  ${RED}FAIL${NC} AE-4 (negative AC 1): scanner false-positived on an HTML-comment-scoped reason=foo"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} AE-4 (negative AC 1): scanner ignores HTML-comment-scoped reason=foo"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+rm -f "$ae_neg1_tmp"
+
+# AE-5 (negative AC 2, false-positive guard): a fixture containing a triple-
+# backtick fenced code block whose body contains the literal substring
+# `reason=foo` MUST NOT trigger an INVALID record (fenced illustrative
+# examples are documentation).
+ae_neg2_tmp=$(mktemp -t ae_neg2.XXXXXX.md) || ae_neg2_tmp="/tmp/ae_neg2_$$.md"
+cat > "$ae_neg2_tmp" <<'AE_NEG2_EOF'
+## Decisions Made
+
+| gate | action | reason | notes |
+|------|--------|--------|-------|
+| scout | allow | evaluated | ok row |
+
+```text
+| illustrative | skip | reason=foo | this is in a fence |
+```
+AE_NEG2_EOF
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ae_neg2_scan=$(ae_scan_decisions_table "$ae_neg2_tmp")
+if printf '%s\n' "$ae_neg2_scan" | grep -q '^INVALID '; then
+  echo -e "  ${RED}FAIL${NC} AE-5 (negative AC 2): scanner false-positived on a fenced-block reason=foo"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} AE-5 (negative AC 2): scanner ignores fenced-block reason=foo"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+rm -f "$ae_neg2_tmp"
+
+# AE-6: SKILL.md documents the canonical gate-decision-line shape (the
+# four reason values must all appear together in the autopilot SKILL.md).
+AE_AUTOPILOT_SKILL="$REPO_DIR/skills/autopilot/SKILL.md"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'evaluated.*not_reached.*condition_unmet.*dependency_skipped|not_reached.*condition_unmet.*dependency_skipped.*evaluated' "$AE_AUTOPILOT_SKILL" \
+   && grep -q '## Unreached Gates' "$AE_AUTOPILOT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} AE-6: skills/autopilot/SKILL.md documents the four canonical reasons + Unreached Gates section"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AE-6: skills/autopilot/SKILL.md missing canonical reasons or Unreached Gates documentation"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AE-7: tune-analyzer.md documents the tune-candidate-line format and the
+# >=3 consecutive-not_reached threshold.
+AE_TUNE_AGENT="$REPO_DIR/agents/tune-analyzer.md"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'tune-candidate-line' "$AE_TUNE_AGENT" \
+   && grep -qE '>=[[:space:]]*3' "$AE_TUNE_AGENT" \
+   && grep -qE 'candidate: gate=' "$AE_TUNE_AGENT"; then
+  echo -e "  ${GREEN}PASS${NC} AE-7: agents/tune-analyzer.md documents tune-candidate-line + >=3 consecutive threshold"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AE-7: agents/tune-analyzer.md missing tune-candidate-line or >=3 threshold documentation"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary
