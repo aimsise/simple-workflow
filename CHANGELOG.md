@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.5] — 2026-04-28
+
+### Changed
+- `## Quick Start` in `README.md` trimmed to the install commands only. The previous section additionally rendered a six-line pure-manual flow preview, a forward-pointer sentence to `## Three Ways to Run`, and a Note about Copilot CLI session-lifecycle hooks. Every one of those was either duplicated by the immediately-following `## Three Ways to Run` comparison table (the manual flow is row 3 of that table) or made redundant by section adjacency (the forward-pointer pointed at the next heading). The trim makes the install command the only artifact in `## Quick Start`, so the reader's eye lands on the `## Three Ways to Run` decision matrix — where `/brief <idea>` (full automation) is row 1 — within a few lines of installation. README length: 266 → 249 lines.
+
+### Removed
+- `Contributors` and `Discussions` shields.io badges from the README header. The Contributors badge added no real signal at the project's current scale; the Discussions badge linked to a tab that is not the canonical support channel for end users.
+- `GitHub Stars` shields.io badge from the README header. Stars are visible on the GitHub repository chrome itself and do not need a duplicate badge.
+
+The README header now displays exactly three badges — **CI** (build status), **Release** (latest version), and **License** (Apache-2.0) — covering the only signals that are not already visible on the GitHub repo chrome.
+
+### Moved
+- The Note about Copilot CLI session-lifecycle hooks (`pre-compact-save`, `session-stop-log`) and the recommendation to use `/catchup` after compaction. Previously a blockquote inside `## Quick Start`, now a bullet under `## Limitations` next to the IDE-extensions compatibility caveat. Same content, better section fit.
+
 ## [6.0.4] — 2026-04-28
 
 ### Added

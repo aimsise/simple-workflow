@@ -3,9 +3,6 @@
 [![CI](https://github.com/aimsise/simple-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/aimsise/simple-workflow/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub Stars](https://img.shields.io/github/stars/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/stargazers)
-[![Contributors](https://img.shields.io/github/contributors/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/graphs/contributors)
-[![Discussions](https://img.shields.io/github/discussions/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/discussions)
 
 A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
 
@@ -24,21 +21,6 @@ simple-workflow runs entirely against your local filesystem and your existing Gi
 claude plugin install aimsise/simple-workflow   # Claude Code
 copilot plugin install aimsise/simple-workflow   # GitHub Copilot CLI
 ```
-
-Once installed, all slash commands work the same on both platforms. A typical pure-manual flow looks like:
-
-```
-/investigate <topic>                                                                  # research the codebase
-/create-ticket <description>                                                          # produce a structured ticket
-/scout .simple-workflow/backlog/product_backlog/001-migrate-to-session-auth/ticket.md # research + plan
-/impl                                                                                 # Generator-Evaluator implementation loop
-/audit                                                                                # multi-agent quality + security review
-/ship                                                                                 # commit + PR (optionally squash-merge)
-```
-
-For a fully automated pipeline, replace the whole sequence with `/brief <idea>` — see [Three Ways to Run](#three-ways-to-run).
-
-> **Note**: Session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire on Copilot CLI. Context recovery via `/catchup` after compaction works best on Claude Code.
 
 ## Three Ways to Run
 
@@ -243,6 +225,7 @@ Anything not explicitly un-ignored stays gitignored, so research notes, plans, e
 ## Limitations
 
 - Designed for use with Claude Code CLI and GitHub Copilot CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
+- On GitHub Copilot CLI, session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire. Context recovery via `/catchup` after compaction works best on Claude Code.
 - The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
