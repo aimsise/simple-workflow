@@ -62,9 +62,18 @@ Do NOT include self-assessment, subjective comments, or quality judgments in you
 
 ## Investigation File Reading Constraint
 
-`plan.md` is the formal contract; `investigation.md` is exploration notes that the orchestrator may pass as background context. To conserve context tokens, the implementer MUST follow these rules when an `investigation.md` path is provided:
+`plan.md` is the formal contract; `investigation.md` is exploration notes that the orchestrator may pass as background context. `investigation.md` files often run to 20+KB, so blindly loading the whole file wastes the implementer's context budget. To conserve context tokens, the implementer MUST follow these rules when an `investigation.md` path is provided:
 
-- Consult `investigation.md` ONLY for the specific sections that `plan.md` explicitly cites by name (e.g., a heading, line range, or quoted excerpt referenced in the plan). Do not read other parts of `investigation.md`.
-- When reading those cited sections, ALWAYS use `Read` with explicit `offset` and `limit` parameters scoped to the cited range (locate the heading first via `Grep -n` if needed).
-- A full-file `Read` of `investigation.md` (i.e. a `Read` call targeting `investigation.md` without both `offset` and `limit`) is FORBIDDEN. If the plan does not cite any specific section of `investigation.md`, do not read `investigation.md` at all — rely on `plan.md` alone.
+- **When `plan.md` cites specific sections of `investigation.md`** (e.g., a heading name, line range, or quoted excerpt), restrict reads to exactly those cited locations. Do not pull in other parts of the file. Use `Grep -n` to locate the heading first if needed, then `Read` with `offset` and `limit` parameters scoped to the cited range.
+- **When `plan.md` references `investigation.md` only by path** (no specific section citation), limited consultation is still allowed — many existing plans pre-date the citation convention. Prefer `Grep -n` against `investigation.md` for the keywords most relevant to the current task, then `Read` only the matching ranges with `offset` and `limit`. Do NOT walk the file end-to-end.
+- **Unbounded full-file `Read` of `investigation.md` is FORBIDDEN** in every case. A `Read` call targeting `investigation.md` MUST always pass both `offset` and `limit`, and the requested window MUST be scoped to the part actually needed for the current step. Reading the entire file via a single un-scoped `Read`, or via successive `Read` calls that together cover the whole file, is not permitted.
 - This constraint applies only to `investigation.md`. It does not restrict reads of `plan.md`, source files, or any other inputs.
+
+### Canonical citation form for `plan.md`
+
+Upstream planners SHOULD cite `investigation.md` in a form the implementer can resolve to a bounded range without reading the whole file. Either of the following is acceptable:
+
+- Heading citation: `See investigation.md § "Database schema constraints"` — implementer runs `Grep -n '^## Database schema constraints' investigation.md` and reads from that line for ~40 lines.
+- Line-range citation: `See investigation.md L120-L168 (auth middleware trace)` — implementer issues `Read(investigation.md, offset=120, limit=49)`.
+
+Plans that follow this form let the implementer satisfy the first rule above directly; plans that omit it fall back to the second rule (keyword-scoped Grep + bounded Read).

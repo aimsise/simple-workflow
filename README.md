@@ -226,7 +226,7 @@ Anything not explicitly un-ignored stays gitignored, so research notes, plans, e
 
 ### Long idle gaps: start a new session before resuming
 
-Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a session sits idle past that window — for example, an overnight pause between an `/impl` round and the closing `/tune` summary turn — the next turn re-warms the cache from scratch and can rewrite **hundreds of thousands of cache_creation tokens** in a single turn (we have observed ~252K tokens, ~46% of a session's total cache_creation, attributable to one such re-warm).
+Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a session sits idle past that window — for example, an overnight pause between an `/impl` round and the closing `/tune` summary turn — the next turn re-warms the cache from scratch and can rewrite **hundreds of thousands of cache_creation tokens** in a single turn, which can account for a substantial share of the session's total cache_creation.
 
 **Recommendation**: if a simple-workflow session has been idle for more than ~1 hour, exit the session and start a fresh one before running `/tune` (or any other follow-up). Phase-terminating skills emit a `[SW-CHECKPOINT]` block precisely so that `/clear` or session exit is safe, and `/catchup` will reconstruct the in-progress phase from `phase-state.yaml` on the next session. This is a property of Claude Code's cache layer rather than a plugin bug, so it cannot be patched in plugin code.
 
