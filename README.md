@@ -222,6 +222,14 @@ Model selection is automatic based on ticket size — orchestrator skills (`/imp
 
 Anything not explicitly un-ignored stays gitignored, so research notes, plans, eval logs, and the knowledge base remain private. Concurrent ticket creation by multiple developers will produce git conflicts on a shared counter — that is the expected trade-off. simple-workflow's behavior does not depend on whether files are tracked; these patterns are purely a per-team policy decision.
 
+## Operational Notes
+
+### Long idle gaps: start a new session before resuming
+
+Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a session sits idle past that window — for example, an overnight pause between an `/impl` round and the closing `/tune` summary turn — the next turn re-warms the cache from scratch and can rewrite **hundreds of thousands of cache_creation tokens** in a single turn (we have observed ~252K tokens, ~46% of a session's total cache_creation, attributable to one such re-warm).
+
+**Recommendation**: if a simple-workflow session has been idle for more than ~1 hour, exit the session and start a fresh one before running `/tune` (or any other follow-up). Phase-terminating skills emit a `[SW-CHECKPOINT]` block precisely so that `/clear` or session exit is safe, and `/catchup` will reconstruct the in-progress phase from `phase-state.yaml` on the next session. This is a property of Claude Code's cache layer rather than a plugin bug, so it cannot be patched in plugin code.
+
 ## Limitations
 
 - Designed for use with Claude Code CLI and GitHub Copilot CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.

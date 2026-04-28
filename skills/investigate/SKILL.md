@@ -6,6 +6,7 @@ description: >-
   understanding architecture.
 context: fork
 agent: researcher
+model: sonnet
 argument-hint: "<topic or question to investigate>"
 ---
 

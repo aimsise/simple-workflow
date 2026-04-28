@@ -59,3 +59,12 @@ Do NOT include self-assessment, subjective comments, or quality judgments in you
 **Test**: pass | fail (final status, with pass/fail counts if available)
 **Next Steps**: [recommended actions]
 ```
+
+## Investigation File Reading Constraint
+
+`plan.md` is the formal contract; `investigation.md` is exploration notes that the orchestrator may pass as background context. To conserve context tokens, the implementer MUST follow these rules when an `investigation.md` path is provided:
+
+- Consult `investigation.md` ONLY for the specific sections that `plan.md` explicitly cites by name (e.g., a heading, line range, or quoted excerpt referenced in the plan). Do not read other parts of `investigation.md`.
+- When reading those cited sections, ALWAYS use `Read` with explicit `offset` and `limit` parameters scoped to the cited range (locate the heading first via `Grep -n` if needed).
+- A full-file `Read` of `investigation.md` (i.e. a `Read` call targeting `investigation.md` without both `offset` and `limit`) is FORBIDDEN. If the plan does not cite any specific section of `investigation.md`, do not read `investigation.md` at all — rely on `plan.md` alone.
+- This constraint applies only to `investigation.md`. It does not restrict reads of `plan.md`, source files, or any other inputs.
