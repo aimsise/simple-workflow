@@ -1,18 +1,13 @@
 # simple-workflow
 
 [![CI](https://github.com/aimsise/simple-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/aimsise/simple-workflow/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub Stars](https://img.shields.io/github/stars/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/stargazers)
+[![Contributors](https://img.shields.io/github/contributors/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/graphs/contributors)
+[![Discussions](https://img.shields.io/github/discussions/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/discussions)
 
 A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
-
-## At a Glance
-
-simple-workflow turns a Claude Code / Copilot CLI session into a disciplined development pipeline: investigate, plan, implement, audit, and ship — each phase delegated to a purpose-built sub-agent so the orchestrator's context stays small and decisions stay sharp. Tickets are filesystem-native (`.simple-workflow/backlog/`), so state is greppable, history is preserved as files, and recovery after `/clear` or compaction is a single `/catchup` call.
-
-- **Generator-Evaluator firewall**: code authors and code judges run in separate contexts with an asymmetric information firewall, so quality is enforced by structure rather than by prompt instructions
-- **Context Conservation**: the context window is treated as a consumable resource — sub-agents return < 500-token summaries, artifacts live on disk, and `/catchup` reconstructs state from `phase-state.yaml` after `/clear` or compaction
-- **Cross-session learning**: `/tune` distills evaluation logs into `.simple-workflow/kb/` patterns that future `/impl` runs inject into the Generator's prompt, so the system gets better at your project the more tickets it completes
 
 ## Prerequisites
 
@@ -41,7 +36,7 @@ Once installed, all slash commands work the same on both platforms. A typical pu
 /ship                                                                                 # commit + PR (optionally squash-merge)
 ```
 
-For a fully automated pipeline, replace the whole sequence with `/brief <idea>` — see [Three Ways to Run](#three-ways-to-run). After any compaction or `/clear`, run `/catchup` to recover context from `phase-state.yaml` in a single step.
+For a fully automated pipeline, replace the whole sequence with `/brief <idea>` — see [Three Ways to Run](#three-ways-to-run).
 
 > **Note**: Session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire on Copilot CLI. Context recovery via `/catchup` after compaction works best on Claude Code.
 
@@ -63,15 +58,84 @@ For a fully automated pipeline, replace the whole sequence with `/brief <idea>` 
 
 The autopilot-policy evolves over time — `/tune` extracts decision patterns from execution logs, and future `/brief` runs use these patterns to suggest more accurate defaults.
 
+## How it Works
+
+Canonical pipeline — one ticket from idea to PR:
+
+```
+[idea]
+  │
+  ▼
+/brief                                                      (entry point)
+  ├─ researcher        codebase investigation
+  ├─ planner           brief drafting
+  └─ decomposer        large-scope ticket split
+  │   produces: brief.md, autopilot-policy.yaml
+  ▼
+/create-ticket                  🔁 retry until 5 quality gates pass
+  ├─ researcher        Phase 1: scope investigation
+  ├─ planner           Phase 3: ticket drafting
+  ├─ decomposer        large-scope split
+  └─ ticket-evaluator  Phase 4: quality gate (loop driver)
+  │   produces: ticket.md
+  ▼
+/scout                          (chains two skills sequentially)
+  ├─ /investigate  →  researcher
+  └─ /plan2doc     →  planner
+  │   produces: investigation.md, plan.md
+  ▼
+/impl                           🔁 max 3 rounds; FAIL → implementer
+  ├─ implementer       Generator (writes code)
+  ├─ ac-evaluator      acceptance-criteria verifier (loop driver)
+  └─ /audit (chained):
+       ├─ code-reviewer       quality review
+       └─ security-scanner    security audit       (loop driver)
+  │   produces: eval-round-N.md, quality-round-N.md, security-scan-N.md
+  ▼
+/ship                           (no sub-agents)
+  │   commits, opens PR, moves ticket → done/, chains /tune
+  ▼
+[PR opened]
+  │
+  ▼  (post-completion, automatic)
+/tune
+  └─ tune-analyzer     pattern extraction → .simple-workflow/kb/
+                       injected into next /impl's implementer prompt
+```
+
+Reading guide:
+
+- `├─` / `└─`: sub-agents that the skill dispatches
+- `🔁`: an internal verification loop, with the loop driver named on the right
+- `/X (chained):`: the skill calls another skill (its sub-agents listed below it)
+- `produces:`: artifacts written to the ticket directory
+
+Out-of-pipeline skills:
+
+```
+/investigate  →  researcher                  (research-only, standalone)
+/plan2doc     →  planner                     (planning-only, given a ticket)
+/test         →  test-writer                 (test design + execution)
+/refactor     →  planner, code-reviewer      (refactoring with backup branch)
+/catchup      →  researcher                  (state recovery after /clear)
+/autopilot    →  drives the canonical pipeline end-to-end from a brief
+```
+
 ## Why simple-workflow?
 
-Claude Code is powerful, but its context window is finite — and fragile. Long-running agent sessions face four structural threats:
+simple-workflow stands on three pillars:
+
+- **Generator-Evaluator firewall**: code authors and code judges run in separate contexts with an asymmetric information firewall, so quality is enforced by structure rather than by prompt instructions
+- **Context Conservation**: the context window is treated as a consumable resource — sub-agents return < 500-token summaries, artifacts live on disk, and state survives compaction
+- **Cross-session learning**: `/tune` distills evaluation logs into `.simple-workflow/kb/` patterns that future `/impl` runs inject into the Generator's prompt, so the system gets better at your project the more tickets it completes
+
+These pillars exist because Claude Code is powerful, but its context window is finite — and fragile. Long-running agent sessions face four structural threats:
 
 | Threat | What happens | Structural countermeasure |
 |--------|-------------|--------------------------|
 | **Loss** | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact hooks, `/catchup` recovery, `/tune` cross-session learning |
 | **Exhaustion** | The window fills up, degrading instruction-following and response quality | Bounded sub-agent returns (< 500 tokens), phase-aware context release |
-| **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall (Generator -> Evaluator blocked), ticket directory confinement |
+| **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall + ticket directory confinement (see [Harness Engineering](#harness-engineering)) |
 | **Bloat** | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
 
 simple-workflow addresses each threat with architectural constraints that hold regardless of model behavior — not prompt-level instructions that the model might rationalize away. The four sections below describe each pillar: **Context Conservation Protocol** (Loss + Exhaustion), **Harness Engineering** (Contamination + Bloat), the **Knowledge Base** (Loss across sessions), and **Ticket Management** (Contamination across tickets).
@@ -86,7 +150,9 @@ Treats the context window as a consumable resource and systematically conserves 
 
 ### Harness Engineering
 
-A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 3 rounds. The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry. Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. Orchestrator skills enforce sub-agent dispatch via the `Skill` tool with MUST/NEVER/Fail language, making proper context isolation a structural contract rather than a suggestion. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
+A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 3 rounds. The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
+
+Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. Orchestrator skills enforce sub-agent dispatch via the `Skill` tool with MUST/NEVER/Fail language, making proper context isolation a structural contract rather than a suggestion. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
 
 ### Knowledge Base (Cross-Session Learning)
 

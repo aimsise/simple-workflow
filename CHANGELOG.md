@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.4] — 2026-04-28
+
+### Added
+- `## How it Works` section in `README.md`: a fenced ASCII tree that names every skill in the canonical pipeline and the sub-agents each one dispatches, sourced directly from `skills/*/SKILL.md` rather than from prose. The tree shows `/brief`, `/create-ticket`, `/scout`, `/impl` (with its chained `/audit`), `/ship`, and `/tune` in dispatch order, marks the two real verification loops with `🔁` (the `ticket-evaluator` quality-gate retry inside `/create-ticket`, and the `ac-evaluator` / `code-reviewer` / `security-scanner` retry-to-`implementer` cycle inside `/impl`), and lists the artifacts each phase writes (`brief.md`, `ticket.md`, `investigation.md`, `plan.md`, `eval-round-N.md`, `quality-round-N.md`, `security-scan-N.md`). A `Reading guide` legend explains the `├─` / `└─` / `🔁` / `(chained)` / `produces:` notation. A separate fenced block enumerates the six out-of-pipeline skills (`/investigate`, `/plan2doc`, `/test`, `/refactor`, `/catchup`, `/autopilot`) with their sub-agents. Surfaces the previously-undocumented `decomposer` agent (used by `/brief` and `/create-ticket`).
+- `## Why simple-workflow?` now opens with a TL;DR three-pillar bullet list (Generator-Evaluator firewall / Context Conservation / cross-session learning) before the existing four-threats prose. The bullets were promoted from the removed `## At a Glance` section so the rationale is now reachable without scrolling past the threat-table introduction.
+
+### Changed
+- `README.md` restructured for a tighter information architecture (207 → 266 lines): `Quick Start` reaches the install command at line 30, `Three Ways to Run` at line 43, `How it Works` at line 61, and `Why simple-workflow?` at line 124. The new `## How it Works` heading sits between `Three Ways to Run` (how a user drives the system) and `Why simple-workflow?` (why the architecture exists), so the document now answers `what / how to run / what happens internally / why` in that order.
+
+### Removed
+- `## At a Glance` section in `README.md` (heading, overview paragraph, and three differentiator bullets). The differentiator bullets were not deleted — they moved verbatim to the top of `## Why simple-workflow?` as a TL;DR.
+- `docs/assets/demo.svg` (the hand-crafted terminal-mockup SVG embedded as the README hero in v6.0.3). The file is replaced by the textual `## How it Works` ASCII tree, which is grounded in `skills/*/SKILL.md` rather than a hand-curated demo, renders identically in every Markdown renderer (Mermaid, SVG-embed, and asciinema-cast paths all have at least one renderer that fails them), and is editable without touching binary assets. The empty `docs/` parent directory is also removed.
+
 ## [6.0.3] — 2026-04-28
 
 ### Changed
