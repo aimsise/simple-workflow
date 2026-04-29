@@ -95,6 +95,7 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
 3. **MUST invoke `/investigate` via the Skill tool** with the topic to run codebase research via the researcher agent (sonnet). **NEVER bypass /investigate** with direct `Grep`/`Glob`/`Read` from within `/scout`. Fail the task immediately if `/investigate` cannot be invoked.
    - If `ticket-dir` is set, append `(ticket-dir: .simple-workflow/backlog/active/{ticket-dir})` to the arguments.
    - `/investigate` MUST NOT write to `phase-state.yaml`; only `/scout` updates `phases.scout`.
+   - **Return value cap**: Return per the Context Conservation Protocol in the researcher agent definition — the spawned agent's return value MUST stay under 500 tokens (status, output path, executive summary). Full investigation content goes to the artifact path; the orchestrator reads it on demand.
 4. Check the investigate response for failure conditions:
    - If the response contains `**Status**: failed` or `**Status**: partial`, print the error and stop. **Before stopping**, if `phase-state.yaml` exists, read-modify-write `phases.scout.status: failed` and `overall_status: failed`. Leave all other sections untouched.
    - If the response does not contain a research file path (e.g., no `.simple-workflow/docs/research/` or `.simple-workflow/backlog/active/` path), print an error and stop (same failure-state update as above).
@@ -108,6 +109,7 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
    - If `ticket-dir` is not set, use `(research: <research-file-path>)` as before.
    - `/plan2doc` will internally select the planner model based on the Size in `ticket.md` (sonnet for S, opus for M/L/XL).
    - `/plan2doc` MUST NOT write to `phase-state.yaml`; only `/scout` updates `phases.scout`.
+   - **Return value cap**: Return per the Context Conservation Protocol in the planner agent definition — the spawned agent's return value MUST stay under 500 tokens (status, plan.md output path, 1-2 line summary). The full plan content lives in `plan.md`; the orchestrator reads it on demand.
 8. Print the plan summary and file path returned by plan2doc.
 8a. **Complete scout phase (state update — only when `ticket-dir` is set and `phase-state.yaml` exists)**: After both `investigation.md` and `plan.md` are successfully written, read `.simple-workflow/backlog/active/{ticket-dir}/phase-state.yaml` and update ONLY the following fields (read-modify-write):
     - `phases.scout.status: completed`

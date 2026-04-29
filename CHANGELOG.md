@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Per-Agent return-value caps now reach every entry-point Skill (Plan 04). Previously the **Context Conservation Protocol** in `agents/*.md` MUST'd return values under 500 tokens, but the matching reminder was missing at most Skill-side launch sites. The plumbing fix adds an inline reference (`Return per the Context Conservation Protocol in your agent definition; the return value MUST be under 500 tokens — full report goes to the artifact path`) at every `Agent` / `Skill` launch in `skills/scout/SKILL.md` (`/investigate`, `/plan2doc`), `skills/impl/SKILL.md` (`implementer`, `ac-evaluator`, `/audit`), and `skills/create-ticket/SKILL.md` (`researcher`, `decomposer`, `planner`, `ticket-evaluator`). `skills/brief/SKILL.md` already carried the clause and was not modified. The 4-status verdict enum (`PASS` / `PASS-WITH-CAVEATS` / `FAIL` / `FAIL-CRITICAL`), the **Report Persistence Contract**, and the `runtime_metrics:` schema (Plan 01) are unchanged. No new Agent or Skill files were introduced.
+
+### Added
+- `agents/decomposer.md` now carries the explicit `## Context Conservation Protocol` section (matched to the existing block in `agents/planner.md`) — the only one of the six in-scope agents that previously lacked a verbatim protocol heading. The other five (`implementer`, `planner`, `researcher`, `ticket-evaluator`, `ac-evaluator`) already complied and were not modified.
+- `tests/test-skill-contracts.sh` Cat RV (`CT-MODE-RV-scout` / `-impl` / `-front` / `-agents`): contract guards that each of the four entry-point skills mentions the cap clause, plus a guard that all six in-scope agents (re-evaluator excepted — that filename is genuinely absent in the repo) carry a `500 tokens` or `Context Conservation Protocol` reference.
+
 ### Added
 - `### Long-session symptoms` subsection inside `README.md ## Limitations` (Plan 06): docs-only guidance for the test_simple_workflow13 failure mode where `/autopilot` ends with `partial` well below the context-window cap. Names the resume design (`autopilot-state.yaml` + `phase-state.yaml`), points readers at `.docs/discovery/test_simple_workflow13/` for root-cause analysis, and lists the two out-of-the-box mitigations (the Stop-hook stall detector from Plan 02 and the per-Agent return-value cap from Plan 04) plus the separately-scheduled future work (per-ticket session split). Deliberately omits any reference to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or similar undocumented environment variables — those are deferred to a separate PR pending official documentation.
 

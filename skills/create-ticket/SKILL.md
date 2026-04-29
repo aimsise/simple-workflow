@@ -168,6 +168,8 @@ If the findings file was supplied alongside (or was derived from) a brief with f
 
 **MUST invoke the `decomposer` via the Agent tool.** Pass the findings document full content + any Socratic Refinement answers as context. Receive the structured `## Result` block with fields:
 
+**Return value cap**: Return per the Context Conservation Protocol in `agents/decomposer.md` — the decomposer's return value MUST stay under 500 tokens (Status / Parent slug / Tickets list / Topological order / Rationale). No file content is echoed back; the orchestrator routes the structured block straight into Step F-6 graph validation.
+
 - `Status`: `success | partial | failed`
 - `Parent slug`: should match `{parent-slug}` derived above (reconcile if decomposer disagrees; decomposer wins if `slug_hint` was absent).
 - `Tickets`: list of `{id, title, size, scope_summary, depends_on}` entries.
@@ -270,6 +272,8 @@ The following phases are referenced by all three modes above.
 
 **MUST invoke the `researcher` via the Agent tool.** **NEVER bypass** via direct `Grep`/`Read`/`Glob` — independent findings are required for Phase 3. Fail the task immediately if the researcher cannot be invoked.
 
+**Return value cap**: Return per the Context Conservation Protocol in `agents/researcher.md` — the researcher's return value MUST stay under 500 tokens (status, executive summary, output path). The full investigation content lives at the canonical artifact path; the orchestrator reads it only when the planner needs it.
+
 Researcher scope:
 
 1. Source code related to the ticket description
@@ -328,6 +332,8 @@ If investigation yields sufficient clarity (e.g., simple S-size with obvious sco
 
 **MUST invoke the `planner` via the Agent tool.** **NEVER draft inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft for Phase 4. Fail the task immediately if the planner cannot be invoked.
 
+**Return value cap**: Return per the Context Conservation Protocol in `agents/planner.md` — the planner's return value MUST stay under 500 tokens (status, output path, 1-2 line summary). The full draft is persisted to the artifact; the orchestrator and the Phase 4 evaluator read it from disk.
+
 Planner scope:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes)
@@ -364,6 +370,8 @@ Instruct the planner to evaluate whether the ticket should be split:
 ### Phase 4: Ticket Evaluation
 
 **MUST invoke the `ticket-evaluator` via the Agent tool.** **NEVER self-assess** — the ticket-evaluator is the independent gate verifying AC Testability/Unambiguity. Fail immediately if it cannot be invoked.
+
+**Return value cap**: Return per the Context Conservation Protocol in `agents/ticket-evaluator.md` — the evaluator's return value MUST stay under 500 tokens (PASS/FAIL verdict + per-AC findings). The full Feedback transcript is consumed by Phase 4's retry-with-feedback loop on FAIL; the orchestrator does not re-echo it.
 
 **MUST inline-inject the canonical AC Quality Criteria into every `ticket-evaluator` spawn prompt** (both the initial evaluation and any retry re-spawn), delimited by the exact marker pair `<canonical_ac_criteria>` ... `</canonical_ac_criteria>`. The injected content is the canonical rubric text already loaded into this skill's Pre-computed Context above (via the `AC Quality Criteria` backtick-bang loader near the top of this file); reuse that loaded text verbatim. The evaluator does NOT read the canonical file itself — it reads only the marker block in its spawn prompt, so failure to inject is a contract violation that will cause the evaluator to fail-fast with ERROR. If the Pre-computed Context loader produced the `[WARNING: ac-quality-criteria.md not found]` sentinel, stop with an ERROR rather than spawning the evaluator without the rubric.
 

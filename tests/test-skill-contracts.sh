@@ -3136,5 +3136,88 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category RV: Agent return-value cap references in SKILL.md (Plan 04)
+# Diff: Plan 04 plumbing-fix — every SKILL.md that spawns sub-agents
+#       (scout, impl, create-ticket, brief) MUST cite "under 500 tokens"
+#       or "Context Conservation Protocol" so the cap is reachable from
+#       the caller side, not just from the agent definition. This is a
+#       static drift guard against accidental simplification PRs that
+#       strip the cap reference. Cat RV does NOT verify per-agent
+#       prose — that is owned by Plan 04 AC #4 (sub-agent definitions
+#       carry the protocol on their own side).
+# =============================================================================
+echo "--- Cat RV: Agent return-value cap references (Plan 04) ---"
+
+RV_PATTERN='under 500 tokens|Context Conservation Protocol'
+
+# CT-MODE-RV-scout: /investigate + /plan2doc invocation sites in
+# skills/scout/SKILL.md MUST each carry the cap reference (>= 2 hits).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_SCOUT="$REPO_DIR/skills/scout/SKILL.md"
+RV_SCOUT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_SCOUT" 2>/dev/null || echo 0)
+if [ "$RV_SCOUT_COUNT" -ge 2 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-scout: scout SKILL.md has $RV_SCOUT_COUNT cap reference(s) (>= 2 required)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-scout: scout SKILL.md has $RV_SCOUT_COUNT cap reference(s); 2 required (one per /investigate /plan2doc invocation)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RV-impl: implementer + ac-evaluator + /audit invocations in
+# skills/impl/SKILL.md MUST each carry the cap reference (>= 3 hits).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_IMPL="$REPO_DIR/skills/impl/SKILL.md"
+RV_IMPL_COUNT=$(grep -cE "$RV_PATTERN" "$RV_IMPL" 2>/dev/null || echo 0)
+if [ "$RV_IMPL_COUNT" -ge 3 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-impl: impl SKILL.md has $RV_IMPL_COUNT cap reference(s) (>= 3 required)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-impl: impl SKILL.md has $RV_IMPL_COUNT cap reference(s); 3 required (implementer + ac-evaluator + /audit)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RV-front: combined cap references in create-ticket + brief
+# SKILL.md MUST be >= 4 (researcher + decomposer + planner + ticket-evaluator
+# in create-ticket; researcher in brief).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
+RV_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+RV_CT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_CT" 2>/dev/null || echo 0)
+RV_BRIEF_COUNT=$(grep -cE "$RV_PATTERN" "$RV_BRIEF" 2>/dev/null || echo 0)
+RV_FRONT_COUNT=$((RV_CT_COUNT + RV_BRIEF_COUNT))
+if [ "$RV_FRONT_COUNT" -ge 4 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-front: create-ticket+brief combined cap references = $RV_FRONT_COUNT (>= 4 required)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-front: create-ticket=$RV_CT_COUNT brief=$RV_BRIEF_COUNT combined=$RV_FRONT_COUNT; 4 required"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RV-agents: every spawned-from-skill sub-agent MUST also carry
+# the protocol on its own side (defense-in-depth — caller-side cap and
+# agent-side cap are belt-and-braces).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_AGENTS_OK=true
+RV_MISSING_AGENTS=""
+for rv_agent in implementer planner researcher ticket-evaluator decomposer ac-evaluator; do
+  rv_apath="$REPO_DIR/agents/${rv_agent}.md"
+  if [ -f "$rv_apath" ]; then
+    if ! grep -qE "$RV_PATTERN" "$rv_apath"; then
+      RV_AGENTS_OK=false
+      RV_MISSING_AGENTS="$RV_MISSING_AGENTS $rv_agent"
+    fi
+  fi
+done
+if [ "$RV_AGENTS_OK" = "true" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-agents: implementer / planner / researcher / ticket-evaluator / decomposer / ac-evaluator all carry the 500-token cap clause"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-agents: missing cap clause in:${RV_MISSING_AGENTS}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary

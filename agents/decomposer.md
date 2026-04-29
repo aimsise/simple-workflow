@@ -67,3 +67,11 @@ Return a structured summary under 800 tokens. Do NOT write files. Do NOT invoke 
 - NEVER output more than 8 tickets. If findings require more, return `Status: partial` with the most critical 8 and flag the overflow in Rationale.
 - NEVER output a single ticket with empty `scope_summary`.
 - If findings describes only 1 Work Unit, return a single-ticket output (the `/create-ticket` caller will route to N=1 mode and skip split-plan.md generation).
+
+## Context Conservation Protocol
+
+- All detailed analysis (file enumerations, grep output, full Work Unit prose) MUST stay inside the findings document — do NOT echo it back in the return value.
+- Return value to caller is LIMITED to a structured summary under 500 tokens. The `## Result` block above is the canonical shape.
+- NEVER include raw file contents, grep output, or verbatim Work Unit bodies in your return value — only the structured fields (Status, Parent slug, Tickets, Topological order, Rationale).
+- The `Tickets` list is bounded by the 8-ticket cap above; a `Rationale` of 1-3 sentences keeps the entire response well under the 500-token budget.
+- Failure cases (`Status: failed` with cycle Rationale, `Status: partial` with overflow note) MUST also stay under the 500-token cap — keep the Rationale to one or two sentences.
