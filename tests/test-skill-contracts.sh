@@ -3076,5 +3076,65 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category LT: Loop-tail end_turn prohibition + Stop Reason section (Plan 05)
+# Diff: Plan 01's Cat RM guards the taxonomy file itself and the SKILL.md
+#       citation. This category guards two further inter-skill contracts that
+#       Plan 05 introduces: (1) the orchestrator-level "MUST NOT end_turn"
+#       loop-tail clause cannot be silently softened, and (2) SKILL.md
+#       documents the autopilot-log Stop Reason section format and points
+#       to the taxonomy file rather than redefining the tag enum.
+# =============================================================================
+echo "--- Cat LT: loop-tail clause + Stop Reason contract ---"
+
+LT_AUTOPILOT_SKILL="$REPO_DIR/skills/autopilot/SKILL.md"
+
+# CT-MODE-LT-1: loop-tail "MUST NOT end_turn" clause must remain in SKILL.md
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'MUST NOT.*end_turn' "$LT_AUTOPILOT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-1: SKILL.md retains 'MUST NOT.*end_turn' loop-tail clause"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-LT-1: SKILL.md is missing the 'MUST NOT end_turn' loop-tail clause"
+  echo -e "       File: $LT_AUTOPILOT_SKILL"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-LT-2: SKILL.md declares a level-2 '## Stop Reason' section that
+# references the taxonomy file (single source of truth — tag conditions are
+# not redefined inline).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+LT_STOP_REASON_BLOCK=$(awk '/^## Stop Reason[[:space:]]*$/{found=1; next} found && /^## /{exit} found {print}' "$LT_AUTOPILOT_SKILL")
+if [ -n "$LT_STOP_REASON_BLOCK" ] \
+   && echo "$LT_STOP_REASON_BLOCK" | grep -qE 'references/stop-reason-taxonomy\.md'; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-2: SKILL.md '## Stop Reason' section cites references/stop-reason-taxonomy.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-LT-2: SKILL.md missing '## Stop Reason' section or its taxonomy citation"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-LT-3: the six canonical Stop Reason tags are each named at least
+# once somewhere in SKILL.md so a reader can search for each enum value
+# without leaving the skill document. (The authoritative semantics still
+# live in the taxonomy file; this guard only checks discoverability.)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+LT_TAGS_OK=true
+for lt_tag in self_abort loop_guard_release harness_terminated policy_gate_stop partial_completion normal_completion; do
+  if ! grep -qE "\\b${lt_tag}\\b" "$LT_AUTOPILOT_SKILL"; then
+    LT_TAGS_OK=false
+    break
+  fi
+done
+if [ "$LT_TAGS_OK" = "true" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-3: SKILL.md names all 6 Stop Reason tags"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-LT-3: SKILL.md is missing one or more Stop Reason tag names"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary

@@ -483,6 +483,23 @@ manual_bash_fallbacks:
 
 On finalization (when writing `autopilot-log.md`), the `Manual Bash Fallbacks` section MUST replay this list verbatim. "No manual bash fallbacks" is valid ONLY when `manual_bash_fallbacks` is empty or absent. When the state file recorded fallbacks, the log MUST NOT emit an empty `Manual Bash Fallbacks: none` line — silent drops are a contract violation.
 
+## Stop Reason
+
+When an `autopilot-log.md` is written for a stopped or failed run, it MUST include a `## Stop Reason` section recording why the run terminated. Tag values and the discrimination heuristic are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md) — see that file for the full enum and conditions. The same `stop_reason` namespace is also written by the Stop hook into `autopilot-state.yaml` `runtime_metrics:` entries (single source of truth across log and state).
+
+Section format:
+
+```markdown
+## Stop Reason
+- **tag**: `<one of: self_abort | loop_guard_release | policy_gate_stop | partial_completion | normal_completion | harness_terminated>`
+- **timestamp**: 2026-04-29T19:39:10Z
+- **last_completed_ticket**: <logical_id or `null`>
+- **next_pending_ticket**: <logical_id or `null`>
+- **note**: <free-form, 1-2 lines>
+```
+
+Per-tag conditions live in the taxonomy file and MUST NOT be redefined here.
+
 ## Error Handling
 
 - **Empty arguments**: "Usage: /autopilot <parent-slug>" and stop.

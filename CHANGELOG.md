@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `## Stop Reason` level-2 section in `skills/autopilot/SKILL.md` (Plan 05) describing the `autopilot-log.md` Stop Reason format. Tag values reference [`references/stop-reason-taxonomy.md`](skills/autopilot/references/stop-reason-taxonomy.md) (introduced in Plan 01) so the SKILL.md and the taxonomy file share a single source of truth — per-tag conditions are not duplicated in the SKILL.md prose. The same `stop_reason` namespace appears in `autopilot-state.yaml` `runtime_metrics:` entries.
+- `tests/test-skill-contracts.sh` Cat LT (`CT-MODE-LT-1/2/3`): contract guards for the loop-tail `MUST NOT.*end_turn` clause, the `## Stop Reason` section + taxonomy citation, and the discoverability of all 6 Stop Reason tags inside SKILL.md. Drift-detector for accidentally-softening simplification PRs and for taxonomy desync.
+
+### Added
 - `hooks/post-skill-cleanup.sh` (Plan 03): a `PostToolUse` hook that physically removes any stale `auto-kick.yaml` after every `simple-workflow:autopilot` Skill invocation. Defense-in-depth backstop for the existing Phase 1 step 0 MUST clause — when the model skips the Auto-kick cleanup (as observed in test_simple_workflow13), the hook enforces the contract regardless. Idempotent on missing files; depth-agnostic so both flat (`briefs/active/{slug}/auto-kick.yaml`) and nested (`briefs/active/{parent}/{child}/auto-kick.yaml`) layouts are handled. Non-autopilot Skill invocations are no-ops. Logs to stderr only (PostToolUse stdout flows back to the model).
 - `hooks/hooks.json` extended with the new `PostToolUse` matcher entry pointing at the cleanup hook.
 - `tests/test-post-skill-cleanup.sh` (23 assertions across 6 cases: autopilot removes / idempotent no-op / non-autopilot preserves / nested layout / other files preserved / stdout silence).
