@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","timestamp":"2026-04-29T00:00:00Z","message":{"role":"user","content":[{"type":"text","text":"what does this file say"}]}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-04-29T00:00:01Z","message":{"id":"msg_a1","role":"assistant","content":[{"type":"text","text":"Let me check."},{"type":"tool_use","id":"toolu_r1","name":"Read","input":{"file_path":"<repo>/CLAUDE.md"}}]}}

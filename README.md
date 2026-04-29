@@ -238,6 +238,7 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
 - AC Evaluator ships with built-in test/lint runners for JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator will rely on static code analysis only (reported as PASS-WITH-CAVEATS).
+- The `/autopilot` Stop hook releases end_turn only when **both** the state file is stuck AND the model has emitted N consecutive turns without invoking a real tool (`Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit`). If this two-counter rule misfires for your workload, set `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment to revert to the pre-Plan-02 single-counter behaviour (state-mtime gate alone). The kill switch is intended for immediate rollback, not as a default operating mode.
 
 ## Acknowledgements
 

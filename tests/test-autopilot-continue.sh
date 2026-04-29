@@ -836,5 +836,272 @@ else
 fi
 cleanup_test_repo
 
+# ============================================================
+# Plan 02: NOTOOL_COUNT (tool-use absence) counter + AND-release rule
+# ============================================================
+echo ""
+echo "=== Plan 02: NOTOOL_COUNT counter ==="
+echo ""
+
+P02_FIXTURES_DIR="$(cd "$SCRIPT_DIR/fixtures/transcripts" 2>/dev/null && pwd)"
+
+# Helper: run hook with explicit session id, transcript path, and pre-populated counters.
+# Args: $1=session_id, $2=transcript_path (relative to fixtures dir, or empty),
+#       $3=mtime_count_initial (number, blank to leave counter file absent),
+#       $4=notool_count_initial (number, blank to leave absent),
+#       $5=cwd (test repo root), $6=extra_env_var ("AUTOPILOT_LEGACY_LOOPGUARD=1" or empty)
+run_p02_hook() {
+  local sid="$1"
+  local transcript="$2"
+  local mtime_init="$3"
+  local notool_init="$4"
+  local cwd="${5:-.}"
+  local extra_env="${6:-}"
+
+  local mtime_file="/tmp/.autopilot-continue-${sid}"
+  local notool_file="/tmp/.autopilot-notool-${sid}"
+  rm -f "$mtime_file" "$notool_file"
+
+  if [ -n "$mtime_init" ]; then echo "$mtime_init" > "$mtime_file"; fi
+  if [ -n "$notool_init" ]; then echo "$notool_init" > "$notool_file"; fi
+
+  local input
+  if [ -n "$transcript" ]; then
+    input=$(jq -n --arg sid "$sid" --arg tp "$P02_FIXTURES_DIR/$transcript" \
+      '{session_id:$sid, transcript_path:$tp}')
+  else
+    input=$(jq -n --arg sid "$sid" '{session_id:$sid}')
+  fi
+
+  local stdout_file stderr_file
+  stdout_file=$(mktemp); stderr_file=$(mktemp)
+  set +e
+  if [ -n "$extra_env" ]; then
+    echo "$input" | (cd "$cwd" && env "$extra_env" bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  else
+    echo "$input" | (cd "$cwd" && bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  fi
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
+  rm -f "$stdout_file" "$stderr_file"
+  P02_NOTOOL_AFTER=$(cat "$notool_file" 2>/dev/null || echo "")
+  P02_MTIME_AFTER=$(cat "$mtime_file" 2>/dev/null || echo "")
+  rm -f "$mtime_file" "$notool_file"
+}
+
+# Helper: write a minimal in-progress autopilot-state.yaml so the hook treats
+# the pipeline as active. The yaml uses literal newlines so we keep it inline
+# rather than using an HEREDOC (the existing tests use the same pattern).
+p02_create_state() {
+  local slug="$1"
+  mkdir -p ".simple-workflow/backlog/briefs/active/${slug}"
+  cat > ".simple-workflow/backlog/briefs/active/${slug}/autopilot-state.yaml" <<EOF
+version: 1
+parent_slug: ${slug}
+started: 2026-04-29T00:00:00Z
+execution_mode: split
+total_tickets: 1
+ticket_mapping: {}
+tickets:
+  - logical_id: ${slug}-part-1
+    ticket_dir: 001-test
+    status: in_progress
+    steps:
+      scout: in_progress
+      impl: pending
+      ship: pending
+manual_bash_fallbacks: []
+runtime_metrics: []
+EOF
+  # Backdate state file so the file-based counter (created later) is "newer"
+  # than the state file — i.e. STATE_FILE -nt COUNTER_FILE is FALSE so the
+  # mtime guard does NOT reset FILE_COUNT in these synthetic scenarios.
+  if [ "$(uname -s)" = "Darwin" ]; then
+    touch -A -010000 ".simple-workflow/backlog/briefs/active/${slug}/autopilot-state.yaml" 2>/dev/null || true
+  else
+    touch -d "1 hour ago" ".simple-workflow/backlog/briefs/active/${slug}/autopilot-state.yaml" 2>/dev/null || true
+  fi
+}
+
+# ------------------------------------------------------------
+# AC #2: mtime stuck but tool_use present → block (no release)
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #2: mtime stuck but tool_use present ---"
+setup_test_repo
+p02_create_state "p02-ac2"
+run_p02_hook "p02-ac2" "tool_use_present.jsonl" "5" "0" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} mtime stuck but tool_use present: decision=block (no release)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} mtime stuck but tool_use present"
+  echo -e "       Got decision='$DEC', exit=$LAST_EXIT_CODE, stdout snippet: ${LAST_STDOUT:0:120}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC #3: tool_use unblocks counter (NOTOOL counter file → 0)
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #3: tool_use unblocks counter ---"
+setup_test_repo
+p02_create_state "p02-ac3"
+run_p02_hook "p02-ac3" "tool_use_present.jsonl" "" "4" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$P02_NOTOOL_AFTER" = "0" ]; then
+  echo -e "  ${GREEN}PASS${NC} tool_use unblocks counter: NOTOOL counter reset to 0 (was 4)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tool_use unblocks counter"
+  echo -e "       Expected NOTOOL=0, got '$P02_NOTOOL_AFTER'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC #4: double stuck releases (FILE>=5 AND NOTOOL>=5) → exit 0 + [AUTOPILOT-STALL] on stdout
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #4: double stuck releases ---"
+setup_test_repo
+p02_create_state "p02-ac4"
+run_p02_hook "p02-ac4" "text_only_5_consecutive.jsonl" "5" "4" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDOUT" | grep -qE '\[AUTOPILOT-STALL\]'; then
+  echo -e "  ${GREEN}PASS${NC} double stuck releases: exit 0 + [AUTOPILOT-STALL] on stdout"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} double stuck releases"
+  echo -e "       exit=$LAST_EXIT_CODE, stdout: ${LAST_STDOUT:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC #5: realistic full turn parsing (complex content array)
+#         The fixture's last assistant turn carries Read AND Edit tool_use blocks;
+#         Edit is in the real-tool set so NOTOOL must reset to 0.
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #5: realistic full turn parsing ---"
+setup_test_repo
+p02_create_state "p02-ac5"
+run_p02_hook "p02-ac5" "realistic_full_turn.jsonl" "" "3" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$P02_NOTOOL_AFTER" = "0" ]; then
+  echo -e "  ${GREEN}PASS${NC} realistic full turn parsing: NOTOOL reset to 0 (Edit tool_use detected)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} realistic full turn parsing"
+  echo -e "       Expected NOTOOL=0, got '$P02_NOTOOL_AFTER'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC #6: Read alone does NOT reset NOTOOL (Read excluded from real-tool set)
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #6: Read alone does not reset ---"
+setup_test_repo
+p02_create_state "p02-ac6"
+run_p02_hook "p02-ac6" "read_only_turns.jsonl" "" "2" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$P02_NOTOOL_AFTER" = "3" ]; then
+  echo -e "  ${GREEN}PASS${NC} Read alone does not reset: NOTOOL incremented 2→3"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Read alone does not reset"
+  echo -e "       Expected NOTOOL=3, got '$P02_NOTOOL_AFTER'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC #7: malformed transcript → hook does not crash; emits valid JSON or exit 0
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #7: malformed transcript ---"
+setup_test_repo
+p02_create_state "p02-ac7"
+run_p02_hook "p02-ac7" "malformed.jsonl" "" "" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -n "$DEC" ]; then
+  echo -e "  ${GREEN}PASS${NC} malformed transcript: exit 0 + decision='$DEC' (no crash)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} malformed transcript"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC' stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC #9 part 1: legacy loop guard env var skips NOTOOL — FILE=4 still blocks
+# even when transcript shows no tool_use (in non-legacy mode this would also
+# block because FILE<5; the non-trivial assertion is that the FILE-only path
+# is the only gate).
+# ------------------------------------------------------------
+echo "--- Plan 02 / AC #9: legacy loop guard env var (mtime gate alone) ---"
+setup_test_repo
+p02_create_state "p02-ac9a"
+run_p02_hook "p02-ac9a" "text_only_5_consecutive.jsonl" "4" "10" "$TEST_REPO" "AUTOPILOT_LEGACY_LOOPGUARD=1"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+# Even though NOTOOL initial was 10 (above threshold), legacy mode bypasses it
+# and FILE=4 alone is below threshold → block.
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} legacy loop guard (FILE=4): decision=block (NOTOOL bypassed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} legacy loop guard (FILE=4)"
+  echo -e "       Got decision='$DEC' stdout: ${LAST_STDOUT:0:120}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# AC #9 part 2: legacy + FILE=5 still releases (mtime alone, regardless of tool_use)
+echo "--- Plan 02 / AC #9: legacy loop guard env var (FILE=5 releases) ---"
+setup_test_repo
+p02_create_state "p02-ac9b"
+# tool_use_present transcript: in non-legacy mode this would force NOTOOL=0
+# and PREVENT release; in legacy mode NOTOOL is bypassed so FILE>=5 alone
+# triggers release. This is the precise AC #9 sub-assertion.
+run_p02_hook "p02-ac9b" "tool_use_present.jsonl" "5" "0" "$TEST_REPO" "AUTOPILOT_LEGACY_LOOPGUARD=1"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDOUT" | grep -qE '\[AUTOPILOT-STALL\]'; then
+  echo -e "  ${GREEN}PASS${NC} legacy loop guard (FILE=5): release fires regardless of tool_use"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} legacy loop guard (FILE=5)"
+  echo -e "       exit=$LAST_EXIT_CODE stdout: ${LAST_STDOUT:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# NAC #2 regression: auto-kick branch unchanged
+# ------------------------------------------------------------
+echo "--- Plan 02 / NAC #2 regression: autokick branch unchanged ---"
+setup_test_repo
+mkdir -p .simple-workflow/backlog/briefs/active/test-autokick-p02
+cat > .simple-workflow/backlog/briefs/active/test-autokick-p02/auto-kick.yaml <<'EOF'
+slug: test-autokick-p02
+EOF
+
+run_p02_hook "p02-autokick" "" "" "" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
+if [ "$DEC" = "block" ] && echo "$REASON" | grep -q 'auto-kick.yaml'; then
+  echo -e "  ${GREEN}PASS${NC} autokick branch unchanged: decision=block + reason mentions auto-kick.yaml"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} autokick branch unchanged"
+  echo -e "       decision='$DEC' reason: ${REASON:0:120}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
 echo ""
 print_summary

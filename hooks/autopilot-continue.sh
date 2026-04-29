@@ -197,6 +197,7 @@ fi
 CONTINUE_COUNT="${_AUTOPILOT_CONTINUE_COUNT:-0}"
 if [ "$CONTINUE_COUNT" -ge 5 ] 2>/dev/null; then
   echo "[AUTOPILOT-STALL] env-var loop guard released after $CONTINUE_COUNT consecutive blocks" >&2
+  echo "[AUTOPILOT-STALL] env-var loop guard released after $CONTINUE_COUNT consecutive blocks. Resume with: /autopilot {parent-slug}"
   _emit_session_end_metrics "loop_guard_release" "$CONTINUE_COUNT"
   exit 0
 fi
@@ -279,6 +280,13 @@ if [ -z "$STATE_FILE" ]; then
 fi
 
 # --- File-based loop guard (keyed to session) ---
+# `FILE_COUNT` (a.k.a. `MTIME_COUNT` in Plan 02 terminology) tracks consecutive
+# Stop-hook block decisions in which `STATE_FILE` mtime did NOT advance. The
+# pre-Plan-02 release rule was `FILE_COUNT >= 5` — that threshold is unchanged.
+# Reset condition is also unchanged: `STATE_FILE -nt COUNTER_FILE`. Plan 02
+# layers a SECOND counter (`NOTOOL_COUNT`) on top and AND-combines the two,
+# so a release fires only when BOTH the state file is stuck AND the model has
+# made N consecutive turns without invoking a real tool.
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || echo "unknown")
 COUNTER_FILE="/tmp/.autopilot-continue-${SESSION_ID}"
 FILE_COUNT=0
@@ -291,9 +299,76 @@ if [ "$SESSION_ID" != "unknown" ] && [ -f "$COUNTER_FILE" ]; then
   fi
 fi
 
-if [ "$FILE_COUNT" -ge 5 ]; then
+# --- NOTOOL_COUNT: tool-use absence counter (Plan 02) ---
+# A second counter tracks consecutive end_turn attempts in which the most
+# recent assistant turn produced ZERO real tool_use blocks. "Real" tools are
+# {Skill, Agent, Bash, Edit, Write, NotebookEdit}. `Read` is intentionally
+# excluded — pure investigation turns are not progress. The hook reads the
+# tail of the JSONL transcript pointed at by `transcript_path` in the stdin
+# payload. The kill switch `AUTOPILOT_LEGACY_LOOPGUARD=1` short-circuits this
+# logic and forces NOTOOL_COUNT to threshold so FILE_COUNT alone drives the
+# release decision (the pre-Plan-02 behaviour).
+LEGACY_LOOPGUARD="${AUTOPILOT_LEGACY_LOOPGUARD:-0}"
+NOTOOL_THRESHOLD=5
+NOTOOL_COUNTER_FILE="/tmp/.autopilot-notool-${SESSION_ID}"
+NOTOOL_COUNT=0
+
+if [ "$LEGACY_LOOPGUARD" = "1" ]; then
+  # Legacy / pre-Plan-02 mode: bypass tool-use detection and let FILE_COUNT
+  # alone gate the release decision.
+  NOTOOL_COUNT="$NOTOOL_THRESHOLD"
+else
+  TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+  if [ "$SESSION_ID" != "unknown" ] && [ -f "$NOTOOL_COUNTER_FILE" ]; then
+    NOTOOL_COUNT=$(cat "$NOTOOL_COUNTER_FILE" 2>/dev/null || echo "0")
+    case "$NOTOOL_COUNT" in *[!0-9]*|"") NOTOOL_COUNT=0 ;; esac
+  fi
+
+  HAS_TOOL_USE="false"
+  TRANSCRIPT_READABLE="false"
+  if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    TRANSCRIPT_READABLE="true"
+    LAST_ASSISTANT_TURN=$(tail -n 50 "$TRANSCRIPT_PATH" 2>/dev/null \
+      | grep -E '"role":"assistant"' \
+      | tail -1 || true)
+    if [ -n "$LAST_ASSISTANT_TURN" ]; then
+      if echo "$LAST_ASSISTANT_TURN" | jq -e '
+        ((.message.content // .content) // [])
+        | (if type=="array" then . else [] end)
+        | map(select(
+            .type == "tool_use"
+            and ((.name // "") | IN("Skill","Agent","Bash","Edit","Write","NotebookEdit"))
+          ))
+        | length > 0
+      ' >/dev/null 2>&1; then
+        HAS_TOOL_USE="true"
+      fi
+    fi
+  fi
+
+  if [ "$TRANSCRIPT_READABLE" = "true" ]; then
+    if [ "$HAS_TOOL_USE" = "true" ]; then
+      NOTOOL_COUNT=0
+    else
+      NOTOOL_COUNT=$((NOTOOL_COUNT + 1))
+    fi
+    if [ "$SESSION_ID" != "unknown" ]; then
+      echo "$NOTOOL_COUNT" > "$NOTOOL_COUNTER_FILE"
+    fi
+  else
+    # Crash-safety: transcript empty / missing / malformed. Fall back to the
+    # pre-Plan-02 behaviour by treating NOTOOL as already-met. Do not persist
+    # this synthetic value to the counter file — a future invocation with a
+    # readable transcript should start clean.
+    NOTOOL_COUNT="$NOTOOL_THRESHOLD"
+  fi
+fi
+
+if [ "$FILE_COUNT" -ge 5 ] && [ "$NOTOOL_COUNT" -ge "$NOTOOL_THRESHOLD" ]; then
   echo "[AUTOPILOT-STALL] file-based loop guard released after $FILE_COUNT consecutive blocks" >&2
+  echo "[AUTOPILOT-STALL] Pipeline halted: model emitted $NOTOOL_COUNT consecutive end_turn attempts without tool calls or state progress. Resume with: /autopilot {parent-slug}"
   _emit_session_end_metrics "loop_guard_release" "$FILE_COUNT"
+  rm -f "$NOTOOL_COUNTER_FILE" 2>/dev/null || true
   exit 0
 fi
 
@@ -312,6 +387,7 @@ if [ "$ACTIVE_STEPS" -eq 0 ]; then
     _emit_session_end_metrics "normal_completion" "$FILE_COUNT"
   fi
   rm -f "$COUNTER_FILE" 2>/dev/null || true
+  rm -f "$NOTOOL_COUNTER_FILE" 2>/dev/null || true
   exit 0
 fi
 

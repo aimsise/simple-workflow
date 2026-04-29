@@ -194,6 +194,23 @@ Note: the `steps:` / `invocation_method:` maps no longer contain a `create-ticke
 
 Value domains for `boundary` and `stop_reason`, plus the Stop hook's discrimination heuristic, are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md). Tracked files MUST cite that file rather than the planning-phase document under `.docs/` (which is not shipped with the plugin).
 
+#### Stop-hook loop guards
+
+`hooks/autopilot-continue.sh` runs two parallel counters and AND-combines them to decide when to release end_turn:
+
+| Counter | Source of truth | Reset condition | Threshold |
+| --- | --- | --- | --- |
+| `FILE_COUNT` (a.k.a. `MTIME_COUNT`) | `/tmp/.autopilot-continue-${session_id}` | `STATE_FILE -nt COUNTER_FILE` (state file advanced) | `>= 5` |
+| `NOTOOL_COUNT` | `/tmp/.autopilot-notool-${session_id}` | The most recent assistant turn in `transcript_path` carries a `tool_use` block whose `name` is one of `Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit` (`Read` is intentionally excluded — pure investigation turns are not progress) | `>= 5` |
+
+Release fires only when **both** counters meet their thresholds. The two-counter rule replaces the pre-Plan-02 single-counter logic in which "state stuck for 5 blocks" alone was sufficient — that single signal misfired when the model emitted text-only end_turns without making real progress. With `NOTOOL_COUNT` in place the hook holds its `decision: block` until the model has actually given up on tools as well.
+
+When `transcript_path` is empty / missing / malformed, the hook gracefully degrades to the pre-Plan-02 single-counter behaviour (`NOTOOL_COUNT` is treated as already met).
+
+On release the hook emits the literal line `[AUTOPILOT-STALL] ...` to **both** stdout (for user-visible recovery instructions) and stderr (for the runtime-metrics discrimination heuristic), then writes a `boundary: session_end, stop_reason: loop_guard_release` entry to `runtime_metrics:`.
+
+Kill switch: setting `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment short-circuits `NOTOOL_COUNT` (treats it as already met) so `FILE_COUNT` alone gates release — exactly the pre-Plan-02 behaviour. Use this only when the new logic is misfiring; the kill switch is meant for immediate rollback, not as a default operating mode.
+
 ### Split Execution Flow
 
 **Input**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (parsed in Phase 1 discovery). This is the **single source of truth** for the ticket set. Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` is ignored.

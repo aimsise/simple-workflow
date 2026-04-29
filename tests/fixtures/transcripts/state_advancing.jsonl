@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","timestamp":"2026-04-29T00:00:00Z","message":{"role":"user","content":[{"type":"text","text":"please update the state file"}]}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-04-29T00:00:01Z","message":{"id":"msg_a1","role":"assistant","content":[{"type":"text","text":"Updating state."},{"type":"tool_use","id":"toolu_e1","name":"Edit","input":{"file_path":".simple-workflow/backlog/briefs/active/test-slug/autopilot-state.yaml","old_string":"in_progress","new_string":"completed"}}]}}

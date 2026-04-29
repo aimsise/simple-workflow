@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","timestamp":"2026-04-29T00:00:00Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-04-29T00:00:01Z","message":{"id":"msg_a1","role":"assistant","content":[{"type":"text","text":"checking status"},{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"git status","description":"Show working tree status"}}]}}
