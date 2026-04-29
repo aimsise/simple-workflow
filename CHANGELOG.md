@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `hooks/post-skill-cleanup.sh` (Plan 03): a `PostToolUse` hook that physically removes any stale `auto-kick.yaml` after every `simple-workflow:autopilot` Skill invocation. Defense-in-depth backstop for the existing Phase 1 step 0 MUST clause — when the model skips the Auto-kick cleanup (as observed in test_simple_workflow13), the hook enforces the contract regardless. Idempotent on missing files; depth-agnostic so both flat (`briefs/active/{slug}/auto-kick.yaml`) and nested (`briefs/active/{parent}/{child}/auto-kick.yaml`) layouts are handled. Non-autopilot Skill invocations are no-ops. Logs to stderr only (PostToolUse stdout flows back to the model).
+- `hooks/hooks.json` extended with the new `PostToolUse` matcher entry pointing at the cleanup hook.
+- `tests/test-post-skill-cleanup.sh` (23 assertions across 6 cases: autopilot removes / idempotent no-op / non-autopilot preserves / nested layout / other files preserved / stdout silence).
+- `tests/fixtures/briefs/{flat-layout,nested-layout}/` shared fixtures (per `00-index.md` Common Fixture Layout).
+- `skills/autopilot/SKILL.md` Phase 1 step 0 now carries a one-line `Note:` explaining the hook is defense-in-depth — the original MUST clause is preserved verbatim.
+
 ### Changed
 - `/autopilot` Stop hook (`hooks/autopilot-continue.sh`) now uses a **two-counter AND-release rule** (Plan 02). The pre-existing `FILE_COUNT` (state-mtime) counter is retained unchanged; a second counter `NOTOOL_COUNT` increments when the most recent assistant turn invokes none of `Skill` / `Agent` / `Bash` / `Edit` / `Write` / `NotebookEdit` (a `Read`-only turn does NOT reset the counter). Loop guard releases the pipeline only when **both** counters reach 5 — i.e. state is stuck AND the model is no longer calling real tools. This closes the test_simple_workflow13 regression where the model emitted text-only turns and the single-counter mtime gate released as if the pipeline were truly stuck. On release, the hook prints `[AUTOPILOT-STALL] Pipeline halted: model emitted N consecutive end_turn attempts without tool calls or state progress. Resume with: /autopilot {parent-slug}` to stdout.
 - **Migration / kill switch**: set `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment to revert to the pre-Plan-02 single-counter behaviour (mtime gate alone). The legacy mode is intended for immediate rollback if the new rule misfires for a particular workload — not as a default operating mode. Behaviour matches the v6.0.5 hook bit-for-bit when this env var is set.

@@ -95,6 +95,8 @@ The pre-flight gate decides whether `/autopilot` has a runnable input. The singl
 
 0. **Auto-kick cleanup**: If `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` exists, delete it. This signals to the Stop hook that the auto-chain has entered `/autopilot` and the pre-autopilot guard is no longer needed. Deletion is idempotent — missing file is not an error. Do NOT touch `brief.md`, `autopilot-policy.yaml`, or `autopilot-state.yaml` in this step — only `auto-kick.yaml` is removed.
 
+   > Note: A `PostToolUse` hook (`hooks/post-skill-cleanup.sh`) physically removes any stale `auto-kick.yaml` after every `simple-workflow:autopilot` Skill invocation as a safety net. The MUST above remains the primary contract; the hook is defense-in-depth.
+
 1. **Split-plan discovery (single source of truth)**:
    - Let `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`.
    - Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` MUST NOT be read. Even if such a file exists on disk, `/autopilot` does not fall back to it. This is enforced by the Plan 4 Negative AC: "A `split-plan.md` located at the legacy path is not read by `/autopilot` as the authoritative ticket source — the skill's execution transcript for `/autopilot <slug>` against such a fixture emits stdout containing `ERROR:` or `not found` referencing the new path."
