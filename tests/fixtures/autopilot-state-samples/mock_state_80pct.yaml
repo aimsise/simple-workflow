@@ -1,0 +1,20 @@
+version: 1
+parent_slug: mock-80pct
+started: 2026-04-30T12:00:00Z
+execution_mode: split
+total_tickets: 1
+ticket_mapping: {}
+tickets: []
+manual_bash_fallbacks: []
+runtime_metrics:
+  - boundary: session_compaction
+    stop_reason: null
+    timestamp: 2026-04-30T12:00:00Z
+    cache_creation_input_tokens: 50000
+    cache_read_input_tokens: 150000
+    input_tokens: 50000
+    consecutive_stop_blocks: null
+    # input_tokens + cache_read_input_tokens = 200000
+    # context_window_size = 1000000
+    # remaining_pct = 1.0 - 200000/1000000 = 0.80 (80%)
+    # tier: >= 70%  -> 10 rounds x 3 questions = up to 30 questions

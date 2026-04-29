@@ -365,7 +365,36 @@ Instruct the planner to evaluate whether the ticket should be split:
 - **N > 1**: Planner outputs each sub-ticket individually with its own title, category, size, scope, ACs. Each must be self-contained and independently implementable.
 - **N = 1**: Planner outputs a single ticket draft (existing behavior).
 
-(In findings mode, split judgment is already performed by the `decomposer` — the planner receives N skeletons one at a time and does NOT re-split.)
+##### Dynamic split-loop shrinkage (one-shot read of `runtime_metrics:`)
+
+Immediately before invoking the **planner** for split judgment, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` (or the parent_backlog mirror — same location precedence as `skills/autopilot/SKILL.md ### State file initialization`). This read is performed **once at the start of split judgment**; it is not repeated inside the re-evaluation loop.
+
+When the file exists, take the **last entry** of `runtime_metrics:` and compute the same `remaining_pct` formula used by `/brief` Phase 2:
+
+```
+current_context_tokens = input_tokens + cache_read_input_tokens
+context_window_size    = 1000000
+remaining_pct          = 1.0 - (current_context_tokens / context_window_size)
+```
+
+The signal pair `input_tokens + cache_read_input_tokens` is the canonical context-occupancy approximation introduced by Plan 01 (`runtime_metrics:` schema). `cache_creation_input_tokens` is intentionally **not** used.
+
+##### Lazy re-evaluation (skip the re-evaluation loop on high-confidence drafts)
+
+After the planner returns its first split judgment, evaluate the **confidence signal** the planner emitted alongside the draft. The skill considers a draft "high-confidence" when **either** of the following holds:
+
+1. The planner emits an explicit `confidence:` field with value **`confidence ≥ 0.8`** (e.g. `confidence: 0.9`), **or**
+2. The planner emits a single unambiguous size verdict (one of `S`, `M`, `L`, `XL`) with **no contested signals** in the rationale (i.e., no "alternative split possible" / "borderline" / "could also be N=2" qualifiers, and no FAIL items from the inline self-check).
+
+**When high-confidence**: skip the re-evaluation loop entirely. The first planner output is treated as final and the skill proceeds directly to Phase 4 (ticket-evaluator). The skip is a **token-saving optimization** — the planner's high-confidence draft has already passed the same internal checks the re-evaluator would re-run.
+
+**When not high-confidence**: enter the existing re-evaluation loop (no behaviour change from before Plan 07).
+
+**Standalone fallback (state-file-absent)**: when `autopilot-state.yaml` does not exist (standalone `/create-ticket` invocation), the dynamic-loop shrinkage is **bypassed** and the existing re-evaluation loop runs unconditionally regardless of confidence. This preserves the pre-Plan-07 behaviour of every direct `/create-ticket` invocation. The lazy-evaluation rule fires **only inside an autopilot session** (state file present).
+
+The size-tier thresholds (defined elsewhere in this skill) are **not** modified by this section; only the re-evaluation loop's iteration count is gated by the confidence signal.
+
+(In findings mode, split judgment is already performed by the `decomposer` — the planner receives N skeletons one at a time and does NOT re-split. The lazy-evaluation rule above also does not apply to findings mode, because the decomposer is the canonical authority there.)
 
 ### Phase 4: Ticket Evaluation
 

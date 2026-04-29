@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `/brief` Phase 2 (Socratic Refinement) now performs a one-shot read of `autopilot-state.yaml.runtime_metrics:` last entry at the top of the phase and dynamically shrinks the question quota by tier (Plan 07). `remaining_pct` is approximated as `1.0 - (input_tokens + cache_read_input_tokens) / context_window_size` (default 1M, with documented caveat). Tier table: `≥ 70%` → 10 rounds × 3 questions = up to 30 (existing behaviour); `50-70%` → 5 rounds × 3 questions = up to 15; `30-50%` → 3 rounds × 2 questions = up to 6; `< 30%` → 1 round × 1 question = up to 1. When `autopilot-state.yaml` is absent (standalone `/brief` invocation) the existing 30-question ceiling continues to apply — the load-bearing `mode independence guard` and Phase 1 `researcher` paragraph are unchanged.
+- `/create-ticket` split judgment now performs the same one-shot read and adds a **lazy re-evaluation** rule: when the initial `planner` returns a high-confidence verdict (`confidence ≥ 0.8`, or an unambiguous size verdict with no contested signals), the `ticket-evaluator` / `re-evaluator` re-evaluation loop is **skipped**. The S/M/L/XL split thresholds and the `estimated_size` field semantics are unchanged. Standalone invocations (no `autopilot-state.yaml`) follow the existing re-evaluation loop.
+
+### Added
+- `tests/test-brief-lightening.sh` (15 assertions across 3 fixture cases at remaining_pct 80% / 40% / 10%, plus cross-cutting consistency checks): static document-consistency test confirming the SKILL.md tier table covers each fixture's remaining_pct.
+- `tests/fixtures/autopilot-state-samples/mock_state_{80,40,10}pct.yaml`: synthetic state-file fixtures for the lightening test.
+- `tests/test-skill-contracts.sh` Cat BL (`CT-MODE-BL-1..4`): contract guards that the dynamic shrinkage convention exists in `skills/brief/SKILL.md` and the lazy-evaluation rule exists in `skills/create-ticket/SKILL.md`.
+
+### Changed
 - Per-Agent return-value caps now reach every entry-point Skill (Plan 04). Previously the **Context Conservation Protocol** in `agents/*.md` MUST'd return values under 500 tokens, but the matching reminder was missing at most Skill-side launch sites. The plumbing fix adds an inline reference (`Return per the Context Conservation Protocol in your agent definition; the return value MUST be under 500 tokens — full report goes to the artifact path`) at every `Agent` / `Skill` launch in `skills/scout/SKILL.md` (`/investigate`, `/plan2doc`), `skills/impl/SKILL.md` (`implementer`, `ac-evaluator`, `/audit`), and `skills/create-ticket/SKILL.md` (`researcher`, `decomposer`, `planner`, `ticket-evaluator`). `skills/brief/SKILL.md` already carried the clause and was not modified. The 4-status verdict enum (`PASS` / `PASS-WITH-CAVEATS` / `FAIL` / `FAIL-CRITICAL`), the **Report Persistence Contract**, and the `runtime_metrics:` schema (Plan 01) are unchanged. No new Agent or Skill files were introduced.
 
 ### Added

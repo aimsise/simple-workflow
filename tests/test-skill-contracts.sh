@@ -3219,5 +3219,63 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category BL: Plan 07 brief / create-ticket dynamic shrinkage
+# Diff: AC #6 of Plan 07 — assert that brief/SKILL.md contains the dynamic
+#       Phase 2 shrinkage rule and that create-ticket/SKILL.md contains the
+#       lazy re-evaluation rule. Drift-detector for the Plan 07 contract.
+# =============================================================================
+echo "--- Cat BL: Plan 07 dynamic shrinkage rules ---"
+
+BL_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+BL_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# CT-MODE-BL-1: brief/SKILL.md MUST cite runtime_metrics and the signal pair
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'runtime_metrics|autopilot-state\.yaml' "$BL_BRIEF" \
+   && grep -qE 'input_tokens.*cache_read_input_tokens|cache_read_input_tokens.*input_tokens' "$BL_BRIEF"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-1: brief/SKILL.md cites runtime_metrics and the input_tokens+cache_read_input_tokens signal pair"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-1: brief/SKILL.md missing runtime_metrics citation or signal pair"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-BL-2: brief/SKILL.md MUST document all four tier rows
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE '≥ 70%|>= 70%' "$BL_BRIEF" \
+   && grep -qE '50-70%' "$BL_BRIEF" \
+   && grep -qE '30-50%' "$BL_BRIEF" \
+   && grep -qE '< 30%' "$BL_BRIEF"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-2: brief/SKILL.md enumerates all four remaining_pct tier rows"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-2: brief/SKILL.md missing one of the four tier rows"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-BL-3: brief/SKILL.md MUST document the standalone fallback path
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'standalone|state-file-absent|state.*absent|state.*not.*exist' "$BL_BRIEF"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-3: brief/SKILL.md documents the standalone fallback when autopilot-state.yaml is absent"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-3: brief/SKILL.md missing standalone fallback clause"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-BL-4: create-ticket/SKILL.md MUST document lazy re-evaluation + one-shot read
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'confidence|skip.*re-?eval' "$BL_CT" \
+   && grep -qE 'one-shot read|read once|single read|once at' "$BL_CT"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-4: create-ticket/SKILL.md documents the lazy re-evaluation + one-shot read"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-4: create-ticket/SKILL.md missing lazy re-evaluation rule or one-shot read note"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary
