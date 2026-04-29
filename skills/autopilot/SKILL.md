@@ -175,9 +175,24 @@ tickets:
     status: pending
     steps: {scout: pending, impl: pending, ship: pending}
     invocation_method: {scout: unknown, impl: unknown, ship: unknown}
+runtime_metrics: []                      # append-only, written by Stop / PreCompact hooks
+# Sample entry (one full session_end snapshot, all 7 canonical keys):
+#   - boundary: session_end                    # session_compaction | session_end (see references/stop-reason-taxonomy.md)
+#     stop_reason: normal_completion           # one of self_abort | loop_guard_release | policy_gate_stop | partial_completion | normal_completion | harness_terminated; null when boundary != session_end
+#     timestamp: 2026-04-29T19:39:10Z          # ISO-8601 UTC (`date -u +%Y-%m-%dT%H:%M:%SZ`)
+#     cache_creation_input_tokens: 716586      # integer or null (from hook payload)
+#     cache_read_input_tokens: 0               # integer or null (from hook payload)
+#     input_tokens: 0                          # integer or null (from hook payload, used by Plan 07)
+#     consecutive_stop_blocks: 5               # integer or null; meaningful only for boundary: session_end
 ```
 
 Note: the `steps:` / `invocation_method:` maps no longer contain a `create-ticket` key — ticket creation is no longer an `/autopilot` step (Plan 4). Existing state files from pre-Plan-4 runs that still carry a `create-ticket` key are tolerated on resume but not written fresh.
+
+#### `runtime_metrics:` schema
+
+`runtime_metrics:` is an **append-only** list written exclusively by the Stop hook (`hooks/autopilot-continue.sh`) and the PreCompact hook (`hooks/pre-compact-save.sh`). The list survives ticket completion (Split State File Cleanup keeps it intact when moving the state file to `briefs/done/`). Skills MUST NOT write `runtime_metrics:` directly — hook-only ownership keeps the schema observable from a single audit point.
+
+Value domains for `boundary` and `stop_reason`, plus the Stop hook's discrimination heuristic, are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md). Tracked files MUST cite that file rather than the planning-phase document under `.docs/` (which is not shipped with the plugin).
 
 ### Split Execution Flow
 

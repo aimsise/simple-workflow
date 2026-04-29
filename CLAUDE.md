@@ -1,5 +1,14 @@
 # CLAUDE.md — simple-workflow
 
+## Dependencies
+
+The plugin assumes the following CLIs are available on `PATH`:
+
+- `git` — repository inspection used by every skill (status, diff, branch, log).
+- `gh` — GitHub interactions (PR creation, release publishing, issue queries).
+- `jq` — JSON parsing inside hooks and shell helpers.
+- `yq` (mikefarah/yq v4) — YAML mutation used by hooks that append to `autopilot-state.yaml` (e.g. `runtime_metrics:`). Hooks degrade gracefully to a `python3 + PyYAML` fallback, then to a pure-shell append, when `yq` is missing.
+
 ## Language
 
 The following MUST be written in English:

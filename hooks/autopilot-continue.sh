@@ -11,19 +11,161 @@
 #
 # Block stop (decision:"block") when:
 #   - Active pipeline with in_progress or pending steps remaining
+#
+# On every session_end exit (any path that allows end_turn while a state file
+# exists) the hook appends a runtime_metrics entry to that state file. The
+# entry's `stop_reason` follows the discrimination heuristic documented in
+# `skills/autopilot/references/stop-reason-taxonomy.md`. PreCompact-boundary
+# entries are written by `hooks/pre-compact-save.sh`, never by this hook.
 
 set -euo pipefail
 
 # Read stdin JSON payload (may be empty)
 INPUT=$(cat 2>/dev/null || echo '{}')
 
-# --- Loop guard: environment variable override (for tests / manual override) ---
-CONTINUE_COUNT="${_AUTOPILOT_CONTINUE_COUNT:-0}"
-if [ "$CONTINUE_COUNT" -ge 5 ] 2>/dev/null; then
-  exit 0
-fi
+# --- runtime_metrics helpers (Plan 01) -----------------------------------
+# These helpers append a single entry to the `runtime_metrics:` list in the
+# given autopilot-state.yaml file. They are NO-OPS when the state file is
+# missing or unreadable. Implementation strategy (in priority order):
+#   1. yq (mikefarah/yq v4) when available — preferred, schema-aware.
+#   2. python3 + PyYAML when available — schema-aware fallback.
+#   3. Pure shell text append — last-resort, assumes runtime_metrics: is the
+#      last top-level key (true for fresh state files written from the
+#      SKILL.md template).
 
-# --- Find autopilot-state.yaml ---
+_runtime_metrics_payload_field() {
+  # $1 = field name, prints int or "null"
+  local field="$1"
+  local payload="${INPUT:-}"
+  if [ -z "$payload" ]; then
+    payload='{}'
+  fi
+  local value
+  value=$(printf '%s' "$payload" | jq -r --arg f "$field" '.[$f] // "null"' 2>/dev/null) || value="null"
+  if [ -z "$value" ] || [ "$value" = "null" ]; then
+    printf 'null'
+  else
+    printf '%s' "$value"
+  fi
+}
+
+_append_runtime_metrics_entry() {
+  # $1 state_file, $2 boundary, $3 stop_reason ("null" or value),
+  # $4 timestamp, $5 cache_creation, $6 cache_read, $7 input_tokens,
+  # $8 consecutive_stop ("null" or int)
+  local state_file="$1"
+  local boundary="$2"
+  local stop_reason="$3"
+  local timestamp="$4"
+  local cache_creation="$5"
+  local cache_read="$6"
+  local input_tokens="$7"
+  local consecutive="$8"
+
+  [ -n "$state_file" ] && [ -f "$state_file" ] || return 0
+
+  if command -v yq >/dev/null 2>&1; then
+    local stop_value
+    if [ "$stop_reason" = "null" ]; then stop_value="null"; else stop_value="\"$stop_reason\""; fi
+    if yq eval -i ".runtime_metrics = ((.runtime_metrics // []) + [{\"boundary\":\"$boundary\",\"stop_reason\":$stop_value,\"timestamp\":\"$timestamp\",\"cache_creation_input_tokens\":$cache_creation,\"cache_read_input_tokens\":$cache_read,\"input_tokens\":$input_tokens,\"consecutive_stop_blocks\":$consecutive}])" "$state_file" 2>/dev/null; then
+      return 0
+    fi
+    echo "[runtime_metrics] yq write failed, attempting fallback" >&2
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    STATE_FILE_PATH="$state_file" \
+    METRIC_BOUNDARY="$boundary" \
+    METRIC_STOP_REASON="$stop_reason" \
+    METRIC_TIMESTAMP="$timestamp" \
+    METRIC_CACHE_CREATION="$cache_creation" \
+    METRIC_CACHE_READ="$cache_read" \
+    METRIC_INPUT_TOKENS="$input_tokens" \
+    METRIC_CONSECUTIVE="$consecutive" \
+    python3 - <<'PYEOF'
+import os, sys
+try:
+    import yaml
+except ImportError:
+    sys.exit(0)
+def numeric_or_null(s):
+    if s is None or s == '' or s == 'null':
+        return None
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return s
+path = os.environ['STATE_FILE_PATH']
+try:
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        sys.exit(0)
+    stop_raw = os.environ['METRIC_STOP_REASON']
+    entry = {
+        'boundary': os.environ['METRIC_BOUNDARY'],
+        'stop_reason': None if stop_raw == 'null' else stop_raw,
+        'timestamp': os.environ['METRIC_TIMESTAMP'],
+        'cache_creation_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_CREATION']),
+        'cache_read_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_READ']),
+        'input_tokens': numeric_or_null(os.environ['METRIC_INPUT_TOKENS']),
+        'consecutive_stop_blocks': numeric_or_null(os.environ['METRIC_CONSECUTIVE']),
+    }
+    rm = data.get('runtime_metrics')
+    if not isinstance(rm, list):
+        rm = []
+    rm.append(entry)
+    data['runtime_metrics'] = rm
+    with open(path, 'w') as f:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+except Exception as exc:
+    print(f'[runtime_metrics] python yaml write failed: {exc}', file=sys.stderr)
+    sys.exit(0)
+PYEOF
+    return 0
+  fi
+
+  # Pure-shell last-resort fallback. Assumes runtime_metrics: is the last
+  # top-level key in the file (true for state files initialised from the
+  # SKILL.md template).
+  if grep -qE '^runtime_metrics:[[:space:]]*\[\][[:space:]]*$' "$state_file"; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
+    else
+      sed -i 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
+    fi
+  elif ! grep -qE '^runtime_metrics:' "$state_file"; then
+    [ -z "$(tail -c1 "$state_file" 2>/dev/null)" ] || printf '\n' >> "$state_file"
+    printf 'runtime_metrics:\n' >> "$state_file"
+  fi
+  cat >> "$state_file" <<EOF
+  - boundary: $boundary
+    stop_reason: $stop_reason
+    timestamp: $timestamp
+    cache_creation_input_tokens: $cache_creation
+    cache_read_input_tokens: $cache_read
+    input_tokens: $input_tokens
+    consecutive_stop_blocks: $consecutive
+EOF
+  return 0
+}
+
+_emit_session_end_metrics() {
+  # $1 stop_reason, $2 consecutive_stop ("null" or int)
+  local stop_reason="$1"
+  local consecutive="${2:-null}"
+  if [ -n "${STATE_FILE:-}" ] && [ -f "${STATE_FILE:-}" ]; then
+    local timestamp cache_creation cache_read input_tokens
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+    cache_creation=$(_runtime_metrics_payload_field cache_creation_input_tokens)
+    cache_read=$(_runtime_metrics_payload_field cache_read_input_tokens)
+    input_tokens=$(_runtime_metrics_payload_field input_tokens)
+    _append_runtime_metrics_entry "$STATE_FILE" "session_end" "$stop_reason" "$timestamp" \
+      "$cache_creation" "$cache_read" "$input_tokens" "$consecutive"
+  fi
+}
+
+# --- Find autopilot-state.yaml (moved up so loop-guard exits can write metrics) ---
 # Depth-agnostic scan: the flat layout is
 # `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` (one
 # level under briefs/active/), but nested layouts such as
@@ -40,6 +182,23 @@ if [ -d .simple-workflow/backlog/briefs/active ]; then
     fi
   done < <(find .simple-workflow/backlog/briefs/active -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
   unset _f
+fi
+if [ -z "$STATE_FILE" ] && [ -d .simple-workflow/backlog/product_backlog ]; then
+  while IFS= read -r _f; do
+    if [ -f "$_f" ]; then
+      STATE_FILE="$_f"
+      break
+    fi
+  done < <(find .simple-workflow/backlog/product_backlog -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+  unset _f
+fi
+
+# --- Loop guard: environment variable override (for tests / manual override) ---
+CONTINUE_COUNT="${_AUTOPILOT_CONTINUE_COUNT:-0}"
+if [ "$CONTINUE_COUNT" -ge 5 ] 2>/dev/null; then
+  echo "[AUTOPILOT-STALL] env-var loop guard released after $CONTINUE_COUNT consecutive blocks" >&2
+  _emit_session_end_metrics "loop_guard_release" "$CONTINUE_COUNT"
+  exit 0
 fi
 
 if [ -z "$STATE_FILE" ]; then
@@ -133,6 +292,8 @@ if [ "$SESSION_ID" != "unknown" ] && [ -f "$COUNTER_FILE" ]; then
 fi
 
 if [ "$FILE_COUNT" -ge 5 ]; then
+  echo "[AUTOPILOT-STALL] file-based loop guard released after $FILE_COUNT consecutive blocks" >&2
+  _emit_session_end_metrics "loop_guard_release" "$FILE_COUNT"
   exit 0
 fi
 
@@ -142,7 +303,14 @@ fi
 ACTIVE_STEPS=$(grep -cE '(create-ticket|scout|impl|ship): (in_progress|pending)' "$STATE_FILE" 2>/dev/null) || ACTIVE_STEPS=0
 
 if [ "$ACTIVE_STEPS" -eq 0 ]; then
-  # All steps done — pipeline is finished, allow stop
+  # All step-level work done — pipeline is finished, allow stop.
+  # Determine ticket-level pending state for stop_reason discrimination.
+  PENDING_TICKETS=$(grep -cE '^[[:space:]]+status:[[:space:]]+(pending|in_progress)' "$STATE_FILE" 2>/dev/null) || PENDING_TICKETS=0
+  if [ "$PENDING_TICKETS" -gt 0 ]; then
+    _emit_session_end_metrics "partial_completion" "$FILE_COUNT"
+  else
+    _emit_session_end_metrics "normal_completion" "$FILE_COUNT"
+  fi
   rm -f "$COUNTER_FILE" 2>/dev/null || true
   exit 0
 fi
@@ -169,7 +337,7 @@ TICKET_DIR="${TICKET_DIR:-unknown}"
 # composite path (e.g. `parent-slug/my-slug`). Surfacing the full path
 # in `reason` means the caller can see which nested brief directory the
 # pipeline is parked in without needing a second probe.
-SLUG=$(echo "$STATE_FILE" | sed 's|.*/briefs/active/||; s|/autopilot-state.yaml||')
+SLUG=$(echo "$STATE_FILE" | sed 's|.*/briefs/active/||; s|.*/product_backlog/||; s|/autopilot-state.yaml||')
 
 # --- Increment file-based counter ---
 FILE_COUNT=$((FILE_COUNT + 1))

@@ -3017,5 +3017,64 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category RM: runtime_metrics taxonomy contract (Plan 01)
+# Diff: This category guards the runtime_metrics SoT introduced by Plan 01.
+#       It does not overlap with any existing category — Cat A only checks
+#       allowed-tools / dmi consistency, Cat AD only checks audit references.
+# =============================================================================
+echo "--- Cat RM: runtime_metrics taxonomy contract ---"
+
+RM_TAXONOMY="$REPO_DIR/skills/autopilot/references/stop-reason-taxonomy.md"
+RM_AUTOPILOT_SKILL="$REPO_DIR/skills/autopilot/SKILL.md"
+
+# CT-MODE-RM-1: taxonomy file exists and enumerates the canonical enums
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$RM_TAXONOMY" ] \
+   && grep -qE '\bsession_compaction\b' "$RM_TAXONOMY" \
+   && grep -qE '\bsession_end\b' "$RM_TAXONOMY" \
+   && grep -qE '\bself_abort\b' "$RM_TAXONOMY" \
+   && grep -qE '\bloop_guard_release\b' "$RM_TAXONOMY" \
+   && grep -qE '\bpolicy_gate_stop\b' "$RM_TAXONOMY" \
+   && grep -qE '\bpartial_completion\b' "$RM_TAXONOMY" \
+   && grep -qE '\bnormal_completion\b' "$RM_TAXONOMY" \
+   && grep -qE '\bharness_terminated\b' "$RM_TAXONOMY"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-1: stop-reason-taxonomy.md exists and enumerates all 8 enum values"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RM-1: stop-reason-taxonomy.md missing or incomplete"
+  echo -e "       Expected file: $RM_TAXONOMY"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RM-2: autopilot SKILL.md mentions runtime_metrics: and cites the taxonomy file
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'runtime_metrics:' "$RM_AUTOPILOT_SKILL" \
+   && grep -qE 'references/stop-reason-taxonomy\.md' "$RM_AUTOPILOT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-2: autopilot SKILL.md documents runtime_metrics and cites references/stop-reason-taxonomy.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RM-2: autopilot SKILL.md missing runtime_metrics: or taxonomy reference"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RM-3: taxonomy file is English-only (CLAUDE.md Language rule)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$RM_TAXONOMY" ]; then
+  RM_NONLATIN=$(grep -cE '[ぁ-んァ-ヶ一-龥]' "$RM_TAXONOMY" 2>/dev/null || echo 0)
+  if [ "$RM_NONLATIN" -eq 0 ]; then
+    echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-3: stop-reason-taxonomy.md contains no Japanese characters"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} CT-MODE-RM-3: stop-reason-taxonomy.md contains $RM_NONLATIN Japanese character(s)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RM-3: stop-reason-taxonomy.md not present"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary

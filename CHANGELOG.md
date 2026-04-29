@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `runtime_metrics:` measurement foundation in `autopilot-state.yaml` (Plan 01). The `Stop` hook (`hooks/autopilot-continue.sh`) and `PreCompact` hook (`hooks/pre-compact-save.sh`) now append session-level entries (`boundary: session_end` / `boundary: session_compaction`) capturing `cache_creation_input_tokens`, `cache_read_input_tokens`, `input_tokens`, `consecutive_stop_blocks`, and a discriminated `stop_reason` (`normal_completion` / `partial_completion` / `loop_guard_release` / `null`). The append is graceful: when `yq` is unavailable, the hook falls back to `python3 + PyYAML`, then to a pure-shell text append. Per-ticket boundaries (`ticket_completed` / `ticket_failed` / `ticket_skipped`) are out of scope for Plan 01.
+- `skills/autopilot/references/stop-reason-taxonomy.md` (new): runtime source of truth for the `boundary` (2 values) and `stop_reason` (6 values) enums plus the discrimination heuristic. Replaces the planning-phase taxonomy that previously lived only in `.docs/`. `skills/autopilot/SKILL.md` now references this file from the `### State file initialization` block via a relative path.
+- `tests/test-autopilot-runtime-metrics.sh` covering 6 cases (session_end / normal_completion / partial_completion / loop_guard_release / session_compaction / empty payload) and 16 assertions.
+- `tests/fixtures/autopilot-state-samples/{empty,single-ticket,multi-ticket}.yaml` and `tests/fixtures/payloads/{stop-hook-end-turn,empty}.json` shared fixtures (per `00-index.md` Common Fixture Layout).
+- `tests/test-skill-contracts.sh` Cat RM (`CT-MODE-RM-1/2/3`): contract guards for the taxonomy file, its citation in `SKILL.md`, and the `runtime_metrics:` schema entry.
+- `## Dependencies` section in `CLAUDE.md` listing `git`, `gh`, `jq`, and `yq` (mikefarah/yq v4) with one-line purpose for each.
+
 ## [6.0.5] — 2026-04-28
 
 ### Changed

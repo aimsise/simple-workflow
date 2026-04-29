@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # PreCompact hook: snapshot work state with YAML frontmatter so /catchup
 # can recover the in-progress phase after context compaction.
+#
+# Plan 01: this hook also appends a `boundary: session_compaction` entry to
+# any autopilot-state.yaml that exists, so /tune and post-mortem analysis
+# can correlate compaction events with pipeline progress. The append is
+# best-effort — missing yq + python3 simply skips the metric write.
 set -euo pipefail
-cat > /dev/null  # consume stdin
+INPUT=$(cat 2>/dev/null || echo '{}')
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DATE_ISO=$(date -Iseconds 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -264,5 +269,129 @@ fi
     fi
   fi
 } > "$SAVE_FILE"
+
+# --- Plan 01: append boundary: session_compaction entry to every discovered
+# autopilot-state.yaml. Best-effort — missing yq AND missing python3+yaml
+# simply skips the write. ---
+
+_pc_runtime_metrics_payload_field() {
+  local field="$1"
+  local payload="${INPUT:-}"
+  if [ -z "$payload" ]; then
+    payload='{}'
+  fi
+  local value
+  value=$(printf '%s' "$payload" | jq -r --arg f "$field" '.[$f] // "null"' 2>/dev/null) || value="null"
+  if [ -z "$value" ] || [ "$value" = "null" ]; then
+    printf 'null'
+  else
+    printf '%s' "$value"
+  fi
+}
+
+_pc_append_session_compaction() {
+  local state_file="$1"
+  [ -n "$state_file" ] && [ -f "$state_file" ] || return 0
+
+  local timestamp cache_creation cache_read input_tokens
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+  cache_creation=$(_pc_runtime_metrics_payload_field cache_creation_input_tokens)
+  cache_read=$(_pc_runtime_metrics_payload_field cache_read_input_tokens)
+  input_tokens=$(_pc_runtime_metrics_payload_field input_tokens)
+
+  if command -v yq >/dev/null 2>&1; then
+    if yq eval -i ".runtime_metrics = ((.runtime_metrics // []) + [{\"boundary\":\"session_compaction\",\"stop_reason\":null,\"timestamp\":\"$timestamp\",\"cache_creation_input_tokens\":$cache_creation,\"cache_read_input_tokens\":$cache_read,\"input_tokens\":$input_tokens,\"consecutive_stop_blocks\":null}])" "$state_file" 2>/dev/null; then
+      return 0
+    fi
+    echo "[runtime_metrics] yq write failed, attempting fallback" >&2
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    STATE_FILE_PATH="$state_file" \
+    METRIC_TIMESTAMP="$timestamp" \
+    METRIC_CACHE_CREATION="$cache_creation" \
+    METRIC_CACHE_READ="$cache_read" \
+    METRIC_INPUT_TOKENS="$input_tokens" \
+    python3 - <<'PYEOF'
+import os, sys
+try:
+    import yaml
+except ImportError:
+    sys.exit(0)
+def numeric_or_null(s):
+    if s is None or s == '' or s == 'null':
+        return None
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return s
+path = os.environ['STATE_FILE_PATH']
+try:
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        sys.exit(0)
+    entry = {
+        'boundary': 'session_compaction',
+        'stop_reason': None,
+        'timestamp': os.environ['METRIC_TIMESTAMP'],
+        'cache_creation_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_CREATION']),
+        'cache_read_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_READ']),
+        'input_tokens': numeric_or_null(os.environ['METRIC_INPUT_TOKENS']),
+        'consecutive_stop_blocks': None,
+    }
+    rm = data.get('runtime_metrics')
+    if not isinstance(rm, list):
+        rm = []
+    rm.append(entry)
+    data['runtime_metrics'] = rm
+    with open(path, 'w') as f:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+except Exception as exc:
+    print(f'[runtime_metrics] python yaml write failed: {exc}', file=sys.stderr)
+    sys.exit(0)
+PYEOF
+    return 0
+  fi
+
+  # Pure-shell last-resort append (assumes runtime_metrics: is the last top-level key).
+  if grep -qE '^runtime_metrics:[[:space:]]*\[\][[:space:]]*$' "$state_file"; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
+    else
+      sed -i 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
+    fi
+  elif ! grep -qE '^runtime_metrics:' "$state_file"; then
+    [ -z "$(tail -c1 "$state_file" 2>/dev/null)" ] || printf '\n' >> "$state_file"
+    printf 'runtime_metrics:\n' >> "$state_file"
+  fi
+  cat >> "$state_file" <<EOF
+  - boundary: session_compaction
+    stop_reason: null
+    timestamp: $timestamp
+    cache_creation_input_tokens: $cache_creation
+    cache_read_input_tokens: $cache_read
+    input_tokens: $input_tokens
+    consecutive_stop_blocks: null
+EOF
+  return 0
+}
+
+# Discover all autopilot-state.yaml files and write a session_compaction
+# entry to each. Both legacy briefs/active and product_backlog locations
+# are scanned (matches autopilot-continue.sh discovery semantics).
+PC_STATE_FILES=()
+for _root in .simple-workflow/backlog/briefs/active .simple-workflow/backlog/product_backlog; do
+  [ -d "$_root" ] || continue
+  while IFS= read -r _sf; do
+    [ -n "$_sf" ] && [ -f "$_sf" ] && PC_STATE_FILES+=("$_sf")
+  done < <(find "$_root" -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+done
+unset _root _sf
+
+for _state_file in "${PC_STATE_FILES[@]:-}"; do
+  [ -n "$_state_file" ] && _pc_append_session_compaction "$_state_file"
+done
+unset _state_file
 
 exit 0
