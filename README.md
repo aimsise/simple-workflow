@@ -240,6 +240,19 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 - AC Evaluator ships with built-in test/lint runners for JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator will rely on static code analysis only (reported as PASS-WITH-CAVEATS).
 - The `/autopilot` Stop hook releases end_turn only when **both** the state file is stuck AND the model has emitted N consecutive turns without invoking a real tool (`Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit`). If this two-counter rule misfires for your workload, set `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment to revert to the pre-Plan-02 single-counter behaviour (state-mtime gate alone). The kill switch is intended for immediate rollback, not as a default operating mode.
 
+### Long-session symptoms
+
+If `/autopilot` ends with a `partial` status well before reaching the context-window cap (e.g., under 80% utilization), the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. The plugin's resume design (`autopilot-state.yaml` + `phase-state.yaml`) lets you continue with `/autopilot {parent-slug}` in a fresh session.
+
+For root-cause analysis of one such failure mode, see `.docs/discovery/test_simple_workflow13/` in the repository.
+
+Mitigations available out-of-the-box:
+
+- The Stop hook detects "no tool call AND no state progress" sequences and releases the loop guard with an `[AUTOPILOT-STALL]` line so the user immediately sees why the run halted.
+- Per-Agent return value caps reduce orchestrator context bloat so the session stays under the auto-Compaction threshold longer.
+
+Future work (separately scheduled): per-ticket session split (one ticket = one session) for full context isolation.
+
 ## Acknowledgements
 
 simple-workflow is heavily inspired by:

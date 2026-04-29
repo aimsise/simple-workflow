@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `### Long-session symptoms` subsection inside `README.md ## Limitations` (Plan 06): docs-only guidance for the test_simple_workflow13 failure mode where `/autopilot` ends with `partial` well below the context-window cap. Names the resume design (`autopilot-state.yaml` + `phase-state.yaml`), points readers at `.docs/discovery/test_simple_workflow13/` for root-cause analysis, and lists the two out-of-the-box mitigations (the Stop-hook stall detector from Plan 02 and the per-Agent return-value cap from Plan 04) plus the separately-scheduled future work (per-ticket session split). Deliberately omits any reference to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or similar undocumented environment variables — those are deferred to a separate PR pending official documentation.
+
+### Added
 - `## Stop Reason` level-2 section in `skills/autopilot/SKILL.md` (Plan 05) describing the `autopilot-log.md` Stop Reason format. Tag values reference [`references/stop-reason-taxonomy.md`](skills/autopilot/references/stop-reason-taxonomy.md) (introduced in Plan 01) so the SKILL.md and the taxonomy file share a single source of truth — per-tag conditions are not duplicated in the SKILL.md prose. The same `stop_reason` namespace appears in `autopilot-state.yaml` `runtime_metrics:` entries.
 - `tests/test-skill-contracts.sh` Cat LT (`CT-MODE-LT-1/2/3`): contract guards for the loop-tail `MUST NOT.*end_turn` clause, the `## Stop Reason` section + taxonomy citation, and the discoverability of all 6 Stop Reason tags inside SKILL.md. Drift-detector for accidentally-softening simplification PRs and for taxonomy desync.
 
