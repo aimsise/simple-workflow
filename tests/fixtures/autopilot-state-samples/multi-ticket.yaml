@@ -1,0 +1,27 @@
+version: 1
+parent_slug: multi-fixture
+started: 2026-04-29T00:00:00Z
+execution_mode: split
+total_tickets: 3
+ticket_mapping:
+  multi-fixture-part-1: 001-first
+  multi-fixture-part-2: 002-second
+  multi-fixture-part-3: 003-third
+tickets:
+  - logical_id: multi-fixture-part-1
+    ticket_dir: .simple-workflow/backlog/active/multi-fixture/001-first
+    status: pending
+    steps: {scout: pending, impl: pending, ship: pending}
+    invocation_method: {scout: unknown, impl: unknown, ship: unknown}
+  - logical_id: multi-fixture-part-2
+    ticket_dir: .simple-workflow/backlog/active/multi-fixture/002-second
+    status: pending
+    steps: {scout: pending, impl: pending, ship: pending}
+    invocation_method: {scout: unknown, impl: unknown, ship: unknown}
+  - logical_id: multi-fixture-part-3
+    ticket_dir: .simple-workflow/backlog/active/multi-fixture/003-third
+    status: pending
+    steps: {scout: pending, impl: pending, ship: pending}
+    invocation_method: {scout: unknown, impl: unknown, ship: unknown}
+manual_bash_fallbacks: []
+runtime_metrics: []

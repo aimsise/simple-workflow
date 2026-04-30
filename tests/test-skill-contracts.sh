@@ -3017,5 +3017,265 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category RM: runtime_metrics taxonomy contract (Plan 01)
+# Diff: This category guards the runtime_metrics SoT introduced by Plan 01.
+#       It does not overlap with any existing category — Cat A only checks
+#       allowed-tools / dmi consistency, Cat AD only checks audit references.
+# =============================================================================
+echo "--- Cat RM: runtime_metrics taxonomy contract ---"
+
+RM_TAXONOMY="$REPO_DIR/skills/autopilot/references/stop-reason-taxonomy.md"
+RM_AUTOPILOT_SKILL="$REPO_DIR/skills/autopilot/SKILL.md"
+
+# CT-MODE-RM-1: taxonomy file exists and enumerates the canonical enums
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$RM_TAXONOMY" ] \
+   && grep -qE '\bsession_compaction\b' "$RM_TAXONOMY" \
+   && grep -qE '\bsession_end\b' "$RM_TAXONOMY" \
+   && grep -qE '\bself_abort\b' "$RM_TAXONOMY" \
+   && grep -qE '\bloop_guard_release\b' "$RM_TAXONOMY" \
+   && grep -qE '\bpolicy_gate_stop\b' "$RM_TAXONOMY" \
+   && grep -qE '\bpartial_completion\b' "$RM_TAXONOMY" \
+   && grep -qE '\bnormal_completion\b' "$RM_TAXONOMY" \
+   && grep -qE '\bharness_terminated\b' "$RM_TAXONOMY"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-1: stop-reason-taxonomy.md exists and enumerates all 8 enum values"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RM-1: stop-reason-taxonomy.md missing or incomplete"
+  echo -e "       Expected file: $RM_TAXONOMY"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RM-2: autopilot SKILL.md mentions runtime_metrics: and cites the taxonomy file
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'runtime_metrics:' "$RM_AUTOPILOT_SKILL" \
+   && grep -qE 'references/stop-reason-taxonomy\.md' "$RM_AUTOPILOT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-2: autopilot SKILL.md documents runtime_metrics and cites references/stop-reason-taxonomy.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RM-2: autopilot SKILL.md missing runtime_metrics: or taxonomy reference"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RM-3: taxonomy file is English-only (CLAUDE.md Language rule)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$RM_TAXONOMY" ]; then
+  RM_NONLATIN=$(grep -cE '[ぁ-んァ-ヶ一-龥]' "$RM_TAXONOMY" 2>/dev/null || echo 0)
+  if [ "$RM_NONLATIN" -eq 0 ]; then
+    echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-3: stop-reason-taxonomy.md contains no Japanese characters"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} CT-MODE-RM-3: stop-reason-taxonomy.md contains $RM_NONLATIN Japanese character(s)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RM-3: stop-reason-taxonomy.md not present"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
+# Category LT: Loop-tail end_turn prohibition + Stop Reason section (Plan 05)
+# Diff: Plan 01's Cat RM guards the taxonomy file itself and the SKILL.md
+#       citation. This category guards two further inter-skill contracts that
+#       Plan 05 introduces: (1) the orchestrator-level "MUST NOT end_turn"
+#       loop-tail clause cannot be silently softened, and (2) SKILL.md
+#       documents the autopilot-log Stop Reason section format and points
+#       to the taxonomy file rather than redefining the tag enum.
+# =============================================================================
+echo "--- Cat LT: loop-tail clause + Stop Reason contract ---"
+
+LT_AUTOPILOT_SKILL="$REPO_DIR/skills/autopilot/SKILL.md"
+
+# CT-MODE-LT-1: loop-tail "MUST NOT end_turn" clause must remain in SKILL.md
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'MUST NOT.*end_turn' "$LT_AUTOPILOT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-1: SKILL.md retains 'MUST NOT.*end_turn' loop-tail clause"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-LT-1: SKILL.md is missing the 'MUST NOT end_turn' loop-tail clause"
+  echo -e "       File: $LT_AUTOPILOT_SKILL"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-LT-2: SKILL.md declares a level-2 '## Stop Reason' section that
+# references the taxonomy file (single source of truth — tag conditions are
+# not redefined inline).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+LT_STOP_REASON_BLOCK=$(awk '/^## Stop Reason[[:space:]]*$/{found=1; next} found && /^## /{exit} found {print}' "$LT_AUTOPILOT_SKILL")
+if [ -n "$LT_STOP_REASON_BLOCK" ] \
+   && echo "$LT_STOP_REASON_BLOCK" | grep -qE 'references/stop-reason-taxonomy\.md'; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-2: SKILL.md '## Stop Reason' section cites references/stop-reason-taxonomy.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-LT-2: SKILL.md missing '## Stop Reason' section or its taxonomy citation"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-LT-3: the six canonical Stop Reason tags are each named at least
+# once somewhere in SKILL.md so a reader can search for each enum value
+# without leaving the skill document. (The authoritative semantics still
+# live in the taxonomy file; this guard only checks discoverability.)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+LT_TAGS_OK=true
+for lt_tag in self_abort loop_guard_release harness_terminated policy_gate_stop partial_completion normal_completion; do
+  if ! grep -qE "\\b${lt_tag}\\b" "$LT_AUTOPILOT_SKILL"; then
+    LT_TAGS_OK=false
+    break
+  fi
+done
+if [ "$LT_TAGS_OK" = "true" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-3: SKILL.md names all 6 Stop Reason tags"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-LT-3: SKILL.md is missing one or more Stop Reason tag names"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
+# Category RV: Agent return-value cap references in SKILL.md (Plan 04)
+# Diff: Plan 04 plumbing-fix — every SKILL.md that spawns sub-agents
+#       (scout, impl, create-ticket, brief) MUST cite "under 500 tokens"
+#       or "Context Conservation Protocol" so the cap is reachable from
+#       the caller side, not just from the agent definition. This is a
+#       static drift guard against accidental simplification PRs that
+#       strip the cap reference. Cat RV does NOT verify per-agent
+#       prose — that is owned by Plan 04 AC #4 (sub-agent definitions
+#       carry the protocol on their own side).
+# =============================================================================
+echo "--- Cat RV: Agent return-value cap references (Plan 04) ---"
+
+RV_PATTERN='under 500 tokens|Context Conservation Protocol'
+
+# CT-MODE-RV-scout: /investigate + /plan2doc invocation sites in
+# skills/scout/SKILL.md MUST each carry the cap reference (>= 2 hits).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_SCOUT="$REPO_DIR/skills/scout/SKILL.md"
+RV_SCOUT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_SCOUT" 2>/dev/null || echo 0)
+if [ "$RV_SCOUT_COUNT" -ge 2 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-scout: scout SKILL.md has $RV_SCOUT_COUNT cap reference(s) (>= 2 required)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-scout: scout SKILL.md has $RV_SCOUT_COUNT cap reference(s); 2 required (one per /investigate /plan2doc invocation)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RV-impl: implementer + ac-evaluator + /audit invocations in
+# skills/impl/SKILL.md MUST each carry the cap reference (>= 3 hits).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_IMPL="$REPO_DIR/skills/impl/SKILL.md"
+RV_IMPL_COUNT=$(grep -cE "$RV_PATTERN" "$RV_IMPL" 2>/dev/null || echo 0)
+if [ "$RV_IMPL_COUNT" -ge 3 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-impl: impl SKILL.md has $RV_IMPL_COUNT cap reference(s) (>= 3 required)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-impl: impl SKILL.md has $RV_IMPL_COUNT cap reference(s); 3 required (implementer + ac-evaluator + /audit)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RV-front: combined cap references in create-ticket + brief
+# SKILL.md MUST be >= 4 (researcher + decomposer + planner + ticket-evaluator
+# in create-ticket; researcher in brief).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
+RV_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+RV_CT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_CT" 2>/dev/null || echo 0)
+RV_BRIEF_COUNT=$(grep -cE "$RV_PATTERN" "$RV_BRIEF" 2>/dev/null || echo 0)
+RV_FRONT_COUNT=$((RV_CT_COUNT + RV_BRIEF_COUNT))
+if [ "$RV_FRONT_COUNT" -ge 4 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-front: create-ticket+brief combined cap references = $RV_FRONT_COUNT (>= 4 required)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-front: create-ticket=$RV_CT_COUNT brief=$RV_BRIEF_COUNT combined=$RV_FRONT_COUNT; 4 required"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-RV-agents: every spawned-from-skill sub-agent MUST also carry
+# the protocol on its own side (defense-in-depth — caller-side cap and
+# agent-side cap are belt-and-braces).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RV_AGENTS_OK=true
+RV_MISSING_AGENTS=""
+for rv_agent in implementer planner researcher ticket-evaluator decomposer ac-evaluator; do
+  rv_apath="$REPO_DIR/agents/${rv_agent}.md"
+  if [ -f "$rv_apath" ]; then
+    if ! grep -qE "$RV_PATTERN" "$rv_apath"; then
+      RV_AGENTS_OK=false
+      RV_MISSING_AGENTS="$RV_MISSING_AGENTS $rv_agent"
+    fi
+  fi
+done
+if [ "$RV_AGENTS_OK" = "true" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-agents: implementer / planner / researcher / ticket-evaluator / decomposer / ac-evaluator all carry the 500-token cap clause"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-RV-agents: missing cap clause in:${RV_MISSING_AGENTS}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
+# Category BL: Plan 07 brief / create-ticket dynamic shrinkage
+# Diff: AC #6 of Plan 07 — assert that brief/SKILL.md contains the dynamic
+#       Phase 2 shrinkage rule and that create-ticket/SKILL.md contains the
+#       lazy re-evaluation rule. Drift-detector for the Plan 07 contract.
+# =============================================================================
+echo "--- Cat BL: Plan 07 dynamic shrinkage rules ---"
+
+BL_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+BL_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# CT-MODE-BL-1: brief/SKILL.md MUST cite runtime_metrics and the signal pair
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'runtime_metrics|autopilot-state\.yaml' "$BL_BRIEF" \
+   && grep -qE 'input_tokens.*cache_read_input_tokens|cache_read_input_tokens.*input_tokens' "$BL_BRIEF"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-1: brief/SKILL.md cites runtime_metrics and the input_tokens+cache_read_input_tokens signal pair"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-1: brief/SKILL.md missing runtime_metrics citation or signal pair"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-BL-2: brief/SKILL.md MUST document all four tier rows
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE '≥ 70%|>= 70%' "$BL_BRIEF" \
+   && grep -qE '50-70%' "$BL_BRIEF" \
+   && grep -qE '30-50%' "$BL_BRIEF" \
+   && grep -qE '< 30%' "$BL_BRIEF"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-2: brief/SKILL.md enumerates all four remaining_pct tier rows"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-2: brief/SKILL.md missing one of the four tier rows"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-BL-3: brief/SKILL.md MUST document the standalone fallback path
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'standalone|state-file-absent|state.*absent|state.*not.*exist' "$BL_BRIEF"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-3: brief/SKILL.md documents the standalone fallback when autopilot-state.yaml is absent"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-3: brief/SKILL.md missing standalone fallback clause"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-BL-4: create-ticket/SKILL.md MUST document lazy re-evaluation + one-shot read
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'confidence|skip.*re-?eval' "$BL_CT" \
+   && grep -qE 'one-shot read|read once|single read|once at' "$BL_CT"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-4: create-ticket/SKILL.md documents the lazy re-evaluation + one-shot read"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-4: create-ticket/SKILL.md missing lazy re-evaluation rule or one-shot read note"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary

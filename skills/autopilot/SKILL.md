@@ -95,6 +95,8 @@ The pre-flight gate decides whether `/autopilot` has a runnable input. The singl
 
 0. **Auto-kick cleanup**: If `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` exists, delete it. This signals to the Stop hook that the auto-chain has entered `/autopilot` and the pre-autopilot guard is no longer needed. Deletion is idempotent — missing file is not an error. Do NOT touch `brief.md`, `autopilot-policy.yaml`, or `autopilot-state.yaml` in this step — only `auto-kick.yaml` is removed.
 
+   > Note: A `PostToolUse` hook (`hooks/post-skill-cleanup.sh`) physically removes any stale `auto-kick.yaml` after every `simple-workflow:autopilot` Skill invocation as a safety net. The MUST above remains the primary contract; the hook is defense-in-depth.
+
 1. **Split-plan discovery (single source of truth)**:
    - Let `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`.
    - Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` MUST NOT be read. Even if such a file exists on disk, `/autopilot` does not fall back to it. This is enforced by the Plan 4 Negative AC: "A `split-plan.md` located at the legacy path is not read by `/autopilot` as the authoritative ticket source — the skill's execution transcript for `/autopilot <slug>` against such a fixture emits stdout containing `ERROR:` or `not found` referencing the new path."
@@ -175,9 +177,41 @@ tickets:
     status: pending
     steps: {scout: pending, impl: pending, ship: pending}
     invocation_method: {scout: unknown, impl: unknown, ship: unknown}
+runtime_metrics: []                      # append-only, written by Stop / PreCompact hooks
+# Sample entry (one full session_end snapshot, all 7 canonical keys):
+#   - boundary: session_end                    # session_compaction | session_end (see references/stop-reason-taxonomy.md)
+#     stop_reason: normal_completion           # one of self_abort | loop_guard_release | policy_gate_stop | partial_completion | normal_completion | harness_terminated; null when boundary != session_end
+#     timestamp: 2026-04-29T19:39:10Z          # ISO-8601 UTC (`date -u +%Y-%m-%dT%H:%M:%SZ`)
+#     cache_creation_input_tokens: 716586      # integer or null (from hook payload)
+#     cache_read_input_tokens: 0               # integer or null (from hook payload)
+#     input_tokens: 0                          # integer or null (from hook payload, used by Plan 07)
+#     consecutive_stop_blocks: 5               # integer or null; meaningful only for boundary: session_end
 ```
 
 Note: the `steps:` / `invocation_method:` maps no longer contain a `create-ticket` key — ticket creation is no longer an `/autopilot` step (Plan 4). Existing state files from pre-Plan-4 runs that still carry a `create-ticket` key are tolerated on resume but not written fresh.
+
+#### `runtime_metrics:` schema
+
+`runtime_metrics:` is an **append-only** list written exclusively by the Stop hook (`hooks/autopilot-continue.sh`) and the PreCompact hook (`hooks/pre-compact-save.sh`). The list survives ticket completion (Split State File Cleanup keeps it intact when moving the state file to `briefs/done/`). Skills MUST NOT write `runtime_metrics:` directly — hook-only ownership keeps the schema observable from a single audit point.
+
+Value domains for `boundary` and `stop_reason`, plus the Stop hook's discrimination heuristic, are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md). Tracked files MUST cite that file rather than the planning-phase document under `.docs/` (which is not shipped with the plugin).
+
+#### Stop-hook loop guards
+
+`hooks/autopilot-continue.sh` runs two parallel counters and AND-combines them to decide when to release end_turn:
+
+| Counter | Source of truth | Reset condition | Threshold |
+| --- | --- | --- | --- |
+| `FILE_COUNT` (a.k.a. `MTIME_COUNT`) | `/tmp/.autopilot-continue-${session_id}` | `STATE_FILE -nt COUNTER_FILE` (state file advanced) | `>= 5` |
+| `NOTOOL_COUNT` | `/tmp/.autopilot-notool-${session_id}` | The most recent assistant turn in `transcript_path` carries a `tool_use` block whose `name` is one of `Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit` (`Read` is intentionally excluded — pure investigation turns are not progress) | `>= 5` |
+
+Release fires only when **both** counters meet their thresholds. The two-counter rule replaces the pre-Plan-02 single-counter logic in which "state stuck for 5 blocks" alone was sufficient — that single signal misfired when the model emitted text-only end_turns without making real progress. With `NOTOOL_COUNT` in place the hook holds its `decision: block` until the model has actually given up on tools as well.
+
+When `transcript_path` is empty / missing / malformed, the hook gracefully degrades to the pre-Plan-02 single-counter behaviour (`NOTOOL_COUNT` is treated as already met).
+
+On release the hook emits the literal line `[AUTOPILOT-STALL] ...` to **both** stdout (for user-visible recovery instructions) and stderr (for the runtime-metrics discrimination heuristic), then writes a `boundary: session_end, stop_reason: loop_guard_release` entry to `runtime_metrics:`.
+
+Kill switch: setting `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment short-circuits `NOTOOL_COUNT` (treats it as already met) so `FILE_COUNT` alone gates release — exactly the pre-Plan-02 behaviour. Use this only when the new logic is misfiring; the kill switch is meant for immediate rollback, not as a default operating mode.
 
 ### Split Execution Flow
 
@@ -448,6 +482,23 @@ manual_bash_fallbacks:
 ```
 
 On finalization (when writing `autopilot-log.md`), the `Manual Bash Fallbacks` section MUST replay this list verbatim. "No manual bash fallbacks" is valid ONLY when `manual_bash_fallbacks` is empty or absent. When the state file recorded fallbacks, the log MUST NOT emit an empty `Manual Bash Fallbacks: none` line — silent drops are a contract violation.
+
+## Stop Reason
+
+When an `autopilot-log.md` is written for a stopped or failed run, it MUST include a `## Stop Reason` section recording why the run terminated. Tag values and the discrimination heuristic are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md) — see that file for the full enum and conditions. The same `stop_reason` namespace is also written by the Stop hook into `autopilot-state.yaml` `runtime_metrics:` entries (single source of truth across log and state).
+
+Section format:
+
+```markdown
+## Stop Reason
+- **tag**: `<one of: self_abort | loop_guard_release | policy_gate_stop | partial_completion | normal_completion | harness_terminated>`
+- **timestamp**: 2026-04-29T19:39:10Z
+- **last_completed_ticket**: <logical_id or `null`>
+- **next_pending_ticket**: <logical_id or `null`>
+- **note**: <free-form, 1-2 lines>
+```
+
+Per-tag conditions live in the taxonomy file and MUST NOT be redefined here.
 
 ## Error Handling
 

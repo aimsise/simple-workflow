@@ -5,6 +5,7 @@ description: >-
   agent. Follows existing test patterns in the project.
 context: fork
 agent: test-writer
+model: sonnet
 argument-hint: "<file path or feature name to test>"
 ---
 

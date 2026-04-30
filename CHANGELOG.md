@@ -5,7 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.1.0] — 2026-04-30
+
+### Changed
+- `/brief` Phase 2 (Socratic Refinement) now performs a one-shot read of `autopilot-state.yaml.runtime_metrics:` last entry at the top of the phase and dynamically shrinks the question quota by tier (Plan 07). `remaining_pct` is approximated as `1.0 - (input_tokens + cache_read_input_tokens) / context_window_size` (default 1M, with documented caveat). Tier table: `≥ 70%` → 10 rounds × 3 questions = up to 30 (existing behaviour); `50-70%` → 5 rounds × 3 questions = up to 15; `30-50%` → 3 rounds × 2 questions = up to 6; `< 30%` → 1 round × 1 question = up to 1. When `autopilot-state.yaml` is absent (standalone `/brief` invocation) the existing 30-question ceiling continues to apply — the load-bearing `mode independence guard` and Phase 1 `researcher` paragraph are unchanged.
+- `/create-ticket` split judgment now performs the same one-shot read and adds a **lazy re-evaluation** rule: when the initial `planner` returns a high-confidence verdict (`confidence ≥ 0.8`, or an unambiguous size verdict with no contested signals), the `ticket-evaluator` / `re-evaluator` re-evaluation loop is **skipped**. The S/M/L/XL split thresholds and the `estimated_size` field semantics are unchanged. Standalone invocations (no `autopilot-state.yaml`) follow the existing re-evaluation loop.
+
+### Added
+- `tests/test-brief-lightening.sh` (15 assertions across 3 fixture cases at remaining_pct 80% / 40% / 10%, plus cross-cutting consistency checks): static document-consistency test confirming the SKILL.md tier table covers each fixture's remaining_pct.
+- `tests/fixtures/autopilot-state-samples/mock_state_{80,40,10}pct.yaml`: synthetic state-file fixtures for the lightening test.
+- `tests/test-skill-contracts.sh` Cat BL (`CT-MODE-BL-1..4`): contract guards that the dynamic shrinkage convention exists in `skills/brief/SKILL.md` and the lazy-evaluation rule exists in `skills/create-ticket/SKILL.md`.
+
+### Changed
+- Per-Agent return-value caps now reach every entry-point Skill (Plan 04). Previously the **Context Conservation Protocol** in `agents/*.md` MUST'd return values under 500 tokens, but the matching reminder was missing at most Skill-side launch sites. The plumbing fix adds an inline reference (`Return per the Context Conservation Protocol in your agent definition; the return value MUST be under 500 tokens — full report goes to the artifact path`) at every `Agent` / `Skill` launch in `skills/scout/SKILL.md` (`/investigate`, `/plan2doc`), `skills/impl/SKILL.md` (`implementer`, `ac-evaluator`, `/audit`), and `skills/create-ticket/SKILL.md` (`researcher`, `decomposer`, `planner`, `ticket-evaluator`). `skills/brief/SKILL.md` already carried the clause and was not modified. The 4-status verdict enum (`PASS` / `PASS-WITH-CAVEATS` / `FAIL` / `FAIL-CRITICAL`), the **Report Persistence Contract**, and the `runtime_metrics:` schema (Plan 01) are unchanged. No new Agent or Skill files were introduced.
+
+### Added
+- `agents/decomposer.md` now carries the explicit `## Context Conservation Protocol` section (matched to the existing block in `agents/planner.md`) — the only one of the six in-scope agents that previously lacked a verbatim protocol heading. The other five (`implementer`, `planner`, `researcher`, `ticket-evaluator`, `ac-evaluator`) already complied and were not modified.
+- `tests/test-skill-contracts.sh` Cat RV (`CT-MODE-RV-scout` / `-impl` / `-front` / `-agents`): contract guards that each of the four entry-point skills mentions the cap clause, plus a guard that all six in-scope agents (re-evaluator excepted — that filename is genuinely absent in the repo) carry a `500 tokens` or `Context Conservation Protocol` reference.
+
+### Added
+- `### Long-session symptoms` subsection inside `README.md ## Limitations` (Plan 06): docs-only guidance for the test_simple_workflow13 failure mode where `/autopilot` ends with `partial` well below the context-window cap. Names the resume design (`autopilot-state.yaml` + `phase-state.yaml`), points readers at `.docs/discovery/test_simple_workflow13/` for root-cause analysis, and lists the two out-of-the-box mitigations (the Stop-hook stall detector from Plan 02 and the per-Agent return-value cap from Plan 04) plus the separately-scheduled future work (per-ticket session split). Deliberately omits any reference to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or similar undocumented environment variables — those are deferred to a separate PR pending official documentation.
+
+### Added
+- `## Stop Reason` level-2 section in `skills/autopilot/SKILL.md` (Plan 05) describing the `autopilot-log.md` Stop Reason format. Tag values reference [`references/stop-reason-taxonomy.md`](skills/autopilot/references/stop-reason-taxonomy.md) (introduced in Plan 01) so the SKILL.md and the taxonomy file share a single source of truth — per-tag conditions are not duplicated in the SKILL.md prose. The same `stop_reason` namespace appears in `autopilot-state.yaml` `runtime_metrics:` entries.
+- `tests/test-skill-contracts.sh` Cat LT (`CT-MODE-LT-1/2/3`): contract guards for the loop-tail `MUST NOT.*end_turn` clause, the `## Stop Reason` section + taxonomy citation, and the discoverability of all 6 Stop Reason tags inside SKILL.md. Drift-detector for accidentally-softening simplification PRs and for taxonomy desync.
+
+### Added
+- `hooks/post-skill-cleanup.sh` (Plan 03): a `PostToolUse` hook that physically removes any stale `auto-kick.yaml` after every `simple-workflow:autopilot` Skill invocation. Defense-in-depth backstop for the existing Phase 1 step 0 MUST clause — when the model skips the Auto-kick cleanup (as observed in test_simple_workflow13), the hook enforces the contract regardless. Idempotent on missing files; depth-agnostic so both flat (`briefs/active/{slug}/auto-kick.yaml`) and nested (`briefs/active/{parent}/{child}/auto-kick.yaml`) layouts are handled. Non-autopilot Skill invocations are no-ops. Logs to stderr only (PostToolUse stdout flows back to the model).
+- `hooks/hooks.json` extended with the new `PostToolUse` matcher entry pointing at the cleanup hook.
+- `tests/test-post-skill-cleanup.sh` (23 assertions across 6 cases: autopilot removes / idempotent no-op / non-autopilot preserves / nested layout / other files preserved / stdout silence).
+- `tests/fixtures/briefs/{flat-layout,nested-layout}/` shared fixtures (per `00-index.md` Common Fixture Layout).
+- `skills/autopilot/SKILL.md` Phase 1 step 0 now carries a one-line `Note:` explaining the hook is defense-in-depth — the original MUST clause is preserved verbatim.
+
+### Changed
+- `/autopilot` Stop hook (`hooks/autopilot-continue.sh`) now uses a **two-counter AND-release rule** (Plan 02). The pre-existing `FILE_COUNT` (state-mtime) counter is retained unchanged; a second counter `NOTOOL_COUNT` increments when the most recent assistant turn invokes none of `Skill` / `Agent` / `Bash` / `Edit` / `Write` / `NotebookEdit` (a `Read`-only turn does NOT reset the counter). Loop guard releases the pipeline only when **both** counters reach 5 — i.e. state is stuck AND the model is no longer calling real tools. This closes the test_simple_workflow13 regression where the model emitted text-only turns and the single-counter mtime gate released as if the pipeline were truly stuck. On release, the hook prints `[AUTOPILOT-STALL] Pipeline halted: model emitted N consecutive end_turn attempts without tool calls or state progress. Resume with: /autopilot {parent-slug}` to stdout.
+- **Migration / kill switch**: set `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment to revert to the pre-Plan-02 single-counter behaviour (mtime gate alone). The legacy mode is intended for immediate rollback if the new rule misfires for a particular workload — not as a default operating mode. Behaviour matches the v6.0.5 hook bit-for-bit when this env var is set.
+
+### Added
+- `tests/fixtures/transcripts/` shared transcript fixtures (`tool_use_present.jsonl`, `text_only_5_consecutive.jsonl`, `state_advancing.jsonl`, `read_only_turns.jsonl`, `malformed.jsonl`, `realistic_full_turn.jsonl`) per `00-index.md` Common Fixture Layout.
+- `tests/test-autopilot-continue.sh` extended with 9 Plan-02 cases covering AC #2-#7, AC #9 (kill switch, two sub-assertions), and the NAC #2 autokick-branch regression. Total assertions: 34 → 43.
+- `runtime_metrics:` measurement foundation in `autopilot-state.yaml` (Plan 01). The `Stop` hook (`hooks/autopilot-continue.sh`) and `PreCompact` hook (`hooks/pre-compact-save.sh`) now append session-level entries (`boundary: session_end` / `boundary: session_compaction`) capturing `cache_creation_input_tokens`, `cache_read_input_tokens`, `input_tokens`, `consecutive_stop_blocks`, and a discriminated `stop_reason` (`normal_completion` / `partial_completion` / `loop_guard_release` / `null`). The append is graceful: when `yq` is unavailable, the hook falls back to `python3 + PyYAML`, then to a pure-shell text append. Per-ticket boundaries (`ticket_completed` / `ticket_failed` / `ticket_skipped`) are out of scope for Plan 01.
+- `skills/autopilot/references/stop-reason-taxonomy.md` (new): runtime source of truth for the `boundary` (2 values) and `stop_reason` (6 values) enums plus the discrimination heuristic. Replaces the planning-phase taxonomy that previously lived only in `.docs/`. `skills/autopilot/SKILL.md` now references this file from the `### State file initialization` block via a relative path.
+- `tests/test-autopilot-runtime-metrics.sh` covering 6 cases (session_end / normal_completion / partial_completion / loop_guard_release / session_compaction / empty payload) and 16 assertions.
+- `tests/fixtures/autopilot-state-samples/{empty,single-ticket,multi-ticket}.yaml` and `tests/fixtures/payloads/{stop-hook-end-turn,empty}.json` shared fixtures (per `00-index.md` Common Fixture Layout).
+- `tests/test-skill-contracts.sh` Cat RM (`CT-MODE-RM-1/2/3`): contract guards for the taxonomy file, its citation in `SKILL.md`, and the `runtime_metrics:` schema entry.
+- `## Dependencies` section in `CLAUDE.md` listing `git`, `gh`, `jq`, and `yq` (mikefarah/yq v4) with one-line purpose for each.
 
 ## [6.0.5] — 2026-04-28
 

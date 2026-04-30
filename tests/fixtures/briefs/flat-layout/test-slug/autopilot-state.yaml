@@ -1,0 +1,9 @@
+version: 1
+parent_slug: test-slug
+started: 2026-04-30T00:00:00Z
+execution_mode: split
+total_tickets: 0
+ticket_mapping: {}
+tickets: []
+manual_bash_fallbacks: []
+runtime_metrics: []

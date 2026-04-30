@@ -71,7 +71,7 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `researcher` agent (Agent tool) | Phase 1 Investigation — before drafting (bare/brief modes only; findings mode skips because the findings doc IS the investigation) | No investigation findings; planner operates on model-internal assumptions rather than codebase evidence. Detected by missing researcher trace in skill invocation audit |
+| `researcher` agent (Agent tool) | Phase 1 Investigation — before drafting (bare mode always; brief mode unless a fresh `{ticket-dir}/investigation.md` already exists, satisfies the freshness criterion below, and is reused; findings mode skips because the findings doc IS the investigation) | No investigation findings; planner operates on model-internal assumptions rather than codebase evidence. Detected by missing researcher trace in skill invocation audit. **Reuse case (brief mode only)**: when `{ticket-dir}/investigation.md` is present, passes the freshness check (`phase-state.yaml` provenance, mtime threshold, or content hash — see Phase 1 reuse clause), and is reused, the researcher invocation is intentionally skipped with no consequence — Phase 1 emits the same executive-summary + output-path schema sourced from the existing file, so the audit treats this as a contract-compliant skip rather than a bypass. A stale `investigation.md` that fails the freshness check MUST NOT be reused; the researcher is invoked instead |
 | `decomposer` agent (Agent tool) | Findings mode — immediately after findings-file validation, before planner | No dependency graph; skill cannot partition N work units into N ticket skeletons; findings mode cannot proceed |
 | `planner` agent (Agent tool) | Phase 3 Ticket Draft — after Phase 1 (+ optional Phase 2) | No structured draft; skill falls back to ad-hoc output with no category/size/AC separation — ticket-evaluator will FAIL the quality gate |
 | `ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — after Phase 3 | No quality gate; ticket marked "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
@@ -167,6 +167,8 @@ If the findings file was supplied alongside (or was derived from) a brief with f
 ### Step F-5: Invoke `decomposer` agent
 
 **MUST invoke the `decomposer` via the Agent tool.** Pass the findings document full content + any Socratic Refinement answers as context. Receive the structured `## Result` block with fields:
+
+**Return value cap**: Return per the Context Conservation Protocol in `agents/decomposer.md` — the decomposer's return value MUST stay under 500 tokens (Status / Parent slug / Tickets list / Topological order / Rationale). No file content is echoed back; the orchestrator routes the structured block straight into Step F-6 graph validation.
 
 - `Status`: `success | partial | failed`
 - `Parent slug`: should match `{parent-slug}` derived above (reconcile if decomposer disagrees; decomposer wins if `slug_hint` was absent).
@@ -270,6 +272,8 @@ The following phases are referenced by all three modes above.
 
 **MUST invoke the `researcher` via the Agent tool.** **NEVER bypass** via direct `Grep`/`Read`/`Glob` — independent findings are required for Phase 3. Fail the task immediately if the researcher cannot be invoked.
 
+**Return value cap**: Return per the Context Conservation Protocol in `agents/researcher.md` — the researcher's return value MUST stay under 500 tokens (status, executive summary, output path). The full investigation content lives at the canonical artifact path; the orchestrator reads it only when the planner needs it.
+
 Researcher scope:
 
 1. Source code related to the ticket description
@@ -279,6 +283,18 @@ Researcher scope:
 5. Dependencies (relationships with other tickets)
 
 In **findings mode**, Phase 1 is already satisfied by the findings document itself — the decomposer consumes the prior investigation directly. The researcher is only invoked again if the decomposer's Rationale flags missing context.
+
+In **brief mode**, Phase 1 is reused (researcher invocation skipped) when a `{ticket-dir}/investigation.md` already exists in the same ticket directory the brief is bound to **AND** that file satisfies the freshness criterion defined below — for example when `/scout` has chained `/investigate` into the ticket dir before `/create-ticket` runs, or when the caller explicitly supplies that exact path. The reuse is strictly scoped to `{ticket-dir}/investigation.md` inside the resolved ticket directory; an `investigation.md` from any other directory MUST NOT be reused (no remote-directory borrowing).
+
+**Freshness criterion (mechanically checkable; presence alone is NOT sufficient).** An existing `{ticket-dir}/investigation.md` is considered fresh and reusable iff at least ONE of the following signals holds, and the chosen signal is recorded in the Phase 1 trace:
+
+1. **`phase-state.yaml` provenance (preferred)** — `{ticket-dir}/phase-state.yaml` exists and `phases.scout.artifacts.investigation` resolves to the same `{ticket-dir}/investigation.md` path with `phases.scout.status` ∈ {`in-progress`, `completed`} and a `started_at` (or `completed_at`) timestamp not earlier than the file's `mtime`. This is the canonical signal because `/scout` (and `/investigate` via `/scout`) is the only legitimate writer of that artifact slot per `references/phase-state-schema.md` §2.
+2. **mtime freshness threshold** — when `phase-state.yaml` has no `phases.scout.artifacts.investigation` entry, the file's `mtime` MUST be within the last 24 hours (≤ 86400 s before the current `/create-ticket` invocation start time). Files older than this threshold are treated as stale.
+3. **Content-hash signature** — when the brief's YAML frontmatter records an `investigation_sha256:` field, the SHA-256 of `{ticket-dir}/investigation.md` MUST match that value byte-for-byte. A mismatch is treated as stale.
+
+When `{ticket-dir}/investigation.md` is absent, OR is present but fails ALL of the freshness signals above (e.g., a leftover file from an aborted earlier run with no matching `phase-state.yaml` provenance, an mtime older than 24 h, and no matching `investigation_sha256:`), the reuse path MUST NOT fire: brief mode falls through to the default behavior and the researcher is invoked exactly as in the no-file case. Phase 1 is mandatory whenever the reuse condition is not met — there is no third path that drafts a ticket without either a researcher invocation or a freshness-validated reused file.
+
+When the reuse path fires, Phase 1 still emits the same downstream contract as a researcher invocation: an executive summary plus the canonical output file path (`{ticket-dir}/investigation.md`). The schema of this Phase 1 output is identical to the researcher-invoked schema, so Phase 2 (Socratic) and Phase 3 (planner) consume it interchangeably and the downstream contract is preserved. **Bare-description mode does NOT participate in this reuse path** — Step D-2 always runs the researcher, because bare mode has no caller-supplied investigation context and no ticket directory exists yet at Phase 1 time.
 
 ### Phase 2: Socratic Refinement
 
@@ -316,6 +332,8 @@ If investigation yields sufficient clarity (e.g., simple S-size with obvious sco
 
 **MUST invoke the `planner` via the Agent tool.** **NEVER draft inline** — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft for Phase 4. Fail the task immediately if the planner cannot be invoked.
 
+**Return value cap**: Return per the Context Conservation Protocol in `agents/planner.md` — the planner's return value MUST stay under 500 tokens (status, output path, 1-2 line summary). The full draft is persisted to the artifact; the orchestrator and the Phase 4 evaluator read it from disk.
+
 Planner scope:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes)
@@ -347,11 +365,42 @@ Instruct the planner to evaluate whether the ticket should be split:
 - **N > 1**: Planner outputs each sub-ticket individually with its own title, category, size, scope, ACs. Each must be self-contained and independently implementable.
 - **N = 1**: Planner outputs a single ticket draft (existing behavior).
 
-(In findings mode, split judgment is already performed by the `decomposer` — the planner receives N skeletons one at a time and does NOT re-split.)
+##### Dynamic split-loop shrinkage (one-shot read of `runtime_metrics:`)
+
+Immediately before invoking the **planner** for split judgment, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` (or the parent_backlog mirror — same location precedence as `skills/autopilot/SKILL.md ### State file initialization`). This read is performed **once at the start of split judgment**; it is not repeated inside the re-evaluation loop.
+
+When the file exists, take the **last entry** of `runtime_metrics:` and compute the same `remaining_pct` formula used by `/brief` Phase 2:
+
+```
+current_context_tokens = input_tokens + cache_read_input_tokens
+context_window_size    = 1000000
+remaining_pct          = 1.0 - (current_context_tokens / context_window_size)
+```
+
+The signal pair `input_tokens + cache_read_input_tokens` is the canonical context-occupancy approximation introduced by Plan 01 (`runtime_metrics:` schema). `cache_creation_input_tokens` is intentionally **not** used.
+
+##### Lazy re-evaluation (skip the re-evaluation loop on high-confidence drafts)
+
+After the planner returns its first split judgment, evaluate the **confidence signal** the planner emitted alongside the draft. The skill considers a draft "high-confidence" when **either** of the following holds:
+
+1. The planner emits an explicit `confidence:` field with value **`confidence ≥ 0.8`** (e.g. `confidence: 0.9`), **or**
+2. The planner emits a single unambiguous size verdict (one of `S`, `M`, `L`, `XL`) with **no contested signals** in the rationale (i.e., no "alternative split possible" / "borderline" / "could also be N=2" qualifiers, and no FAIL items from the inline self-check).
+
+**When high-confidence**: skip the re-evaluation loop entirely. The first planner output is treated as final and the skill proceeds directly to Phase 4 (ticket-evaluator). The skip is a **token-saving optimization** — the planner's high-confidence draft has already passed the same internal checks the re-evaluator would re-run.
+
+**When not high-confidence**: enter the existing re-evaluation loop (no behaviour change from before Plan 07).
+
+**Standalone fallback (state-file-absent)**: when `autopilot-state.yaml` does not exist (standalone `/create-ticket` invocation), the dynamic-loop shrinkage is **bypassed** and the existing re-evaluation loop runs unconditionally regardless of confidence. This preserves the pre-Plan-07 behaviour of every direct `/create-ticket` invocation. The lazy-evaluation rule fires **only inside an autopilot session** (state file present).
+
+The size-tier thresholds (defined elsewhere in this skill) are **not** modified by this section; only the re-evaluation loop's iteration count is gated by the confidence signal.
+
+(In findings mode, split judgment is already performed by the `decomposer` — the planner receives N skeletons one at a time and does NOT re-split. The lazy-evaluation rule above also does not apply to findings mode, because the decomposer is the canonical authority there.)
 
 ### Phase 4: Ticket Evaluation
 
 **MUST invoke the `ticket-evaluator` via the Agent tool.** **NEVER self-assess** — the ticket-evaluator is the independent gate verifying AC Testability/Unambiguity. Fail immediately if it cannot be invoked.
+
+**Return value cap**: Return per the Context Conservation Protocol in `agents/ticket-evaluator.md` — the evaluator's return value MUST stay under 500 tokens (PASS/FAIL verdict + per-AC findings). The full Feedback transcript is consumed by Phase 4's retry-with-feedback loop on FAIL; the orchestrator does not re-echo it.
 
 **MUST inline-inject the canonical AC Quality Criteria into every `ticket-evaluator` spawn prompt** (both the initial evaluation and any retry re-spawn), delimited by the exact marker pair `<canonical_ac_criteria>` ... `</canonical_ac_criteria>`. The injected content is the canonical rubric text already loaded into this skill's Pre-computed Context above (via the `AC Quality Criteria` backtick-bang loader near the top of this file); reuse that loaded text verbatim. The evaluator does NOT read the canonical file itself — it reads only the marker block in its spawn prompt, so failure to inject is a contract violation that will cause the evaluator to fail-fast with ERROR. If the Pre-computed Context loader produced the `[WARNING: ac-quality-criteria.md not found]` sentinel, stop with an ERROR rather than spawning the evaluator without the rubric.
 
@@ -367,7 +416,12 @@ Instruct the planner to evaluate whether the ticket should be split:
    - **PASS** → proceed to Common Write Path.
    - **FAIL** →
      a. Save the evaluator's Feedback.
-     b. Re-spawn the **planner** with: original ticket content; evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
+     b. Re-spawn the **planner** with: original ticket content (inlined verbatim into the spawn prompt); evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
+        **Retry planner FS-search ban (token-efficiency contract)**: the retry spawn prompt MUST include the following literal constraint, and the planner MUST honor it even though its `tools:` allowlist (see `agents/planner.md`) still permits Read/Grep/Glob/Bash. The allowlist itself is NOT modified — this is a prompt-level suppression only.
+           - The retry planner works **solely from the inlined prior draft and the inlined evaluator Feedback** supplied in this spawn prompt.
+           - The retry planner MUST NOT search the filesystem for the prior `ticket.md` (no `Bash(find:*)`, no `Bash(grep:*)`, no `Bash(ls:*)`, no `Read` of any `ticket.md` path on disk, no `Grep`/`Glob` over the repository looking for ticket files). The prior draft is already inline; re-discovering it from disk is forbidden and wastes cache.
+           - The retry planner MUST NOT shell out to look for ticket directories, `.simple-workflow/backlog/...`, or any `ticket.md` artifact under any path; the canonical input is the inlined draft text only.
+           - These suppressions are **intentional** even when the underlying tool permission would allow the call. Treat the constraint as a hard contract: if the inlined draft is malformed or missing, fail-fast with `ERROR: retry spawn missing inlined prior draft` rather than reaching for the filesystem.
      c. Re-spawn the **ticket-evaluator** on the revised ticket. **MUST** again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair, sourced from the Pre-computed Context above. Missing the marker block causes the evaluator to fail-fast with ERROR.
      d. Max 2 rounds (initial + 1 revision). If still FAIL:
         - **Autopilot policy check**: Check `{ticket-dir}/autopilot-policy.yaml` at `.simple-workflow/backlog/product_backlog/{parent-slug}/{ticket-dir}/`. If missing **and** `brief=<path>` was given **AND** `brief_mode == auto` (parsed in Step B-2; legacy briefs without `mode:` are treated as `auto`), also check `{brief-parent-dir}/autopilot-policy.yaml` (e.g. `.simple-workflow/backlog/briefs/active/{slug}/`). When `brief_mode == manual`, the brief-parent `autopilot-policy.yaml` fallback is **skipped** — manual-mode runs do not pull retry-strategy from autopilot policy and proceed directly to the interactive flow below.

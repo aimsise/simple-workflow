@@ -1,0 +1,15 @@
+version: 1
+parent_slug: single-fixture
+started: 2026-04-29T00:00:00Z
+execution_mode: split
+total_tickets: 1
+ticket_mapping:
+  single-fixture-part-1: 001-single
+tickets:
+  - logical_id: single-fixture-part-1
+    ticket_dir: .simple-workflow/backlog/active/single-fixture/001-single
+    status: pending
+    steps: {scout: pending, impl: pending, ship: pending}
+    invocation_method: {scout: unknown, impl: unknown, ship: unknown}
+manual_bash_fallbacks: []
+runtime_metrics: []

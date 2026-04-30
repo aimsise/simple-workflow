@@ -222,6 +222,14 @@ Model selection is automatic based on ticket size — orchestrator skills (`/imp
 
 Anything not explicitly un-ignored stays gitignored, so research notes, plans, eval logs, and the knowledge base remain private. Concurrent ticket creation by multiple developers will produce git conflicts on a shared counter — that is the expected trade-off. simple-workflow's behavior does not depend on whether files are tracked; these patterns are purely a per-team policy decision.
 
+## Operational Notes
+
+### Long idle gaps: start a new session before resuming
+
+Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a session sits idle past that window — for example, an overnight pause between an `/impl` round and the closing `/tune` summary turn — the next turn re-warms the cache from scratch and can rewrite **hundreds of thousands of cache_creation tokens** in a single turn, which can account for a substantial share of the session's total cache_creation.
+
+**Recommendation**: if a simple-workflow session has been idle for more than ~1 hour, exit the session and start a fresh one before running `/tune` (or any other follow-up). Phase-terminating skills emit a `[SW-CHECKPOINT]` block precisely so that `/clear` or session exit is safe, and `/catchup` will reconstruct the in-progress phase from `phase-state.yaml` on the next session. This is a property of Claude Code's cache layer rather than a plugin bug, so it cannot be patched in plugin code.
+
 ## Limitations
 
 - Designed for use with Claude Code CLI and GitHub Copilot CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
@@ -230,6 +238,20 @@ Anything not explicitly un-ignored stays gitignored, so research notes, plans, e
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
 - AC Evaluator ships with built-in test/lint runners for JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator will rely on static code analysis only (reported as PASS-WITH-CAVEATS).
+- The `/autopilot` Stop hook releases end_turn only when **both** the state file is stuck AND the model has emitted N consecutive turns without invoking a real tool (`Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit`). If this two-counter rule misfires for your workload, set `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment to revert to the pre-Plan-02 single-counter behaviour (state-mtime gate alone). The kill switch is intended for immediate rollback, not as a default operating mode.
+
+### Long-session symptoms
+
+If `/autopilot` ends with a `partial` status well before reaching the context-window cap (e.g., under 80% utilization), the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. The plugin's resume design (`autopilot-state.yaml` + `phase-state.yaml`) lets you continue with `/autopilot {parent-slug}` in a fresh session.
+
+For root-cause analysis of one such failure mode, see `.docs/discovery/test_simple_workflow13/` in the repository.
+
+Mitigations available out-of-the-box:
+
+- The Stop hook detects "no tool call AND no state progress" sequences and releases the loop guard with an `[AUTOPILOT-STALL]` line so the user immediately sees why the run halted.
+- Per-Agent return value caps reduce orchestrator context bloat so the session stays under the auto-Compaction threshold longer.
+
+Future work (separately scheduled): per-ticket session split (one ticket = one session) for full context isolation.
 
 ## Acknowledgements
 
