@@ -56,7 +56,7 @@ _run_stop_hook() {
   ( cd "$TMP_REPO" && _AUTOPILOT_CONTINUE_COUNT="$continue_count" bash "$HOOK_STOP" <<<"$payload" ) >"$stdout_file" 2>"$stderr_file"
   LAST_EXIT_CODE=$?
   set -e
-  LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
+  LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
 }
 
@@ -68,7 +68,7 @@ _run_precompact_hook() {
   ( cd "$TMP_REPO" && bash "$HOOK_PRECOMPACT" <<<"$payload" ) >"$stdout_file" 2>"$stderr_file"
   LAST_EXIT_CODE=$?
   set -e
-  LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
+  LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
 }
 

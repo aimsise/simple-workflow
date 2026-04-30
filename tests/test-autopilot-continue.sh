@@ -886,7 +886,6 @@ run_p02_hook() {
   LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
   P02_NOTOOL_AFTER=$(cat "$notool_file" 2>/dev/null || echo "")
-  P02_MTIME_AFTER=$(cat "$mtime_file" 2>/dev/null || echo "")
   rm -f "$mtime_file" "$notool_file"
 }
 
