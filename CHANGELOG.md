@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.1.0] — 2026-04-30
 
 ### Changed
 - `/brief` Phase 2 (Socratic Refinement) now performs a one-shot read of `autopilot-state.yaml.runtime_metrics:` last entry at the top of the phase and dynamically shrinks the question quota by tier (Plan 07). `remaining_pct` is approximated as `1.0 - (input_tokens + cache_read_input_tokens) / context_window_size` (default 1M, with documented caveat). Tier table: `≥ 70%` → 10 rounds × 3 questions = up to 30 (existing behaviour); `50-70%` → 5 rounds × 3 questions = up to 15; `30-50%` → 3 rounds × 2 questions = up to 6; `< 30%` → 1 round × 1 question = up to 1. When `autopilot-state.yaml` is absent (standalone `/brief` invocation) the existing 30-question ceiling continues to apply — the load-bearing `mode independence guard` and Phase 1 `researcher` paragraph are unchanged.
