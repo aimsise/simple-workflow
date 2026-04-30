@@ -30,6 +30,14 @@ Conversations with the user may be in any language — translate before writing 
 - Every released tag needs a matching GitHub Release: `gh release create vX.Y.Z --title vX.Y.Z --notes-file <notes>`. Mark the newest stable as `--latest`.
 - For breaking releases, post a migration guide under GitHub Discussions `Announcements` and link it from the Release notes.
 
+### CHANGELOG and release-note style
+
+- One block per change type per version (a single `### Added`, `### Changed`, etc.) — never one section per Plan / topic. Bullets nest inside.
+- CHANGELOG bullet: 1-3 lines for the user-visible change and minimal impact context. Implementation narration belongs in the commit message, not the CHANGELOG.
+- Release notes ≠ CHANGELOG verbatim: open with a one-paragraph TL;DR, group highlights by user-facing feature (not internal Plan numbers), use tables for tier / test data, and link back to `CHANGELOG.md` + the PR.
+- Surface migration / kill switch in the same paragraph as the change it modifies, naming the env var or flag and the prior-version behaviour it preserves — even for non-breaking releases that flip a default.
+- Skip per-fixture / per-assertion lists in release notes; `X / Y pass` suffices, with full enumeration kept in CHANGELOG `### Added`.
+
 ### Pre-flight, before merging a release PR
 
 1. `bash tests/test-skill-contracts.sh` exits 0.
