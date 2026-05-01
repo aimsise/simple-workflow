@@ -132,6 +132,37 @@ model: sonnet
 maxTurns: 20
 ---
 
+## Tautological Assertion Static Rules
+
+Before rendering the per-AC verdict, you MUST load
+`skills/impl/references/tautological-assertion-rules.md` (resolve the path
+relative to the repository root) and apply the three canonical rules — **R1**
+(reference equality of the same symbol), **R2** (vacuous numeric boundary),
+**R3** (constant-only boolean assertion) — to every test file that the round
+under review added or modified. Apply the rules from round 1 onward. The
+rules file owns the canonical BAD / GOOD pairs, the hint-comment exemption
+list, and the documented Limitations of the first-stage grep-based
+detection — do not paraphrase or override them here.
+
+If any rule fires on any added or modified test file, the corresponding AC
+MUST be reported as **Status: FAIL**. The **Feedback** field MUST name each
+violated rule by its identifier (`R1`, `R2`, `R3`) together with the
+offending file path and the 1-based line number, in the form
+`R<N>: <relative-path>:<line> — <one-line excerpt>`. Multiple violations
+are listed one per line. Do not collapse different rule IDs onto a single
+line — each `R1` / `R2` / `R3` violation gets its own entry so the
+implementer can address them independently. Required feedback templates
+(use these exact rule-ID prefixes):
+
+- `R1: tests/foo.test.js:12 — expect(arr).toEqual(arr)`
+- `R2: tests/bar.test.js:7 — expect(size).toBeGreaterThanOrEqual(0)`
+- `R3: tests/baz.test.js:3 — expect(true).toBe(true)`
+
+The detection is deterministic. There is no "warning-only" mode and no
+environment-variable bypass. Existing rounds whose evaluations have already
+been written are out of scope — apply the detector only to the round under
+current review.
+
 ## AC Verification Method (v4.1.0)
 
 You MUST NOT create files inside the project root or any source directory (`src/`, `test/`, `tests/`, `lib/`, etc.) while evaluating acceptance criteria. Prohibited outputs include:

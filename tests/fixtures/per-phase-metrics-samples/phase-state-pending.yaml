@@ -1,0 +1,40 @@
+# Base phase-state.yaml template — every phase pending. Used by
+# tests/test-per-phase-metrics.sh (PX-05) as the starting state for each
+# scenario. Tests copy this into
+#   <tmp>/.simple-workflow/backlog/briefs/active/<parent_slug>/T-001/phase-state.yaml
+# and overwrite the relevant `phases.<name>.status` field before piping a
+# Write payload at hooks/post-phase-checkpoint.sh.
+#
+# The schema mirrors skills/create-ticket/references/phase-state-schema.md
+# but adds `audit:` and `tune:` slots so the per-phase observability hook
+# can record entries for the full five-phase scope (scout / impl / audit
+# / tune / ship). The `create-ticket` slot is intentionally omitted — that
+# phase runs before autopilot-state.yaml exists and is out of scope.
+version: 1
+ticket_id: T-001
+size: M
+created: 2026-04-29T00:00:00Z
+current_phase: scout
+last_completed_phase: null
+overall_status: in-progress
+phases:
+  scout:
+    status: pending
+    started_at: null
+    completed_at: null
+  impl:
+    status: pending
+    started_at: null
+    completed_at: null
+  audit:
+    status: pending
+    started_at: null
+    completed_at: null
+  tune:
+    status: pending
+    started_at: null
+    completed_at: null
+  ship:
+    status: pending
+    started_at: null
+    completed_at: null

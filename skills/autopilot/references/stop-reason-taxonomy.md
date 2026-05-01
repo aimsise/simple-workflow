@@ -14,18 +14,50 @@ The planning-phase specification that drives this file lives at
 
 ## `boundary` (WHEN — which hook event recorded the entry)
 
-`runtime_metrics:` entries are written by exactly two hooks. Each entry's
+`runtime_metrics:` entries are written by three hooks. Each entry's
 `boundary` field identifies the writer:
 
 | Value                | Writer hook                              | Meaning                                                          |
 | -------------------- | ---------------------------------------- | ---------------------------------------------------------------- |
 | `session_compaction` | `pre-compact-save.sh` (PreCompact hook)  | Snapshot taken just before context compaction fires.             |
 | `session_end`        | `autopilot-continue.sh` (Stop hook)      | Snapshot taken at the moment Stop hook permits `end_turn`.       |
+| `phase_complete`     | `post-phase-checkpoint.sh` (PostToolUse:Write) | Recorded when `phase-state.yaml.phases.<name>.status` transitions to `completed`. |
+| `phase_failed`       | `post-phase-checkpoint.sh` (PostToolUse:Write) | Recorded when `phase-state.yaml.phases.<name>.status` transitions to `failed`.    |
+| `phase_skipped`      | `post-phase-checkpoint.sh` (PostToolUse:Write) | Recorded when `phase-state.yaml.phases.<name>.status` transitions to `skipped`.   |
 
-Per-ticket boundaries (`ticket_completed`, `ticket_failed`, `ticket_skipped`)
-are intentionally **out of scope** here: neither Stop nor PreCompact fires at
-ticket transitions, and a different hook mechanism is required to record them.
-A future plan may extend this taxonomy.
+The two `session_*` boundaries cover session-level events; the three
+`phase_*` boundaries cover per-phase transitions inside a single session.
+Per-ticket boundaries (`ticket_completed`, `ticket_failed`,
+`ticket_skipped`) remain intentionally **out of scope** — a future plan
+may extend this taxonomy.
+
+### Per-phase entries (`phase_complete` / `phase_failed` / `phase_skipped`)
+
+The three per-phase boundary literals are:
+
+- `boundary: phase_complete` — `phase-state.yaml.phases.<name>.status` reached `completed`.
+- `boundary: phase_failed` — `phase-state.yaml.phases.<name>.status` reached `failed`.
+- `boundary: phase_skipped` — `phase-state.yaml.phases.<name>.status` reached `skipped`.
+
+Per-phase entries carry two extra fields beyond the seven canonical keys:
+
+- `ticket_id` — the ticket the phase belongs to (e.g. `T-001`), extracted
+  from the phase-state.yaml location or its embedded `ticket_id` field.
+- `phase` — one of `scout` / `impl` / `audit` / `tune` / `ship`. The
+  `create-ticket` phase is excluded because it runs before
+  `autopilot-state.yaml` exists.
+
+For per-phase entries `stop_reason` is always `null`. The `cache_*`,
+`input_tokens`, and `consecutive_stop_blocks` fields are best-effort —
+the PostToolUse:Write hook does not receive a token-usage payload, so
+they default to `null`.
+
+Idempotency: the writer hook checks the entire `runtime_metrics:` array
+for a pre-existing `(ticket_id, phase, boundary)` triple before
+appending. A repeated write of the same status (e.g. `completed` →
+`completed`) does NOT add a second entry. The check scans the full
+array, not a recent-N window, so duplicates are detected even when
+`runtime_metrics:` has grown across many phases.
 
 ## `stop_reason` (WHY — only meaningful for `boundary: session_end`)
 
@@ -33,6 +65,8 @@ A future plan may extend this taxonomy.
 
 - For `boundary: session_end` it is one of the values in the table below.
 - For `boundary: session_compaction` it is always `null`.
+- For `boundary: phase_complete` / `phase_failed` / `phase_skipped` it is
+  always `null` — phase transitions do not carry a stop-reason axis.
 - The same enum is reused in `autopilot-log.md`'s `## Stop Reason` section.
 
 | Value                | Condition                                                                                                                                                |
@@ -68,7 +102,10 @@ itself; the Stop hook does not synthesise them.
 
 The PreCompact hook (`hooks/pre-compact-save.sh`) always writes
 `boundary: session_compaction`, `stop_reason: null`. No discrimination is
-required.
+required. Note: auto compact is normal operation, not a failure mode — the
+PreCompact entry is the harness's designed response to context pressure, and
+the resume path (`[RESUME] Skipping {logical_id}: already completed`) carries
+the run forward without orchestrator intervention.
 
 ## Field reference for `runtime_metrics:` entries
 

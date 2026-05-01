@@ -1,0 +1,22 @@
+# Base autopilot-state.yaml template used by tests/test-per-phase-metrics.sh
+# (PX-05). Each fixture scenario copies this file under
+#   <tmp>/.simple-workflow/backlog/briefs/active/<parent_slug>/autopilot-state.yaml
+# and substitutes parent_slug / ticket entries before driving the hook.
+#
+# `runtime_metrics:` starts empty; the hook is expected to append exactly
+# one entry per (ticket_id, phase, boundary) triple.
+version: 1
+parent_slug: PARENT_SLUG_PLACEHOLDER
+started: 2026-04-29T00:00:00Z
+execution_mode: split
+total_tickets: 1
+ticket_mapping:
+  PARENT_SLUG_PLACEHOLDER-part-1: T-001
+tickets:
+  - logical_id: PARENT_SLUG_PLACEHOLDER-part-1
+    ticket_dir: .simple-workflow/backlog/briefs/active/PARENT_SLUG_PLACEHOLDER/T-001
+    status: in_progress
+    steps: {scout: pending, impl: pending, audit: pending, tune: pending, ship: pending}
+    invocation_method: {scout: skill, impl: skill, audit: skill, tune: skill, ship: skill}
+manual_bash_fallbacks: []
+runtime_metrics: []

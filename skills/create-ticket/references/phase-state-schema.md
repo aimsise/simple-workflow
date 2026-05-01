@@ -78,3 +78,43 @@ status. `/ship` preserves the file inside the ticket dir when moving to
 Legacy `impl-state.yaml` handling (both-files-exist branch, rename table,
 `legacy_extras`, `.bak` cleanup, sunset) lives in
 `phase-state-migration.md`. `/impl` §11a reads it at migration time.
+
+## 8. Skip-transition discipline (`override_skip`)
+
+Both `phase-state.yaml` (per-ticket file) and `autopilot-state.yaml`
+(parent-level orchestrator file) accept an optional ticket-level
+`override_skip` field that governs explicit `status: skipped`
+transitions. The PreToolUse:Write/Edit guard (`pre-state-transition.sh`)
+enforces this contract for every state-file write taken inside an
+autopilot context.
+
+Schema:
+
+| Field | Type | Default | Location | Purpose |
+|---|---|---|---|---|
+| `override_skip` | boolean | `false` | Same indentation as the ticket's `status:` line (per-ticket scope) | Explicit acknowledgement that this ticket is being marked `skipped` while one or more sibling tickets are still `pending` / `in_progress`. |
+
+Rules:
+
+- An `override_skip: true` flag MUST sit at the same indentation as the
+  ticket's own `status:` field. A top-level `override_skip:` (column 0),
+  a commented-out `# override_skip: true`, or a placement at any other
+  indentation does NOT count — the structural check rejects the write.
+- `override_skip: true` is **not unconditionally honoured**. The
+  abuse-prevention clause: when the same ticket's `skip_reason`
+  matches one of the canonical context-pressure / forbidden rationale
+  patterns (single source of truth: `hooks/lib/forbidden-rationale-patterns.sh`),
+  the override is invalid and the write is blocked. In other words,
+  a forbidden rationale invalidates an override regardless of its
+  structural placement.
+- Dependency-cascade skips (`skip_reason` containing
+  `dependency_failed` or `dependency_skipped`) do NOT require
+  `override_skip` — they are the canonical, contracted way to skip a
+  ticket whose upstream dependency failed or was skipped.
+- Outside an autopilot context (no `autopilot-state.yaml` under
+  `briefs/active/` or `product_backlog/`), the schema field is purely
+  documentary and the guard is a no-op.
+
+The forbidden-rationale list is intentionally not duplicated here:
+schema documents reference the helper file by name only so the rule set
+has exactly one source of truth.
