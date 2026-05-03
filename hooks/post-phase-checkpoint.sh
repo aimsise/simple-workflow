@@ -427,13 +427,16 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Iterate the five in-scope phases. For each, read the on-disk
+# Iterate the three canonical in-scope phases. For each, read the on-disk
 # `phases.<name>.status` (post-Write content) via parse_phase_status; if
-# it lands on `completed` / `failed` / `skipped`, append once.
+# it lands on `completed` / `failed` / `skipped`, append once. The phase
+# scope mirrors `skills/create-ticket/references/phase-state-schema.md`,
+# which defines exactly `scout` / `impl` / `ship` (the `create_ticket`
+# slot runs before autopilot-state.yaml exists and is out of scope).
 # ---------------------------------------------------------------------------
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
 
-for PHASE in scout impl audit tune ship; do
+for PHASE in scout impl ship; do
   STATUS=$(parse_phase_status "$ABS_FILE_PATH" "$PHASE" 2>/dev/null || true)
   STATUS=$(printf '%s' "$STATUS" | tr -d '[:space:]')
   if [ -z "$STATUS" ]; then

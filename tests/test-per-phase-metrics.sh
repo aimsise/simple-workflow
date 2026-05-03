@@ -7,16 +7,19 @@
 #
 # Scenarios (PX-05 Acceptance Criteria #3 (a)-(g) plus AC #5 simulation):
 #   (a) phases.scout.status pending -> completed -> 1 entry phase_complete
-#   (b) 5 phases (scout/impl/audit/tune/ship) sequentially completed
-#       -> 5 entries phase_complete
+#   (b) 3 phases (scout/impl/ship) sequentially completed
+#       -> 3 entries phase_complete
 #   (c) non-status update (last_round only) -> no entry
 #   (d) outside autopilot context -> no entry
 #   (e) idempotent completed -> completed run twice -> only 1 entry
 #   (f) phases.impl.status pending -> failed -> 1 entry phase_failed
-#   (g) phases.audit.status pending -> skipped -> 1 entry phase_skipped
-#   (h) AC #5 -- 6 tickets x 5 phases = exactly 30 phase_complete entries
+#   (g) phases.ship.status pending -> skipped -> 1 entry phase_skipped
+#   (h) AC #5 -- 6 tickets x 3 phases = exactly 18 phase_complete entries
 #       (one autopilot-state.yaml hosts 6 ticket dirs; we run scenario (b)
-#        equivalent against each in turn)
+#        equivalent against each in turn). The phase scope mirrors the
+#        canonical three-phase schema in
+#        skills/create-ticket/references/phase-state-schema.md (scout /
+#        impl / ship); the prior five-phase shape was a fixture artefact.
 #
 # Each scenario builds a self-contained tmp repo via mktemp -d and runs
 # the hook with a Claude Code-shaped JSON payload on stdin, mirroring the
@@ -390,10 +393,10 @@ assert_exit_zero "(a) hook exits 0"
 assert_eq "(a) one phase_complete entry recorded" 1 "$(count_triple_entries "$APS" "$TID" scout phase_complete)"
 assert_eq "(a) total phase_complete entries == 1" 1 "$(count_boundary_entries "$APS" phase_complete)"
 
-# --- (b) 5 phases sequentially completed -----------------------------------
+# --- (b) 3 phases sequentially completed -----------------------------------
 
 echo ""
-echo "--- (b) 5 phases (scout/impl/audit/tune/ship) sequentially completed -> 5 entries ---"
+echo "--- (b) 3 phases (scout/impl/ship) sequentially completed -> 3 entries ---"
 REPO=$(new_repo)
 SLUG="ppm-b"
 TID="T-002"
@@ -401,15 +404,15 @@ APS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/autopilot-state.yaml"
 PHS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/$TID/phase-state.yaml"
 write_autopilot_state "$APS" "$SLUG"
 write_phase_state "$PHS" "$TID"  # all pending
-for ph in scout impl audit tune ship; do
+for ph in scout impl ship; do
   write_phase_state "$PHS" "$TID" "$ph" completed
   run_hook "$REPO" "$PHS"
   assert_exit_zero "(b) hook exits 0 after $ph -> completed"
 done
-for ph in scout impl audit tune ship; do
+for ph in scout impl ship; do
   assert_eq "(b) one entry for ($TID, $ph, phase_complete)" 1 "$(count_triple_entries "$APS" "$TID" "$ph" phase_complete)"
 done
-assert_eq "(b) total phase_complete entries == 5" 5 "$(count_boundary_entries "$APS" phase_complete)"
+assert_eq "(b) total phase_complete entries == 3" 3 "$(count_boundary_entries "$APS" phase_complete)"
 
 # --- (c) non-status update -> no entry --------------------------------------
 
@@ -422,7 +425,7 @@ APS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/autopilot-state.yaml"
 PHS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/$TID/phase-state.yaml"
 write_autopilot_state "$APS" "$SLUG"
 write_phase_state "$PHS" "$TID"  # all pending
-# Append a `last_round: 1` scalar at top-level. The scout/impl/audit/tune/ship
+# Append a `last_round: 1` scalar at top-level. The scout/impl/ship
 # statuses remain `pending`, so no entry should be appended.
 printf '\nlast_round: 1\n' >> "$PHS"
 run_hook "$REPO" "$PHS"
@@ -488,27 +491,27 @@ assert_eq "(f) one phase_failed entry for impl" 1 "$(count_triple_entries "$APS"
 assert_eq "(f) total phase_failed entries == 1" 1 "$(count_boundary_entries "$APS" phase_failed)"
 assert_eq "(f) zero phase_complete entries" 0 "$(count_boundary_entries "$APS" phase_complete)"
 
-# --- (g) phases.audit.status pending -> skipped -> 1 entry -----------------
+# --- (g) phases.ship.status pending -> skipped -> 1 entry ------------------
 
 echo ""
-echo "--- (g) phases.audit.status pending -> skipped -> 1 entry phase_skipped ---"
+echo "--- (g) phases.ship.status pending -> skipped -> 1 entry phase_skipped ---"
 REPO=$(new_repo)
 SLUG="ppm-g"
 TID="T-007"
 APS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/autopilot-state.yaml"
 PHS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/$TID/phase-state.yaml"
 write_autopilot_state "$APS" "$SLUG"
-write_phase_state "$PHS" "$TID" audit skipped
+write_phase_state "$PHS" "$TID" ship skipped
 run_hook "$REPO" "$PHS"
 assert_exit_zero "(g) hook exits 0"
-assert_eq "(g) one phase_skipped entry for audit" 1 "$(count_triple_entries "$APS" "$TID" audit phase_skipped)"
+assert_eq "(g) one phase_skipped entry for ship" 1 "$(count_triple_entries "$APS" "$TID" ship phase_skipped)"
 assert_eq "(g) total phase_skipped entries == 1" 1 "$(count_boundary_entries "$APS" phase_skipped)"
 assert_eq "(g) zero phase_complete entries" 0 "$(count_boundary_entries "$APS" phase_complete)"
 
-# --- (h) AC #5: 6 tickets x 5 phases = exactly 30 phase_complete entries --
+# --- (h) AC #5: 6 tickets x 3 phases = exactly 18 phase_complete entries --
 
 echo ""
-echo "--- (h) AC #5: 6 tickets x 5 phases = 30 phase_complete entries ---"
+echo "--- (h) AC #5: 6 tickets x 3 phases = 18 phase_complete entries ---"
 REPO=$(new_repo)
 SLUG="ppm-bulk"
 APS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/autopilot-state.yaml"
@@ -517,15 +520,15 @@ for i in 1 2 3 4 5 6; do
   TID=$(printf 'T-%03d' "$i")
   PHS="$REPO/.simple-workflow/backlog/briefs/active/$SLUG/$TID/phase-state.yaml"
   write_phase_state "$PHS" "$TID"  # all pending
-  for ph in scout impl audit tune ship; do
+  for ph in scout impl ship; do
     write_phase_state "$PHS" "$TID" "$ph" completed
     run_hook "$REPO" "$PHS"
   done
 done
-assert_eq "(h) total phase_complete entries == 30" 30 "$(count_boundary_entries "$APS" phase_complete)"
+assert_eq "(h) total phase_complete entries == 18" 18 "$(count_boundary_entries "$APS" phase_complete)"
 # Spot-check three triples to prove array-wide identity (not just count).
 assert_eq "(h) entry for (T-001, scout, phase_complete) == 1" 1 "$(count_triple_entries "$APS" T-001 scout phase_complete)"
-assert_eq "(h) entry for (T-003, audit, phase_complete) == 1" 1 "$(count_triple_entries "$APS" T-003 audit phase_complete)"
+assert_eq "(h) entry for (T-003, impl, phase_complete) == 1" 1 "$(count_triple_entries "$APS" T-003 impl phase_complete)"
 assert_eq "(h) entry for (T-006, ship, phase_complete) == 1" 1 "$(count_triple_entries "$APS" T-006 ship phase_complete)"
 
 print_summary

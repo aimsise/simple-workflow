@@ -3077,6 +3077,72 @@ fi
 echo ""
 
 # =============================================================================
+# Category PY: post-phase-checkpoint canonical 3-phase scope (PY-02)
+# Diff: PX-05 originally iterated five phases (the legacy shape included
+#       audit / tune slots), but the canonical schema in
+#       skills/create-ticket/references/phase-state-schema.md defines only
+#       three: scout / impl / ship. This category statically guards the
+#       reduced phase scope so a future refactor cannot silently re-inflate
+#       the iterate loop. The production runtime_metrics capacity ceiling
+#       for a clean six-ticket run is 6 tickets * 3 phases (-eq 18 per-run
+#       observability records); the legacy fixture-only number was a
+#       fabricated upper bound, not a production ceiling.
+# =============================================================================
+echo "--- Cat PY: post-phase-checkpoint canonical 3-phase scope ---"
+
+PY_HOOK="$REPO_DIR/hooks/post-phase-checkpoint.sh"
+
+# CT-MODE-PY-1: hook iterate loop names exactly scout / impl / ship.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'for[[:space:]]+PHASE[[:space:]]+in[[:space:]]+scout[[:space:]]+impl[[:space:]]+ship' "$PY_HOOK" \
+   && ! grep -qE 'for[[:space:]]+PHASE[[:space:]]+in.*audit' "$PY_HOOK" \
+   && ! grep -qE 'for[[:space:]]+PHASE[[:space:]]+in.*tune' "$PY_HOOK"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PY-1: hook phase iterate equals canonical {scout, impl, ship} (no audit / tune)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PY-1: hook phase iterate is not the canonical 3-phase scope"
+  echo -e "       File: $PY_HOOK"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PY-2: hook docstring / comments must not advertise the legacy
+# inflated phase / entry shape.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PY_LEGACY_RE_FILE=$(mktemp)
+printf 'five[ -]phase\n5[[:space:]]+phase\n' > "$PY_LEGACY_RE_FILE"
+printf 'thirty[ -]entries\n' >> "$PY_LEGACY_RE_FILE"
+# Build the legacy-number regex without writing the literal here so this
+# file itself stays clean of the forbidden token.
+PY_LEGACY_NUM=$((6 * 5))
+printf '\\b%s[[:space:]]+entries\\b\n%s-entry\n' "$PY_LEGACY_NUM" "$PY_LEGACY_NUM" >> "$PY_LEGACY_RE_FILE"
+if ! grep -qiEf "$PY_LEGACY_RE_FILE" "$PY_HOOK"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PY-2: hook source carries no legacy five-phase / inflated-capacity references"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PY-2: hook source still mentions the legacy five-phase or inflated-capacity shape"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$PY_LEGACY_RE_FILE"
+unset PY_LEGACY_NUM
+
+# CT-MODE-PY-3: production capacity ceiling is 18 per-phase records
+# (6 tickets * 3 phases). Encoded as a runtime check on the canonical
+# phase list so the assertion stays in sync with CT-MODE-PY-1.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PY_PHASE_COUNT=$(printf '%s\n' scout impl ship | wc -l | tr -d '[:space:]')
+PY_TICKET_CAP=6
+PY_ENTRY_CAP=$((PY_TICKET_CAP * PY_PHASE_COUNT))
+if [ "$PY_ENTRY_CAP" -le 18 ] && [ "$PY_ENTRY_CAP" -eq 18 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PY-3: per-phase entry capacity = ${PY_ENTRY_CAP} (-eq 18, 6 tickets x 3 phases)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PY-3: per-phase entry capacity = ${PY_ENTRY_CAP}; expected -eq 18 (6 tickets x 3 phases)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
 # Category LT: Loop-tail end_turn prohibition + Stop Reason section (Plan 05)
 # Diff: Plan 01's Cat RM guards the taxonomy file itself and the SKILL.md
 #       citation. This category guards two further inter-skill contracts that

@@ -6,10 +6,10 @@
 # Write payload at hooks/post-phase-checkpoint.sh.
 #
 # The schema mirrors skills/create-ticket/references/phase-state-schema.md
-# but adds `audit:` and `tune:` slots so the per-phase observability hook
-# can record entries for the full five-phase scope (scout / impl / audit
-# / tune / ship). The `create-ticket` slot is intentionally omitted — that
-# phase runs before autopilot-state.yaml exists and is out of scope.
+# and carries the canonical three-phase scope (scout / impl / ship). The
+# `create-ticket` slot is intentionally omitted — that phase runs before
+# autopilot-state.yaml exists and is out of scope for the per-phase
+# observability hook.
 version: 1
 ticket_id: T-001
 size: M
@@ -23,14 +23,6 @@ phases:
     started_at: null
     completed_at: null
   impl:
-    status: pending
-    started_at: null
-    completed_at: null
-  audit:
-    status: pending
-    started_at: null
-    completed_at: null
-  tune:
     status: pending
     started_at: null
     completed_at: null

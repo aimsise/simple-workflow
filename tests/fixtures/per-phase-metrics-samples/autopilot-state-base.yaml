@@ -16,7 +16,7 @@ tickets:
   - logical_id: PARENT_SLUG_PLACEHOLDER-part-1
     ticket_dir: .simple-workflow/backlog/briefs/active/PARENT_SLUG_PLACEHOLDER/T-001
     status: in_progress
-    steps: {scout: pending, impl: pending, audit: pending, tune: pending, ship: pending}
-    invocation_method: {scout: skill, impl: skill, audit: skill, tune: skill, ship: skill}
+    steps: {scout: pending, impl: pending, ship: pending}
+    invocation_method: {scout: skill, impl: skill, ship: skill}
 manual_bash_fallbacks: []
 runtime_metrics: []
