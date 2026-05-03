@@ -192,7 +192,6 @@ _pst_shell_parse() {
   local dash_indent=-1
   local status="(none)" override="(none)" reason="(none)"
 
-  local flush_item
   flush_item() {
     if [ "$have_item" -eq 1 ]; then
       printf '%s|%s|%s\n' "$status" "$override" "$reason"

@@ -97,7 +97,6 @@ _run_stop_hook() {
   ( cd "$TMP_REPO" && _AUTOPILOT_CONTINUE_COUNT="$continue_count" bash "$HOOK_STOP" <<<"$payload" ) >"$stdout_file" 2>"$stderr_file"
   LAST_EXIT_CODE=$?
   set -e
-  LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
 }
@@ -197,9 +196,6 @@ _check_order() {
   local description="$1"
   local file="$2"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  local seq
-  seq=$(grep -nE 'find .*backlog/(briefs/active|product_backlog|briefs/done).*autopilot-state\.yaml' "$file" \
-        | awk -F: '{print $1}')
   local active_line product_line done_line
   active_line=$(grep -nE 'find .*backlog/briefs/active.*autopilot-state\.yaml' "$file" | head -1 | awk -F: '{print $1}')
   product_line=$(grep -nE 'find .*backlog/product_backlog.*autopilot-state\.yaml' "$file" | head -1 | awk -F: '{print $1}')
