@@ -350,7 +350,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! grep -qiE 'last_n|recent_n|window|tail.*[0-9]+' "$HOOK_PATH" 2>/dev/null; then
+if ! grep -qiE 'last_n|recent_n|window|\btail[[:space:]]+-n([[:space:]]+|=)?[0-9]+' "$HOOK_PATH" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} hook has no recent-N window idioms (AC #6)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

@@ -401,12 +401,11 @@ PY
         || _pphc_warn "shell sed normalisation failed (state=$state_file)"
     fi
   elif ! grep -qE '^runtime_metrics:' "$state_file"; then
-    # Ensure the file ends with a newline before appending. We use awk
-    # to read the final character rather than alternative byte-counting
-    # tools, to avoid colliding with the negative-AC grep that audits
-    # this script for positional-cap idioms.
-    _last_byte=$(awk 'END{print substr($0, length($0))}' "$state_file" 2>/dev/null || true)
-    if [ -n "$_last_byte" ]; then
+    # Ensure the file ends with a newline before appending. The trailing
+    # sentinel preserves a literal newline through command substitution
+    # (which would otherwise strip it).
+    _last_byte=$(tail -c 1 "$state_file" 2>/dev/null; printf x)
+    if [ "$_last_byte" != "x" ]; then
       printf '\n' >> "$state_file"
     fi
     unset _last_byte
