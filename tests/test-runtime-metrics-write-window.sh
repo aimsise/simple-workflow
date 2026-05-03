@@ -293,7 +293,7 @@ DONE_PATH="$TMP_REPO/.simple-workflow/backlog/briefs/done/win-e/autopilot-state.
 _write_completed_state_file "$ACTIVE_PATH"
 _write_completed_state_file "$DONE_PATH"
 DONE_PRE_HASH=$(shasum "$DONE_PATH" | awk '{print $1}')
-DONE_PRE_MTIME=$(stat -f %m "$DONE_PATH" 2>/dev/null || stat -c %Y "$DONE_PATH" 2>/dev/null)
+DONE_PRE_MTIME=$(stat -c %Y "$DONE_PATH" 2>/dev/null || stat -f %m "$DONE_PATH" 2>/dev/null)
 # Sleep one second so any mutation produces an mtime delta we can detect.
 sleep 1
 _run_stop_hook "$PAYLOAD"
@@ -301,7 +301,7 @@ _assert_exit_zero "(e) Stop hook exits 0"
 _assert_metrics_count "(e) briefs/active/ state file has one new entry" "$ACTIVE_PATH" 1
 _assert_metrics_count "(e) briefs/done/ state file has zero entries" "$DONE_PATH" 0
 DONE_POST_HASH=$(shasum "$DONE_PATH" | awk '{print $1}')
-DONE_POST_MTIME=$(stat -f %m "$DONE_PATH" 2>/dev/null || stat -c %Y "$DONE_PATH" 2>/dev/null)
+DONE_POST_MTIME=$(stat -c %Y "$DONE_PATH" 2>/dev/null || stat -f %m "$DONE_PATH" 2>/dev/null)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$DONE_PRE_HASH" = "$DONE_POST_HASH" ]; then
   echo -e "  ${GREEN}PASS${NC} (e) briefs/done/ state file content unchanged (sha1 stable)"
