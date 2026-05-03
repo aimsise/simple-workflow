@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.1.1] — 2026-05-03
 
 ### Added
 - `ac-evaluator` tautological assertion static detector (PX-07). Three deterministic anti-patterns — **R1** (reference equality of the same symbol), **R2** (vacuous numeric boundary against a literal extremum), **R3** (constant-only boolean assertions) — are surfaced every round as `R<N>: <file>:<line> — <excerpt>`. A `// intentional reference equality test` hint comment exempts legitimate reference-identity tests. No env-var bypass and no warning-only mode.
