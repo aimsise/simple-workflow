@@ -3,8 +3,9 @@
 # helpers used by hook scripts and tests.
 #
 # Sourced by:
-#   - hooks/pre-write-safety.sh (PostToolUse:Write guard, PX-04)
-#   - hooks/post-skill-cleanup.sh (PostToolUse:Skill cleanup, PX-05)
+#   - hooks/pre-bash-contract-guard.sh (PreToolUse:Bash guard, PX-02a)
+#   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)
+#   - hooks/post-phase-checkpoint.sh (PostToolUse:Write/Edit observer, PX-05)
 #   - tests/test-hooks-lib.sh (unit tests for these helpers)
 #
 # Public contract (do not change without updating the consumers above):
