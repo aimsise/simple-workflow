@@ -30,7 +30,7 @@
 #      does NOT police Bash commands run outside an autopilot tree.
 #   2. autopilot context inside, `git commit ...` direct invocation:
 #        - Allowed when any per-ticket phase-state.yaml under the active
-#          autopilot tree has `phases.ship.status: in_progress` (the
+#          autopilot tree has `phases.ship.status: in-progress` (the
 #          /ship Skill is the legitimate caller).
 #        - Blocked otherwise as `unauthorized_ship_inline`. This is the
 #          "/ship Skill bypass" path described in the ticket Implementation
@@ -135,8 +135,8 @@ GIT_COMMIT_RE='(^|[|;&]|\$\(|`)[[:space:]]*(env[[:space:]]+|command[[:space:]]+)
 if printf '%s' "$COMMAND" | grep -qE "$GIT_COMMIT_RE"; then
   # Look for a per-ticket phase-state.yaml underneath
   # .simple-workflow/backlog/active/ that records phases.ship.status:
-  # in_progress. The /ship Skill flips this status as its first step, so
-  # an in_progress state is the strongest available proxy for "Bash was
+  # in-progress. The /ship Skill flips this status as its first step, so
+  # an in-progress state is the strongest available proxy for "Bash was
   # invoked inside /ship". When no such file is found we treat the call
   # as a Skill bypass and block it.
   ROOT="$(_psf_repo_root "$PWD")"
@@ -145,7 +145,7 @@ if printf '%s' "$COMMAND" | grep -qE "$GIT_COMMIT_RE"; then
     while IFS= read -r ps_file; do
       [ -z "$ps_file" ] && continue
       status="$(parse_phase_status "$ps_file" ship 2>/dev/null || true)"
-      if [ "$status" = "in_progress" ]; then
+      if [ "$status" = "in-progress" ]; then
         SHIP_IN_PROGRESS="true"
         break
       fi

@@ -8,7 +8,7 @@
 #
 # Scenarios (PX-02a Acceptance Criteria #4):
 #   (a) outside autopilot   + git commit                   -> allow
-#   (b) inside autopilot    + git commit + ship in_progress -> allow
+#   (b) inside autopilot    + git commit + ship in-progress -> allow
 #   (c) inside autopilot    + git commit + ship pending     -> block
 #   (d) inside autopilot    + manual_bash_fallbacks append
 #       with reason "Context budget"                         -> block
@@ -150,7 +150,7 @@ execution_mode: split
 total_tickets: 1
 tickets:
   - logical_id: ${slug}-part-1
-    status: in_progress
+    status: in-progress
 manual_bash_fallbacks: []
 YAML
 }
@@ -171,7 +171,7 @@ assert_guard_allow \
 # Scenario (b): inside autopilot, /ship Skill in progress -> commit allowed.
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Scenario (b): inside autopilot, ship in_progress, git commit allowed ---"
+echo "--- Scenario (b): inside autopilot, ship in-progress, git commit allowed ---"
 TMP_B="$(mktemp -d)"
 register_cleanup "$TMP_B"
 SLUG_B="example-slug"
@@ -184,9 +184,9 @@ write_autopilot_state \
   "$SLUG_B"
 write_phase_state \
   "$TMP_B/.simple-workflow/backlog/active/$SLUG_B/$TICKET_B/phase-state.yaml" \
-  "in_progress"
+  "in-progress"
 assert_guard_allow \
-  "(b) inside autopilot tree, phases.ship.status=in_progress, git commit allowed" \
+  "(b) inside autopilot tree, phases.ship.status=in-progress, git commit allowed" \
   "git commit -m 'release(vX.Y.Z): feature'" \
   "$TMP_B"
 
@@ -209,7 +209,7 @@ write_phase_state \
   "$TMP_C/.simple-workflow/backlog/active/$SLUG_C/$TICKET_C/phase-state.yaml" \
   "pending"
 assert_guard_block \
-  "(c) inside autopilot tree, phases.ship.status!=in_progress, git commit blocked" \
+  "(c) inside autopilot tree, phases.ship.status!=in-progress, git commit blocked" \
   "git commit -m 'inline shortcut'" \
   "$TMP_C" \
   "unauthorized_ship_inline"
