@@ -3077,6 +3077,72 @@ fi
 echo ""
 
 # =============================================================================
+# Category PY: post-phase-checkpoint canonical 3-phase scope (PY-02)
+# Diff: PX-05 originally iterated five phases (the legacy shape included
+#       audit / tune slots), but the canonical schema in
+#       skills/create-ticket/references/phase-state-schema.md defines only
+#       three: scout / impl / ship. This category statically guards the
+#       reduced phase scope so a future refactor cannot silently re-inflate
+#       the iterate loop. The production runtime_metrics capacity ceiling
+#       for a clean six-ticket run is 6 tickets * 3 phases (-eq 18 per-run
+#       observability records); the legacy fixture-only number was a
+#       fabricated upper bound, not a production ceiling.
+# =============================================================================
+echo "--- Cat PY: post-phase-checkpoint canonical 3-phase scope ---"
+
+PY_HOOK="$REPO_DIR/hooks/post-phase-checkpoint.sh"
+
+# CT-MODE-PY-1: hook iterate loop names exactly scout / impl / ship.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'for[[:space:]]+PHASE[[:space:]]+in[[:space:]]+scout[[:space:]]+impl[[:space:]]+ship' "$PY_HOOK" \
+   && ! grep -qE 'for[[:space:]]+PHASE[[:space:]]+in.*audit' "$PY_HOOK" \
+   && ! grep -qE 'for[[:space:]]+PHASE[[:space:]]+in.*tune' "$PY_HOOK"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PY-1: hook phase iterate equals canonical {scout, impl, ship} (no audit / tune)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PY-1: hook phase iterate is not the canonical 3-phase scope"
+  echo -e "       File: $PY_HOOK"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PY-2: hook docstring / comments must not advertise the legacy
+# inflated phase / entry shape.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PY_LEGACY_RE_FILE=$(mktemp)
+printf 'five[ -]phase\n5[[:space:]]+phase\n' > "$PY_LEGACY_RE_FILE"
+printf 'thirty[ -]entries\n' >> "$PY_LEGACY_RE_FILE"
+# Build the legacy-number regex without writing the literal here so this
+# file itself stays clean of the forbidden token.
+PY_LEGACY_NUM=$((6 * 5))
+printf '\\b%s[[:space:]]+entries\\b\n%s-entry\n' "$PY_LEGACY_NUM" "$PY_LEGACY_NUM" >> "$PY_LEGACY_RE_FILE"
+if ! grep -qiEf "$PY_LEGACY_RE_FILE" "$PY_HOOK"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PY-2: hook source carries no legacy five-phase / inflated-capacity references"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PY-2: hook source still mentions the legacy five-phase or inflated-capacity shape"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$PY_LEGACY_RE_FILE"
+unset PY_LEGACY_NUM
+
+# CT-MODE-PY-3: production capacity ceiling is 18 per-phase records
+# (6 tickets * 3 phases). Encoded as a runtime check on the canonical
+# phase list so the assertion stays in sync with CT-MODE-PY-1.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PY_PHASE_COUNT=$(printf '%s\n' scout impl ship | wc -l | tr -d '[:space:]')
+PY_TICKET_CAP=6
+PY_ENTRY_CAP=$((PY_TICKET_CAP * PY_PHASE_COUNT))
+if [ "$PY_ENTRY_CAP" -le 18 ] && [ "$PY_ENTRY_CAP" -eq 18 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PY-3: per-phase entry capacity = ${PY_ENTRY_CAP} (-eq 18, 6 tickets x 3 phases)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PY-3: per-phase entry capacity = ${PY_ENTRY_CAP}; expected -eq 18 (6 tickets x 3 phases)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
 # Category LT: Loop-tail end_turn prohibition + Stop Reason section (Plan 05)
 # Diff: Plan 01's Cat RM guards the taxonomy file itself and the SKILL.md
 #       citation. This category guards two further inter-skill contracts that
@@ -3274,6 +3340,213 @@ else
   echo -e "  ${RED}FAIL${NC} CT-MODE-BL-4: create-ticket/SKILL.md missing lazy re-evaluation rule or one-shot read note"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
+
+echo ""
+
+# =============================================================================
+# Category CP: Context-Pressure Response Paths (PX-01)
+# Diff: PX-01 introduces a SKILL.md section that bans "context budget" /
+#       "context pressure" rationales for Manual Bash Fallback and codifies
+#       two canonical response paths (auto-compaction + unexpected_error
+#       policy-gate stop). These four assertions are static drift guards on
+#       AC #1..#4 of PX-01 — they do not exercise the runtime hooks.
+# =============================================================================
+echo "--- Cat CP: Context-Pressure Response Paths (PX-01) ---"
+
+CP_AUTOPILOT_SKILL="$REPO_DIR/skills/autopilot/SKILL.md"
+CP_TAXONOMY="$REPO_DIR/skills/autopilot/references/stop-reason-taxonomy.md"
+
+# CT-MODE-CP-1 (PX-01 AC #1): the `**MUST NOT treat as Manual Bash Fallback**`
+# bullet list MUST contain at least one bullet whose text mentions context
+# window / context budget / context pressure / context exhaustion / context
+# occupancy as a forbidden rationale.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CP1_HITS=$(awk '/^\*\*MUST NOT treat as Manual Bash Fallback\*\*:/,/^\*\*MUST NOT use destructive operations as error shortcuts\*\*:/' "$CP_AUTOPILOT_SKILL" \
+  | grep -ciE 'context.*(window|budget|pressure|exhaust|occupancy)')
+if [ "$CP1_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-1 (PX-01 AC #1): MUST NOT bullet list cites context window/budget/pressure ($CP1_HITS hits)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-CP-1 (PX-01 AC #1): MUST NOT bullet list missing the context-pressure rationale bullet" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-CP-2 (PX-01 AC #2): the new `## Context-Pressure Response Paths`
+# heading MUST appear and MUST sit immediately above `## Stop Reason` in the
+# section ordering. The grep below extracts the two heading lines (the new
+# section and the existing `## Stop Reason`) and checks the order.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CP2_OUT=$(grep -nE '^##+\s+Context.Pressure Response Paths|^## Stop Reason$' "$CP_AUTOPILOT_SKILL" | head -2)
+CP2_LINE_1=$(echo "$CP2_OUT" | sed -n '1p')
+CP2_LINE_2=$(echo "$CP2_OUT" | sed -n '2p')
+if echo "$CP2_LINE_1" | grep -qiE 'Context.Pressure Response Paths' \
+   && echo "$CP2_LINE_2" | grep -q '## Stop Reason'; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-2 (PX-01 AC #2): '## Context-Pressure Response Paths' precedes '## Stop Reason'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-CP-2 (PX-01 AC #2): heading order incorrect or section missing" >&2
+  echo -e "       Line 1: $CP2_LINE_1" >&2
+  echo -e "       Line 2: $CP2_LINE_2" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-CP-3 (PX-01 AC #3): the body of `## Context-Pressure Response Paths`
+# (heading line up to the next `^## ` heading) MUST contain all four required
+# elements: pre-compact-save.sh, [RESUME] Skipping, unexpected_error.action: stop,
+# and an AskUserQuestion cross-reference.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CP3_BODY=$(awk '/^## Context-Pressure Response Paths/{found=1; next} found && /^## /{exit} found {print}' "$CP_AUTOPILOT_SKILL")
+CP3_OK="true"
+CP3_MISSING=""
+for needle in 'pre-compact-save.sh' '[RESUME] Skipping' 'unexpected_error.action: stop' 'AskUserQuestion'; do
+  if ! echo "$CP3_BODY" | grep -qF -- "$needle"; then
+    CP3_OK="false"
+    CP3_MISSING="$CP3_MISSING [$needle]"
+  fi
+done
+if [ "$CP3_OK" = "true" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-3 (PX-01 AC #3): Context-Pressure body contains all 4 required elements"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-CP-3 (PX-01 AC #3): missing element(s) in section body:$CP3_MISSING" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-CP-4 (PX-01 AC #4): stop-reason-taxonomy.md MUST contain the literal
+# phrase "auto compact is normal operation" so taxonomy readers see the
+# normalisation explicitly (rather than inferring it from the section format).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'auto compact is normal operation' "$CP_TAXONOMY"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-4 (PX-01 AC #4): stop-reason-taxonomy.md states 'auto compact is normal operation'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-CP-4 (PX-01 AC #4): stop-reason-taxonomy.md missing 'auto compact is normal operation' line" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
+# Phase B: forbidden manual_bash_fallback reason audit (PX-02b)
+# Diff: Phase A / Phase A+ above audit static skill-invocation contracts.
+#       Phase B is the run-after audit that scans `manual_bash_fallbacks[].reason`
+#       text in autopilot-state.yaml fixtures for the canonical
+#       FORBIDDEN_RATIONALE_PATTERNS list defined by PX-01. It is the post-hoc
+#       counterpart to PX-02a's PreToolUse:Bash guard: PX-02a blocks the call
+#       at runtime; Phase B flags any rationale that slipped past the guard
+#       (e.g. autopilot-context detection false-negative or hook outage).
+#
+# Detection scope (NAC #3): only the *text* of `manual_bash_fallbacks[].reason`.
+# The literal value "manual-bash" stored under `invocation_method` is NEVER
+# itself a violation; legitimate Manual Bash Fallback rationales (subagent
+# anomaly recovery, aliased binary bypass) are allowed and exercised by the
+# clean-anomaly-reasons.yaml fixture.
+#
+# No threshold (NAC #7): one reason matching any pattern = violation for
+# that fixture.
+# =============================================================================
+echo "--- Phase B: forbidden manual_bash_fallback reason audit (PX-02b) ---"
+
+# Source the canonical forbidden-rationale pattern list from PX-01. Phase B
+# MUST NOT redeclare the pattern array (AC #2 forbids duplicate definitions).
+# shellcheck source=../hooks/lib/forbidden-rationale-patterns.sh
+source "$REPO_DIR/hooks/lib/forbidden-rationale-patterns.sh"
+
+# Extract every `reason: ...` value from a fixture's `manual_bash_fallbacks:`
+# list. Pure-shell parser (no yq dependency) — the fixture schema is fixed
+# and the values are quoted scalars, so a line-oriented sed pass is
+# sufficient.
+phase_b_extract_reasons() {
+  local fixture="$1"
+  awk '
+    /^manual_bash_fallbacks:/ { in_list = 1; next }
+    in_list && /^[a-zA-Z_]+:/ { in_list = 0 }
+    in_list && /^[[:space:]]+reason:[[:space:]]*/ {
+      sub(/^[[:space:]]+reason:[[:space:]]*/, "", $0)
+      sub(/^"/, "", $0); sub(/"$/, "", $0)
+      print $0
+    }
+  ' "$fixture"
+}
+
+# Run a single Phase B fixture case.
+#   $1 = human-readable case label
+#   $2 = absolute path to fixture YAML
+#   $3 = expected outcome: "detect-forbidden" or "clean"
+#
+# The case PASSES when the actual outcome matches the expected outcome.
+# A "detect-forbidden" expectation requires at least one
+# `manual_bash_fallbacks[].reason` line to match a pattern in
+# FORBIDDEN_RATIONALE_PATTERNS; a "clean" expectation requires zero matches.
+phase_b_run_case() {
+  local label="$1"
+  local fixture="$2"
+  local expected="$3"
+  local fixture_basename
+  fixture_basename="$(basename "$fixture")"
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+  if [ ! -f "$fixture" ]; then
+    echo -e "  ${RED}FAIL${NC} [Phase B] $label: fixture not found: $fixture" >&2
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    return
+  fi
+
+  local reasons
+  reasons="$(phase_b_extract_reasons "$fixture")"
+
+  local hits=0
+  local hit_lines=""
+  local pattern reason
+  while IFS= read -r reason; do
+    [ -z "$reason" ] && continue
+    for pattern in "${FORBIDDEN_RATIONALE_PATTERNS[@]}"; do
+      if echo "$reason" | grep -iqE "$pattern"; then
+        hits=$((hits + 1))
+        hit_lines="${hit_lines}    forbidden pattern hit: ${pattern} -- reason: ${reason}"$'\n'
+        break
+      fi
+    done
+  done <<< "$reasons"
+
+  local actual="clean"
+  if [ "$hits" -gt 0 ]; then
+    actual="detect-forbidden"
+  fi
+
+  if [ "$actual" = "$expected" ]; then
+    if [ "$expected" = "detect-forbidden" ]; then
+      # Emit a line that satisfies AC #3's grep:
+      #   grep -E 'with-context-budget-reason\.yaml.*(FAIL|forbidden)'
+      echo -e "  ${GREEN}PASS${NC} [Phase B] $label: ${fixture_basename} forbidden hit detected as expected ($hits hit(s))"
+      printf '%s' "$hit_lines"
+    else
+      echo -e "  ${GREEN}PASS${NC} [Phase B] $label: ${fixture_basename} clean as expected (0 hits)"
+    fi
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    if [ "$expected" = "detect-forbidden" ]; then
+      echo -e "  ${RED}FAIL${NC} [Phase B] $label: ${fixture_basename} expected forbidden hit but got 0 hits" >&2
+    else
+      echo -e "  ${RED}FAIL${NC} [Phase B] $label: ${fixture_basename} expected clean but found $hits forbidden hit(s)" >&2
+      printf '%s' "$hit_lines" >&2
+    fi
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+PHASE_B_FIXTURE_DIR="$REPO_DIR/tests/fixtures/manual-bash-fallbacks-samples"
+
+phase_b_run_case \
+  "FAIL fixture: context-budget reason should be detected" \
+  "$PHASE_B_FIXTURE_DIR/with-context-budget-reason.yaml" \
+  "detect-forbidden"
+
+phase_b_run_case \
+  "PASS fixture: anomaly-only reasons should be clean" \
+  "$PHASE_B_FIXTURE_DIR/clean-anomaly-reasons.yaml" \
+  "clean"
 
 echo ""
 

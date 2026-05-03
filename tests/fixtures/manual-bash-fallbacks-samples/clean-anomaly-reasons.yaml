@@ -1,0 +1,25 @@
+# PX-02b PASS fixture - every Manual Bash Fallback entry is a legitimate
+# anomaly-recovery rationale (subagent failure, aliased binary bypass,
+# network retry). No reason matches the canonical FORBIDDEN_RATIONALE_PATTERNS
+# regex list, so the Phase B audit in tests/test-skill-contracts.sh MUST
+# treat this fixture as clean.
+#
+# Schema: each entry under manual_bash_fallbacks: carries the canonical
+# 5 keys (timestamp, command, reason, exit_code, destructive). No other
+# top-level keys are present (NAC #5).
+manual_bash_fallbacks:
+  - timestamp: "2026-04-29T22:13:00Z"
+    command: "/bin/rm -f /tmp/lock.pid"
+    reason: "interactive 'rm' aliased; used /bin/rm -f to bypass alias"
+    exit_code: 0
+    destructive: true
+  - timestamp: "2026-04-29T22:30:00Z"
+    command: "git fetch origin"
+    reason: "ac-evaluator subagent returned truncated response 3x; manual fetch to inspect remote ref"
+    exit_code: 0
+    destructive: false
+  - timestamp: "2026-04-29T22:45:00Z"
+    command: "curl -fsSL https://example.test/health"
+    reason: "transient 502 from upstream; retried via curl after subagent timeout"
+    exit_code: 0
+    destructive: false

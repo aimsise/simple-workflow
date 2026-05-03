@@ -283,6 +283,12 @@ For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_OR
    - Any dep `failed` / `skipped` → mark this ticket `skipped` reason "dependency {dep-slug} {status}". state `tickets[i].status = skipped`; record `[PIPELINE] {ticket-part}: skipped | reason=dependency_{dep-slug}_{status} | ticket-dir={ticket-dir}`; next ticket. `ticket-dir` is always known (from split-plan).
    - All deps `completed` → proceed.
 
+   **Skip-transition invariant**: `/autopilot` MUST NOT transition a ticket from `pending` / `in_progress` / `completed` to `status: skipped` while any sibling ticket in the same `autopilot-state.yaml` is still `pending` or `in_progress`, unless one of the two contracted exceptions applies:
+   - The skip is a **dependency cascade** — the `skip_reason` contains `dependency_failed` or `dependency_skipped`, matching this `Dependency check` step's own output (the only sanctioned auto-skip path; `depends_on` is the originating signal).
+   - An **explicit ticket-level override** is recorded — the affected ticket carries `override_skip: true` at the same indentation as its `status:` field AND the `skip_reason` does NOT match any forbidden rationale pattern in `hooks/lib/forbidden-rationale-patterns.sh`. A top-level or commented `override_skip` placement is structurally invalid and is rejected.
+
+   Any other rationale — context budget pressure, deferred-to-resume, manual override without `override_skip: true`, etc. — MUST NOT skip a ticket while siblings are active. The PreToolUse:Write/Edit guard (`hooks/pre-state-transition.sh`) intercepts violation attempts before the state file is written and emits `decision: block` with reason `unauthorized_skip_with_active_siblings` or `unauthorized_skip_with_forbidden_rationale`. There is no environment-variable bypass; recovery flows through the same two paths as `## Context-Pressure Response Paths` (auto-compaction or `unexpected_error.action: stop`).
+
 3. **Execute pipeline for this ticket** (no ticket-creation step — the ticket dir already exists under `.simple-workflow/backlog/product_backlog/{parent-slug}/` when the pipeline starts, and `/scout` moves it into `.simple-workflow/backlog/active/{parent-slug}/`):
 
    a. **Pre-scout: Policy guard**
@@ -392,6 +398,8 @@ Print: overall status (completed / partial / failed); per-ticket table (status +
 
 After Split Brief Lifecycle, **move** the `autopilot-state.yaml` from its active location (`.simple-workflow/backlog/briefs/active/{parent-slug}/` or `.simple-workflow/backlog/product_backlog/{parent-slug}/`) to `.simple-workflow/backlog/briefs/done/{parent-slug}/autopilot-state.yaml` (creating the dir if missing). NEVER delete — post-mortem and Manual Bash Fallback history must be preserved. Logs and state together form the permanent record of the run. (This is the "State file cleanup" step — absence of this text is a contract violation.)
 
+The Stop hook (`hooks/autopilot-continue.sh`) and the PreCompact hook (`hooks/pre-compact-save.sh`) recognise `briefs/done/` as a third fallback lookup root for the moved state file, evaluated in the order (1) `briefs/active/` → (2) `product_backlog/` → (3) `briefs/done/`. This closes the same-turn race where Split State File Cleanup completes and the terminal Stop / PreCompact hook fires before the surrounding turn ends — without the fallback those terminal events would silently skip the `runtime_metrics:` append. The hooks adopt a `briefs/done/` candidate ONLY when every pipeline step has reached `completed`; a `briefs/done/` state file with any `in_progress` or `pending` step is treated as anomalous and ignored, so a premature `partial_completion` entry is never emitted against a half-finished run that was moved by mistake.
+
 ### Autopilot Log Sections (common to overall + per-ticket)
 
 Every `autopilot-log.md` (overall or per-ticket) includes the following sections derived from Phase 1 step 5 (Human override detection) and runtime `[AUTOPILOT-POLICY]` lines:
@@ -460,9 +468,12 @@ Each enumerated line MUST match regex `^- (scout|plan|build|verify|retro): not_r
 
 A Manual Bash Fallback is an orchestrator-level `Bash` call used to recover from an anomaly that a subagent could not handle. It is a last resort.
 
+Context window / context budget pressure is **NEVER** an anomaly that justifies a Manual Bash Fallback. Context pressure is a normal operating condition with two designed responses (see `## Context-Pressure Response Paths` below): auto-compaction via the PreCompact hook, or a `unexpected_error.action: stop` policy-gate stop. The orchestrator MUST NOT bypass `/scout` / `/impl` / `/ship` Skill invocations to "save tokens" or "fit within the context window".
+
 **MUST NOT treat as Manual Bash Fallback**:
 - Generator / Evaluator / any subagent response truncation (timeout / token limit). These MUST trigger the configured retry gate (`ac_eval_fail`, `evaluator_dry_run_fail`, etc.) and re-spawn the subagent, NOT be covered by an orchestrator-run shadow execution.
 - Cases where a subagent was the intended executor but failed. Re-spawn the subagent with the failure context in its prompt.
+- Context window / context budget / context pressure as a rationale for orchestrator-level Bash that bypasses a Skill invocation. Context pressure is not an anomaly: the canonical responses are auto-compaction (PreCompact hook) and `unexpected_error.action: stop` (policy-gate stop). Recording `context budget` (or any equivalent — `context window`, `context pressure`, `context exhausted`, `context occupancy`, `token budget`) as a `manual_bash_fallbacks[].reason` is a contract violation flagged by `hooks/lib/forbidden-rationale-patterns.sh`.
 
 **MUST NOT use destructive operations as error shortcuts**:
 - Prohibited without explicit justification: `rm -rf`, `rm -f .git/index`, `git reset --hard`, `git clean -f`, `git checkout .`, `git branch -D` of an active branch.
@@ -482,6 +493,29 @@ manual_bash_fallbacks:
 ```
 
 On finalization (when writing `autopilot-log.md`), the `Manual Bash Fallbacks` section MUST replay this list verbatim. "No manual bash fallbacks" is valid ONLY when `manual_bash_fallbacks` is empty or absent. When the state file recorded fallbacks, the log MUST NOT emit an empty `Manual Bash Fallbacks: none` line — silent drops are a contract violation.
+
+**Runtime enforcement (`hooks/pre-bash-contract-guard.sh`)**: A `PreToolUse:Bash` hook (the `pre-bash-contract` guard) intercepts violation attempts inside an autopilot context and emits `decision: block` before the tool call fires. It rejects (1) appends to `manual_bash_fallbacks[]` whose `reason` matches any pattern in `hooks/lib/forbidden-rationale-patterns.sh` (`context_budget_fallback`), and (2) direct `git commit` invocations when no per-ticket `phases.ship.status: in_progress` is present (`unauthorized_ship_inline`, i.e. a `/ship` Skill bypass). The hook has no environment-variable escape hatch — recovery is via auto-compaction or `unexpected_error.action: stop`, not a bypass flag.
+
+## Context-Pressure Response Paths
+
+Context window / context budget pressure during an `/autopilot` run has exactly **two** canonical responses. Inventing a third path — for example calling `AskUserQuestion` to escalate, fabricating an "inline-equivalent" Bash fallback, or skipping a mandatory Skill invocation to "save tokens" — is a contract violation. The non-interactive orchestrator contract documented above (`AskUserQuestion` is forbidden — and applies uniformly to every boundary inside the pipeline) is restated here: **NEVER** call `AskUserQuestion` as a context-pressure escalation path.
+
+**(a) Accept auto-compaction (canonical response when the harness fires PreCompact):**
+
+- The PreCompact hook (`hooks/pre-compact-save.sh`) writes a `boundary: session_compaction` entry to `autopilot-state.yaml` `runtime_metrics:` and saves resumable state. This is `pre-compact-save.sh` performing its designed job — auto compact is normal operation, not a failure mode.
+- After compaction the harness rehydrates the session and re-enters `/autopilot`. The resume path then prints `[RESUME] Skipping {logical_id}: already completed` for every ticket with `status: completed`, and continues from the first non-completed ticket.
+- The orchestrator MUST NOT pre-empt compaction by inventing token-saving shortcuts; the PreCompact + resume pair is the contracted recovery.
+
+**(b) Stop via `unexpected_error.action: stop` (canonical response when context pressure surfaces as a pipeline error):**
+
+- When a step fails because the model can no longer keep the full pipeline state in context, the gate `unexpected_error` evaluates to `action: stop` (the conservative / moderate / aggressive default). The orchestrator MUST emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop` and write `## Stop Reason` with `tag: policy_gate_stop` (see `## Stop Reason` below for the section format).
+- The user resumes by running `/autopilot {parent-slug}` against the preserved `autopilot-state.yaml`. `unexpected_error.action: stop` is the canonical response — it is NOT a degraded fallback, NOT a workaround, and is documented as such here so any reviewer can confirm the stop was contracted, not improvised.
+
+**Forbidden third paths:**
+
+- The orchestrator NEVER invokes `AskUserQuestion` to ask the user how to proceed under context pressure — see the `MUST NOT directive — Non-interactive orchestrator contract` paragraph above (the prohibition `applies uniformly to every boundary inside the pipeline` and is restated verbatim here for cross-reference).
+- The orchestrator MUST NOT log `context budget`, `context window`, `context pressure`, `context exhausted`, `context occupancy`, `token budget`, `running out of context`, or any equivalent rationale as a `manual_bash_fallbacks[].reason`. Such rationales are matched by `hooks/lib/forbidden-rationale-patterns.sh` and rejected by the PreToolUse:Bash and PostToolUse:Write guards.
+- The orchestrator MUST NOT bypass `/scout`, `/impl`, or `/ship` Skill invocations under the pretext of context conservation. The two paths above (auto-compaction and `unexpected_error.action: stop`) are exhaustive.
 
 ## Stop Reason
 

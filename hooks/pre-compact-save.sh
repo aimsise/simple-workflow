@@ -378,16 +378,38 @@ EOF
 }
 
 # Discover all autopilot-state.yaml files and write a session_compaction
-# entry to each. Both legacy briefs/active and product_backlog locations
-# are scanned (matches autopilot-continue.sh discovery semantics).
+# entry to each. The lookup order mirrors hooks/autopilot-continue.sh:
+#   1. briefs/active/   — autopilot run in progress (most common).
+#   2. product_backlog/ — split-plan-only run with no brief.
+#   3. briefs/done/     — terminal compaction after /ship's Split State File
+#      Cleanup moved the brief out of briefs/active/. Without this third
+#      root the same-turn PreCompact hook would silently skip the
+#      session_compaction emit (PX-03 race repair). NAC #7 protection:
+#      a state file in briefs/done/ is included ONLY when every step has
+#      reached `completed` — pending / in_progress steps imply the run is
+#      mid-flight and emitting against it would distort runtime_metrics.
 PC_STATE_FILES=()
-for _root in .simple-workflow/backlog/briefs/active .simple-workflow/backlog/product_backlog; do
-  [ -d "$_root" ] || continue
+if [ -d .simple-workflow/backlog/briefs/active ]; then
   while IFS= read -r _sf; do
     [ -n "$_sf" ] && [ -f "$_sf" ] && PC_STATE_FILES+=("$_sf")
-  done < <(find "$_root" -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
-done
-unset _root _sf
+  done < <(find .simple-workflow/backlog/briefs/active -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+fi
+if [ -d .simple-workflow/backlog/product_backlog ]; then
+  while IFS= read -r _sf; do
+    [ -n "$_sf" ] && [ -f "$_sf" ] && PC_STATE_FILES+=("$_sf")
+  done < <(find .simple-workflow/backlog/product_backlog -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+fi
+if [ -d .simple-workflow/backlog/briefs/done ]; then
+  while IFS= read -r _sf; do
+    [ -n "$_sf" ] && [ -f "$_sf" ] || continue
+    # Skip any briefs/done/ state file whose pipeline is not fully complete.
+    if grep -qE '(create-ticket|scout|impl|ship): (in_progress|pending)' "$_sf" 2>/dev/null; then
+      continue
+    fi
+    PC_STATE_FILES+=("$_sf")
+  done < <(find .simple-workflow/backlog/briefs/done -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+fi
+unset _sf
 
 for _state_file in "${PC_STATE_FILES[@]:-}"; do
   [ -n "$_state_file" ] && _pc_append_session_compaction "$_state_file"

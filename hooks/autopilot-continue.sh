@@ -192,6 +192,30 @@ if [ -z "$STATE_FILE" ] && [ -d .simple-workflow/backlog/product_backlog ]; then
   done < <(find .simple-workflow/backlog/product_backlog -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
   unset _f
 fi
+# PX-03: terminal Stop hook fallback. After /ship's Split State File Cleanup
+# moves the brief to briefs/done/, the same-turn Stop hook would otherwise
+# fail to discover the state file and skip the runtime_metrics emit. Adding
+# briefs/done/ as the third lookup root closes that race window. The order
+# is intentional — briefs/active/ and product_backlog/ MUST be checked first
+# so that an unrelated parent_slug already moved to briefs/done/ never
+# shadows an active run. NAC #7 protection: when the candidate state file
+# lives in briefs/done/, refuse to adopt it unless every step has reached
+# `completed`; this prevents a premature partial_completion emit against a
+# half-finished run that was prematurely moved.
+if [ -z "$STATE_FILE" ] && [ -d .simple-workflow/backlog/briefs/done ]; then
+  while IFS= read -r _f; do
+    if [ -f "$_f" ]; then
+      # All step-level entries must be `completed`. Any in_progress or
+      # pending step disqualifies the file (NAC #7 / AC #3 (d)).
+      if grep -qE '(create-ticket|scout|impl|ship): (in_progress|pending)' "$_f" 2>/dev/null; then
+        continue
+      fi
+      STATE_FILE="$_f"
+      break
+    fi
+  done < <(find .simple-workflow/backlog/briefs/done -type f -name 'autopilot-state.yaml' 2>/dev/null | sort -u)
+  unset _f
+fi
 
 # --- Loop guard: environment variable override (for tests / manual override) ---
 CONTINUE_COUNT="${_AUTOPILOT_CONTINUE_COUNT:-0}"
