@@ -282,8 +282,11 @@ assert_guard_allow \
   "$STATE_D" "$CONTENT_D" "$TMP_D"
 
 # ---------------------------------------------------------------------------
-# Scenario (e): override_skip placed at irrelevant location (top-level)
-# does NOT validate the skip transition.
+# Scenario (e) / fixture (e): override_skip placed at irrelevant location
+# (top-level) does NOT validate the skip transition. This fixture exercises
+# Rule 1 (`unauthorized_skip_with_active_siblings`) — a pending sibling is
+# present and the lone skipped ticket has no dep-cascade marker, so Rule 1
+# fires before the structural override check (Rule 2) is even reached.
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- Scenario (e): top-level override_skip without ticket override -> block ---"
@@ -300,9 +303,11 @@ tickets:
     status: skipped
     skip_reason: prerequisite invalidated by external change
 "
+# fixture (e) expectation: Rule 1's tag, narrowed from the prior substring
+# match so a regression in Rule 2 cannot mask itself behind Rule 1.
 assert_guard_block \
   "(e) override_skip at top-level (not at ticket level) does not authorize skip; blocked" \
-  "unauthorized_skip" \
+  "unauthorized_skip_with_active_siblings" \
   "$STATE_E" "$CONTENT_E" "$TMP_E"
 
 # Comment-form override_skip: also rejected.
@@ -321,8 +326,65 @@ tickets:
 "
 assert_guard_block \
   "(e2) commented override_skip line does not authorize skip; blocked" \
-  "unauthorized_skip" \
+  "unauthorized_skip_with_active_siblings" \
   "$STATE_E2" "$CONTENT_E2" "$TMP_E2"
+
+# ---------------------------------------------------------------------------
+# Scenario (e3) / fixture (e3): structural override placement check
+# (Rule 2) reached only when Rule 1 does NOT fire. To bypass Rule 1,
+# every plain-skipped ticket must carry a `dependency_failed` cascade
+# marker; then a misplaced top-level `override_skip: true` becomes the
+# sole structural defect, and the hook must emit the distinct
+# `malformed_override_placement` tag (not Rule 1's
+# `unauthorized_skip_with_active_siblings`).
+#
+# Fixture (e3) covers Rule 2's structural override placement check,
+# distinct from fixture (e) which trips Rule 1's active-sibling rule.
+# Fixture (e) exercises Rule 1 (active sibling without dep-cascade),
+# whereas fixture (e3) exercises Rule 2 (every skip has a dep-cascade
+# exemption, but a misplaced top-level override_skip is still present).
+# The two trip different rules and emit different tags.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Scenario (e3): top-level override + dep-cascade siblings -> Rule 2 block ---"
+TMP_E3="$(mktemp -d)"; register_cleanup "$TMP_E3"
+SLUG_E3="malformed-override-slug"
+STATE_E3="$(prepare_autopilot_tree "$TMP_E3" "$SLUG_E3" 3)"
+# Mutate disk state so a sibling is in_progress (active sibling on disk),
+# forcing the hook past the no-active-sibling early exit and into the
+# structural-placement check after the dep-cascade filter clears Rule 1.
+cat >"$STATE_E3" <<YAML
+version: 1
+parent_slug: ${SLUG_E3}
+execution_mode: split
+total_tickets: 3
+tickets:
+  - logical_id: ${SLUG_E3}-part-1
+    status: in_progress
+  - logical_id: ${SLUG_E3}-part-2
+    status: pending
+  - logical_id: ${SLUG_E3}-part-3
+    status: pending
+YAML
+# fixture (e3) Proposal: every skipped ticket carries `dependency_failed`
+# (so Rule 1's `remaining_plain` count stays at 0), but a top-level
+# `override_skip: true` is planted at column 0 -- structural defect that
+# Rule 2 must catch and tag as `malformed_override_placement`.
+CONTENT_E3="version: 1
+parent_slug: ${SLUG_E3}
+override_skip: true
+tickets:
+  - logical_id: ${SLUG_E3}-part-2
+    status: skipped
+    skip_reason: dependency_failed
+  - logical_id: ${SLUG_E3}-part-3
+    status: skipped
+    skip_reason: dependency_failed
+"
+assert_guard_block \
+  "(e3) all-dep-cascade skips with misplaced top-level override blocked as malformed_override_placement" \
+  "malformed_override_placement" \
+  "$STATE_E3" "$CONTENT_E3" "$TMP_E3"
 
 # ---------------------------------------------------------------------------
 # Scenario (f): override at correct level + forbidden rationale -> block.

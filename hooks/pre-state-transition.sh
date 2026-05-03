@@ -285,23 +285,6 @@ _pst_shell_parse() {
 }
 
 # ---------------------------------------------------------------------------
-# Top-level (non-ticket) override_skip detector. This is used to detect
-# malformed override placement: `override_skip: true` at column 0 (or in
-# a comment line) MUST NOT count toward Rule 1 acceptance.
-#
-# Returns 0 (true) when a malformed top-level / comment override is found.
-# ---------------------------------------------------------------------------
-has_top_level_override_true() {
-  if printf '%s' "$1" | grep -qE '^override_skip:[[:space:]]*true[[:space:]]*$'; then
-    return 0
-  fi
-  if printf '%s' "$1" | grep -qE '^[[:space:]]*#.*override_skip[[:space:]]*:[[:space:]]*true'; then
-    return 0
-  fi
-  return 1
-}
-
-# ---------------------------------------------------------------------------
 # Detect whether the proposed CONTENT introduces a `status: skipped`
 # transition for at least one ticket.
 # ---------------------------------------------------------------------------
@@ -430,6 +413,23 @@ if [ "$remaining_plain" -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Top-level (non-ticket) override_skip detector. This is used to detect
+# malformed override placement: `override_skip: true` at column 0 (or in
+# a comment line) MUST NOT count toward Rule 1 acceptance.
+#
+# Returns 0 (true) when a malformed top-level / comment override is found.
+# ---------------------------------------------------------------------------
+has_top_level_override_true() {
+  if printf '%s' "$1" | grep -qE '^override_skip:[[:space:]]*true[[:space:]]*$'; then
+    return 0
+  fi
+  if printf '%s' "$1" | grep -qE '^[[:space:]]*#.*override_skip[[:space:]]*:[[:space:]]*true'; then
+    return 0
+  fi
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # Structural override placement check (AC #6 case (e), NAC #3): if the
 # proposal carries no in-ticket override but DOES carry a top-level (or
 # commented) `override_skip: true`, the write is rejected so authors
@@ -438,7 +438,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$HAS_OVERRIDE_AT_TICKET" != "true" ]; then
   if has_top_level_override_true "$CONTENT"; then
-    emit_block "unauthorized_skip_with_active_siblings" \
+    emit_block "malformed_override_placement" \
       "override_skip: true must appear at the ticket level (same indentation as the ticket's status: line). Top-level or comment placement is ignored. See skills/create-ticket/references/phase-state-schema.md."
   fi
 fi
