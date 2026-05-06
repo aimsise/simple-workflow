@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.1] — 2026-05-07
+
+Adds the first of three foundation libraries planned for the upcoming hook-side enforcement work. This release ships only `hooks/lib/jsonl-tail-audit.sh` plus its test suite — there are no consumers yet (the existing hooks are unchanged). Subsequent foundations 2 and 3 will wire the helpers into `pre-edit-safety.sh` / `pre-write-safety.sh` and the pre-skill / pre-agent contract guards. Non-breaking, no migration required.
+
+### Added
+
+- `hooks/lib/jsonl-tail-audit.sh`: shared helper exposing four public functions (`jsonl_tail_skill_uses`, `jsonl_tail_agent_uses`, `jsonl_tail_tool_use_count`, `jsonl_tail_most_recent_skill`) that inspect the session JSONL transcript via a hard-bounded `tail -n 500 -- "$transcript"` window. The bound is a literal constant — callers cannot widen it — and the `--` separator rejects leading-dash filenames. Filters use `jq --arg` for both tool name and output field, ruling out filter injection. Foundation 1 of 3; no consumers in this PR.
+- `tests/fixtures/jsonl-tail-audit/`: four JSONL fixtures (empty, 3-skill in document order, 600-line overflow with all skill records in the first 100 lines, mixed-tool with 5 Skill / 3 Agent / 12 Bash tool_use records). Used by both the new lib's tests and any future consumer that needs deterministic transcript shapes.
+- `tests/test-hooks-lib.sh`: new `--- jsonl-tail-audit.sh ---` section adds 20 assertions (AC-1..AC-7 plus Negative AC-1..AC-4) covering the four public functions, the literal-bound `tail -n 500` invariant, document-order preservation, mixed-tool counting, and the no-`skills/`-or-`agents/`-path-leak negative AC. Total assertion count rises from 35 to 55, all green.
+
 ## [6.2.0] — 2026-05-07
 
 Unifies bare-description, brief, and findings modes of `/create-ticket` onto a single decomposer-led partition path. Bare and brief modes previously used the `planner` agent's Split Judgment as a side task during ticket drafting; the partition decision now lives exclusively in the `decomposer` agent in every mode. The plugin's external interface (CLI arguments, file layouts, ticket-template / split-plan / phase-state schemas) is unchanged — only the partition heuristic and an internal env-var scope move.
