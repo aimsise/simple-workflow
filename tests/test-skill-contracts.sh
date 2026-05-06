@@ -3280,7 +3280,6 @@ echo ""
 echo "--- Cat BL: Plan 07 dynamic shrinkage rules ---"
 
 BL_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
-BL_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
 
 # CT-MODE-BL-1: brief/SKILL.md MUST cite runtime_metrics and the signal pair
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
