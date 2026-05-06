@@ -314,4 +314,160 @@ else
 fi
 
 echo ""
+
+# ---------------------------------------------------------------------------
+# Section 3: jsonl-tail-audit.sh
+# ---------------------------------------------------------------------------
+echo "--- jsonl-tail-audit.sh ---"
+
+JTA_PATH="$LIB_DIR/jsonl-tail-audit.sh"
+JTA_FIXTURES="$REPO_DIR/tests/fixtures/jsonl-tail-audit"
+JTA_F1="$JTA_FIXTURES/fixture-1-empty.jsonl"
+JTA_F2="$JTA_FIXTURES/fixture-2-3-skill-uses.jsonl"
+JTA_F3="$JTA_FIXTURES/fixture-3-overflow.jsonl"
+JTA_F4="$JTA_FIXTURES/fixture-4-mixed-tools.jsonl"
+
+# Capture function names in current shell BEFORE sourcing the lib (for Negative AC-1).
+jta_before_source_funcs="$(declare -F | awk '{print $3}' | sort -u)"
+
+# AC-1: file exists and shebang is correct
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if test -f "$JTA_PATH"; then
+  echo -e "  ${GREEN}PASS${NC} jsonl-tail-audit.sh exists"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} jsonl-tail-audit.sh not found at $JTA_PATH"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+shebang_count="$(grep -E '^#!/usr/bin/env bash$' "$JTA_PATH" | wc -l | tr -d ' ')"
+assert_eq "AC-1: jsonl-tail-audit.sh has exactly one shebang line" "1" "$shebang_count"
+
+# AC-2: four public functions are declared after sourcing
+# shellcheck disable=SC1090
+source "$JTA_PATH"
+jta_declare_out="$(bash -c "source '$JTA_PATH' && declare -F jsonl_tail_skill_uses jsonl_tail_agent_uses jsonl_tail_tool_use_count jsonl_tail_most_recent_skill" 2>/dev/null)"
+set +e
+bash -c "source '$JTA_PATH' && declare -F jsonl_tail_skill_uses jsonl_tail_agent_uses jsonl_tail_tool_use_count jsonl_tail_most_recent_skill" >/dev/null 2>&1
+jta_ac2_exit=$?
+set -e
+assert_exit_zero "AC-2: sourcing and declare -F four functions exits 0" "$jta_ac2_exit"
+jta_declare_lines="$(printf '%s\n' "$jta_declare_out" | grep -c .)"
+assert_eq "AC-2: declare -F emits exactly 4 lines" "4" "$jta_declare_lines"
+
+# AC-3: jsonl_tail_skill_uses on empty fixture produces zero lines, exits 0
+set +e
+jta_ac3_out="$(jsonl_tail_skill_uses "$JTA_F1")"
+jta_ac3_exit=$?
+set -e
+assert_exit_zero "AC-3: jsonl_tail_skill_uses on empty fixture exits 0" "$jta_ac3_exit"
+jta_ac3_lines="$(printf '%s' "$jta_ac3_out" | grep -c . || true)"
+assert_eq "AC-3: jsonl_tail_skill_uses on empty fixture produces 0 lines" "0" "$jta_ac3_lines"
+
+# AC-4: jsonl_tail_skill_uses on 3-skill fixture returns skills in order
+set +e
+jta_ac4_out="$(jsonl_tail_skill_uses "$JTA_F2")"
+jta_ac4_exit=$?
+set -e
+assert_exit_zero "AC-4: jsonl_tail_skill_uses on 3-skill fixture exits 0" "$jta_ac4_exit"
+jta_ac4_expected="simple-workflow:scout
+simple-workflow:impl
+simple-workflow:ship"
+assert_eq "AC-4: jsonl_tail_skill_uses produces scout/impl/ship in order" "$jta_ac4_expected" "$jta_ac4_out"
+
+# AC-5: overflow fixture — tail-500 sees zero Skill records; bash -x trace has tail -n 500
+set +e
+jta_ac5_out="$(jsonl_tail_skill_uses "$JTA_F3")"
+jta_ac5_exit=$?
+set -e
+assert_exit_zero "AC-5: jsonl_tail_skill_uses on overflow fixture exits 0" "$jta_ac5_exit"
+jta_ac5_lines="$(printf '%s' "$jta_ac5_out" | grep -c . || true)"
+assert_eq "AC-5: overflow fixture returns 0 Skill lines in tail-500 window" "0" "$jta_ac5_lines"
+
+JTA_TRACE_TMP="$(mktemp)"
+# shellcheck disable=SC2064
+trap "rm -rf '$PSF_TMP' '$NEG_TMP' '$JTA_TRACE_TMP'" EXIT
+bash -x -c "source '$JTA_PATH'; jsonl_tail_skill_uses '$JTA_F3'" >/dev/null 2>"$JTA_TRACE_TMP" || true
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -q 'tail -n 500' "$JTA_TRACE_TMP"; then
+  echo -e "  ${GREEN}PASS${NC} AC-5: bash -x trace contains 'tail -n 500'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-5: bash -x trace does NOT contain 'tail -n 500'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'tail -n [6-9][0-9]{2,}|tail -n [0-9]{4,}' "$JTA_TRACE_TMP"; then
+  echo -e "  ${RED}FAIL${NC} AC-5: bash -x trace contains tail with limit >= 600"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} AC-5: bash -x trace has no tail limit >= 600"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'cat [^|]*\.jsonl|cat \*\.jsonl' "$JTA_TRACE_TMP"; then
+  echo -e "  ${RED}FAIL${NC} AC-5: bash -x trace contains cat *.jsonl"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} AC-5: bash -x trace has no cat *.jsonl"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+# AC-6: jsonl_tail_tool_use_count on mixed fixture
+set +e
+jta_ac6_skill="$(jsonl_tail_tool_use_count "$JTA_F4" "Skill")"
+jta_ac6_skill_exit=$?
+jta_ac6_agent="$(jsonl_tail_tool_use_count "$JTA_F4" "Agent")"
+jta_ac6_agent_exit=$?
+jta_ac6_bash="$(jsonl_tail_tool_use_count "$JTA_F4" "Bash")"
+jta_ac6_bash_exit=$?
+set -e
+assert_exit_zero "AC-6: jsonl_tail_tool_use_count Skill exits 0" "$jta_ac6_skill_exit"
+assert_exit_zero "AC-6: jsonl_tail_tool_use_count Agent exits 0" "$jta_ac6_agent_exit"
+assert_exit_zero "AC-6: jsonl_tail_tool_use_count Bash exits 0" "$jta_ac6_bash_exit"
+assert_eq "AC-6: Skill count is 5" "5" "$jta_ac6_skill"
+assert_eq "AC-6: Agent count is 3" "3" "$jta_ac6_agent"
+assert_eq "AC-6: Bash count is 12" "12" "$jta_ac6_bash"
+
+# AC-7: jsonl_tail_most_recent_skill
+set +e
+jta_ac7_ship="$(jsonl_tail_most_recent_skill "$JTA_F2")"
+jta_ac7_ship_exit=$?
+jta_ac7_empty="$(jsonl_tail_most_recent_skill "$JTA_F1")"
+jta_ac7_empty_exit=$?
+set -e
+assert_exit_zero "AC-7: jsonl_tail_most_recent_skill on 3-skill fixture exits 0" "$jta_ac7_ship_exit"
+assert_exit_zero "AC-7: jsonl_tail_most_recent_skill on empty fixture exits 0" "$jta_ac7_empty_exit"
+assert_eq "AC-7: most recent skill on 3-skill fixture is simple-workflow:ship" "simple-workflow:ship" "$jta_ac7_ship"
+assert_eq "AC-7: most recent skill on empty fixture is empty" "" "$jta_ac7_empty"
+
+# Negative AC-1: exactly 4 new public functions after sourcing (none besides the declared 4)
+# Use jta_before_source_funcs (captured before sourcing the lib above) and compare
+# against what the current shell declares now (after sourcing the lib).
+jta_after_source_funcs="$(declare -F | awk '{print $3}' | sort -u)"
+jta_new_public_funcs="$(comm -13 <(printf '%s\n' "$jta_before_source_funcs") <(printf '%s\n' "$jta_after_source_funcs") | grep -vE '^_' || true)"
+jta_new_public_count="$(printf '%s\n' "$jta_new_public_funcs" | grep -c '[^[:space:]]' || true)"
+assert_eq "Negative-AC-1: exactly 4 new public functions (no _ prefix)" "4" "$jta_new_public_count"
+
+# Negative AC-2: no tail -n with variable expansion in lib
+# grep returns 1 on no match (the success path here), which would trip
+# `set -euo pipefail`. Wrap each pipeline in `set +e ... set -e` so the
+# zero-match case stays a PASS rather than aborting the script.
+set +e
+neg_ac2_count="$(grep -nE 'tail[[:space:]]+[^|]*-n[[:space:]]+\$' "$JTA_PATH" | wc -l | tr -d ' ')"
+neg_ac3_count="$(grep -nE '\bcat[[:space:]]+[^|]*\.jsonl|\bawk[[:space:]]+.*\.jsonl|\bsed[[:space:]]+.*\.jsonl|tail[[:space:]]+[^-|]*\.jsonl[[:space:]]*$' "$JTA_PATH" | wc -l | tr -d ' ')"
+neg_ac4_count="$(grep -rnE 'skills/|agents/' "$JTA_PATH" | wc -l | tr -d ' ')"
+set -e
+assert_eq "Negative-AC-2: no tail -n variable expansion in lib" "0" "$neg_ac2_count"
+
+# Negative AC-3: no unbounded JSONL read paths in lib
+assert_eq "Negative-AC-3: no unbounded JSONL read paths in lib" "0" "$neg_ac3_count"
+
+# Negative AC-4: no skills/ or agents/ path references in lib
+assert_eq "Negative-AC-4: no skills/ or agents/ path references in lib" "0" "$neg_ac4_count"
+
+echo ""
 print_summary

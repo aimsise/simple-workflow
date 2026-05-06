@@ -1,0 +1,3 @@
+{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Skill","input":{"skill":"simple-workflow:scout","args":""}}]}}
+{"type":"assistant","uuid":"a2","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Skill","input":{"skill":"simple-workflow:impl","args":""}}]}}
+{"type":"assistant","uuid":"a3","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu3","name":"Skill","input":{"skill":"simple-workflow:ship","args":""}}]}}
