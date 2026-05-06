@@ -54,6 +54,9 @@ Ticket template:
 split-plan.md schema (canonical reference for N>1 writes):
 !`cat "$CLAUDE_PLUGIN_ROOT/.simple-workflow/docs/fix_structure/spec-split-plan-schema.md" 2>/dev/null || echo "[WARNING: spec-split-plan-schema.md not found]"`
 
+`decomposer` agent input spec (canonical reference for all bare/brief/findings modes — orchestrator constructs spawn prompts per this schema):
+!`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/spec-decomposer-input.md" 2>/dev/null || echo "[WARNING: spec-decomposer-input.md not found]"`
+
 AC Quality Criteria (canonical contract — planner and ticket-evaluator are both bound by this file):
 !`cat "$CLAUDE_PLUGIN_ROOT/skills/create-ticket/references/ac-quality-criteria.md" 2>/dev/null || echo "[WARNING: ac-quality-criteria.md not found]"`
 
@@ -72,13 +75,13 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
 | Invocation Target | When | Skip consequence |
 |---|---|---|
 | `researcher` agent (Agent tool) | Phase 1 Investigation — before drafting (bare mode always; brief mode unless a fresh `{ticket-dir}/investigation.md` already exists, satisfies the freshness criterion below, and is reused; findings mode skips because the findings doc IS the investigation) | No investigation findings; planner operates on model-internal assumptions rather than codebase evidence. Detected by missing researcher trace in skill invocation audit. **Reuse case (brief mode only)**: when `{ticket-dir}/investigation.md` is present, passes the freshness check (`phase-state.yaml` provenance, mtime threshold, or content hash — see Phase 1 reuse clause), and is reused, the researcher invocation is intentionally skipped with no consequence — Phase 1 emits the same executive-summary + output-path schema sourced from the existing file, so the audit treats this as a contract-compliant skip rather than a bypass. A stale `investigation.md` that fails the freshness check MUST NOT be reused; the researcher is invoked instead |
-| `decomposer` agent (Agent tool) | Findings mode — immediately after findings-file validation, before planner | No dependency graph; skill cannot partition N work units into N ticket skeletons; findings mode cannot proceed |
+| `decomposer` agent (Agent tool) | All modes — after Phase 1 (researcher in bare/brief modes; findings file in findings mode) and any Socratic Refinement, before planner. Caller selects `Input form: findings_doc` (findings mode) or `Input form: scope_context` (bare/brief modes) per `references/spec-decomposer-input.md` | No dependency graph; skill cannot partition N work units into N ticket skeletons; the run cannot proceed in any mode |
 | `planner` agent (Agent tool) | Phase 3 Ticket Draft — after Phase 1 (+ optional Phase 2) | No structured draft; skill falls back to ad-hoc output with no category/size/AC separation — ticket-evaluator will FAIL the quality gate |
 | `ticket-evaluator` agent (Agent tool) | Phase 4 per-ticket evaluation — after Phase 3 | No quality gate; ticket marked "NOT EVALUATED" and may contain untestable/ambiguous ACs. Detected by autopilot's post-create-ticket quality check |
 
 **Binding rules**:
 - `MUST invoke researcher via the Agent tool` — the researcher's independent findings are load-bearing for ticket scope definition (bare/brief modes).
-- `MUST invoke decomposer via the Agent tool` — in findings mode, the decomposer's dependency graph is load-bearing for ticket partitioning and `split-plan.md` synthesis.
+- `MUST invoke decomposer via the Agent tool` — in every mode (bare / brief / findings), the decomposer's dependency graph is load-bearing for ticket partitioning and `split-plan.md` synthesis. The orchestrator selects the input form per `references/spec-decomposer-input.md`.
 - `MUST invoke planner via the Agent tool` — never draft ticket content inline; the planner's output is the canonical draft.
 - `MUST invoke ticket-evaluator via the Agent tool` — never self-assess ticket quality; the ticket-evaluator is the independent quality gate.
 - `NEVER bypass any of these agents via direct file operations` — writing `ticket.md` without going through all three phases is a contract violation.
@@ -166,7 +169,7 @@ If the findings file was supplied alongside (or was derived from) a brief with f
 
 ### Step F-5: Invoke `decomposer` agent
 
-**MUST invoke the `decomposer` via the Agent tool.** Pass the findings document full content + any Socratic Refinement answers as context. Receive the structured `## Result` block with fields:
+**MUST invoke the `decomposer` via the Agent tool** with `Input form: findings_doc` per `skills/create-ticket/references/spec-decomposer-input.md` Form A. Pass the findings document's full content (frontmatter included) plus any Socratic Refinement answers (appended as `## Socratic Answers`). Receive the structured `## Result` block with fields:
 
 **Return value cap**: Return per the Context Conservation Protocol in `agents/decomposer.md` — the decomposer's return value MUST stay under 500 tokens (Status / Parent slug / Tickets list / Topological order / Rationale). No file content is echoed back; the orchestrator routes the structured block straight into Step F-6 graph validation.
 
@@ -217,6 +220,16 @@ If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-t
 
 Entry condition: `brief=<path>` was parsed from `$ARGUMENTS`.
 
+### Step B-0: Capability guard (environment variable)
+
+Check `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER`. If it is set to `1`, print exactly:
+
+```
+ERROR: decomposer capability disabled (SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1)
+```
+
+Exit non-zero. Do NOT read the brief file. Do NOT touch `.ticket-counter`. Do NOT invoke any agent. (v6.2.0+ unifies bare / brief / findings modes on the same external kill-switch.)
+
 ### Step B-1: Brief file existence check
 
 If the brief path does not exist, print `ERROR: Brief file not found at <path>` and exit non-zero.
@@ -236,13 +249,41 @@ The `{brief_mode}` value gates two downstream behaviors:
 
 **Stdin independence (`interview_complete: true`)**: when the brief frontmatter contains `interview_complete: true`, `/create-ticket` MUST be able to produce a ticket file under `.simple-workflow/backlog/` within 10 seconds even if stdin is a closed file descriptor. This is verified by AC #7 of the findings-mode Plan 2. When `interview_complete: false` (or absent), the skill blocks on `AskUserQuestion` / stdin until at least one answer arrives (AC #8).
 
-### Step B-3: Run Phase 1 + 2 + 3 + 4
+### Step B-3: Phase 1 — Researcher (with reuse condition)
 
-Execute the standard single-ticket pipeline (researcher → optional Socratic → planner → ticket-evaluator). Brief content supplies the context in lieu of a findings file.
+Run Phase 1 (see shared phases below). For brief mode, the researcher writes `investigation.md` to a transient location at `.simple-workflow/.tmp/create-ticket-{brief_slug}/investigation.md` (parent dir created by the orchestrator if absent — `.simple-workflow/` is gitignored).
 
-### Step B-4: Dispatch to Common Write Path (N=1)
+**Reuse path**: if the brief is bound to a pre-existing ticket directory and a fresh `{ticket-dir}/investigation.md` already exists per the freshness criterion in Phase 1 below, skip the researcher invocation and use the existing file as the Phase 1 output. The reuse path is identical to the previous version of this skill — see Phase 1 for the freshness signals (`phase-state.yaml` provenance, mtime threshold, content-hash).
 
-Brief mode produces exactly 1 ticket by default. If a split occurs mid-planner (per the Split Judgment section below), route to N>1 Common Write Path instead.
+### Step B-4: Phase 2 — Socratic Refinement
+
+If the brief's frontmatter contains `interview_complete: true`, **skip Phase 2 entirely**. Otherwise run the capped Socratic Refinement (max 3 questions per round, max 10 rounds, max 30 questions total — see Phase 2 below). Non-interactive fallback: skip Phase 2 and proceed.
+
+### Step B-5: Synthesize `scope_context` and invoke `decomposer`
+
+Construct an inline `scope_context` spawn prompt per `skills/create-ticket/references/spec-decomposer-input.md` Form B:
+
+- Header: `Input form: scope_context`
+- Header: `Parent slug: {parent-slug}` (i.e. `{brief_slug}`)
+- Body section `## Context`: the brief.md `## Vision` + `## Business Context` sections concatenated verbatim
+- Body section `## Investigation Summary`: full content of `investigation.md` from B-3
+- Body section `## Socratic Answers` (only if B-4 collected at least one answer): one bullet per answer
+
+**MUST invoke the `decomposer` via the Agent tool** with this spawn prompt. Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale).
+
+Failure paths (identical to Findings Mode F-5 / F-6): `Status: failed` → `ERROR: decomposer failed — <Rationale>`; agent unavailable → `ERROR: decomposer agent unavailable`; empty `Tickets` → `ERROR: decomposer returned zero tickets`; cycle in `depends_on` → `ERROR: circular dependency detected among tickets: <list>`. All failures exit non-zero with no directory writes and no counter change.
+
+### Step B-6: Per-ticket planner expansion
+
+For each ticket skeleton returned by the decomposer, in topological order, **MUST invoke the `planner` via the Agent tool** with the skeleton (title, scope_summary, size) plus the brief content and Phase 1 investigation as supporting context. Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow). Follow the AC Quality Criteria contract at `skills/create-ticket/references/ac-quality-criteria.md` (see Phase 3 below). The planner does NOT re-partition — the decomposer already decided the ticket count in Step B-5.
+
+### Step B-7: Per-ticket evaluation
+
+For each planner draft, **MUST invoke the `ticket-evaluator` via the Agent tool** with the canonical AC Quality Criteria inline-injected per Phase 4 below. Apply the same retry/escalation policy as the rest of the skill (max 2 rounds, `autopilot-policy.yaml` `gates.ticket_quality_fail` consulted when `brief_mode == auto`, non-interactive fallback to stop). If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with no directories created and no counter change (atomicity).
+
+### Step B-8: Dispatch to Common Write Path
+
+Route to the Common Write Path regardless of N. `split-plan.md` is written for every run (N ≥ 1). The Common Write Path's autopilot-policy propagation in Step W-8 honors `brief_mode == auto` exactly as before.
 
 ---
 
@@ -250,17 +291,53 @@ Brief mode produces exactly 1 ticket by default. If a split occurs mid-planner (
 
 Entry condition: neither `brief=` nor `findings=` was present in `$ARGUMENTS`.
 
+### Step D-0: Capability guard (environment variable)
+
+Check `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER`. If it is set to `1`, print exactly:
+
+```
+ERROR: decomposer capability disabled (SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1)
+```
+
+Exit non-zero. Do NOT touch `.ticket-counter`. Do NOT invoke any agent. (v6.2.0+ unifies bare / brief / findings modes on the same external kill-switch.)
+
 ### Step D-1: Derive parent_slug
 
 `{parent-slug}` = kebab-case of the ticket description (lowercase ASCII, whitespace → `-`, strip non-`[a-z0-9-]`, truncate at 40 chars).
 
-### Step D-2: Run Phase 1 + 2 + 3 + 4
+### Step D-2: Phase 1 — Researcher
 
-Same as Brief Mode (researcher → Socratic → planner → ticket-evaluator), but the description is the sole context.
+Run Phase 1 (see shared phases below). Researcher writes `investigation.md` to a transient location at `.simple-workflow/.tmp/create-ticket-{parent-slug}/investigation.md` (parent dir created by the orchestrator if absent — `.simple-workflow/` is gitignored). Bare-description mode does NOT participate in the brief-mode reuse path; the researcher is invoked unconditionally because no ticket directory exists yet at Phase 1 time.
 
-### Step D-3: Dispatch to Common Write Path (N=1)
+### Step D-3: Phase 2 — Socratic Refinement
 
-Bare description mode ALWAYS nests the single ticket under `{parent-slug}/` — never at bare `.simple-workflow/backlog/product_backlog/NNN-*/`. This uniform-nesting rule (AC #7) holds for N=1 just as for N>1.
+Run the capped Socratic Refinement (max 3 questions per round, max 10 rounds, max 30 questions total — see Phase 2 below). Non-interactive fallback: skip Phase 2 and proceed with the researcher's findings only.
+
+### Step D-4: Synthesize `scope_context` and invoke `decomposer`
+
+Construct an inline `scope_context` spawn prompt per `skills/create-ticket/references/spec-decomposer-input.md` Form B:
+
+- Header: `Input form: scope_context`
+- Header: `Parent slug: {parent-slug}`
+- Body section `## Context`: the bare description text verbatim
+- Body section `## Investigation Summary`: full content of `investigation.md` from D-2
+- Body section `## Socratic Answers` (only if D-3 collected at least one answer): one bullet per answer
+
+**MUST invoke the `decomposer` via the Agent tool** with this spawn prompt. Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale).
+
+Failure paths (identical to Findings Mode F-5 / F-6): `Status: failed` → `ERROR: decomposer failed — <Rationale>`; agent unavailable → `ERROR: decomposer agent unavailable`; empty `Tickets` → `ERROR: decomposer returned zero tickets`; cycle in `depends_on` → `ERROR: circular dependency detected among tickets: <list>`. All failures exit non-zero with no directory writes and no counter change.
+
+### Step D-5: Per-ticket planner expansion
+
+For each ticket skeleton returned by the decomposer, in topological order, **MUST invoke the `planner` via the Agent tool** with the skeleton (title, scope_summary, size) plus the bare description and Phase 1 investigation as supporting context. Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow). Follow the AC Quality Criteria contract at `skills/create-ticket/references/ac-quality-criteria.md` (see Phase 3 below). The planner does NOT re-partition — the decomposer already decided the ticket count in Step D-4.
+
+### Step D-6: Per-ticket evaluation
+
+For each planner draft, **MUST invoke the `ticket-evaluator` via the Agent tool** with the canonical AC Quality Criteria inline-injected per Phase 4 below. Apply the same retry/escalation policy as the rest of the skill (max 2 rounds, non-interactive fallback to stop). Bare description mode does NOT have an `autopilot-policy.yaml` brief-parent fallback (no brief is present). If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with no directories created and no counter change (atomicity).
+
+### Step D-7: Dispatch to Common Write Path
+
+Route to the Common Write Path regardless of N. `split-plan.md` is written for every run (N ≥ 1). Bare description mode ALWAYS nests every ticket under `{parent-slug}/` — never at bare `.simple-workflow/backlog/product_backlog/NNN-*/`. This uniform-nesting rule (AC #7) holds for N=1 just as for N>1.
 
 ---
 
@@ -294,7 +371,9 @@ In **brief mode**, Phase 1 is reused (researcher invocation skipped) when a `{ti
 
 When `{ticket-dir}/investigation.md` is absent, OR is present but fails ALL of the freshness signals above (e.g., a leftover file from an aborted earlier run with no matching `phase-state.yaml` provenance, an mtime older than 24 h, and no matching `investigation_sha256:`), the reuse path MUST NOT fire: brief mode falls through to the default behavior and the researcher is invoked exactly as in the no-file case. Phase 1 is mandatory whenever the reuse condition is not met — there is no third path that drafts a ticket without either a researcher invocation or a freshness-validated reused file.
 
-When the reuse path fires, Phase 1 still emits the same downstream contract as a researcher invocation: an executive summary plus the canonical output file path (`{ticket-dir}/investigation.md`). The schema of this Phase 1 output is identical to the researcher-invoked schema, so Phase 2 (Socratic) and Phase 3 (planner) consume it interchangeably and the downstream contract is preserved. **Bare-description mode does NOT participate in this reuse path** — Step D-2 always runs the researcher, because bare mode has no caller-supplied investigation context and no ticket directory exists yet at Phase 1 time.
+When the reuse path fires, Phase 1 still emits the same downstream contract as a researcher invocation: an executive summary plus the output file path (`{ticket-dir}/investigation.md` in the reuse case). The schema of this Phase 1 output is identical to the researcher-invoked schema, so Phase 2 (Socratic) and Phase 3 (planner) consume it interchangeably and the downstream contract is preserved. **Bare-description mode does NOT participate in this reuse path** — Step D-2 always runs the researcher, because bare mode has no caller-supplied investigation context and no ticket directory exists yet at Phase 1 time.
+
+For fresh bare and brief runs (no reuse), the orchestrator passes a transient output path under `.simple-workflow/.tmp/create-ticket-{parent-slug}/investigation.md` to the researcher. The transient location keeps Common Write Path atomicity intact (the canonical product_backlog ticket directories are created only at Step W-4 after every evaluation passes); the orchestrator reads the transient file when constructing the `scope_context` decomposer prompt in Step B-5 / D-4.
 
 ### Phase 2: Socratic Refinement
 
@@ -352,49 +431,9 @@ The full rubric (Gates 1-5, BAD/GOOD examples, size thresholds, HOW/observation-
 
 Planner behaviour: draft every AC to satisfy Gates 1-5 on first pass; when the file-count axis and AC-count axis of Gate 5 disagree, include a short rationale in the ticket so the evaluator can apply the single-axis tiebreak rule.
 
-#### Split Judgment (bare / brief modes only)
+#### Partition is owned by the decomposer (all modes)
 
-Instruct the planner to evaluate whether the ticket should be split:
-
-- **Split criteria**: Size ≥ M **and** ACs group into 2+ independent work units (no inter-AC deps within a group).
-- **Split quality guardrails**:
-  - Each sub-ticket must be at least Size S with 2 or more Acceptance Criteria. Never create a ticket with only 1 AC.
-  - Splits must produce **independently deployable and verifiable work units**, not mechanical AC distribution — each sub-ticket represents coherent functionality.
-  - The planner must emit a **Split Rationale** justifying the split (e.g., "These ACs form an independent feature boundary" or "This group can be deployed/tested in isolation").
-  - If no candidate satisfies all guardrails, fall back to **N = 1** (invalid split is worse than one larger ticket).
-- **N > 1**: Planner outputs each sub-ticket individually with its own title, category, size, scope, ACs. Each must be self-contained and independently implementable.
-- **N = 1**: Planner outputs a single ticket draft (existing behavior).
-
-##### Dynamic split-loop shrinkage (one-shot read of `runtime_metrics:`)
-
-Immediately before invoking the **planner** for split judgment, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` (or the parent_backlog mirror — same location precedence as `skills/autopilot/SKILL.md ### State file initialization`). This read is performed **once at the start of split judgment**; it is not repeated inside the re-evaluation loop.
-
-When the file exists, take the **last entry** of `runtime_metrics:` and compute the same `remaining_pct` formula used by `/brief` Phase 2:
-
-```
-current_context_tokens = input_tokens + cache_read_input_tokens
-context_window_size    = 1000000
-remaining_pct          = 1.0 - (current_context_tokens / context_window_size)
-```
-
-The signal pair `input_tokens + cache_read_input_tokens` is the canonical context-occupancy approximation introduced by Plan 01 (`runtime_metrics:` schema). `cache_creation_input_tokens` is intentionally **not** used.
-
-##### Lazy re-evaluation (skip the re-evaluation loop on high-confidence drafts)
-
-After the planner returns its first split judgment, evaluate the **confidence signal** the planner emitted alongside the draft. The skill considers a draft "high-confidence" when **either** of the following holds:
-
-1. The planner emits an explicit `confidence:` field with value **`confidence ≥ 0.8`** (e.g. `confidence: 0.9`), **or**
-2. The planner emits a single unambiguous size verdict (one of `S`, `M`, `L`, `XL`) with **no contested signals** in the rationale (i.e., no "alternative split possible" / "borderline" / "could also be N=2" qualifiers, and no FAIL items from the inline self-check).
-
-**When high-confidence**: skip the re-evaluation loop entirely. The first planner output is treated as final and the skill proceeds directly to Phase 4 (ticket-evaluator). The skip is a **token-saving optimization** — the planner's high-confidence draft has already passed the same internal checks the re-evaluator would re-run.
-
-**When not high-confidence**: enter the existing re-evaluation loop (no behaviour change from before Plan 07).
-
-**Standalone fallback (state-file-absent)**: when `autopilot-state.yaml` does not exist (standalone `/create-ticket` invocation), the dynamic-loop shrinkage is **bypassed** and the existing re-evaluation loop runs unconditionally regardless of confidence. This preserves the pre-Plan-07 behaviour of every direct `/create-ticket` invocation. The lazy-evaluation rule fires **only inside an autopilot session** (state file present).
-
-The size-tier thresholds (defined elsewhere in this skill) are **not** modified by this section; only the re-evaluation loop's iteration count is gated by the confidence signal.
-
-(In findings mode, split judgment is already performed by the `decomposer` — the planner receives N skeletons one at a time and does NOT re-split. The lazy-evaluation rule above also does not apply to findings mode, because the decomposer is the canonical authority there.)
+Partition (the decision of how many ticket skeletons to produce) is performed by the `decomposer` agent in every mode (bare / brief / findings). The planner receives N skeletons one at a time from the decomposer and never re-partitions its own draft. The legacy planner-side partition mechanisms (the per-mode partition heuristic, the per-tier dynamic shrinkage tied to `runtime_metrics:`, and the confidence-based loop skip) were removed in v6.2.0 when bare and brief modes were unified onto the decomposer-led partition path. See `references/spec-decomposer-input.md` for the input forms the orchestrator constructs (`findings_doc` for findings mode, `scope_context` for bare/brief modes).
 
 ### Phase 4: Ticket Evaluation
 
@@ -456,7 +495,7 @@ All three modes converge here. This section enforces the atomic counter/director
    ERROR: .simple-workflow/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.
    ```
    Exit non-zero. Do NOT write any ticket directories. Do NOT update the counter. (Edge case: counter invalid → non-zero exit, no dirs.)
-3. Let `counter` = current value; let `N` = 1 (bare / brief / findings-N=1) or `N` > 1 (findings-N>1 / brief-with-split).
+3. Let `counter` = current value; let `N` = the decomposer's ticket count (1 when the partition resolves to a single work unit in any mode, ≥ 2 when the decomposer returns multiple tickets in any mode).
 
 ### Step W-2: Derive ticket-dir paths
 
@@ -698,12 +737,12 @@ Common fields (all modes):
 
 **Recommendation line — choose exactly ONE shape per run**:
 
-- **Success path, N = 1** (bare description, brief mode without split, findings mode with 1 Required Work Unit):
+- **Success path, N = 1** (any mode where the decomposer returns a single ticket — bare description with one work unit, brief with one work unit, findings mode with 1 Required Work Unit):
   - Emit a single line: `next_recommended: /scout <ticket-dir>`.
   - Do NOT emit `next_recommended_auto:` or `next_recommended_manual:`.
   - The block MUST NOT contain the substring `next_recommended_auto` anywhere (negative AC).
 
-- **Success path, N > 1** (findings mode with 2+ Required Work Units, or brief mode where split judgment chose split):
+- **Success path, N > 1** (any mode where the decomposer returns 2+ tickets — findings mode with 2+ Required Work Units, or bare/brief modes where the decomposer partitioned `scope_context` into 2+ work units):
   - Emit BOTH of the following, on separate lines, in this order:
     - `next_recommended_auto: /autopilot {parent-slug}`
     - `next_recommended_manual: /scout {first-unblocked-ticket-dir}`
@@ -749,7 +788,7 @@ All `ERROR:` paths below share the same invariants: **no ticket directories crea
 - **`findings=<path>` points to non-existent file**: Print `ERROR: Findings file not found at <path>` and stop.
 - **`findings_version` missing or ≠ 1**: Print `ERROR: findings_version missing or unsupported (expected 1)` and stop.
 - **Findings has zero Required Work Units**: Print `ERROR: findings file contains zero Required Work Units` and stop.
-- **`SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1`**: Print `ERROR: decomposer capability disabled (SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1)` and stop, BEFORE reading findings or invoking any agent.
+- **`SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1`**: In every mode (bare / brief / findings), print `ERROR: decomposer capability disabled (SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1)` and stop BEFORE reading any input file or invoking any agent.
 - **Decomposer `Status: failed`**: Print `ERROR: decomposer failed — <Rationale>` and stop.
 - **Decomposer returns empty Tickets list**: Print `ERROR: decomposer returned zero tickets` and stop.
 - **Decomposer agent unavailable** (`agents/decomposer.md` unreadable, etc.): Print `ERROR: decomposer agent unavailable` and stop.

@@ -3,12 +3,17 @@
 #
 # Static document-consistency check: for each of three mock autopilot-state.yaml
 # fixtures (remaining_pct = 80% / 40% / 10%), assert that skills/brief/SKILL.md's
-# Phase 2 shrinkage table covers the matching tier, and that the create-ticket
-# split judgment carries the lazy-evaluation rule.
+# Phase 2 shrinkage table covers the matching tier.
 #
 # The test does NOT execute the Skill (Skills are model-driven). It validates
 # that the documented thresholds in SKILL.md are consistent with the fixture
 # values that downstream consumers would feed into the formula.
+#
+# v6.2.0: the create-ticket-side assertions (runtime_metrics signal pair, one-shot
+# read for split, lazy re-evaluation) were removed when the planner Split Judgment /
+# Dynamic split-loop / Lazy re-evaluation sections were retired in favour of the
+# decomposer-led partition path. The brief-side Phase 2 shrinkage rule remains
+# in scope and is still validated below.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +21,6 @@ source "$SCRIPT_DIR/test-helper.sh"
 
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BRIEF_SKILL="$REPO_DIR/skills/brief/SKILL.md"
-CT_SKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
 FIXTURES_DIR="$REPO_DIR/tests/fixtures/autopilot-state-samples"
 
 assert_grep() {
@@ -105,15 +109,6 @@ assert_grep "brief/SKILL.md states one-shot read at Phase 2 start" \
 assert_grep "brief/SKILL.md documents standalone fallback" \
   "$BRIEF_SKILL" \
   'standalone|state-file-absent'
-assert_grep "create-ticket/SKILL.md cites runtime_metrics signal pair" \
-  "$CT_SKILL" \
-  'input_tokens.*cache_read_input_tokens'
-assert_grep "create-ticket/SKILL.md states one-shot read for split" \
-  "$CT_SKILL" \
-  'one-shot read'
-assert_grep "create-ticket/SKILL.md documents lazy re-evaluation rule" \
-  "$CT_SKILL" \
-  'confidence|skip.*re-?eval'
 echo ""
 
 echo "==============================="
