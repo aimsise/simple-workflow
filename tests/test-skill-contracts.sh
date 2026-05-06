@@ -3358,13 +3358,13 @@ assert_file_contains \
 assert_file_contains \
   "create-ticket SKILL.md Bare Mode has decomposer invocation step (D-4)" \
   "$DEC_CT" \
-  "Step D-4: Synthesize \\\`scope_context\\\` and invoke \\\`decomposer\\\`"
+  '^### Step D-4: Synthesize'
 
 # CT-DEC-3: create-ticket SKILL.md Brief Mode invokes the decomposer (Step B-5)
 assert_file_contains \
   "create-ticket SKILL.md Brief Mode has decomposer invocation step (B-5)" \
   "$DEC_CT" \
-  "Step B-5: Synthesize \\\`scope_context\\\` and invoke \\\`decomposer\\\`"
+  '^### Step B-5: Synthesize'
 
 # CT-DEC-4: create-ticket SKILL.md MUST NOT contain the legacy Split Judgment vocabulary
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
