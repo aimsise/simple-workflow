@@ -994,22 +994,8 @@ assert_file_contains \
   "$REPO_DIR/skills/create-ticket/SKILL.md" \
   "brief_slug"
 
-# L-4: create-ticket SKILL.md has Split Judgment structure (Split criteria / Split Rationale)
-assert_file_contains \
-  "create-ticket SKILL.md has Split criteria description" \
-  "$REPO_DIR/skills/create-ticket/SKILL.md" \
-  "Split criteria"
-
-assert_file_contains \
-  "create-ticket SKILL.md has Split Rationale description" \
-  "$REPO_DIR/skills/create-ticket/SKILL.md" \
-  "Split Rationale"
-
-# L-5: create-ticket SKILL.md has Split guardrails (minimum size / AC count)
-assert_file_contains \
-  "create-ticket SKILL.md has split guardrail (at least Size S or 2+ AC)" \
-  "$REPO_DIR/skills/create-ticket/SKILL.md" \
-  "at least Size S|2 or more Acceptance Criteria"
+# L-4 and L-5: removed in v6.2.0 — Split Judgment / Split Rationale / split guardrails were
+# retired when bare/brief modes joined the decomposer-led partition path. See Cat DEC below.
 
 # L-7: create-ticket SKILL.md mentions .ticket-counter
 assert_file_contains \
@@ -3330,14 +3316,84 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# CT-MODE-BL-4: create-ticket/SKILL.md MUST document lazy re-evaluation + one-shot read
+# CT-MODE-BL-4: removed in v6.2.0 — the lazy re-evaluation + one-shot read mechanism was
+# tied to planner Split Judgment, which was retired when bare/brief modes joined the
+# decomposer-led partition path. The decomposer is deterministic and has no re-evaluation loop.
+
+echo ""
+
+# =============================================================================
+# Category DEC: decomposer-led partition unification (v6.2.0)
+# Diff: v6.2.0 unifies bare / brief / findings modes onto a single decomposer-led
+#       partition path. Two input forms (`findings_doc` for findings mode,
+#       `scope_context` for bare/brief modes) are documented in
+#       skills/create-ticket/references/spec-decomposer-input.md and the
+#       agents/decomposer.md agent file. These five assertions are static drift
+#       guards covering: input contract, per-mode skill steps, and the negative
+#       removal of the legacy Split Judgment vocabulary.
+# =============================================================================
+echo "--- Cat DEC: decomposer-led partition unification (v6.2.0) ---"
+
+DEC_DECOMPOSER="$REPO_DIR/agents/decomposer.md"
+DEC_SPEC="$REPO_DIR/skills/create-ticket/references/spec-decomposer-input.md"
+DEC_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# CT-DEC-1: decomposer.md documents the `scope_context` input form (Form B)
+assert_file_contains \
+  "agents/decomposer.md documents the scope_context input form" \
+  "$DEC_DECOMPOSER" \
+  "scope_context"
+
+# CT-DEC-1b: spec-decomposer-input.md is present and references both forms
+assert_file_contains \
+  "spec-decomposer-input.md present and references findings_doc form" \
+  "$DEC_SPEC" \
+  "findings_doc"
+
+assert_file_contains \
+  "spec-decomposer-input.md references scope_context form" \
+  "$DEC_SPEC" \
+  "scope_context"
+
+# CT-DEC-2: create-ticket SKILL.md Bare Mode invokes the decomposer (Step D-4)
+assert_file_contains \
+  "create-ticket SKILL.md Bare Mode has decomposer invocation step (D-4)" \
+  "$DEC_CT" \
+  "Step D-4: Synthesize \\\`scope_context\\\` and invoke \\\`decomposer\\\`"
+
+# CT-DEC-3: create-ticket SKILL.md Brief Mode invokes the decomposer (Step B-5)
+assert_file_contains \
+  "create-ticket SKILL.md Brief Mode has decomposer invocation step (B-5)" \
+  "$DEC_CT" \
+  "Step B-5: Synthesize \\\`scope_context\\\` and invoke \\\`decomposer\\\`"
+
+# CT-DEC-4: create-ticket SKILL.md MUST NOT contain the legacy Split Judgment vocabulary
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if grep -qE 'confidence|skip.*re-?eval' "$BL_CT" \
-   && grep -qE 'one-shot read|read once|single read|once at' "$BL_CT"; then
-  echo -e "  ${GREEN}PASS${NC} CT-MODE-BL-4: create-ticket/SKILL.md documents the lazy re-evaluation + one-shot read"
+if ! grep -qE '(Split Judgment|Split Rationale|Split criteria|split-loop shrinkage|Lazy re-evaluation)' "$DEC_CT"; then
+  echo -e "  ${GREEN}PASS${NC} CT-DEC-4: create-ticket SKILL.md no longer contains legacy Split Judgment vocabulary"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} CT-MODE-BL-4: create-ticket/SKILL.md missing lazy re-evaluation rule or one-shot read note"
+  echo -e "  ${RED}FAIL${NC} CT-DEC-4: create-ticket SKILL.md still contains legacy Split Judgment vocabulary"
+  echo -e "       File: $DEC_CT"
+  echo -e "       Forbidden patterns: Split Judgment / Split Rationale / Split criteria / split-loop shrinkage / Lazy re-evaluation"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-DEC-5: Mandatory Skill Invocations table decomposer row covers all modes
+assert_file_contains \
+  "create-ticket SKILL.md Mandatory table decomposer row covers all modes" \
+  "$DEC_CT" \
+  "decomposer.*All modes"
+
+# CT-DEC-6: capability guard SIMPLE_WORKFLOW_DISABLE_DECOMPOSER honored in all three mode sections
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DEC_GUARD_COUNT=$(grep -cE 'SIMPLE_WORKFLOW_DISABLE_DECOMPOSER' "$DEC_CT" || true)
+if [ "$DEC_GUARD_COUNT" -ge 3 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-DEC-6: SIMPLE_WORKFLOW_DISABLE_DECOMPOSER referenced in all three mode sections (count=$DEC_GUARD_COUNT)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-DEC-6: SIMPLE_WORKFLOW_DISABLE_DECOMPOSER reference count < 3 (got $DEC_GUARD_COUNT)"
+  echo -e "       Expected: F-0 (findings) + B-0 (brief) + D-0 (bare) = 3 references minimum"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
