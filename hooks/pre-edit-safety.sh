@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_HOOKS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/hooks"
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
@@ -38,5 +40,19 @@ if [ "$BASENAME" != ".gitignore" ]; then
     fi
   fi
 fi
+
+# state-authority.sh sourced lazily inside case arm to preserve byte-identity for non-state-file payloads (T-002)
+case "$FILE_PATH" in
+  *"/autopilot-state.yaml"|*"/phase-state.yaml")
+    # shellcheck source=lib/state-authority.sh
+    source "$REPO_HOOKS_DIR/lib/state-authority.sh"
+    OLD_STRING=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_string // empty' 2>/dev/null || true)
+    NEW_STRING=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null || true)
+    if state_field_change_blocked "$FILE_PATH" "$OLD_STRING" "$NEW_STRING"; then
+      jq -nc '{decision:"block", reason:"hook_owned_field_violation"}'
+      exit 0
+    fi
+    ;;
+esac
 
 exit 0

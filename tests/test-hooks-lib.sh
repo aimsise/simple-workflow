@@ -470,4 +470,170 @@ assert_eq "Negative-AC-3: no unbounded JSONL read paths in lib" "0" "$neg_ac3_co
 assert_eq "Negative-AC-4: no skills/ or agents/ path references in lib" "0" "$neg_ac4_count"
 
 echo ""
+
+# ---------------------------------------------------------------------------
+# Section 4: state-authority.sh
+# ---------------------------------------------------------------------------
+echo "--- state-authority.sh ---"
+
+SA_PATH="$LIB_DIR/state-authority.sh"
+
+# AC-1: file exists with bash shebang exactly once
+[ -f "$SA_PATH" ] && sa_ac1_file_exit=0 || sa_ac1_file_exit=1
+assert_exit_zero "AC-1: state-authority.sh file exists" "$sa_ac1_file_exit"
+set +e
+sa_ac1_shebang_count="$(grep -cE '^#!/usr/bin/env bash$' "$SA_PATH")"
+set -e
+assert_eq "AC-1: shebang line present exactly once" "1" "$sa_ac1_shebang_count"
+
+# AC-2: three public functions + HOOK_OWNED_FIELDS associative array
+sa_ac2_funcs_out="$(bash -c "source '$SA_PATH' && declare -F resolve_active_state_file is_hook_owned_field state_field_change_blocked")"
+sa_ac2_func_count="$(printf '%s\n' "$sa_ac2_funcs_out" | wc -l | tr -d ' ')"
+assert_eq "AC-2: declare -F emits exactly three lines" "3" "$sa_ac2_func_count"
+sa_ac2_arr_head="$(bash -c "source '$SA_PATH' && declare -p HOOK_OWNED_FIELDS" | cut -c1-29)"
+assert_eq "AC-2: HOOK_OWNED_FIELDS declared as associative array" \
+  "declare -A HOOK_OWNED_FIELDS=" "$sa_ac2_arr_head"
+
+# AC-3: resolve_active_state_file in briefs/active
+SA_T3="$(mktemp -d)"
+mkdir -p "$SA_T3/.simple-workflow/backlog/briefs/active/test-slug"
+touch "$SA_T3/.simple-workflow/backlog/briefs/active/test-slug/autopilot-state.yaml"
+sa_t3_canon="$(cd "$SA_T3" && pwd -P)"
+sa_ac3_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_T3'")"
+assert_eq "AC-3: emits briefs/active state path" \
+  "$sa_t3_canon/.simple-workflow/backlog/briefs/active/test-slug/autopilot-state.yaml" \
+  "$sa_ac3_out"
+
+# AC-4: done-completed adoption (inline YAML flow mapping)
+SA_T4="$(mktemp -d)"
+mkdir -p "$SA_T4/.simple-workflow/backlog/briefs/done/test-slug"
+printf 'phases:\n  scout: {status: completed}\n  impl: {status: completed}\n  ship: {status: completed}\n' \
+  > "$SA_T4/.simple-workflow/backlog/briefs/done/test-slug/autopilot-state.yaml"
+sa_t4_canon="$(cd "$SA_T4" && pwd -P)"
+sa_ac4_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_T4'")"
+assert_eq "AC-4: emits done-completed state path (inline YAML)" \
+  "$sa_t4_canon/.simple-workflow/backlog/briefs/done/test-slug/autopilot-state.yaml" \
+  "$sa_ac4_out"
+
+# AC-5: done-incomplete rejection
+SA_T5="$(mktemp -d)"
+mkdir -p "$SA_T5/.simple-workflow/backlog/briefs/done/test-slug"
+printf 'phases:\n  scout: {status: completed}\n  impl: {status: completed}\n  ship: {status: in-progress}\n' \
+  > "$SA_T5/.simple-workflow/backlog/briefs/done/test-slug/autopilot-state.yaml"
+sa_ac5_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_T5'")"
+assert_eq "AC-5: rejects done-incomplete (empty stdout)" "" "$sa_ac5_out"
+
+# AC-6: HOOK_OWNED_FIELDS empty by default
+sa_ac6_count="$(bash -c "source '$SA_PATH' && echo \${#HOOK_OWNED_FIELDS[@]}")"
+assert_eq "AC-6: registry empty by default" "0" "$sa_ac6_count"
+
+# AC-7: is_hook_owned_field returns 1 on unknown
+set +e
+bash -c "source '$SA_PATH' && is_hook_owned_field .anything" >/dev/null 2>&1
+sa_ac7_exit=$?
+set -e
+assert_exit_nonzero "AC-7: unknown key exits 1" "$sa_ac7_exit"
+
+# AC-8: is_hook_owned_field exact match (3 sub-cases)
+# Uses a neutral test key (.test_owned_key) to avoid Negative-AC-3 coupling.
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_owned_key']=x; is_hook_owned_field .test_owned_key" >/dev/null 2>&1
+sa_ac8_match_exit=$?
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_owned_key']=x; is_hook_owned_field .test_owned" >/dev/null 2>&1
+sa_ac8_short_exit=$?
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_owned_key']=x; is_hook_owned_field .test_owned_key.extra" >/dev/null 2>&1
+sa_ac8_extra_exit=$?
+set -e
+assert_exit_zero "AC-8: exact match exits 0" "$sa_ac8_match_exit"
+assert_exit_nonzero "AC-8: shorter prefix exits 1" "$sa_ac8_short_exit"
+assert_exit_nonzero "AC-8: extra suffix exits 1" "$sa_ac8_extra_exit"
+
+# AC-9: is_hook_owned_field glob single segment (4 sub-cases)
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.phases.*.completed_at']=x; is_hook_owned_field .phases.scout.completed_at" >/dev/null 2>&1
+sa_ac9_scout_exit=$?
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.phases.*.completed_at']=x; is_hook_owned_field .phases.impl.completed_at" >/dev/null 2>&1
+sa_ac9_impl_exit=$?
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.phases.*.completed_at']=x; is_hook_owned_field .phases.completed_at" >/dev/null 2>&1
+sa_ac9_missing_exit=$?
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.phases.*.completed_at']=x; is_hook_owned_field .phases.scout.sub.completed_at" >/dev/null 2>&1
+sa_ac9_dotted_exit=$?
+set -e
+assert_exit_zero "AC-9: glob matches scout segment" "$sa_ac9_scout_exit"
+assert_exit_zero "AC-9: glob matches impl segment" "$sa_ac9_impl_exit"
+assert_exit_nonzero "AC-9: glob requires segment present" "$sa_ac9_missing_exit"
+assert_exit_nonzero "AC-9: glob excludes dotted segments" "$sa_ac9_dotted_exit"
+
+# AC-10: state_field_change_blocked false on empty registry (3+ pairs)
+set +e
+bash -c "source '$SA_PATH'; state_field_change_blocked /tmp/x 'foo: 1' 'foo: 2'" >/dev/null 2>&1
+sa_ac10_a_exit=$?
+bash -c "source '$SA_PATH'; state_field_change_blocked /tmp/x '' 'foo: 1'" >/dev/null 2>&1
+sa_ac10_b_exit=$?
+bash -c "source '$SA_PATH'; state_field_change_blocked /tmp/x 'a: 1' 'a: 1'" >/dev/null 2>&1
+sa_ac10_c_exit=$?
+set -e
+assert_exit_nonzero "AC-10: empty registry allows pair A" "$sa_ac10_a_exit"
+assert_exit_nonzero "AC-10: empty registry allows pair B" "$sa_ac10_b_exit"
+assert_exit_nonzero "AC-10: empty registry allows pair C" "$sa_ac10_c_exit"
+
+# AC-11: state_field_change_blocked true on registered exact key change
+# Uses a neutral test key (.test_owned_key) to avoid Negative-AC-3 coupling.
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_owned_key']=x; state_field_change_blocked /tmp/x 'test_owned_key: true' 'test_owned_key: false'" >/dev/null 2>&1
+sa_ac11_exit=$?
+set -e
+assert_exit_zero "AC-11: registered exact key change blocked" "$sa_ac11_exit"
+
+# AC-12: state_field_change_blocked true on registered glob key change
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.phases.*.completed_at']=x; state_field_change_blocked /tmp/x \$'phases:\n  scout:\n    completed_at: 2026-05-03T04:46:00Z' \$'phases:\n  scout:\n    completed_at: 2026-05-03T04:00:00Z'" >/dev/null 2>&1
+sa_ac12_exit=$?
+set -e
+assert_exit_zero "AC-12: registered glob key change blocked" "$sa_ac12_exit"
+
+# AC-13: state_field_change_blocked false on initial-set
+# Uses a neutral test key (.test_owned_key) to avoid Negative-AC-3 coupling.
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_owned_key']=x; state_field_change_blocked /tmp/x 'other: foo' 'test_owned_key: true'" >/dev/null 2>&1
+sa_ac13_exit=$?
+set -e
+assert_exit_nonzero "AC-13: initial set is allowed" "$sa_ac13_exit"
+
+# Negative AC-1: exactly 3 new public functions + HOOK_OWNED_FIELDS public var
+sa_neg_ac1_before_funcs="$(declare -F | awk '{print $3}' | sort -u)"
+# shellcheck disable=SC1090
+source "$SA_PATH"
+sa_neg_ac1_after_funcs="$(declare -F | awk '{print $3}' | sort -u)"
+sa_neg_ac1_new_funcs="$(comm -13 <(printf '%s\n' "$sa_neg_ac1_before_funcs") <(printf '%s\n' "$sa_neg_ac1_after_funcs") | grep -vE '^_' || true)"
+sa_neg_ac1_new_func_count="$(printf '%s\n' "$sa_neg_ac1_new_funcs" | grep -c '[^[:space:]]' || true)"
+assert_eq "Negative-AC-1: exactly 3 new public functions (no _ prefix)" "3" "$sa_neg_ac1_new_func_count"
+
+# Negative AC-2: no per-key insertions in the lib
+set +e
+sa_neg_ac2_count="$(grep -cnE '^HOOK_OWNED_FIELDS\[' "$SA_PATH")"
+set -e
+assert_eq "Negative-AC-2: no registry pre-population" "0" "$sa_neg_ac2_count"
+
+# Negative AC-3: no scheduler-coupling identifiers in the lib file.
+# Pattern assembled from hex parts to prevent this script itself from matching.
+_p1="$(printf 'Cron\x43reate')"
+_p2="$(printf 'cron\x5fhandoff')"
+_p3="$(printf 'cron\x2dcreate')"
+_p4="$(printf 'cron\x2dhandoff')"
+_p5="$(printf '/.cron\x2dhandoff-pending')"
+_SA_NEG3_PAT="${_p1}|${_p2}|${_p3}|${_p4}|${_p5}"
+set +e
+sa_neg_ac3_lib_count="$(grep -cnE "$_SA_NEG3_PAT" "$SA_PATH")"
+set -e
+assert_eq "Negative-AC-3: no scheduler-coupling identifiers in lib" "0" "$sa_neg_ac3_lib_count"
+unset _SA_NEG3_PAT _p1 _p2 _p3 _p4 _p5
+
+# Negative AC-5: no skills/ or agents/ path references in the lib
+set +e
+sa_neg_ac5_count="$(grep -cE 'skills/|agents/' "$SA_PATH")"
+set -e
+assert_eq "Negative-AC-5: no skills/ or agents/ path references in lib" "0" "$sa_neg_ac5_count"
+
+echo ""
 print_summary
