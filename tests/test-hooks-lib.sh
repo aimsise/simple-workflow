@@ -352,7 +352,7 @@ bash -c "source '$JTA_PATH' && declare -F jsonl_tail_skill_uses jsonl_tail_agent
 jta_ac2_exit=$?
 set -e
 assert_exit_zero "AC-2: sourcing and declare -F four functions exits 0" "$jta_ac2_exit"
-jta_declare_lines="$(printf '%s\n' "$jta_declare_out" | grep -c .)"
+jta_declare_lines="$(printf '%s\n' "$jta_declare_out" | count_matches '.')"
 assert_eq "AC-2: declare -F emits exactly 4 lines" "4" "$jta_declare_lines"
 
 # AC-3: jsonl_tail_skill_uses on empty fixture produces zero lines, exits 0

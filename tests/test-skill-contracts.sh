@@ -3417,7 +3417,7 @@ CP_TAXONOMY="$REPO_DIR/skills/autopilot/references/stop-reason-taxonomy.md"
 # occupancy as a forbidden rationale.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CP1_HITS=$(awk '/^\*\*MUST NOT treat as Manual Bash Fallback\*\*:/,/^\*\*MUST NOT use destructive operations as error shortcuts\*\*:/' "$CP_AUTOPILOT_SKILL" \
-  | grep -ciE 'context.*(window|budget|pressure|exhaust|occupancy)')
+  | { grep -ciE 'context.*(window|budget|pressure|exhaust|occupancy)' || echo 0; })
 if [ "$CP1_HITS" -ge 1 ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-1 (PX-01 AC #1): MUST NOT bullet list cites context window/budget/pressure ($CP1_HITS hits)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -3602,6 +3602,90 @@ phase_b_run_case \
   "PASS fixture: anomaly-only reasons should be clean" \
   "$PHASE_B_FIXTURE_DIR/clean-anomaly-reasons.yaml" \
   "clean"
+
+echo ""
+
+# =============================================================================
+# Category Q: Test-suite shell hygiene (v6.3.0)
+# Diff: New category. Guards against the `set -e` + `grep -c` exit-1 footgun
+#        that silently halts test sections when a pattern matches zero times.
+#        Every `grep -c` invocation under tests/ MUST be guarded so the test
+#        framework can record a clean FAIL instead of dying mid-script.
+# =============================================================================
+echo "--- Cat Q: Test-suite shell hygiene ---"
+
+# CT-MODE-GREP-C-1: every `grep -c` in tests/ must be set-e safe.
+# Acceptable forms:
+#   - same-line `|| true`, `|| echo 0`, `|| count=0`, `|| return 0`, `|| exit ...`
+#   - line wrapped by surrounding `set +e` / `set -e` (previous non-blank line)
+#   - use of the count_matches helper (which is itself set-e-safe)
+# Exempt: tests/test-helper.sh (defines the count_matches primitive that
+# legitimately wraps grep -c).
+CT_GREP_C_VIOLATIONS=()
+while IFS= read -r line; do
+  file="${line%%:*}"
+  rest="${line#*:}"
+  lineno="${rest%%:*}"
+  match="${rest#*:}"
+  case "$file" in
+    tests/test-helper.sh) continue ;;
+  esac
+  # Skip comment lines.
+  if printf '%s\n' "$match" | grep -qE '^[[:space:]]*#'; then
+    continue
+  fi
+  # Skip echo/printf message lines that mention `grep -c` as documentation —
+  # the grep -c lives inside a string literal, not as an executed command.
+  if printf '%s\n' "$match" | grep -qE '^[[:space:]]*(echo|printf)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)?"'; then
+    continue
+  fi
+  # Allowed: inline guard on the same line.
+  if printf '%s\n' "$match" | grep -qE '\|\|[[:space:]]*(true|echo[[:space:]]+0|count=0|return[[:space:]]+0|exit[[:space:]]+[0-9]+|count_matches)'; then
+    continue
+  fi
+  # Allowed: previous non-blank line is `set +e`.
+  prev_line=""
+  scan_lineno="$lineno"
+  while [ "$scan_lineno" -gt 1 ]; do
+    scan_lineno=$((scan_lineno - 1))
+    prev_line="$(sed -n "${scan_lineno}p" "$REPO_DIR/$file" 2>/dev/null)"
+    [ -n "$(printf '%s' "$prev_line" | tr -d '[:space:]')" ] && break
+  done
+  if printf '%s\n' "$prev_line" | grep -qE '^[[:space:]]*set[[:space:]]+\+e[[:space:]]*$'; then
+    continue
+  fi
+  CT_GREP_C_VIOLATIONS+=("$file:$lineno: $(printf '%s' "$match" | sed 's/^[[:space:]]*//')")
+done < <(cd "$REPO_DIR" && grep -nE '\bgrep[[:space:]]+-[[:alpha:]]*c' tests/*.sh 2>/dev/null || true)
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "${#CT_GREP_C_VIOLATIONS[@]}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-GREP-C-1: every grep -c in tests/ is set-e safe"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-GREP-C-1: ${#CT_GREP_C_VIOLATIONS[@]} unprotected grep -c callsite(s) under tests/" >&2
+  for v in "${CT_GREP_C_VIOLATIONS[@]}"; do
+    echo "       $v" >&2
+  done
+  echo "       Wrap with '|| true' / '|| echo 0' / set +e ... set -e, or migrate to count_matches helper." >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-GREP-C-2: agents/ac-evaluator.md `maxTurns` MUST stay >= 30. Defense
+# against accidental rollback to the v6.1.0 cap of 20, which silently halted
+# AC-heavy plans (e.g. T-002 with 22 ACs) before the Report Persistence
+# Contract's Write call. Higher AC counts (>20) should be addressed by
+# splitting the plan, not by lowering this floor.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ACEVAL_PATH="$REPO_DIR/agents/ac-evaluator.md"
+ACEVAL_MAXTURNS=$(grep -E '^maxTurns:[[:space:]]*[0-9]+' "$ACEVAL_PATH" | head -1 | sed -E 's/^maxTurns:[[:space:]]*([0-9]+).*/\1/')
+ACEVAL_MAXTURNS=${ACEVAL_MAXTURNS:-0}
+if [ "$ACEVAL_MAXTURNS" -ge 30 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS (>= 30)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS is below the 30 floor (set in v6.2.2 to 60; do not lower below 30 — split the plan instead)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

@@ -221,7 +221,7 @@ assert_skill_has_body_sections() {
 
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   local heading_count
-  heading_count=$(grep -cE '^## ' "$skill_md")
+  heading_count=$(count_matches '^## ' "$skill_md")
   if [ "$heading_count" -ge 1 ]; then
     echo -e "  ${GREEN}PASS${NC} skills/$skill_slug/SKILL.md has body sections (${heading_count} '##' headings)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -785,7 +785,7 @@ while IFS=: read -r artifact_lineno _rest; do
 done < <(grep -n 'ARTIFACT-MISSING' "$autopilot_file")
 
 if [ "$ordering_ok" -eq 1 ]; then
-  artifact_count=$(grep -c 'ARTIFACT-MISSING' "$autopilot_file")
+  artifact_count=$(count_matches 'ARTIFACT-MISSING' "$autopilot_file")
   echo -e "  ${GREEN}PASS${NC} autopilot/SKILL.md all $artifact_count ARTIFACT-MISSING blocks appear before their State update (after)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

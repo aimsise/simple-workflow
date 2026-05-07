@@ -247,6 +247,19 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
       phases.impl.next_action: start-evaluator
     Then `git diff --shortstat` for a one-line summary. Do NOT run `git diff --stat` in the main session — the ac-evaluator invokes it via its own `Bash(git diff:*)` permission.
 
+    **§14a — Plan-Compliance Pre-Check** (warn-only; never blocks the round, never burns round budget):
+
+    a. `Grep -nE "^## Affected [Ff]iles$|^## Critical files to modify$" <plan-path>`. If no header matches, emit `[PLAN-COMPLIANCE] no Affected-files section in plan; skipped` and proceed to the CHECKPOINT below. Some plans (per-task `## Task 1 / Task 2` style) intentionally omit this section — the skip is a clean PASS, not a gap.
+    b. If a header matches at line `L`, `Read(<plan-path>, offset=L, limit=80)` and parse the markdown table that follows. Extract file paths from the first column. Accept paths in backticks (`` `path/to/file` ``) or bare; strip backticks. Stop at the first non-table line (blank line, or a new `^#{1,6} ` heading) after the header. Hard cap: 80 lines / 50 paths.
+    c. Compute `actual_files` as the union of `git diff --name-only HEAD` and `git ls-files --others --exclude-standard` (the same union used elsewhere for artifact verification).
+    d. Compute `missing = expected ∖ actual_files` (set-difference on path strings, exact match).
+    e. If `missing` is non-empty, emit one stdout line per missing path: `[PLAN-COMPLIANCE-WARN] plan declares "<path>" in Affected files but it is not in git diff (round={n})`. Carry the same list into the Step 15 Evaluator prompt as field `i` (see §15.i).
+    f. If `missing` is empty, emit `[PLAN-COMPLIANCE] OK ({count} files matched)` and proceed.
+
+    **Why warn-only, not auto-retry**: hard-failing the round on a missing file would consume a round budget on plans where the Affected-files table is stale, aspirational, or partially refactored mid-implementation. A soft warning surfaces the gap to both the user (visible in stdout) and the Evaluator (folded into the prompt), without altering round semantics. If the Evaluator subsequently fails the round on AC coverage, the warning is already in its context and round 2's Generator prompt carries the same gap via the standard feedback file.
+
+    **Idempotency**: this sub-step is pure read-only work (`Grep` + `Read` + `Bash(git diff:*)` + `Bash(git ls-files:*)`) plus stdout. No state-file writes, no agent invocations, no side effects beyond a few orchestrator turns.
+
     > **CHECKPOINT**: Read `phase-state.yaml`, confirm `next_action: start-evaluator`, proceed to Step 15. Do NOT end your turn.
 
 15. **MUST invoke the AC Evaluator (`ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** from Generator return / build / test output alone — the Evaluator reads the code via `git diff` and renders its own PASS/FAIL. This is the Ticket 002 failure mode (L554-L559). Fail the task immediately if the Evaluator cannot be invoked.
@@ -261,6 +274,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
         `{n}` = current round (1, 2, or 3).
      f. Append verbatim: "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran)." Keeps Evaluator verdicts anchored to a pre-Generator rubric.
      g. **Return value cap**: Return per the Context Conservation Protocol in `agents/ac-evaluator.md` — the evaluator's return value MUST stay under 500 tokens (Status / Output / 3-5 bullets). The full evaluation lives in `eval-round-{n}.md`; the orchestrator reads the artifact only when feedback is needed for the next Generator round.
+     h. **Plan-Compliance hint** (conditional, only when §14a emitted `[PLAN-COMPLIANCE-WARN]` lines): append a single paragraph naming each missing path: "Plan-Compliance hint: the Generator may have skipped these files declared in the plan's Affected files section: `<path-1>`, `<path-2>`, …. Verify them when checking AC coverage; mark the related AC FAIL if the missing files are load-bearing for it." Omit this field entirely when §14a printed `[PLAN-COMPLIANCE] OK ...` or `[PLAN-COMPLIANCE] no Affected-files section in plan; skipped`.
    - Prompt must NOT include: Generator's return value (bias elimination); a second invocation whose sole purpose is to persist the report (the save path is always in THIS first call — see Binding rules).
    - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback).
 

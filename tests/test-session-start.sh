@@ -269,7 +269,7 @@ case_c4() {
 
   # .simple-workflow/ must appear exactly once (no duplication).
   local sw_count
-  sw_count="$(grep -cxF '.simple-workflow/' "$dir/.gitignore")"
+  sw_count="$(grep -cxF '.simple-workflow/' "$dir/.gitignore" || echo 0)"
   local name=".simple-workflow/ not duplicated (count=$sw_count)"
   if [ "$sw_count" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
@@ -344,7 +344,7 @@ case_c5() {
   # Sanity: required entry appears exactly once.
   local entry='.simple-workflow/'
   local cnt
-  cnt="$(grep -cxF "$entry" "$dir/.gitignore")"
+  cnt="$(grep -cxF "$entry" "$dir/.gitignore" || echo 0)"
   name="$entry present exactly once (count=$cnt)"
   if [ "$cnt" -eq 1 ]; then report_pass "$name"; else report_fail "$name"; fi
 
