@@ -149,6 +149,19 @@ run_hook() {
   rm -f "$stdout_file" "$stderr_file"
 }
 
+# count_matches PATTERN [FILE]
+#   Set-e-safe wrapper around `grep -cE`. Returns 0 even when the pattern
+#   matches nothing — `grep -c` exits 1 on zero matches, which kills any
+#   `set -e` test section that uses the count directly. Reads stdin when
+#   FILE is omitted. Always echoes a non-negative integer to stdout.
+count_matches() {
+  local pattern="$1"
+  local file="${2:-/dev/stdin}"
+  local count
+  count=$(grep -cE -- "$pattern" "$file" 2>/dev/null) || count=0
+  printf '%s\n' "$count"
+}
+
 # Print the test result summary
 print_summary() {
   echo ""

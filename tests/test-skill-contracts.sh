@@ -3047,7 +3047,8 @@ fi
 # CT-MODE-RM-3: taxonomy file is English-only (CLAUDE.md Language rule)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -f "$RM_TAXONOMY" ]; then
-  RM_NONLATIN=$(grep -cE '[ぁ-んァ-ヶ一-龥]' "$RM_TAXONOMY" 2>/dev/null || echo 0)
+  RM_NONLATIN=$(grep -cE '[ぁ-んァ-ヶ一-龥]' "$RM_TAXONOMY" 2>/dev/null || true)
+  RM_NONLATIN=${RM_NONLATIN:-0}
   if [ "$RM_NONLATIN" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-3: stop-reason-taxonomy.md contains no Japanese characters"
     TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -3207,7 +3208,8 @@ RV_PATTERN='under 500 tokens|Context Conservation Protocol'
 # skills/scout/SKILL.md MUST each carry the cap reference (>= 2 hits).
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 RV_SCOUT="$REPO_DIR/skills/scout/SKILL.md"
-RV_SCOUT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_SCOUT" 2>/dev/null || echo 0)
+RV_SCOUT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_SCOUT" 2>/dev/null || true)
+RV_SCOUT_COUNT=${RV_SCOUT_COUNT:-0}
 if [ "$RV_SCOUT_COUNT" -ge 2 ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-scout: scout SKILL.md has $RV_SCOUT_COUNT cap reference(s) (>= 2 required)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -3220,7 +3222,8 @@ fi
 # skills/impl/SKILL.md MUST each carry the cap reference (>= 3 hits).
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 RV_IMPL="$REPO_DIR/skills/impl/SKILL.md"
-RV_IMPL_COUNT=$(grep -cE "$RV_PATTERN" "$RV_IMPL" 2>/dev/null || echo 0)
+RV_IMPL_COUNT=$(grep -cE "$RV_PATTERN" "$RV_IMPL" 2>/dev/null || true)
+RV_IMPL_COUNT=${RV_IMPL_COUNT:-0}
 if [ "$RV_IMPL_COUNT" -ge 3 ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-impl: impl SKILL.md has $RV_IMPL_COUNT cap reference(s) (>= 3 required)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -3235,8 +3238,10 @@ fi
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 RV_CT="$REPO_DIR/skills/create-ticket/SKILL.md"
 RV_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
-RV_CT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_CT" 2>/dev/null || echo 0)
-RV_BRIEF_COUNT=$(grep -cE "$RV_PATTERN" "$RV_BRIEF" 2>/dev/null || echo 0)
+RV_CT_COUNT=$(grep -cE "$RV_PATTERN" "$RV_CT" 2>/dev/null || true)
+RV_CT_COUNT=${RV_CT_COUNT:-0}
+RV_BRIEF_COUNT=$(grep -cE "$RV_PATTERN" "$RV_BRIEF" 2>/dev/null || true)
+RV_BRIEF_COUNT=${RV_BRIEF_COUNT:-0}
 RV_FRONT_COUNT=$((RV_CT_COUNT + RV_BRIEF_COUNT))
 if [ "$RV_FRONT_COUNT" -ge 4 ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-RV-front: create-ticket+brief combined cap references = $RV_FRONT_COUNT (>= 4 required)"
@@ -3417,7 +3422,8 @@ CP_TAXONOMY="$REPO_DIR/skills/autopilot/references/stop-reason-taxonomy.md"
 # occupancy as a forbidden rationale.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CP1_HITS=$(awk '/^\*\*MUST NOT treat as Manual Bash Fallback\*\*:/,/^\*\*MUST NOT use destructive operations as error shortcuts\*\*:/' "$CP_AUTOPILOT_SKILL" \
-  | grep -ciE 'context.*(window|budget|pressure|exhaust|occupancy)')
+  | { grep -ciE 'context.*(window|budget|pressure|exhaust|occupancy)' || true; })
+CP1_HITS=${CP1_HITS:-0}
 if [ "$CP1_HITS" -ge 1 ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-1 (PX-01 AC #1): MUST NOT bullet list cites context window/budget/pressure ($CP1_HITS hits)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -3602,6 +3608,98 @@ phase_b_run_case \
   "PASS fixture: anomaly-only reasons should be clean" \
   "$PHASE_B_FIXTURE_DIR/clean-anomaly-reasons.yaml" \
   "clean"
+
+echo ""
+
+# =============================================================================
+# Category Q: Test-suite shell hygiene (v6.3.0)
+# Diff: New category. Guards against the `set -e` + `grep -c` exit-1 footgun
+#        that silently halts test sections when a pattern matches zero times.
+#        Every `grep -c` invocation under tests/ MUST be guarded so the test
+#        framework can record a clean FAIL instead of dying mid-script.
+# =============================================================================
+echo "--- Cat Q: Test-suite shell hygiene ---"
+
+# CT-MODE-GREP-C-1: every `grep -c` in tests/ must be set-e safe.
+# Acceptable forms:
+#   - same-line `|| true`, `|| count=0`, `|| return 0`, `|| exit ...`,
+#     or `|| count_matches`
+#   - line wrapped by surrounding `set +e` / `set -e` (previous non-blank line)
+#   - use of the count_matches helper (which is itself set-e-safe)
+# Deliberately NOT accepted: `|| echo 0`. When `grep -c` reads from a real
+# file and finds zero matches, it already writes `0` to stdout before
+# exiting 1, so `|| echo 0` appends a SECOND `0` and the captured value
+# becomes `"0\n0"`, which then breaks any `[ "$VAR" -ge N ]` integer
+# comparison with a stderr "integer expression expected" error. Use
+# `|| true` (which only swallows the exit code) or migrate to count_matches.
+# Exempt: tests/test-helper.sh (defines the count_matches primitive that
+# legitimately wraps grep -c).
+CT_GREP_C_VIOLATIONS=()
+while IFS= read -r line; do
+  file="${line%%:*}"
+  rest="${line#*:}"
+  lineno="${rest%%:*}"
+  match="${rest#*:}"
+  case "$file" in
+    tests/test-helper.sh) continue ;;
+  esac
+  # Skip comment lines.
+  if printf '%s\n' "$match" | grep -qE '^[[:space:]]*#'; then
+    continue
+  fi
+  # Skip echo/printf message lines that mention `grep -c` as documentation —
+  # the grep -c lives inside a string literal, not as an executed command.
+  if printf '%s\n' "$match" | grep -qE '^[[:space:]]*(echo|printf)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)?"'; then
+    continue
+  fi
+  # Allowed: inline guard on the same line. NB: `echo 0` is NOT in this
+  # list — see the header comment above for why.
+  if printf '%s\n' "$match" | grep -qE '\|\|[[:space:]]*(true|count=0|return[[:space:]]+0|exit[[:space:]]+[0-9]+|count_matches)'; then
+    continue
+  fi
+  # Allowed: previous non-blank line is `set +e`.
+  prev_line=""
+  scan_lineno="$lineno"
+  while [ "$scan_lineno" -gt 1 ]; do
+    scan_lineno=$((scan_lineno - 1))
+    prev_line="$(sed -n "${scan_lineno}p" "$REPO_DIR/$file" 2>/dev/null)"
+    [ -n "$(printf '%s' "$prev_line" | tr -d '[:space:]')" ] && break
+  done
+  if printf '%s\n' "$prev_line" | grep -qE '^[[:space:]]*set[[:space:]]+\+e[[:space:]]*$'; then
+    continue
+  fi
+  CT_GREP_C_VIOLATIONS+=("$file:$lineno: $(printf '%s' "$match" | sed 's/^[[:space:]]*//')")
+done < <(cd "$REPO_DIR" && grep -nE '\bgrep[[:space:]]+-[[:alpha:]]*c' tests/*.sh 2>/dev/null || true)
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "${#CT_GREP_C_VIOLATIONS[@]}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-GREP-C-1: every grep -c in tests/ is set-e safe"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-GREP-C-1: ${#CT_GREP_C_VIOLATIONS[@]} unprotected grep -c callsite(s) under tests/" >&2
+  for v in "${CT_GREP_C_VIOLATIONS[@]}"; do
+    echo "       $v" >&2
+  done
+  echo "       Wrap with '|| true' / '|| count=0' / set +e ... set -e, or migrate to count_matches helper. NB: '|| echo 0' is rejected because grep -c against a file already writes 0 to stdout on zero matches; the extra echo would produce '0\\n0' and break integer comparisons." >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-GREP-C-2: agents/ac-evaluator.md `maxTurns` MUST stay >= 30. Defense
+# against accidental rollback to the v6.1.0 cap of 20, which silently halted
+# AC-heavy plans (e.g. T-002 with 22 ACs) before the Report Persistence
+# Contract's Write call. Higher AC counts (>20) should be addressed by
+# splitting the plan, not by lowering this floor.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ACEVAL_PATH="$REPO_DIR/agents/ac-evaluator.md"
+ACEVAL_MAXTURNS=$(grep -E '^maxTurns:[[:space:]]*[0-9]+' "$ACEVAL_PATH" | head -1 | sed -E 's/^maxTurns:[[:space:]]*([0-9]+).*/\1/')
+ACEVAL_MAXTURNS=${ACEVAL_MAXTURNS:-0}
+if [ "$ACEVAL_MAXTURNS" -ge 30 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS (>= 30)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS is below the 30 floor (set in v6.2.2 to 60; do not lower below 30 — split the plan instead)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

@@ -44,7 +44,8 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-RULE_HITS=$(grep -cE '^### R[1-3]:|R1:|R2:|R3:' "$RULES_FILE" 2>/dev/null || echo 0)
+RULE_HITS=$(grep -cE '^### R[1-3]:|R1:|R2:|R3:' "$RULES_FILE" 2>/dev/null || true)
+RULE_HITS=${RULE_HITS:-0}
 if [ "$RULE_HITS" -ge 3 ]; then
   echo -e "  ${GREEN}PASS${NC} AC #1: rules file has 3+ R1/R2/R3 references ($RULE_HITS hits)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
