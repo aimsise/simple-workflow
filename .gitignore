@@ -2,6 +2,7 @@
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/worktrees/
+.claude/*.lock
 
 # simple-workflow plugin runtime artifacts (docs, backlog, knowledge base)
 .simple-workflow/
