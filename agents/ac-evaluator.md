@@ -129,7 +129,7 @@ tools:
   - "shell(head:*)"
   - "shell(tail:*)"
 model: sonnet
-maxTurns: 20
+maxTurns: 60
 ---
 
 ## Tautological Assertion Static Rules
