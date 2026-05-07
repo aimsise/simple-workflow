@@ -318,7 +318,8 @@ echo "--- Sanity: stop-reason-taxonomy.md and hook source contracts ---"
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 TAXONOMY="$REPO_DIR/skills/autopilot/references/stop-reason-taxonomy.md"
-TAX_HITS=$(grep -cE 'boundary:[[:space:]]*phase_(complete|failed|skipped)' "$TAXONOMY" 2>/dev/null || echo 0)
+TAX_HITS=$(grep -cE 'boundary:[[:space:]]*phase_(complete|failed|skipped)' "$TAXONOMY" 2>/dev/null || true)
+TAX_HITS=${TAX_HITS:-0}
 if [ "$TAX_HITS" -ge 3 ]; then
   echo -e "  ${GREEN}PASS${NC} taxonomy enumerates the three new boundary literals (hits=$TAX_HITS)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -337,7 +338,8 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-HELPER_HITS=$(grep -cE 'is_autopilot_context|parse_phase_status|find_state_file' "$HOOK_PATH" 2>/dev/null || echo 0)
+HELPER_HITS=$(grep -cE 'is_autopilot_context|parse_phase_status|find_state_file' "$HOOK_PATH" 2>/dev/null || true)
+HELPER_HITS=${HELPER_HITS:-0}
 if [ "$HELPER_HITS" -ge 3 ]; then
   echo -e "  ${GREEN}PASS${NC} hook references the three required helper functions (hits=$HELPER_HITS)"
   TESTS_PASSED=$((TESTS_PASSED + 1))

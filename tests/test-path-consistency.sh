@@ -426,7 +426,8 @@ echo "--- Bash(*) scope guard ---"
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 bstar_files=$(grep -rl '"Bash(\*)"' "$REPO_DIR"/agents/*.md 2>/dev/null | sort)
-bstar_count=$(echo "$bstar_files" | grep -c . 2>/dev/null || echo 0)
+bstar_count=$(echo "$bstar_files" | { grep -c . 2>/dev/null || true; })
+bstar_count=${bstar_count:-0}
 expected_files=$(printf '%s\n' "$REPO_DIR/agents/implementer.md" "$REPO_DIR/agents/test-writer.md")
 if [ "$bstar_count" -eq 2 ] && [ "$bstar_files" = "$expected_files" ]; then
   echo -e "  ${GREEN}PASS${NC} Bash(*) restricted to implementer + test-writer"

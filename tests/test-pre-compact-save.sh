@@ -399,7 +399,8 @@ fi
 
 # Test 26: per-ticket 'tickets:' array has 2 entries
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-TICKET_COUNT=$(grep -c '^  - dir: ' "$COMPACT_FILE" 2>/dev/null || echo 0)
+TICKET_COUNT=$(grep -c '^  - dir: ' "$COMPACT_FILE" 2>/dev/null || true)
+TICKET_COUNT=${TICKET_COUNT:-0}
 if [ "$TICKET_COUNT" -eq 2 ]; then
   echo -e "  ${GREEN}PASS${NC} per-ticket 'tickets:' array has 2 entries"
   TESTS_PASSED=$((TESTS_PASSED + 1))
