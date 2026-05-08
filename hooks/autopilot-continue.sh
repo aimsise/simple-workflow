@@ -23,16 +23,19 @@ set -euo pipefail
 # Read stdin JSON payload (may be empty)
 INPUT=$(cat 2>/dev/null || echo '{}')
 
-# --- runtime_metrics helpers (Plan 01) -----------------------------------
-# These helpers append a single entry to the `runtime_metrics:` list in the
-# given autopilot-state.yaml file. They are NO-OPS when the state file is
-# missing or unreadable. Implementation strategy (in priority order):
-#   1. yq (mikefarah/yq v4) when available — preferred, schema-aware.
-#   2. python3 + PyYAML when available — schema-aware fallback.
-#   3. Pure shell text append — last-resort, assumes runtime_metrics: is the
-#      last top-level key (true for fresh state files written from the
-#      SKILL.md template).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# `append_runtime_metrics_entry` is defined in hooks/lib/runtime-metrics.sh.
+source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 
+# `_runtime_metrics_payload_field` is currently duplicated in
+# hooks/pre-compact-save.sh as `_pc_runtime_metrics_payload_field`. Both
+# copies close over the hook-script-local `$INPUT` variable; sharing
+# would require passing `$INPUT` as a function argument and lifting the
+# helper into hooks/lib/. The duplication is kept inline as a
+# trade-off — the helper is 14 lines and the consolidation would only
+# remove one copy at the cost of an extra parameter on every call site.
+# Any change to the jq invocation MUST be applied to both copies in
+# lock-step until / unless the helper is consolidated.
 _runtime_metrics_payload_field() {
   # $1 = field name, prints int or "null"
   local field="$1"
@@ -49,107 +52,6 @@ _runtime_metrics_payload_field() {
   fi
 }
 
-_append_runtime_metrics_entry() {
-  # $1 state_file, $2 boundary, $3 stop_reason ("null" or value),
-  # $4 timestamp, $5 cache_creation, $6 cache_read, $7 input_tokens,
-  # $8 consecutive_stop ("null" or int)
-  local state_file="$1"
-  local boundary="$2"
-  local stop_reason="$3"
-  local timestamp="$4"
-  local cache_creation="$5"
-  local cache_read="$6"
-  local input_tokens="$7"
-  local consecutive="$8"
-
-  [ -n "$state_file" ] && [ -f "$state_file" ] || return 0
-
-  if command -v yq >/dev/null 2>&1; then
-    local stop_value
-    if [ "$stop_reason" = "null" ]; then stop_value="null"; else stop_value="\"$stop_reason\""; fi
-    if yq eval -i ".runtime_metrics = ((.runtime_metrics // []) + [{\"boundary\":\"$boundary\",\"stop_reason\":$stop_value,\"timestamp\":\"$timestamp\",\"cache_creation_input_tokens\":$cache_creation,\"cache_read_input_tokens\":$cache_read,\"input_tokens\":$input_tokens,\"consecutive_stop_blocks\":$consecutive}])" "$state_file" 2>/dev/null; then
-      return 0
-    fi
-    echo "[runtime_metrics] yq write failed, attempting fallback" >&2
-  fi
-
-  if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
-    STATE_FILE_PATH="$state_file" \
-    METRIC_BOUNDARY="$boundary" \
-    METRIC_STOP_REASON="$stop_reason" \
-    METRIC_TIMESTAMP="$timestamp" \
-    METRIC_CACHE_CREATION="$cache_creation" \
-    METRIC_CACHE_READ="$cache_read" \
-    METRIC_INPUT_TOKENS="$input_tokens" \
-    METRIC_CONSECUTIVE="$consecutive" \
-    python3 - <<'PYEOF'
-import os, sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(0)
-def numeric_or_null(s):
-    if s is None or s == '' or s == 'null':
-        return None
-    try:
-        return int(s)
-    except (TypeError, ValueError):
-        return s
-path = os.environ['STATE_FILE_PATH']
-try:
-    with open(path) as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, dict):
-        sys.exit(0)
-    stop_raw = os.environ['METRIC_STOP_REASON']
-    entry = {
-        'boundary': os.environ['METRIC_BOUNDARY'],
-        'stop_reason': None if stop_raw == 'null' else stop_raw,
-        'timestamp': os.environ['METRIC_TIMESTAMP'],
-        'cache_creation_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_CREATION']),
-        'cache_read_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_READ']),
-        'input_tokens': numeric_or_null(os.environ['METRIC_INPUT_TOKENS']),
-        'consecutive_stop_blocks': numeric_or_null(os.environ['METRIC_CONSECUTIVE']),
-    }
-    rm = data.get('runtime_metrics')
-    if not isinstance(rm, list):
-        rm = []
-    rm.append(entry)
-    data['runtime_metrics'] = rm
-    with open(path, 'w') as f:
-        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-except Exception as exc:
-    print(f'[runtime_metrics] python yaml write failed: {exc}', file=sys.stderr)
-    sys.exit(0)
-PYEOF
-    return 0
-  fi
-
-  # Pure-shell last-resort fallback. Assumes runtime_metrics: is the last
-  # top-level key in the file (true for state files initialised from the
-  # SKILL.md template).
-  if grep -qE '^runtime_metrics:[[:space:]]*\[\][[:space:]]*$' "$state_file"; then
-    if [ "$(uname -s)" = "Darwin" ]; then
-      sed -i '' 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
-    else
-      sed -i 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
-    fi
-  elif ! grep -qE '^runtime_metrics:' "$state_file"; then
-    [ -z "$(tail -c1 "$state_file" 2>/dev/null)" ] || printf '\n' >> "$state_file"
-    printf 'runtime_metrics:\n' >> "$state_file"
-  fi
-  cat >> "$state_file" <<EOF
-  - boundary: $boundary
-    stop_reason: $stop_reason
-    timestamp: $timestamp
-    cache_creation_input_tokens: $cache_creation
-    cache_read_input_tokens: $cache_read
-    input_tokens: $input_tokens
-    consecutive_stop_blocks: $consecutive
-EOF
-  return 0
-}
-
 _emit_session_end_metrics() {
   # $1 stop_reason, $2 consecutive_stop ("null" or int)
   local stop_reason="$1"
@@ -160,7 +62,7 @@ _emit_session_end_metrics() {
     cache_creation=$(_runtime_metrics_payload_field cache_creation_input_tokens)
     cache_read=$(_runtime_metrics_payload_field cache_read_input_tokens)
     input_tokens=$(_runtime_metrics_payload_field input_tokens)
-    _append_runtime_metrics_entry "$STATE_FILE" "session_end" "$stop_reason" "$timestamp" \
+    append_runtime_metrics_entry "$STATE_FILE" "session_end" "$stop_reason" "$timestamp" \
       "$cache_creation" "$cache_read" "$input_tokens" "$consecutive"
   fi
 }

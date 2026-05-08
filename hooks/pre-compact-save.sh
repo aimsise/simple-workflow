@@ -9,6 +9,10 @@
 set -euo pipefail
 INPUT=$(cat 2>/dev/null || echo '{}')
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# `append_runtime_metrics_entry` is defined in hooks/lib/runtime-metrics.sh.
+source "$SCRIPT_DIR/lib/runtime-metrics.sh"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DATE_ISO=$(date -Iseconds 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
 BRANCH=$(git branch --show-current 2>/dev/null || echo "detached")
@@ -274,6 +278,15 @@ fi
 # autopilot-state.yaml. Best-effort — missing yq AND missing python3+yaml
 # simply skips the write. ---
 
+# `_pc_runtime_metrics_payload_field` is currently duplicated from
+# `_runtime_metrics_payload_field` in hooks/autopilot-continue.sh. Both
+# copies close over the hook-script-local `$INPUT` variable; sharing
+# would require passing `$INPUT` as a function argument and lifting the
+# helper into hooks/lib/. The duplication is kept inline as a
+# trade-off — the helper is 14 lines and the consolidation would only
+# remove one copy at the cost of an extra parameter on every call site.
+# Any change to the jq invocation MUST be applied to both copies in
+# lock-step until / unless the helper is consolidated.
 _pc_runtime_metrics_payload_field() {
   local field="$1"
   local payload="${INPUT:-}"
@@ -287,94 +300,6 @@ _pc_runtime_metrics_payload_field() {
   else
     printf '%s' "$value"
   fi
-}
-
-_pc_append_session_compaction() {
-  local state_file="$1"
-  [ -n "$state_file" ] && [ -f "$state_file" ] || return 0
-
-  local timestamp cache_creation cache_read input_tokens
-  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
-  cache_creation=$(_pc_runtime_metrics_payload_field cache_creation_input_tokens)
-  cache_read=$(_pc_runtime_metrics_payload_field cache_read_input_tokens)
-  input_tokens=$(_pc_runtime_metrics_payload_field input_tokens)
-
-  if command -v yq >/dev/null 2>&1; then
-    if yq eval -i ".runtime_metrics = ((.runtime_metrics // []) + [{\"boundary\":\"session_compaction\",\"stop_reason\":null,\"timestamp\":\"$timestamp\",\"cache_creation_input_tokens\":$cache_creation,\"cache_read_input_tokens\":$cache_read,\"input_tokens\":$input_tokens,\"consecutive_stop_blocks\":null}])" "$state_file" 2>/dev/null; then
-      return 0
-    fi
-    echo "[runtime_metrics] yq write failed, attempting fallback" >&2
-  fi
-
-  if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
-    STATE_FILE_PATH="$state_file" \
-    METRIC_TIMESTAMP="$timestamp" \
-    METRIC_CACHE_CREATION="$cache_creation" \
-    METRIC_CACHE_READ="$cache_read" \
-    METRIC_INPUT_TOKENS="$input_tokens" \
-    python3 - <<'PYEOF'
-import os, sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(0)
-def numeric_or_null(s):
-    if s is None or s == '' or s == 'null':
-        return None
-    try:
-        return int(s)
-    except (TypeError, ValueError):
-        return s
-path = os.environ['STATE_FILE_PATH']
-try:
-    with open(path) as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, dict):
-        sys.exit(0)
-    entry = {
-        'boundary': 'session_compaction',
-        'stop_reason': None,
-        'timestamp': os.environ['METRIC_TIMESTAMP'],
-        'cache_creation_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_CREATION']),
-        'cache_read_input_tokens': numeric_or_null(os.environ['METRIC_CACHE_READ']),
-        'input_tokens': numeric_or_null(os.environ['METRIC_INPUT_TOKENS']),
-        'consecutive_stop_blocks': None,
-    }
-    rm = data.get('runtime_metrics')
-    if not isinstance(rm, list):
-        rm = []
-    rm.append(entry)
-    data['runtime_metrics'] = rm
-    with open(path, 'w') as f:
-        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-except Exception as exc:
-    print(f'[runtime_metrics] python yaml write failed: {exc}', file=sys.stderr)
-    sys.exit(0)
-PYEOF
-    return 0
-  fi
-
-  # Pure-shell last-resort append (assumes runtime_metrics: is the last top-level key).
-  if grep -qE '^runtime_metrics:[[:space:]]*\[\][[:space:]]*$' "$state_file"; then
-    if [ "$(uname -s)" = "Darwin" ]; then
-      sed -i '' 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
-    else
-      sed -i 's|^runtime_metrics:[[:space:]]*\[\][[:space:]]*$|runtime_metrics:|' "$state_file"
-    fi
-  elif ! grep -qE '^runtime_metrics:' "$state_file"; then
-    [ -z "$(tail -c1 "$state_file" 2>/dev/null)" ] || printf '\n' >> "$state_file"
-    printf 'runtime_metrics:\n' >> "$state_file"
-  fi
-  cat >> "$state_file" <<EOF
-  - boundary: session_compaction
-    stop_reason: null
-    timestamp: $timestamp
-    cache_creation_input_tokens: $cache_creation
-    cache_read_input_tokens: $cache_read
-    input_tokens: $input_tokens
-    consecutive_stop_blocks: null
-EOF
-  return 0
 }
 
 # Discover all autopilot-state.yaml files and write a session_compaction
@@ -412,7 +337,14 @@ fi
 unset _sf
 
 for _state_file in "${PC_STATE_FILES[@]:-}"; do
-  [ -n "$_state_file" ] && _pc_append_session_compaction "$_state_file"
+  if [ -n "$_state_file" ]; then
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+    cache_creation=$(_pc_runtime_metrics_payload_field cache_creation_input_tokens)
+    cache_read=$(_pc_runtime_metrics_payload_field cache_read_input_tokens)
+    input_tokens=$(_pc_runtime_metrics_payload_field input_tokens)
+    append_runtime_metrics_entry "$_state_file" "session_compaction" "null" \
+      "$timestamp" "$cache_creation" "$cache_read" "$input_tokens" "null"
+  fi
 done
 unset _state_file
 
