@@ -635,5 +635,163 @@ sa_neg_ac5_count="$(grep -cE 'skills/|agents/' "$SA_PATH")"
 set -e
 assert_eq "Negative-AC-5: no skills/ or agents/ path references in lib" "0" "$sa_neg_ac5_count"
 
+# ---------------------------------------------------------------------------
+# Section 4b: state-authority.sh hardening (v6.3.1)
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- state-authority.sh hardening (v6.3.1) ---"
+
+# AC-A1 (F-H1, ERE escape): with a registry key whose leaf contains a
+# non-glob POSIX-ERE meta (`+`), state_field_change_blocked must NOT match
+# unrelated lines whose key happens to satisfy the un-escaped regex
+# `value+:` (i.e. "valu" + one-or-more "e"). Five distinct unrelated
+# old/new pairs all expected to return exit 1 (allow).
+# `+` is intentionally ERE-meta-only — F-M1 rejects glob meta `[]?{}` so
+# we exercise F-H1 with an input the registry validator does NOT reject.
+SA_F_H1_PAIRS=(
+  "valu: stable|valu: changed"
+  "valuee: foo|valuee: bar"
+  "value: 1|value: 2"
+  "valueee: stable|valueee: changed"
+  "xyz_value: a|xyz_value: b"
+)
+for pair in "${SA_F_H1_PAIRS[@]}"; do
+  old="${pair%%|*}"
+  new="${pair##*|}"
+  set +e
+  bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.prefix.value+']=x; state_field_change_blocked /tmp/x '$old' '$new'" >/dev/null 2>&1
+  sa_h1_exit=$?
+  set -e
+  assert_exit_nonzero "AC-A1 (F-H1): unrelated payload [$old] -> [$new] not falsely matched" \
+    "$sa_h1_exit"
+done
+
+# Sanity contrast: a payload that DOES contain the literal escaped leaf
+# `value+:` triggers the change-block, demonstrating the escape preserves
+# the legitimate detection path.
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.prefix.value+']=x; state_field_change_blocked /tmp/x 'value+: a' 'value+: b'" >/dev/null 2>&1
+sa_h1_literal_exit=$?
+set -e
+assert_exit_zero "AC-A1 (F-H1): literal leaf 'value+:' still detected" "$sa_h1_literal_exit"
+
+# AC-A2 (F-M1, registry rejection): keys containing glob meta other than
+# `*` (e.g. `[`, `]`) are rejected at the first call to
+# is_hook_owned_field with a stderr diagnostic and exit code 2.
+set +e
+sa_m1_stderr="$(bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.[abc].field']=x; is_hook_owned_field .a.field" 2>&1 >/dev/null)"
+sa_m1_exit=$?
+set -e
+assert_eq "AC-A2 (F-M1): is_hook_owned_field exits 2 on bad registry key" "2" "$sa_m1_exit"
+case "$sa_m1_stderr" in
+  *'state-authority: registry key "'*'" contains glob meta'*) sa_m1_msg_ok=1 ;;
+  *)                                                          sa_m1_msg_ok=0 ;;
+esac
+assert_eq "AC-A2 (F-M1): rejection diagnostic on stderr" "1" "$sa_m1_msg_ok"
+
+# state_field_change_blocked also rejects (defense-in-depth).
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.[abc].field']=x; state_field_change_blocked /tmp/x 'a: 1' 'a: 2'" >/dev/null 2>&1
+sa_m1_sfcb_exit=$?
+set -e
+assert_eq "AC-A2 (F-M1): state_field_change_blocked also exits 2" "2" "$sa_m1_sfcb_exit"
+
+# AC-B1 (F-M2): REPO_HOOKS_DIR removed from both safety hooks.
+set +e
+sa_m2_count="$(grep -cE 'REPO_HOOKS_DIR' "$REPO_DIR/hooks/pre-edit-safety.sh" "$REPO_DIR/hooks/pre-write-safety.sh" 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')"
+set -e
+assert_eq "AC-B1 (F-M2): REPO_HOOKS_DIR absent from safety hooks" "0" "$sa_m2_count"
+# Both hooks now source state-authority.sh from $SCRIPT_DIR/lib.
+set +e
+sa_m2_source_count="$(grep -cE 'source "\$SCRIPT_DIR/lib/state-authority.sh"' "$REPO_DIR/hooks/pre-edit-safety.sh" "$REPO_DIR/hooks/pre-write-safety.sh" 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')"
+set -e
+assert_eq "AC-B1 (F-M2): both hooks source from \$SCRIPT_DIR/lib" "2" "$sa_m2_source_count"
+
+# AC-B2 (F-DUP): the helper _sa_extract_leaf_value exists, and there is no
+# inline `old_val=...grep -E...` on a single line in the public function.
+sa_dup_helper_decl="$(bash -c "source '$SA_PATH' && declare -F _sa_extract_leaf_value" 2>/dev/null)"
+case "$sa_dup_helper_decl" in
+  *_sa_extract_leaf_value) sa_dup_helper_ok=1 ;;
+  *)                       sa_dup_helper_ok=0 ;;
+esac
+assert_eq "AC-B2 (F-DUP): _sa_extract_leaf_value declared after sourcing" "1" "$sa_dup_helper_ok"
+set +e
+sa_dup_inline_count="$(grep -cE '^[[:space:]]*(old_val|new_val)=.*\| grep -E' "$SA_PATH")"
+set -e
+assert_eq "AC-B2 (F-DUP): no inline grep -E in old_val/new_val assignments" "0" "$sa_dup_inline_count"
+
+# AC-B3 (F-RR): both libs document the divergence with an explicit F-RR
+# header comment naming `.git` fallback and `pwd -P` canonicalisation as
+# intentional in state-authority.sh.
+sa_rr_state_count="$(grep -cE 'F-RR' "$SA_PATH" || true)"
+sa_rr_psf_count="$(grep -cE 'F-RR' "$REPO_DIR/hooks/lib/parse-state-file.sh" || true)"
+assert_exit_zero "AC-B3 (F-RR): state-authority.sh has F-RR divergence comment" \
+  "$([ "$sa_rr_state_count" -ge 1 ] && echo 0 || echo 1)"
+assert_exit_zero "AC-B3 (F-RR): parse-state-file.sh has F-RR divergence comment" \
+  "$([ "$sa_rr_psf_count" -ge 1 ] && echo 0 || echo 1)"
+
+# AC-C1 (F-BLANK): blank-out of an owned field (old_val present, new_val
+# empty) is now a block, not an allow.
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_field']=x; state_field_change_blocked /tmp/x 'test_field: completed' 'test_field: '" >/dev/null 2>&1
+sa_blank_blockout_exit=$?
+set -e
+assert_exit_zero "AC-C1 (F-BLANK): blank-out of owned field is blocked" \
+  "$sa_blank_blockout_exit"
+# Initial-set with present-only-in-new (key absent in old) still allowed.
+set +e
+bash -c "source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_field']=x; state_field_change_blocked /tmp/x 'other: x' 'test_field: completed'" >/dev/null 2>&1
+sa_blank_initset_exit=$?
+set -e
+assert_exit_nonzero "AC-C1 (F-BLANK): initial-set still allowed (regression guard)" \
+  "$sa_blank_initset_exit"
+
+# AC-C2 (F-EXTGLOB): the parent shell's `extglob` state is preserved.
+# Test from extglob-OFF parent: after sourcing + calling
+# is_hook_owned_field, `shopt -p extglob` reports `shopt -u extglob`.
+sa_extglob_after_off="$(bash -c "shopt -u extglob; source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_x']=x; is_hook_owned_field .y >/dev/null 2>&1 || true; shopt -p extglob" 2>/dev/null || true)"
+assert_eq "AC-C2 (F-EXTGLOB): extglob OFF preserved across is_hook_owned_field" \
+  "shopt -u extglob" "$sa_extglob_after_off"
+sa_extglob_after_on="$(bash -c "shopt -s extglob; source '$SA_PATH'; HOOK_OWNED_FIELDS['.test_x']=x; is_hook_owned_field .y >/dev/null 2>&1 || true; shopt -p extglob" 2>/dev/null || true)"
+assert_eq "AC-C2 (F-EXTGLOB): extglob ON preserved across is_hook_owned_field" \
+  "shopt -s extglob" "$sa_extglob_after_on"
+
+# AC-D1 (F-QYAML, double-quoted): briefs/done/<slug>/autopilot-state.yaml
+# with every phase status as `"completed"` -> resolve_active_state_file
+# returns the absolute path.
+SA_TQDQ="$(mktemp -d)"
+mkdir -p "$SA_TQDQ/.simple-workflow/backlog/briefs/done/qyaml-dq"
+printf 'phases:\n  scout: {status: "completed"}\n  impl: {status: "completed"}\n  ship: {status: "completed"}\n' \
+  > "$SA_TQDQ/.simple-workflow/backlog/briefs/done/qyaml-dq/autopilot-state.yaml"
+sa_qdq_canon="$(cd "$SA_TQDQ" && pwd -P)"
+sa_qdq_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_TQDQ'")"
+assert_eq "AC-D1 (F-QYAML, double-quoted): done-completed adopted" \
+  "$sa_qdq_canon/.simple-workflow/backlog/briefs/done/qyaml-dq/autopilot-state.yaml" \
+  "$sa_qdq_out"
+
+# AC-D2 (F-COMMENT): block-form with `status: completed  # done` ->
+# resolve_active_state_file returns the absolute path.
+SA_TCMT="$(mktemp -d)"
+mkdir -p "$SA_TCMT/.simple-workflow/backlog/briefs/done/comment-test"
+printf 'phases:\n  scout:\n    status: completed  # done\n  impl:\n    status: completed\n  ship:\n    status: completed\n' \
+  > "$SA_TCMT/.simple-workflow/backlog/briefs/done/comment-test/autopilot-state.yaml"
+sa_cmt_canon="$(cd "$SA_TCMT" && pwd -P)"
+sa_cmt_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_TCMT'")"
+assert_eq "AC-D2 (F-COMMENT): block-form with trailing comment adopted" \
+  "$sa_cmt_canon/.simple-workflow/backlog/briefs/done/comment-test/autopilot-state.yaml" \
+  "$sa_cmt_out"
+
+# AC-D3 (F-QYAML, single-quoted): briefs/done with single-quoted
+# 'completed' -> resolve_active_state_file returns the absolute path.
+SA_TQSQ="$(mktemp -d)"
+mkdir -p "$SA_TQSQ/.simple-workflow/backlog/briefs/done/qyaml-sq"
+printf "phases:\n  scout: {status: 'completed'}\n  impl: {status: 'completed'}\n  ship: {status: 'completed'}\n" \
+  > "$SA_TQSQ/.simple-workflow/backlog/briefs/done/qyaml-sq/autopilot-state.yaml"
+sa_qsq_canon="$(cd "$SA_TQSQ" && pwd -P)"
+sa_qsq_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_TQSQ'")"
+assert_eq "AC-D3 (F-QYAML, single-quoted): done-completed adopted" \
+  "$sa_qsq_canon/.simple-workflow/backlog/briefs/done/qyaml-sq/autopilot-state.yaml" \
+  "$sa_qsq_out"
+
 echo ""
 print_summary

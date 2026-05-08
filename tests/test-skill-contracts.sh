@@ -3701,6 +3701,63 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# CT-MODE-STATE-AUTH-1 (v6.3.1, F-M1): hooks/lib/state-authority.sh MUST
+# contain the registry-validation helper that rejects glob meta other
+# than `*`. Static contract — guards against future refactors silently
+# removing the fail-fast on misregistered keys.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SA_LIB_PATH="$REPO_DIR/hooks/lib/state-authority.sh"
+SA_M1_HITS="$(grep -cE '^_sa_validate_registry\(\)' "$SA_LIB_PATH" || true)"
+SA_M1_DIAG_HITS="$(grep -cE 'contains glob meta other than \*' "$SA_LIB_PATH" || true)"
+SA_M1_HITS=${SA_M1_HITS:-0}
+SA_M1_DIAG_HITS=${SA_M1_DIAG_HITS:-0}
+if [ "$SA_M1_HITS" -ge 1 ] && [ "$SA_M1_DIAG_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-STATE-AUTH-1: _sa_validate_registry rejects glob meta other than * (F-M1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-STATE-AUTH-1: state-authority.sh missing _sa_validate_registry (helper hits=$SA_M1_HITS, diagnostic hits=$SA_M1_DIAG_HITS)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-STATE-AUTH-2 (v6.3.1, F-EXTGLOB): is_hook_owned_field MUST
+# capture and restore the parent shell's extglob state. Static contract —
+# checks for the shopt -p capture + eval restore pair inside the function
+# body so a future refactor cannot silently regress to leaking extglob.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SA_EXTGLOB_CAPTURE="$(grep -cE 'shopt -p extglob' "$SA_LIB_PATH" || true)"
+SA_EXTGLOB_RESTORE="$(grep -cE 'eval "\$_prev"' "$SA_LIB_PATH" || true)"
+SA_EXTGLOB_CAPTURE=${SA_EXTGLOB_CAPTURE:-0}
+SA_EXTGLOB_RESTORE=${SA_EXTGLOB_RESTORE:-0}
+if [ "$SA_EXTGLOB_CAPTURE" -ge 1 ] && [ "$SA_EXTGLOB_RESTORE" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-STATE-AUTH-2: is_hook_owned_field captures+restores extglob state (F-EXTGLOB)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-STATE-AUTH-2: extglob preservation pair not found (capture=$SA_EXTGLOB_CAPTURE, restore=$SA_EXTGLOB_RESTORE)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-STATE-AUTH-3 (v6.3.1, F-M2): pre-edit-safety.sh and
+# pre-write-safety.sh MUST source state-authority.sh from $SCRIPT_DIR/lib
+# directly; the legacy REPO_HOOKS_DIR variable is dead code and is
+# rejected here so a future cleanup cannot accidentally re-introduce it.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PE_PATH="$REPO_DIR/hooks/pre-edit-safety.sh"
+PW_PATH="$REPO_DIR/hooks/pre-write-safety.sh"
+# `grep -c` against multiple files prints `<file>:<count>` per file and
+# exits 1 when ANY file had zero hits. The `(... || true)` subshell
+# swallows that exit so the pipeline always reaches awk.
+SA_M2_REPO_HITS="$( (grep -cE 'REPO_HOOKS_DIR' "$PE_PATH" "$PW_PATH" 2>/dev/null || true) | awk -F: '{s+=$2} END{print s+0}')"
+SA_M2_SOURCE_HITS="$( (grep -cE 'source "\$SCRIPT_DIR/lib/state-authority.sh"' "$PE_PATH" "$PW_PATH" 2>/dev/null || true) | awk -F: '{s+=$2} END{print s+0}')"
+SA_M2_REPO_HITS=${SA_M2_REPO_HITS:-0}
+SA_M2_SOURCE_HITS=${SA_M2_SOURCE_HITS:-0}
+if [ "$SA_M2_REPO_HITS" -eq 0 ] && [ "$SA_M2_SOURCE_HITS" -eq 2 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-STATE-AUTH-3: REPO_HOOKS_DIR removed; both safety hooks source from \$SCRIPT_DIR/lib (F-M2)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-STATE-AUTH-3: F-M2 violated (REPO_HOOKS_DIR hits=$SA_M2_REPO_HITS, \$SCRIPT_DIR/lib source hits=$SA_M2_SOURCE_HITS, expected 0+2)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 echo ""
 
 # --- Summary ---

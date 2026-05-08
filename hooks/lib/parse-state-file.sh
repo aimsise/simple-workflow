@@ -56,6 +56,15 @@ _psf_have() {
 # _psf_repo_root [start_dir] -> prints the nearest ancestor that contains
 # `.simple-workflow/` (the canonical anchor). Falls back to start_dir when
 # no anchor is found.
+#
+# F-RR: Intentionally diverges from `_sa_repo_root` in state-authority.sh:
+#   - No `.git` fallback (this lib only matters inside an autopilot context,
+#     so a hit on a bare `.git` parent without `.simple-workflow` would be
+#     a false positive for the callers below).
+#   - No `pwd -P` canonicalisation (callers compare against literal $PWD;
+#     resolving symlinks would break those comparisons).
+# Reconciliation into a shared helper is deferred — see the matching note
+# in state-authority.sh.
 _psf_repo_root() {
   local dir
   dir="${1:-$PWD}"
