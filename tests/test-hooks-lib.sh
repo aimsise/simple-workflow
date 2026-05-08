@@ -853,6 +853,7 @@ if command -v yq >/dev/null 2>&1; then
   # event of a mid-block abort the temp file is the only leak.
 
   RM_YQ_EXIT=0
+  # shellcheck source=hooks/lib/runtime-metrics.sh
   (source "$RM_PATH" && append_runtime_metrics_entry "$RM_YQ_TMP" "session_end" "normal_completion" "2026-05-06T12:00:00Z" "100" "200" "300" "0") || RM_YQ_EXIT=$?
   assert_exit_zero "AC-3: append_runtime_metrics_entry (yq tier) exits 0" "$RM_YQ_EXIT"
 
