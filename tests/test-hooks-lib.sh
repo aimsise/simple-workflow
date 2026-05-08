@@ -794,4 +794,152 @@ assert_eq "AC-D3 (F-QYAML, single-quoted): done-completed adopted" \
   "$sa_qsq_out"
 
 echo ""
+
+# ---------------------------------------------------------------------------
+# Section 5: runtime-metrics.sh
+# ---------------------------------------------------------------------------
+echo "--- runtime-metrics.sh ---"
+
+RM_PATH="$LIB_DIR/runtime-metrics.sh"
+
+# AC-1: file exists with correct shebang
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if test -f "$RM_PATH"; then
+  echo -e "  ${GREEN}PASS${NC} runtime-metrics.sh exists"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} runtime-metrics.sh missing at $RM_PATH"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RM_SHEBANG_COUNT=$(grep -cE '^#!/usr/bin/env bash$' "$RM_PATH" || true)
+if [ "${RM_SHEBANG_COUNT:-0}" -eq 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} runtime-metrics.sh has exactly one #!/usr/bin/env bash shebang"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} runtime-metrics.sh shebang count: $RM_SHEBANG_COUNT (expected 1)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AC-2: public function exported
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RM_FUNC_OUT="$(bash -c "source '$RM_PATH' && declare -F append_runtime_metrics_entry" 2>/dev/null || true)"
+if echo "$RM_FUNC_OUT" | grep -q 'append_runtime_metrics_entry'; then
+  echo -e "  ${GREEN}PASS${NC} runtime-metrics.sh exports append_runtime_metrics_entry"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} append_runtime_metrics_entry not declared after sourcing runtime-metrics.sh"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RM_FUNC_LINE_COUNT="$(echo "$RM_FUNC_OUT" | grep -c 'append_runtime_metrics_entry' || true)"
+if [ "${RM_FUNC_LINE_COUNT:-0}" -eq 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} declare -F emits exactly one line for append_runtime_metrics_entry"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} declare -F emits $RM_FUNC_LINE_COUNT lines (expected 1)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AC-3: yq-tier path (skip if yq unavailable)
+if command -v yq >/dev/null 2>&1; then
+  RM_YQ_TMP="$(mktemp)"
+  printf '%s\n' 'runtime_metrics: []' > "$RM_YQ_TMP"
+  # No EXIT trap here: it would clobber the trap chain set up by earlier
+  # test sections (parse-state-file, jsonl-tail-audit). The block performs
+  # explicit `rm -f "$RM_YQ_TMP"` at the end of normal flow; in the unlikely
+  # event of a mid-block abort the temp file is the only leak.
+
+  RM_YQ_EXIT=0
+  (source "$RM_PATH" && append_runtime_metrics_entry "$RM_YQ_TMP" "session_end" "normal_completion" "2026-05-06T12:00:00Z" "100" "200" "300" "0") || RM_YQ_EXIT=$?
+  assert_exit_zero "AC-3: append_runtime_metrics_entry (yq tier) exits 0" "$RM_YQ_EXIT"
+
+  assert_eq "AC-3: stop_reason = normal_completion (yq)" \
+    "normal_completion" "$(yq '.runtime_metrics[0].stop_reason' "$RM_YQ_TMP")"
+  assert_eq "AC-3: cache_creation_input_tokens = 100 (yq)" \
+    "100" "$(yq '.runtime_metrics[0].cache_creation_input_tokens' "$RM_YQ_TMP")"
+  assert_eq "AC-3: cache_read_input_tokens = 200 (yq)" \
+    "200" "$(yq '.runtime_metrics[0].cache_read_input_tokens' "$RM_YQ_TMP")"
+  assert_eq "AC-3: input_tokens = 300 (yq)" \
+    "300" "$(yq '.runtime_metrics[0].input_tokens' "$RM_YQ_TMP")"
+  assert_eq "AC-3: consecutive_stop_blocks = 0 (yq)" \
+    "0" "$(yq '.runtime_metrics[0].consecutive_stop_blocks' "$RM_YQ_TMP")"
+
+  rm -f "$RM_YQ_TMP"
+else
+  echo "  (skip) AC-3: yq not on PATH — yq-tier test skipped"
+fi
+
+# AC-4: pure-shell fallback (PATH restricted to a dir with no yq or python3)
+# Build a fake-bin dir that has bash + essential POSIX utilities but NOT yq/python3.
+RM_PS_TMP="$(mktemp)"
+printf '%s\n' 'runtime_metrics: []' > "$RM_PS_TMP"
+RM_FAKE_BIN="$(mktemp -d)"
+# No EXIT trap here: would clobber the earlier trap chain (parse-state-file,
+# jsonl-tail-audit). Explicit `rm -f` / `rm -rf` runs at the end of normal flow.
+
+# Symlink only the tools the lib needs (bash, grep, sed, tail, uname, cat, date, printf is builtin)
+for _tool in bash grep sed tail uname cat date; do
+  _tool_path="$(command -v "$_tool" 2>/dev/null || true)"
+  [ -n "$_tool_path" ] && ln -sf "$_tool_path" "$RM_FAKE_BIN/$_tool" || true
+done
+unset _tool _tool_path
+
+RM_PS_EXIT=0
+PATH="$RM_FAKE_BIN" bash -c "source '$RM_PATH' && append_runtime_metrics_entry '$RM_PS_TMP' 'session_end' 'normal_completion' '2026-05-06T12:00:00Z' '100' '200' '300' '0'" || RM_PS_EXIT=$?
+assert_exit_zero "AC-4: append_runtime_metrics_entry (pure-shell tier) exits 0" "$RM_PS_EXIT"
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'stop_reason: normal_completion' "$RM_PS_TMP"; then
+  echo -e "  ${GREEN}PASS${NC} AC-4: stop_reason: normal_completion present in file (pure-shell)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-4: stop_reason: normal_completion not found in file (pure-shell)"
+  echo "       file contents: $(cat "$RM_PS_TMP")"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'boundary: session_end' "$RM_PS_TMP"; then
+  echo -e "  ${GREEN}PASS${NC} AC-4: boundary: session_end present in file (pure-shell)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-4: boundary: session_end not found in file (pure-shell)"
+  echo "       file contents: $(cat "$RM_PS_TMP")"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+rm -f "$RM_PS_TMP"
+rm -rf "$RM_FAKE_BIN"
+
+# Negative AC-3: no new public API beyond append_runtime_metrics_entry
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RM_BEFORE_FUNCS="$(declare -F | awk '{print $3}' | sort)"
+# shellcheck disable=SC1090
+source "$RM_PATH"
+RM_AFTER_FUNCS="$(declare -F | awk '{print $3}' | sort)"
+RM_NEW_PUBLIC="$(comm -13 <(echo "$RM_BEFORE_FUNCS") <(echo "$RM_AFTER_FUNCS") | grep -v '^_' || true)"
+if [ "$RM_NEW_PUBLIC" = "append_runtime_metrics_entry" ]; then
+  echo -e "  ${GREEN}PASS${NC} Negative AC-3: only append_runtime_metrics_entry added as public function"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Negative AC-3: unexpected public functions: '$RM_NEW_PUBLIC'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Negative AC-4: lib does not reference skills/ or agents/ paths
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RM_PATH_LEAK="$(grep -rnE 'skills/|agents/' "$RM_PATH" || true)"
+if [ -z "$RM_PATH_LEAK" ]; then
+  echo -e "  ${GREEN}PASS${NC} Negative AC-4: runtime-metrics.sh has no skills/ or agents/ references"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Negative AC-4: found skills/agents references in runtime-metrics.sh"
+  echo "       $RM_PATH_LEAK"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
 print_summary

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.2] — 2026-05-08
+
+Extract `append_runtime_metrics_entry` from inline hook code into a shared `hooks/lib/runtime-metrics.sh` library.
+
+### Changed
+
+- `hooks/lib/runtime-metrics.sh` (new): the `append_runtime_metrics_entry` function is extracted from `hooks/autopilot-continue.sh` into a dedicated shared library. The function body is byte-for-byte identical to the removed inline copy — only the function name changes (underscore prefix dropped). Supports the same three-tier fallback (yq → python3+PyYAML → pure-shell) as the original.
+- `hooks/autopilot-continue.sh` refactor: deletes the inline `_append_runtime_metrics_entry` definition and sources `hooks/lib/runtime-metrics.sh` via `$SCRIPT_DIR/lib/runtime-metrics.sh`. The single callsite is renamed from `_append_runtime_metrics_entry` to `append_runtime_metrics_entry` with the same eight arguments. Hook behaviour is byte-for-byte unchanged for all inputs.
+- `hooks/pre-compact-save.sh` refactor: deletes `_pc_append_session_compaction` and sources `hooks/lib/runtime-metrics.sh`. The callsite is rewritten from a one-argument wrapper call to an eight-argument `append_runtime_metrics_entry` call with bare variable assignments (not `local` — the loop body is at script top-level). Literal `"null"` is passed for `stop_reason` and `consecutive_stop_blocks`, mirroring the deleted wrapper's hard-coded values. Hook behaviour is byte-for-byte unchanged for all inputs.
+- `CLAUDE.md ## Dependencies`: additive paragraph listing all five `hooks/lib/` shared helpers (`forbidden-rationale-patterns.sh`, `parse-state-file.sh`, `jsonl-tail-audit.sh`, `state-authority.sh`, `runtime-metrics.sh`).
+
 ## [6.3.1] — 2026-05-08
 
 Defense-in-depth + correctness fix release for `hooks/lib/state-authority.sh`. Closes the six audit warnings that the v6.2.2 ship explicitly deferred (`H-1`, `M-1`, `M-2`, plus three code-quality items) **before** Foundation 3 populates `HOOK_OWNED_FIELDS`, plus four additional latents surfaced by the 2026-05-08 skeptical self-eval (extglob-state leak from `is_hook_owned_field`, two awk YAML scalar parse gaps for quoted scalars and trailing `#`-comments, and a blank-out semantic gap in `state_field_change_blocked`). The registry remains shipped empty (Negative AC-2 of v6.2.2 preserved), so `state_field_change_blocked` still always returns 1 (allow) for every existing payload — behaviour is byte-identical to v6.3.0 for all in-spec inputs. **None — registry remains empty; no migration required.**
