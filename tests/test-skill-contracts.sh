@@ -3818,17 +3818,22 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# CT-MODE-PERSIST-FIRST-5 (AC-7 + Negative AC-4): CHANGELOG newest block names Persistence-First and both files
+# CT-MODE-PERSIST-FIRST-5 (AC-7 + Negative AC-4): the v6.3.3 CHANGELOG block
+# names Persistence-First and both files. The "newest block" framing was
+# correct at v6.3.3 ship time; subsequent releases push v6.3.3 down the
+# stack, so the assertion now anchors on the literal `## [6.3.3]` header
+# and stops at the next `## [` header. This keeps the regression contract
+# active without re-publishing PFP wording in every later release.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CL_TMP=$(mktemp)
-awk '/^## \[/{c++} c==1' "$REPO_DIR/CHANGELOG.md" > "$CL_TMP"
+awk '/^## \[6\.3\.3\]/{found=1; print; next} found && /^## \[/{exit} found{print}' "$REPO_DIR/CHANGELOG.md" > "$CL_TMP"
 CL_PF=$(count_matches 'Persistence-First' "$CL_TMP")
 CL_AGENT=$(count_matches 'ac-evaluator\.md' "$CL_TMP")
 CL_SKILL=$(count_matches 'impl/SKILL\.md' "$CL_TMP")
 CL_BAD=$(count_matches 'stable contract|semantically identical|backward compatible|forward compatible' "$CL_TMP")
 rm -f "$CL_TMP"
 if [ "${CL_PF:-0}" -ge 1 ] && [ "${CL_AGENT:-0}" -ge 1 ] && [ "${CL_SKILL:-0}" -ge 1 ] && [ "${CL_BAD:-0}" -eq 0 ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-5: CHANGELOG newest block names Persistence-First + both files; no SemVer-inflation phrases"
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-5: [6.3.3] block names Persistence-First + both files; no SemVer-inflation phrases"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-5: PF=$CL_PF agent=$CL_AGENT skill=$CL_SKILL banned=$CL_BAD" >&2
@@ -3837,6 +3842,113 @@ fi
 
 echo ""
 
+# === Cat S: impl-checkpoint-guard /audit handoff backstop (T-2, v6.4.0) ===
+# Diff: hooks/impl-checkpoint-guard.sh + audit-block-pattern.sh + Step 4-bis
+# (audit/SKILL.md) + Step 17 CHECKPOINT (impl/SKILL.md). Asserts the
+# documentation, single-source-of-truth literals, and release-stdout
+# contract that the Stop hook depends on.
+echo "--- Cat S: impl-checkpoint-guard backstop ---"
+
+AUDIT_SKILL="$REPO_DIR/skills/audit/SKILL.md"
+IMPL_SKILL="$REPO_DIR/skills/impl/SKILL.md"
+AUDIT_BLOCK_PATTERN_LIB="$REPO_DIR/hooks/lib/audit-block-pattern.sh"
+ICG_HOOK="$REPO_DIR/hooks/impl-checkpoint-guard.sh"
+
+# CT-MODE-ICG-1: audit/SKILL.md contains the literal Step 4-bis heading.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '### 4-bis. MANDATORY: Handoff back to caller' "$AUDIT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-1: audit/SKILL.md has Step 4-bis heading"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-1: audit/SKILL.md missing '### 4-bis. MANDATORY: Handoff back to caller'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-2: audit/SKILL.md Step 4 example contains both **Status**:
+# and **Reports**: literals (the literals the Stop hook greps for via
+# audit-block-pattern.sh).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '**Status**:' "$AUDIT_SKILL" && grep -qF '**Reports**:' "$AUDIT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-2: audit/SKILL.md Step 4 contains **Status**: and **Reports**:"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-2: audit/SKILL.md missing required structured-block literals"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-3: distance guard — `phase-state.yaml` MUST appear within 200
+# characters after the Step 4 structured-block example's closing fence so
+# the handoff instruction is colocated with the artifact it describes.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ICG_DIST=$(python3 - <<PY
+import re, sys
+with open("$AUDIT_SKILL") as f:
+    content = f.read()
+m = re.search(r'\`\`\`\n\*\*Status\*\*:.*?\*\*Summary\*\*:.*?\n\`\`\`', content, re.DOTALL)
+if not m:
+    print(-1)
+    sys.exit(0)
+rest = content[m.end():]
+pos = rest.find("phase-state.yaml")
+print(pos)
+PY
+)
+if [ "$ICG_DIST" -ge 0 ] && [ "$ICG_DIST" -le 200 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-3: phase-state.yaml within 200 chars after Step 4 block (distance=$ICG_DIST)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: phase-state.yaml distance=$ICG_DIST chars after Step 4 block (max 200)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-4: impl/SKILL.md Step 17 CHECKPOINT contains the literal
+# "Required next emit: `## [SW-CHECKPOINT]`" so the strengthened anchor
+# cannot drift back to the original wording silently.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'Required next emit: `## [SW-CHECKPOINT]`' "$IMPL_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-4: impl/SKILL.md Step 17 carries the strengthened CHECKPOINT line"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-4: impl/SKILL.md missing 'Required next emit: \`## [SW-CHECKPOINT]\`'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-5: audit-block-pattern.sh exports the same literals (Status,
+# Reports) the Stop hook greps for. The exported value is an ERE pattern
+# (`\*\*Status\*\*:`) — when sourced and used with `grep -E`, it matches
+# the literal `**Status**:` in transcripts. To verify the file actually
+# carries the correct ERE-escaped pattern (single source of truth),
+# we source the file in a sub-shell and inspect the runtime values.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ICG_VAL_STATUS=$(bash -c "source \"$AUDIT_BLOCK_PATTERN_LIB\" && printf '%s' \"\$AUDIT_BLOCK_PATTERN_STATUS\"")
+ICG_VAL_REPORTS=$(bash -c "source \"$AUDIT_BLOCK_PATTERN_LIB\" && printf '%s' \"\$AUDIT_BLOCK_PATTERN_REPORTS\"")
+if [ "$ICG_VAL_STATUS" = '\*\*Status\*\*:' ] && [ "$ICG_VAL_REPORTS" = '\*\*Reports\*\*:' ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-5: audit-block-pattern.sh exports STATUS + REPORTS literals matching audit/SKILL.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-5: audit-block-pattern.sh exports do not match expected ERE patterns"
+  echo -e "       STATUS:  $ICG_VAL_STATUS"
+  echo -e "       REPORTS: $ICG_VAL_REPORTS"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-6: impl-checkpoint-guard.sh contains the [IMPL-CHECKPOINT-RELEASE]
+# prefix AND both Resume variants ('/impl' for non-autopilot, '/autopilot'
+# for autopilot context) — Patch 3 of the design.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ICG_PASS=true
+grep -qF '[IMPL-CHECKPOINT-RELEASE]' "$ICG_HOOK" || ICG_PASS=false
+grep -qF 'Resume with: /impl' "$ICG_HOOK" || ICG_PASS=false
+grep -qF 'Resume with: /autopilot' "$ICG_HOOK" || ICG_PASS=false
+if [ "$ICG_PASS" = true ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh emits both Resume variants under release prefix"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh missing release prefix or one of the Resume variants"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
 
 # --- Summary ---
 print_summary

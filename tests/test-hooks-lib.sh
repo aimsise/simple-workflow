@@ -444,13 +444,17 @@ assert_exit_zero "AC-7: jsonl_tail_most_recent_skill on empty fixture exits 0" "
 assert_eq "AC-7: most recent skill on 3-skill fixture is simple-workflow:ship" "simple-workflow:ship" "$jta_ac7_ship"
 assert_eq "AC-7: most recent skill on empty fixture is empty" "" "$jta_ac7_empty"
 
-# Negative AC-1: exactly 4 new public functions after sourcing (none besides the declared 4)
+# Negative AC-1: exactly 5 new public functions after sourcing — the four
+# declared in v6.2.1 (jsonl_tail_skill_uses, jsonl_tail_agent_uses,
+# jsonl_tail_tool_use_count, jsonl_tail_most_recent_skill) plus
+# transcript_contains_skill_invocation added in v6.4.0 for
+# impl-checkpoint-guard.sh's 5-AND condition (e).
 # Use jta_before_source_funcs (captured before sourcing the lib above) and compare
 # against what the current shell declares now (after sourcing the lib).
 jta_after_source_funcs="$(declare -F | awk '{print $3}' | sort -u)"
 jta_new_public_funcs="$(comm -13 <(printf '%s\n' "$jta_before_source_funcs") <(printf '%s\n' "$jta_after_source_funcs") | grep -vE '^_' || true)"
 jta_new_public_count="$(printf '%s\n' "$jta_new_public_funcs" | grep -c '[^[:space:]]' || true)"
-assert_eq "Negative-AC-1: exactly 4 new public functions (no _ prefix)" "4" "$jta_new_public_count"
+assert_eq "Negative-AC-1: exactly 5 new public functions (no _ prefix)" "5" "$jta_new_public_count"
 
 # Negative AC-2: no tail -n with variable expansion in lib
 # grep returns 1 on no match (the success path here), which would trip

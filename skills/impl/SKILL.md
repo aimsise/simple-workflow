@@ -189,6 +189,8 @@ Current state:
 
 **Autopilot round limit**: If `{ticket-dir}/autopilot-policy.yaml` defines `constraints.max_total_rounds`, use that value; else default 3.
 
+**Why a Stop hook (and not PreToolUse) guards the post-`/audit` handoff**: the recurring failure this loop is hardened against is *omission* — emitting `/audit`'s structured block and then ending the turn before Step 18 → Phase 3 → `## [SW-CHECKPOINT]` runs. PreToolUse hooks (e.g. `pre-state-transition.sh`) can only fire on a tool invocation event; they cannot detect the **absence** of an invocation. A Stop hook (`hooks/impl-checkpoint-guard.sh`) at turn termination is the only layer where "the state that should have been written wasn't" is observable, which is why the harness-side defense lives there rather than in PreToolUse.
+
 ### phase-state.yaml phases.impl state management
 
 All intra-impl loop state lives under `phases.impl.*` in `{ticket-dir}/phase-state.yaml`. See `phase-state-schema.md` for the canonical schema.
@@ -336,7 +338,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
       - **Non-interactive fallback**: If `AskUserQuestion` unavailable / errors, default to `stop` (NOT `fail` — a silent FAIL retry would mask infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure." and exit. Do NOT hang.
       - **Never** silently treat audit failure as PASS / PASS_WITH_CONCERNS — Critical / security issues must not slip through.
 
-    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read `phase-state.yaml`; execute `phases.impl.next_action` immediately. Do NOT end your turn. Do NOT summarize the audit to the user.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `/audit` has just emitted its structured block. That block is `/impl`'s input, not your output. Read `phase-state.yaml`; execute `phases.impl.next_action` immediately (you are now AT Step 18, not done with `/impl`). Do NOT end your turn. Do NOT summarize the audit. Required next emit: `## [SW-CHECKPOINT]` in Phase 3.
 
 18. Combined Decision (from `/audit` structured return):
     - **FAIL** (Critical > 0) → combine ac-evaluator PASS + audit Critical findings (from the `**Reports**` paths) as feedback for next Generator round. Continue.

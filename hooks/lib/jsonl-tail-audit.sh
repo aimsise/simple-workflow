@@ -33,6 +33,17 @@
 #       window (the most recent Skill invocation). Empty stdout when absent.
 #       Exits 0 always.
 #
+#   transcript_contains_skill_invocation <skill_name> <transcript_path>
+#     - Returns 0 when the last 500 lines of <transcript_path> contain at
+#       least one Skill tool_use whose .input.skill equals <skill_name>;
+#       returns 1 when no match (or when the transcript is empty / missing /
+#       jq is unavailable). Used by impl-checkpoint-guard.sh as the
+#       cross-session staleness guard (5-AND condition (e)).
+#     - Bounded to the same `tail -n 500` window as the other helpers; the
+#       /impl Skill invocation that triggered the /audit handoff is
+#       temporally close to the /audit invocation itself, so 500 lines is
+#       sufficient and keeps long-session JSONL scans O(1) wrt session age.
+#
 # All reads go through `tail -n 500` (literal) so the scan window is bounded.
 # This file does not introduce any environment-variable knob that disables
 # the helpers. If a downstream caller needs to bypass detection (e.g. for
@@ -132,7 +143,87 @@ jsonl_tail_most_recent_skill() {
   _jta_iter_tool_uses "$1" "Skill" "skill" | tail -n 1
 }
 
-# Export the four public functions so children that re-enter bash via `bash -c`
+# ---------------------------------------------------------------------------
+# Public function: transcript_contains_skill_invocation
+# Usage: transcript_contains_skill_invocation <skill_name> <transcript_path>
+# ---------------------------------------------------------------------------
+transcript_contains_skill_invocation() {
+  local skill_name="$1"
+  local transcript="$2"
+  [ -n "$skill_name" ] || return 1
+  [ -n "$transcript" ] || return 1
+  [ -f "$transcript" ] || return 1
+
+  # Tier 1: jq (preferred; same engine as the rest of this file).
+  if command -v jq >/dev/null 2>&1; then
+    local found
+    found=$(tail -n 500 -- "$transcript" 2>/dev/null \
+      | jq -r --arg name "$skill_name" '
+          select(.type=="assistant")
+          | ((.message.content // .content) // [])
+          | .[]?
+          | select(.type=="tool_use" and .name=="Skill" and (.input.skill // "")==$name)
+          | "1"
+        ' 2>/dev/null \
+      | head -n 1)
+    if [ "$found" = "1" ]; then
+      return 0
+    fi
+    return 1
+  fi
+
+  # Tier 2: python3 + json (no PyYAML required; transcripts are JSONL).
+  if command -v python3 >/dev/null 2>&1; then
+    if tail -n 500 -- "$transcript" 2>/dev/null | python3 - "$skill_name" <<'PY'
+import json, sys
+target = sys.argv[1]
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        rec = json.loads(line)
+    except Exception:
+        continue
+    if rec.get("type") != "assistant":
+        continue
+    msg = rec.get("message") or {}
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if content is None:
+        content = rec.get("content") or []
+    if not isinstance(content, list):
+        continue
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "tool_use":
+            continue
+        if block.get("name") != "Skill":
+            continue
+        inp = block.get("input") or {}
+        if isinstance(inp, dict) and inp.get("skill") == target:
+            sys.exit(0)
+sys.exit(1)
+PY
+    then
+      return 0
+    fi
+    return 1
+  fi
+
+  # Tier 3: pure grep on the tail window. The transcript is JSONL, so each
+  # tool_use record is a single line containing `"name":"Skill"` and
+  # `"skill":"<name>"` literals. False positives from prose are negligible
+  # because the assistant content is JSON-encoded in the transcript itself.
+  if tail -n 500 -- "$transcript" 2>/dev/null \
+        | grep -F '"name":"Skill"' \
+        | grep -qF "\"skill\":\"$skill_name\""; then
+    return 0
+  fi
+  return 1
+}
+
+# Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f jsonl_tail_skill_uses jsonl_tail_agent_uses jsonl_tail_tool_use_count jsonl_tail_most_recent_skill 2>/dev/null || true
+export -f jsonl_tail_skill_uses jsonl_tail_agent_uses jsonl_tail_tool_use_count jsonl_tail_most_recent_skill transcript_contains_skill_invocation 2>/dev/null || true

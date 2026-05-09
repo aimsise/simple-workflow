@@ -4,6 +4,8 @@
 # Sourced by:
 #   - hooks/autopilot-continue.sh (session_end boundary writes)
 #   - hooks/pre-compact-save.sh (session_compaction boundary writes)
+#   - hooks/impl-checkpoint-guard.sh (session_end boundary writes for the
+#     /audit-handoff guard; emits the four stop_reason values listed below)
 #
 # Public contract:
 #
@@ -20,6 +22,34 @@
 #            the SKILL.md template).
 #     - Pass literal "null" (string) for stop_reason or consecutive when those
 #       fields are not applicable to the boundary type.
+#
+# stop_reason taxonomy (informative; the helper itself does no validation):
+#
+#   Existing (autopilot-continue.sh, pre-compact-save.sh, session-stop-log.sh):
+#     normal_completion, partial_completion, loop_guard_release,
+#     session_compaction, ...
+#
+#   Added by impl-checkpoint-guard.sh (Stop hook, session_end boundary):
+#     premature_audit_handoff_blocked     — 5-AND condition met; block emitted
+#     audit_handoff_via_prompt            — recorded by the same Stop hook
+#                                            when the prompt-side AuditTail
+#                                            is observed to have completed
+#                                            Phase 3 (`## [SW-CHECKPOINT]`
+#                                            present); used to compute the
+#                                            primary SLO ratio.
+#     phasegate_released_after_N_blocks   — 3-loop release path
+#     phasegate_disabled                  — kill switch SW_IMPL_CHECKPOINT_MODE
+#                                            in {metric-only, off}; kept so
+#                                            disabled sessions are not invisible
+#                                            to monitoring.
+#
+# Boundary orthogonality (per addendum §13.C-2): runtime_metrics entries are
+# partitioned by `boundary` field. `boundary: phase_complete | phase_failed |
+# phase_skipped` (PX-05 / post-phase-checkpoint.sh) tracks phase-level
+# transitions; `boundary: session_end` (Stop hooks above) tracks turn-
+# termination events. Tune-skill aggregations treat the two partitions
+# independently — no double-counting between boundaries. Cross-boundary
+# correlation is reserved for ad-hoc analysis, not standard SLO computation.
 #
 # This file does not introduce any environment-variable knob that disables
 # the helper. If a downstream caller needs to bypass detection (e.g. for
