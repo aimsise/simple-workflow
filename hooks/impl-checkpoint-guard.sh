@@ -105,14 +105,14 @@ get_plan_path() {
     return 1
   fi
 
-  if command -v python3 >/dev/null 2>&1; then
+  # Tier 2: python3 + PyYAML — gate on PyYAML availability so macOS's
+  # bundled /usr/bin/python3 (no PyYAML) does NOT short-circuit here and
+  # bypass the awk tier with a silent failure.
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
     local out
     out=$(python3 - "$file" <<'PY' 2>/dev/null
 import sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(1)
+import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
 phases = doc.get("phases") or {}
@@ -126,23 +126,32 @@ PY
     return 1
   fi
 
-  # awk fallback: walk phases -> scout -> artifacts -> plan.
+  # awk fallback: walk phases -> scout -> artifacts -> plan. POSIX awk only;
+  # uses `sub()` strip-by-prefix instead of the gawk-specific 3-arg
+  # `match(s, re, arr)` so macOS's stock BSD awk handles this tier. Indent
+  # is anchored at exactly 2 / 4 / 6 spaces (canonical yq output) so the
+  # phase-key matcher does not falsely promote `    artifacts:` to phase
+  # status.
   local out
   out=$(awk '
     BEGIN { in_phases = 0; in_scout = 0; in_artifacts = 0 }
     /^phases:[[:space:]]*$/ { in_phases = 1; next }
     in_phases && /^[^[:space:]]/ { in_phases = 0; in_scout = 0; in_artifacts = 0 }
-    in_phases && match($0, /^[[:space:]]+([A-Za-z0-9_-]+):[[:space:]]*$/, m) {
-      in_scout = (m[1] == "scout") ? 1 : 0
+    in_phases && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+      name = $0
+      sub(/^  /, "", name)
+      sub(/:[[:space:]]*$/, "", name)
+      in_scout = (name == "scout") ? 1 : 0
       in_artifacts = 0
       next
     }
-    in_scout && match($0, /^[[:space:]]+artifacts:[[:space:]]*$/, _ignore) {
+    in_scout && /^    artifacts:[[:space:]]*$/ {
       in_artifacts = 1
       next
     }
-    in_scout && in_artifacts && match($0, /^[[:space:]]+plan:[[:space:]]*(.*)$/, m) {
-      val = m[1]
+    in_scout && in_artifacts && /^      plan:[[:space:]]*/ {
+      val = $0
+      sub(/^      plan:[[:space:]]*/, "", val)
       gsub(/^"|"$/, "", val)
       gsub(/^'\''|'\''$/, "", val)
       sub(/[[:space:]]+#.*$/, "", val)
@@ -158,18 +167,54 @@ PY
 # Patch 3: discover the autopilot parent-slug for the Resume command. The
 # slug is the path between `briefs/active/` (or `product_backlog/`) and
 # `/autopilot-state.yaml` — possibly nested for split runs.
+#
+# Two-pass search:
+#   1. Walk upward from $PWD; if any ancestor sits directly under
+#      `<root>/.simple-workflow/backlog/(briefs/active|product_backlog)/`
+#      AND contains an `autopilot-state.yaml`, prefer that slug. This
+#      pins the suggestion to the autopilot run the user is actually
+#      working in (worktree pattern), not whichever lex-first run lives
+#      under briefs/active/.
+#   2. Fall back to the mtime-newest candidate so concurrent autopilot
+#      runs do not silently mis-attribute via lex order.
 get_autopilot_parent_slug() {
   local root
   root="$(_psf_repo_root "$PWD" 2>/dev/null || echo "$PWD")"
-  local found=""
+
+  # Pass 1: $PWD ancestor walk-up.
+  local dir="$PWD"
+  local active_root_briefs="$root/.simple-workflow/backlog/briefs/active"
+  local active_root_pb="$root/.simple-workflow/backlog/product_backlog"
+  while [ -n "$dir" ] && [ "$dir" != "/" ]; do
+    local parent
+    parent="$(dirname "$dir")"
+    if [ "$parent" = "$active_root_briefs" ] || [ "$parent" = "$active_root_pb" ]; then
+      if [ -f "$dir/autopilot-state.yaml" ]; then
+        basename "$dir"
+        return 0
+      fi
+    fi
+    [ "$dir" = "$root" ] && break
+    dir="$parent"
+  done
+
+  # Pass 2: mtime-newest across both roots.
+  local newest=""
   for sub in "briefs/active" "product_backlog"; do
     [ -d "$root/.simple-workflow/backlog/$sub" ] || continue
-    found=$(find "$root/.simple-workflow/backlog/$sub" -name 'autopilot-state.yaml' -type f 2>/dev/null | sort -u | head -1)
-    if [ -n "$found" ]; then
-      printf '%s\n' "$found" | sed -E "s|^.*/${sub}/||; s|/autopilot-state.yaml$||"
-      return 0
-    fi
+    while IFS= read -r _f; do
+      [ -f "$_f" ] || continue
+      if [ -z "$newest" ] || [ "$_f" -nt "$newest" ]; then
+        newest="$_f"
+      fi
+    done < <(find "$root/.simple-workflow/backlog/$sub" -name 'autopilot-state.yaml' -type f 2>/dev/null)
+    unset _f
   done
+
+  if [ -n "$newest" ]; then
+    printf '%s\n' "$newest" | sed -E 's|^.*/(briefs/active\|product_backlog)/||; s|/autopilot-state.yaml$||'
+    return 0
+  fi
   return 1
 }
 
@@ -195,12 +240,25 @@ if [ "$IMPL_STATUS" = "completed" ]; then
   exit 0
 fi
 
+# Compute COUNTER_FILE up-front so the SW-CHECKPOINT-seen branch (below)
+# can clean it on the prompt-side success path. Without this cleanup, a
+# session that emitted SW-CHECKPOINT after N false-blocks would carry the
+# stale counter into a subsequent re-entry of the same SESSION_ID and
+# release on the next match (instead of giving a fresh 3-attempt budget).
+COUNTER_FILE="/tmp/.impl-checkpoint-${SESSION_ID}"
+
 # --- Step 4: ## [SW-CHECKPOINT] in recent assistant turn → silent exit ---
+# The grep is anchored on either `"text":"## [SW-CHECKPOINT]` (start of a
+# JSON-encoded text block) or `\n## [SW-CHECKPOINT]` (mid-text after a
+# JSON-escaped newline). This excludes backtick-quoted prose mentions
+# (e.g. instructions in audit/SKILL.md or audit Summary text saying
+# "emit `## [SW-CHECKPOINT]` next") which would otherwise trigger a
+# false positive lag-tolerance exit.
 SW_CHECKPOINT_SEEN="false"
 TAIL_50=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
   TAIL_50=$(tail -n 50 "$TRANSCRIPT_PATH" 2>/dev/null || echo "")
-  if printf '%s\n' "$TAIL_50" | grep -qF '## [SW-CHECKPOINT]'; then
+  if printf '%s\n' "$TAIL_50" | grep -qE '("text":"|\\n)## \[SW-CHECKPOINT\]'; then
     SW_CHECKPOINT_SEEN="true"
   fi
 fi
@@ -216,6 +274,9 @@ if [ "$SW_CHECKPOINT_SEEN" = "true" ]; then
      && transcript_contains_skill_invocation "simple-workflow:impl" "$TRANSCRIPT_PATH"; then
     _emit_metrics "audit_handoff_via_prompt"
   fi
+  # H6: clean the counter on the prompt-side success path so a stale
+  # value cannot leak into a future re-entry under the same SESSION_ID.
+  rm -f "$COUNTER_FILE" 2>/dev/null || true
   exit 0
 fi
 
@@ -243,8 +304,8 @@ if ! transcript_contains_skill_invocation "simple-workflow:impl" "$TRANSCRIPT_PA
   exit 0
 fi
 
-# --- 5-AND met. Counter management. ---
-COUNTER_FILE="/tmp/.impl-checkpoint-${SESSION_ID}"
+# --- 5-AND met. Counter management (COUNTER_FILE was defined above for
+# the SW-CHECKPOINT cleanup branch). ---
 BLOCK_COUNT=0
 if [ "$SESSION_ID" != "unknown" ] && [ -f "$COUNTER_FILE" ]; then
   BLOCK_COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")

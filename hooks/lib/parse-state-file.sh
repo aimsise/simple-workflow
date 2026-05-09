@@ -274,13 +274,18 @@ find_phase_state_file() {
   root="$(_psf_repo_root "$start_dir")"
   [ -d "$root/.simple-workflow/backlog/active" ] || return 1
 
+  # Pick the most-recently-modified candidate as a proxy for "the active
+  # ticket". Lex-first selection (the earlier behaviour) misroutes the
+  # Stop hook to ticket 001 when the user is actually working on ticket
+  # 002 — bash's `-nt` test is portable across BSD and GNU find. Ties
+  # within the same mtime resolve to the order produced by `find`.
   local match=""
   while IFS= read -r _f; do
-    if [ -f "$_f" ]; then
+    [ -f "$_f" ] || continue
+    if [ -z "$match" ] || [ "$_f" -nt "$match" ]; then
       match="$_f"
-      break
     fi
-  done < <(find "$root/.simple-workflow/backlog/active" -type f -name 'phase-state.yaml' 2>/dev/null | sort -u)
+  done < <(find "$root/.simple-workflow/backlog/active" -type f -name 'phase-state.yaml' 2>/dev/null)
   unset _f
 
   if [ -n "$match" ]; then
@@ -319,13 +324,15 @@ parse_impl_next_action() {
     return 0
   fi
 
-  if _psf_have python3; then
+  # Tier 2: python3 + PyYAML. macOS ships /usr/bin/python3 WITHOUT PyYAML,
+  # so we must gate on PyYAML availability up front — otherwise a fresh
+  # macOS without PyYAML would short-circuit here on ImportError and
+  # never reach the awk tier (a fail-closed silent-empty result against
+  # the failure mode this hook is supposed to detect).
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$file" <<'PY' 2>/dev/null || return 1
 import sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(1)
+import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
 phases = doc.get("phases") or {}
@@ -338,19 +345,32 @@ PY
     return 0
   fi
 
-  # awk fallback: walk into `phases:` -> `impl:` and emit the `next_action`
-  # value. Mirrors the parse_phase_status awk recipe so the two helpers
-  # behave consistently on the canonical phase-state.yaml shape.
+  # awk fallback: walk into `phases:` -> `impl:` -> `next_action:` and emit
+  # the value. POSIX awk only — does NOT use the gawk-specific 3-arg
+  # `match(s, re, arr)` form, so this works on macOS's stock BSD awk as
+  # well as gawk. Capture-group extraction is replaced by `sub()`
+  # strip-by-prefix on a local copy of the line. The phase-key matcher is
+  # anchored at exactly 2 spaces (canonical yq output indent) so it does
+  # not falsely match deeper nested keys like `    artifacts:`.
+  #
+  # NOTE: existing `parse_phase_status` / `parse_ticket_statuses` (defined
+  # above) still use the gawk-only form and remain incompatible with BSD
+  # awk; their migration is tracked separately to keep this v6.4.1 patch
+  # scoped to the new functions added in v6.4.0.
   awk '
     BEGIN { in_phases = 0; in_impl = 0 }
     /^phases:[[:space:]]*$/ { in_phases = 1; next }
     in_phases && /^[^[:space:]]/ { in_phases = 0; in_impl = 0 }
-    in_phases && match($0, /^[[:space:]]+([A-Za-z0-9_-]+):[[:space:]]*$/, m) {
-      in_impl = (m[1] == "impl") ? 1 : 0
+    in_phases && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+      name = $0
+      sub(/^  /, "", name)
+      sub(/:[[:space:]]*$/, "", name)
+      in_impl = (name == "impl") ? 1 : 0
       next
     }
-    in_impl && match($0, /^[[:space:]]+next_action:[[:space:]]*(.*)$/, m) {
-      val = m[1]
+    in_impl && /^    next_action:[[:space:]]*/ {
+      val = $0
+      sub(/^    next_action:[[:space:]]*/, "", val)
       gsub(/^"|"$/, "", val)
       gsub(/^'\''|'\''$/, "", val)
       sub(/[[:space:]]+#.*$/, "", val)

@@ -237,8 +237,13 @@ fi
 cleanup_session "$SID"
 rm -rf "$TMP"
 
-# Fixture (iv): SW-CHECKPOINT in recent turn → exit 0 ------------------------
-echo "--- (iv): SW-CHECKPOINT visible in tail → silent exit 0 ---"
+# Fixture (iv): SW-CHECKPOINT in recent turn → exit 0 + emit
+# `audit_handoff_via_prompt` (the SLO denominator metric, convergence §9).
+# H4 (skeptical-review v6.4.1): asserts the metric IS appended to
+# phase-state.yaml runtime_metrics so a future change to the conditional
+# gating in the hook's SW-CHECKPOINT branch cannot regress the SLO
+# silently.
+echo "--- (iv): SW-CHECKPOINT visible in tail → silent exit 0 + audit_handoff_via_prompt metric ---"
 TMP=$(mktemp -d)
 make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
 make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_WITH_CHECKPOINT"
@@ -247,12 +252,16 @@ cleanup_session "$SID"
 INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
 run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ]; then
-  echo -e "  ${GREEN}PASS${NC} (iv): exit 0, empty stdout"
+ICG_IV_STATE="$TMP/.simple-workflow/backlog/active/001-test/phase-state.yaml"
+ICG_IV_METRIC_HITS=$(grep -cF 'stop_reason: audit_handoff_via_prompt' "$ICG_IV_STATE" 2>/dev/null || true)
+ICG_IV_METRIC_HITS="${ICG_IV_METRIC_HITS:-0}"
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ] && [ "$ICG_IV_METRIC_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} (iv): exit 0, empty stdout, audit_handoff_via_prompt recorded"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} (iv): expected exit 0 + empty stdout"
+  echo -e "  ${RED}FAIL${NC} (iv): expected exit 0 + empty stdout + 1+ audit_handoff_via_prompt entries"
   echo -e "       Exit: $LAST_EXIT_CODE  Stdout: '$LAST_STDOUT'"
+  echo -e "       Metric hits: $ICG_IV_METRIC_HITS"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 cleanup_session "$SID"
