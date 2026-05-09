@@ -292,7 +292,23 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
    ```
 
 16. AC Gate:
-    - **Output envelope check (precedence over Status parsing)**: If ac-evaluator's `**Output**` field is empty OR begins with `ERROR-` (e.g. `ERROR-WRITE-FAILED`), treat as **FAIL-CRITICAL** regardless of the returned Status. Print `[CONTRACT-VIOLATION] ac-evaluator Output was empty or ERROR-prefixed; treating as FAIL-CRITICAL` and stop. Do NOT proceed to Status parsing or re-invoke ac-evaluator to persist.
+    - **Output envelope check (precedence over Status parsing) — 3-way decision**:
+      (i) **Output empty AND no file at expected path** => print
+          `[CONTRACT-VIOLATION] ac-evaluator Output was empty and no report
+          was persisted; treating as FAIL-CRITICAL` and stop. Do NOT
+          re-invoke ac-evaluator to persist.
+      (ii) **Output empty AND file exists at expected path AND its first
+          `## Status:` line matches `^## Status: IN_PROGRESS$`** => print
+          `[IN_PROGRESS] ac-evaluator persisted partial state at <path>;
+          treating as FAIL-CRITICAL until T-3 recovery lands` and stop.
+          The file is a Persistence-First Protocol partial-state marker
+          (see agents/ac-evaluator.md `## Persistence-First Protocol`).
+          Do NOT re-invoke ac-evaluator to persist.
+      (iii) **Output begins with `ERROR-`** (e.g. `ERROR-WRITE-FAILED`) =>
+          print `[CONTRACT-VIOLATION] ac-evaluator returned ERROR-prefixed
+          Output; treating as FAIL-CRITICAL` and stop.
+      (iv) **Output non-empty AND not ERROR-prefixed** => proceed to Status
+          parsing below (unchanged path).
     - **FAIL-CRITICAL** → stop immediately. Report CRITICAL issues. Do NOT continue rounds.
     - **Autopilot policy check for ac_eval_fail**: If `autopilot-policy.yaml` exists, read `gates.ac_eval_fail`: `on_critical: stop` is always enforced (FAIL-CRITICAL safety invariant); `action: retry` → continue (print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=retry round={n}`); `action: stop` → stop (print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=stop`). Else proceed with behavior below.
     - **FAIL** → save ac-evaluator's Feedback; continue to next round (skip quality review this round).

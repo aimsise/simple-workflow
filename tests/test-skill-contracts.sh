@@ -3760,5 +3760,83 @@ fi
 
 echo ""
 
+# === Cat R: Persistence-First Protocol (T-1, v6.3.3) ===
+# Diff: agents/ac-evaluator.md gains `## Persistence-First Protocol` section;
+# skills/impl/SKILL.md Step 16 gains an IN_PROGRESS branch.
+# All grep -c uses route through count_matches per CT-MODE-GREP-C-1.
+echo "--- Cat R: Persistence-First Protocol ---"
+
+# CT-MODE-PERSIST-FIRST-1 (AC-1): ac-evaluator has the heading
+assert_file_contains \
+  "CT-MODE-PERSIST-FIRST-1: agents/ac-evaluator.md has ## Persistence-First Protocol section" \
+  "$REPO_DIR/agents/ac-evaluator.md" \
+  '^## Persistence-First Protocol$'
+
+# CT-MODE-PERSIST-FIRST-2 (AC-2): IN_PROGRESS appears >= 2 times in the section,
+# and 'before invoking any' appears >= 1 time
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PFP_TMP=$(mktemp)
+awk '/^## Persistence-First Protocol$/,/^## Report Persistence Contract$/' "$REPO_DIR/agents/ac-evaluator.md" > "$PFP_TMP"
+PFP_INPROGRESS=$(count_matches 'IN_PROGRESS' "$PFP_TMP")
+PFP_BEFORE=$(count_matches 'before invoking any' "$PFP_TMP")
+rm -f "$PFP_TMP"
+if [ "${PFP_INPROGRESS:-0}" -ge 2 ] && [ "${PFP_BEFORE:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-2: Persistence-First section has IN_PROGRESS x2 + 'before invoking any' x1"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-2: got IN_PROGRESS=$PFP_INPROGRESS, before=$PFP_BEFORE" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PERSIST-FIRST-3 (AC-3): Output path stability rule documented
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PFP_TMP2=$(mktemp)
+awk '/^## Persistence-First Protocol$/,/^## Report Persistence Contract$/' "$REPO_DIR/agents/ac-evaluator.md" > "$PFP_TMP2"
+PFP_OUTPUT=$(count_matches 'Output' "$PFP_TMP2")
+PFP_SAMEPATH=$(count_matches 'same path' "$PFP_TMP2")
+rm -f "$PFP_TMP2"
+if [ "${PFP_OUTPUT:-0}" -ge 1 ] && [ "${PFP_SAMEPATH:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-3: Output path stability rule present"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-3: got Output=$PFP_OUTPUT, same path=$PFP_SAMEPATH" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PERSIST-FIRST-4 (AC-4): /impl Step 16 has IN_PROGRESS token and retains CONTRACT-VIOLATION
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+STEP16_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$STEP16_TMP"
+STEP16_INPROGRESS=$(count_matches 'IN_PROGRESS' "$STEP16_TMP")
+rm -f "$STEP16_TMP"
+STEP16_VIOLATION=$(count_matches 'CONTRACT-VIOLATION' "$REPO_DIR/skills/impl/SKILL.md")
+if [ "${STEP16_INPROGRESS:-0}" -ge 1 ] && [ "${STEP16_VIOLATION:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-4: Step 16 has IN_PROGRESS + retains CONTRACT-VIOLATION branch"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-4: got Step 16 IN_PROGRESS=$STEP16_INPROGRESS, file CONTRACT-VIOLATION=$STEP16_VIOLATION" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PERSIST-FIRST-5 (AC-7 + Negative AC-4): CHANGELOG newest block names Persistence-First and both files
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CL_TMP=$(mktemp)
+awk '/^## \[/{c++} c==1' "$REPO_DIR/CHANGELOG.md" > "$CL_TMP"
+CL_PF=$(count_matches 'Persistence-First' "$CL_TMP")
+CL_AGENT=$(count_matches 'ac-evaluator\.md' "$CL_TMP")
+CL_SKILL=$(count_matches 'impl/SKILL\.md' "$CL_TMP")
+CL_BAD=$(count_matches 'stable contract|semantically identical|backward compatible|forward compatible' "$CL_TMP")
+rm -f "$CL_TMP"
+if [ "${CL_PF:-0}" -ge 1 ] && [ "${CL_AGENT:-0}" -ge 1 ] && [ "${CL_SKILL:-0}" -ge 1 ] && [ "${CL_BAD:-0}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-5: CHANGELOG newest block names Persistence-First + both files; no SemVer-inflation phrases"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-5: PF=$CL_PF agent=$CL_AGENT skill=$CL_SKILL banned=$CL_BAD" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+
 # --- Summary ---
 print_summary

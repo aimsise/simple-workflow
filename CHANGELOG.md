@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.3] — 2026-05-09
+
+ac-evaluator gains a Persistence-First Protocol that writes a partial-state marker before any verification tool runs, so 20+ AC plans no longer produce empty `Output` envelopes on turn-budget exhaustion. `/impl` Step 16 distinguishes "no report persisted" (CONTRACT-VIOLATION) from "partial state on disk" (new `[IN_PROGRESS]` diagnostic). The recovery branch that consumes the partial state is deferred to the next ticket.
+
+### Changed
+
+- Persistence-First Protocol added to `agents/ac-evaluator.md`: agents MUST write a `## Status: IN_PROGRESS` skeleton with an AC checklist before invoking any verification tool, then rewrite with terminal verdicts before return. The v4.1.0 idempotency clause forbidding re-invocation solely to persist is preserved.
+- `skills/impl/SKILL.md` Step 16 envelope check now branches 3-way: empty Output without a persisted file remains a `[CONTRACT-VIOLATION]` halt; empty Output with a persisted `## Status: IN_PROGRESS` file emits a new `[IN_PROGRESS]` diagnostic and halts as FAIL-CRITICAL pending the recovery branch in the follow-up ticket; non-empty Output proceeds to the existing Status parsing path.
+
 ## [6.3.2] — 2026-05-08
 
 Extract `append_runtime_metrics_entry` from inline hook code into a shared `hooks/lib/runtime-metrics.sh` library.

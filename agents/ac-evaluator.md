@@ -220,10 +220,33 @@ When invoking a test runner (`bun test`, `npm test`, `pytest`, `cargo test`, etc
 - **PASS-WITH-CAVEATS**: All AC pass based on code inspection AND no [MEDIUM]+ issues, BUT automated test/lint verification was skipped due to unavailable runner. The Caveats field must list which verifications were skipped.
 - **FAIL**: One or more AC fail, OR [HIGH] issues exist
 - **FAIL-CRITICAL**: Any [CRITICAL] issue exists
+- **IN_PROGRESS**: pre-terminal on-disk marker only — written by the Persistence-First Protocol skeleton step (see below). MUST NEVER be returned in the `Status` field of the agent's return envelope. The orchestrator inspects this marker on disk when the `Output` envelope is empty.
 
 Save your detailed evaluation report to the file path specified by the caller. If no path is specified, save to `.simple-workflow/docs/eval-round/{topic}-eval-report.md` where {topic} is derived from the subject of the evaluation.
 
 You MUST NOT modify source code. Use Write only to save your evaluation report.
+
+## Persistence-First Protocol
+
+The natural execution order of this agent (verify ACs depth-first, then `Write` the report, then return) has produced empty `Output` envelopes on plans with 20+ ACs because the turn budget is exhausted before the `Write` step is reached. To eliminate this no-recovery cliff, you MUST follow the Persistence-First Protocol on every invocation:
+
+1. **Skeleton write before verification.** As your FIRST action, `Write` the report path with a top-of-file line `## Status: IN_PROGRESS` followed by an AC checklist (one `- [ ] AC-N: <description>` line per AC extracted from the plan). This MUST happen before invoking any Bash, Read, or Grep verification tool. The resulting file is a partial-state marker that the orchestrator can detect even if you terminate mid-verification.
+
+2. **Terminal rewrite before return.** After completing AC verification, rewrite the same file with final verdicts (`- [x] AC-N` or `- [ ] AC-N — FAILED: reason`) and replace the top-of-file `## Status: IN_PROGRESS` with the terminal `## Status: PASS`, `## Status: PASS-WITH-CAVEATS`, `## Status: FAIL`, or `## Status: FAIL-CRITICAL`. The terminal `## Status:` line MUST be the FIRST `## Status:` line in the file (the orchestrator inspects the first match).
+
+3. **Output path stability.** The `**Output**` field returned to the caller MUST be the same path written in step 1. Do not rename, move, or duplicate the file between the skeleton write and the terminal rewrite.
+
+Example (paraphrasing the IN_PROGRESS sentinel):
+
+```
+## Status: IN_PROGRESS
+
+- [ ] AC-1: <description copied from plan>
+- [ ] AC-2: <description copied from plan>
+...
+```
+
+This protocol is additive to the `## Report Persistence Contract` below — it does not relax any existing rule.
 
 ## Report Persistence Contract
 
