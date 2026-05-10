@@ -43,7 +43,15 @@ extract_ac_items() {
       in_ac = 1
       next
     }
-    in_ac && /^##[[:space:]]/ {
+    # Terminate on ANY heading depth (## / ### / #### / ...). The original
+    # `^##[[:space:]]` was H2-only, which silently let `#### Negative
+    # Acceptance Criteria` (and other deeper sub-headings under
+    # `## Acceptance Criteria`) keep extending the collection window —
+    # producing spurious `count-mismatch` drift between tickets that hold
+    # both positive + negative ACs and plans that correctly mirror only the
+    # positive list. The `## Acceptance Criteria` start line itself is
+    # consumed by the rule above (`next`), so it cannot reach this guard.
+    in_ac && /^#+[[:space:]]/ {
       in_ac = 0
     }
     in_ac { print }
