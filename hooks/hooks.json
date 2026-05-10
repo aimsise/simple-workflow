@@ -49,7 +49,6 @@
     ],
     "Stop": [
       {
-        "_comment": "impl-checkpoint-guard.sh — 5-AND gate guarding /audit handoff back to /impl Step 18 + Phase 3. Independent counter (/tmp/.impl-checkpoint-${SESSION_ID}); release at 3 blocks. Runs BEFORE autopilot-continue.sh and evaluates INDEPENDENTLY in /autopilot context — both hooks may block in the same turn, with asymmetric release thresholds (3 vs 5+) yielding ~8 cumulative attempts before pipeline halt. See hooks/impl-checkpoint-guard.sh header and convergence-addendum.md §13.A-3 for the design rationale.",
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/impl-checkpoint-guard.sh" }]
       },
       {

@@ -3879,27 +3879,56 @@ fi
 # CT-MODE-ICG-3: distance guard — `phase-state.yaml` MUST appear within 200
 # characters after the Step 4 structured-block example's closing fence so
 # the handoff instruction is colocated with the artifact it describes.
+# Anchored on the Step 4 heading + a fenced block whose first line is
+# `**Status**:` (the structured block's invariant first field) so:
+#   - inserting an unrelated `\`\`\`bash\` example into Step 4's prose
+#     description does NOT silently shift the matcher onto the wrong fence
+#     pair, and
+#   - adding or removing fields BELOW `**Status**:` (e.g. a future
+#     `**Caveats**:`) inside the structured block still matches.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ICG_DIST=$(python3 - <<PY
 import re, sys
 with open("$AUDIT_SKILL") as f:
     content = f.read()
-m = re.search(r'\`\`\`\n\*\*Status\*\*:.*?\*\*Summary\*\*:.*?\n\`\`\`', content, re.DOTALL)
-if not m:
+# Match from the Step 4 heading through the closing fence of the first
+# fenced block whose body starts with **Status**: (uniquely identifies
+# the structured block, not a stray code example). Sentinel return values:
+#   -1: regex did not match (structural drift — Step 4 heading missing,
+#       structured block missing, or **Status**: line moved out of the
+#       opening fence)
+#   -2: phase-state.yaml literal not present in the rest of the document
+m4 = re.search(r'### 4\. .*?\`\`\`\n\*\*Status\*\*:.*?\n\`\`\`', content, re.DOTALL)
+if not m4:
     print(-1)
     sys.exit(0)
-rest = content[m.end():]
+rest = content[m4.end():]
 pos = rest.find("phase-state.yaml")
-print(pos)
+if pos < 0:
+    print(-2)
+else:
+    print(pos)
 PY
 )
-if [ "$ICG_DIST" -ge 0 ] && [ "$ICG_DIST" -le 200 ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-3: phase-state.yaml within 200 chars after Step 4 block (distance=$ICG_DIST)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: phase-state.yaml distance=$ICG_DIST chars after Step 4 block (max 200)"
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
+case "$ICG_DIST" in
+  -1)
+    echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: Step 4 structured-block matcher failed (heading or fence regex did not match audit/SKILL.md)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    ;;
+  -2)
+    echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: phase-state.yaml literal not found after Step 4 block"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    ;;
+  *)
+    if [ "$ICG_DIST" -ge 0 ] && [ "$ICG_DIST" -le 200 ]; then
+      echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-3: phase-state.yaml within 200 chars after Step 4 block (distance=$ICG_DIST)"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: phase-state.yaml distance regression — distance=$ICG_DIST chars after Step 4 block (max 200)"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    ;;
+esac
 
 # CT-MODE-ICG-4: impl/SKILL.md Step 17 CHECKPOINT contains the literal
 # "Required next emit: `## [SW-CHECKPOINT]`" so the strengthened anchor
@@ -3934,17 +3963,21 @@ fi
 
 # CT-MODE-ICG-6: impl-checkpoint-guard.sh contains the [IMPL-CHECKPOINT-RELEASE]
 # prefix AND both Resume variants ('/impl' for non-autopilot, '/autopilot'
-# for autopilot context) — Patch 3 of the design.
+# for autopilot context) — Patch 3 of the design. Both Resume tokens MUST
+# appear on lines that ALSO carry the '[IMPL-CHECKPOINT-RELEASE] Pipeline
+# halted' prefix, not scattered across header comments or other prose, so
+# the proximity guarantee is enforced at the contract layer.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ICG_PASS=true
-grep -qF '[IMPL-CHECKPOINT-RELEASE]' "$ICG_HOOK" || ICG_PASS=false
-grep -qF 'Resume with: /impl' "$ICG_HOOK" || ICG_PASS=false
-grep -qF 'Resume with: /autopilot' "$ICG_HOOK" || ICG_PASS=false
+ICG_RELEASE_LINES=$(grep -F '[IMPL-CHECKPOINT-RELEASE] Pipeline halted' "$ICG_HOOK" || true)
+[ -n "$ICG_RELEASE_LINES" ] || ICG_PASS=false
+printf '%s\n' "$ICG_RELEASE_LINES" | grep -qF 'Resume with: /impl' || ICG_PASS=false
+printf '%s\n' "$ICG_RELEASE_LINES" | grep -qF 'Resume with: /autopilot' || ICG_PASS=false
 if [ "$ICG_PASS" = true ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh emits both Resume variants under release prefix"
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh emits both Resume variants on Pipeline-halted lines"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh missing release prefix or one of the Resume variants"
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh missing 'Pipeline halted' release line or one of the Resume variants on those lines"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

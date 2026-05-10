@@ -34,20 +34,39 @@
 #       Exits 0 always.
 #
 #   transcript_contains_skill_invocation <skill_name> <transcript_path>
-#     - Returns 0 when the last 500 lines of <transcript_path> contain at
-#       least one Skill tool_use whose .input.skill equals <skill_name>;
-#       returns 1 when no match (or when the transcript is empty / missing /
-#       jq is unavailable). Used by impl-checkpoint-guard.sh as the
-#       cross-session staleness guard (5-AND condition (e)).
-#     - Bounded to the same `tail -n 500` window as the other helpers; the
-#       /impl Skill invocation that triggered the /audit handoff is
-#       temporally close to the /audit invocation itself, so 500 lines is
-#       sufficient and keeps long-session JSONL scans O(1) wrt session age.
+#     - Returns 0 when the last `_JTA_CROSS_SESSION_TAIL` lines of
+#       <transcript_path> contain at least one Skill tool_use whose
+#       .input.skill equals <skill_name>; returns 1 when no match (or when
+#       the transcript is empty / missing / jq is unavailable). Used by
+#       impl-checkpoint-guard.sh as the cross-session staleness guard
+#       (5-AND condition (e)).
+#     - Window size: this helper uses a LARGER window (5000 lines) than the
+#       general-purpose helpers above (500 lines). The /impl Skill
+#       invocation that triggered the /audit handoff can be hundreds or
+#       thousands of records back when an autopilot run accumulates many
+#       tool calls (read/edit/bash/grep) plus retry rounds before /audit
+#       fires. Empirically a typical 1-3 round /impl session is ~1500
+#       transcript lines; the 5000-line window gives ~3x headroom for
+#       longer chains while keeping the scan O(1) wrt total session age
+#       (`tail -n 5000 | jq` is ~50ms on a 6.6 MB transcript). Going below
+#       5000 risked silent fail-OPEN on long autopilot runs.
 #
-# All reads go through `tail -n 500` (literal) so the scan window is bounded.
+# All reads go through a `tail -n` window so the scan is bounded.
 # This file does not introduce any environment-variable knob that disables
 # the helpers. If a downstream caller needs to bypass detection (e.g. for
 # tests), it should call into the helper with a controlled fixture path.
+
+# ---------------------------------------------------------------------------
+# Internal constants.
+# ---------------------------------------------------------------------------
+
+# Tail-window size for transcript_contains_skill_invocation (cross-session
+# staleness guard). Separate from the 500-line literal used in the other
+# helpers — see the header for the rationale. Intentionally NOT `readonly`:
+# this lib is sourced by hook scripts that may chain into other hooks which
+# also source it, and `readonly X=...` would hard-error on the second source
+# under `set -e`.
+_JTA_CROSS_SESSION_TAIL=5000
 
 # ---------------------------------------------------------------------------
 # Internal helpers (not part of the public contract).
@@ -157,7 +176,7 @@ transcript_contains_skill_invocation() {
   # Tier 1: jq (preferred; same engine as the rest of this file).
   if command -v jq >/dev/null 2>&1; then
     local found
-    found=$(tail -n 500 -- "$transcript" 2>/dev/null \
+    found=$(tail -n "$_JTA_CROSS_SESSION_TAIL" -- "$transcript" 2>/dev/null \
       | jq -r --arg name "$skill_name" '
           select(.type=="assistant")
           | ((.message.content // .content) // [])
@@ -174,7 +193,7 @@ transcript_contains_skill_invocation() {
 
   # Tier 2: python3 + json (no PyYAML required; transcripts are JSONL).
   if command -v python3 >/dev/null 2>&1; then
-    if tail -n 500 -- "$transcript" 2>/dev/null | python3 - "$skill_name" <<'PY'
+    if tail -n "$_JTA_CROSS_SESSION_TAIL" -- "$transcript" 2>/dev/null | python3 - "$skill_name" <<'PY'
 import json, sys
 target = sys.argv[1]
 for line in sys.stdin:
@@ -215,7 +234,7 @@ PY
   # tool_use record is a single line containing `"name":"Skill"` and
   # `"skill":"<name>"` literals. False positives from prose are negligible
   # because the assistant content is JSON-encoded in the transcript itself.
-  if tail -n 500 -- "$transcript" 2>/dev/null \
+  if tail -n "$_JTA_CROSS_SESSION_TAIL" -- "$transcript" 2>/dev/null \
         | grep -F '"name":"Skill"' \
         | grep -qF "\"skill\":\"$skill_name\""; then
     return 0

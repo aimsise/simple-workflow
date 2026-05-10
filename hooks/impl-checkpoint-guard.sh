@@ -70,7 +70,7 @@ fi
 
 _runtime_metrics_payload_field() {
   local field="$1"
-  local payload="${INPUT:-}"
+  local payload="$INPUT"
   [ -n "$payload" ] || payload='{}'
   local value
   value=$(printf '%s' "$payload" | jq -r --arg f "$field" '.[$f] // "null"' 2>/dev/null) || value="null"

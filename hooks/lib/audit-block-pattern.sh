@@ -15,10 +15,12 @@
 #     AUDIT_BLOCK_PATTERN_REPORTS  — ERE pattern that matches the literal
 #                                    `**Reports**:` line emitted by Step 4.
 #
-# Patterns are HARDCODED LITERALS, NOT runtime-parsed from SKILL.md. The
-# skill-contract test asserts these literals appear in audit/SKILL.md Step 4,
-# so a documentation drift fails CI at the contract layer instead of the
-# runtime hook silently ceasing to fire.
+# Patterns are HARDCODED LITERALS, NOT runtime-parsed from SKILL.md.
+# The skill-contract suite asserts both halves independently:
+#   - CT-MODE-ICG-2 verifies the literals appear in audit/SKILL.md Step 4.
+#   - CT-MODE-ICG-5 verifies the exports below match the design ERE.
+# Either drift fails CI at the contract layer instead of the runtime hook
+# silently ceasing to fire.
 #
 # Why no SUMMARY: only Status + Reports drive the Stop-hook 5-AND condition (a).
 # Adding an unused export bloats the surface; if a future caller needs it,
