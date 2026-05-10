@@ -192,8 +192,15 @@ transcript_contains_skill_invocation() {
   fi
 
   # Tier 2: python3 + json (no PyYAML required; transcripts are JSONL).
+  # The python source is passed via `python3 -c` so the heredoc body is
+  # evaluated at command-substitution time and python3's stdin stays the
+  # `tail | ...` pipe. The earlier dash-stdin + heredoc form silently let
+  # the heredoc body OVERRIDE stdin, so `for line in sys.stdin` iterated
+  # the python source itself and the tier always returned 1 (SC2259:
+  # stdin-pipe vs heredoc collision).
   if command -v python3 >/dev/null 2>&1; then
-    if tail -n "$_JTA_CROSS_SESSION_TAIL" -- "$transcript" 2>/dev/null | python3 - "$skill_name" <<'PY'
+    local _tier2_src
+    _tier2_src=$(cat <<'PY'
 import json, sys
 target = sys.argv[1]
 for line in sys.stdin:
@@ -224,7 +231,9 @@ for line in sys.stdin:
             sys.exit(0)
 sys.exit(1)
 PY
-    then
+)
+    if tail -n "$_JTA_CROSS_SESSION_TAIL" -- "$transcript" 2>/dev/null \
+        | python3 -c "$_tier2_src" "$skill_name"; then
       return 0
     fi
     return 1

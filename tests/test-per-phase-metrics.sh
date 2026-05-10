@@ -114,14 +114,19 @@ PY
   else
     # awk fallback: emit the template but rewrite the requested phase's
     # status line. Since the template is well-known and stable we can rely
-    # on indentation-based matching.
+    # on indentation-based matching. POSIX awk only — uses `sub()` strip-
+    # by-prefix instead of the gawk-specific 3-arg `match(s, re, arr)`
+    # form, so this works on macOS's stock BSD awk as well as gawk.
     awk -v tid="$ticket_id" -v phase="$phase" -v status="$status" '
       BEGIN { in_phases = 0; in_target = 0 }
       /^ticket_id:[[:space:]]/ { print "ticket_id: " tid; next }
       /^phases:[[:space:]]*$/ { in_phases = 1; print; next }
       in_phases && /^[^[:space:]]/ { in_phases = 0; in_target = 0 }
-      in_phases && match($0, /^[[:space:]]+([A-Za-z0-9_-]+):[[:space:]]*$/, m) {
-        in_target = (m[1] == phase) ? 1 : 0
+      in_phases && /^[[:space:]]+[A-Za-z0-9_-]+:[[:space:]]*$/ {
+        name = $0
+        sub(/^[[:space:]]+/, "", name)
+        sub(/:[[:space:]]*$/, "", name)
+        in_target = (name == phase) ? 1 : 0
         print
         next
       }
@@ -197,12 +202,17 @@ except Exception:
 PY
     return
   fi
-  # awk fallback
+  # awk fallback. POSIX awk only — uses `sub()` strip-by-prefix instead
+  # of the gawk-specific 3-arg `match(s, re, arr)` form, so this works
+  # on macOS's stock BSD awk as well as gawk.
   awk -v bnd="$boundary" '
     /^runtime_metrics:[[:space:]]*$/ { in_rm = 1; next }
     /^[A-Za-z0-9_-]+:[[:space:]]*$/ && in_rm == 1 && !/^runtime_metrics/ { in_rm = 0 }
-    in_rm && match($0, /boundary:[[:space:]]*([A-Za-z0-9_]+)/, m) {
-      if (m[1] == bnd) c++
+    in_rm && /boundary:[[:space:]]*[A-Za-z0-9_]+/ {
+      val = $0
+      sub(/^.*boundary:[[:space:]]*/, "", val)
+      sub(/[^A-Za-z0-9_].*$/, "", val)
+      if (val == bnd) c++
     }
     END { print c+0 }
   ' "$path"
@@ -247,7 +257,11 @@ except Exception:
 PY
     return
   fi
-  # awk fallback that scans full block.
+  # awk fallback that scans full block. POSIX awk only — uses `sub()`
+  # strip-by-prefix instead of the gawk-specific 3-arg `match(s, re, arr)`
+  # form, so this works on macOS's stock BSD awk as well as gawk.
+  # Capture-group extraction is replaced by `sub()` strip-by-prefix on a
+  # local copy of the line.
   awk -v tid="$tid" -v ph="$ph" -v bnd="$bnd" '
     /^runtime_metrics:[[:space:]]*$/ { in_rm = 1; cur_tid = ""; cur_ph = ""; cur_bnd = ""; next }
     /^[A-Za-z0-9_-]+:[[:space:]]*$/ && in_rm == 1 && !/^runtime_metrics/ {
@@ -258,10 +272,23 @@ PY
       if (cur_tid == tid && cur_ph == ph && cur_bnd == bnd) c++
       cur_tid = ""; cur_ph = ""; cur_bnd = ""
     }
-    in_rm {
-      if (match($0, /ticket_id:[[:space:]]*([^[:space:]]+)/, m)) cur_tid = m[1]
-      if (match($0, /phase:[[:space:]]*([^[:space:]]+)/, m))     cur_ph  = m[1]
-      if (match($0, /boundary:[[:space:]]*([^[:space:]]+)/, m))  cur_bnd = m[1]
+    in_rm && /ticket_id:[[:space:]]/ {
+      val = $0
+      sub(/^.*ticket_id:[[:space:]]*/, "", val)
+      sub(/[[:space:]].*$/, "", val)
+      cur_tid = val
+    }
+    in_rm && /phase:[[:space:]]/ {
+      val = $0
+      sub(/^.*phase:[[:space:]]*/, "", val)
+      sub(/[[:space:]].*$/, "", val)
+      cur_ph = val
+    }
+    in_rm && /boundary:[[:space:]]/ {
+      val = $0
+      sub(/^.*boundary:[[:space:]]*/, "", val)
+      sub(/[[:space:]].*$/, "", val)
+      cur_bnd = val
     }
     END {
       if (cur_tid == tid && cur_ph == ph && cur_bnd == bnd) c++
