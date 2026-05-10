@@ -63,6 +63,27 @@ assert_file_contains() {
   fi
 }
 
+# Case-insensitive variant of assert_file_contains. Use when the documented
+# canonical capitalization differs from the prose realization (e.g. a label
+# bullet `**Else default 9**` vs the lowercase `else default 9` referenced by
+# the precedence-rule contract). Avoids fragile dependence on a meta-comment
+# that happens to spell the term in the matching case.
+assert_file_contains_i() {
+  local description="$1"
+  local file="$2"
+  local pattern="$3"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qiE -- "$pattern" "$file"; then
+    echo -e "  ${GREEN}PASS${NC} $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $description"
+    echo -e "       File: $file"
+    echo -e "       Expected pattern (case-insensitive): $pattern"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
 assert_true() {
   local description="$1"
   local condition="$2" # "true" or "false"
@@ -915,6 +936,35 @@ assert_file_contains \
   "$REPO_DIR/skills/brief/SKILL.md" \
   'allow_breaking_changes:.*true.*aggressive'
 
+# J-20: impl SKILL.md documents the rounds=N argument, the new default 9 cap,
+#       and the soft cap of 24. Added in v6.4.4 to lock in the manual-vs-autopilot
+#       asymmetry fix (manual default raised 3 -> 9, plus an explicit `rounds=N`
+#       override and a 24-round soft warning).
+
+# J-20a: argument-hint advertises the rounds=N token (anchored to the
+#        frontmatter line so the assertion does not silently pass on a
+#        SKILL.md that mentions rounds=N only in body / examples while the
+#        argument-hint itself was deleted).
+assert_file_contains \
+  "impl SKILL.md argument-hint advertises rounds=N" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "^argument-hint:.*rounds=N"
+
+# J-20b: precedence prose explicitly names the new default 9 fallback.
+#        Case-insensitive so the canonical bullet header `**Else default 9**`
+#        (capital E) directly satisfies the contract — no fragile dependence
+#        on a meta-comment that happens to spell the term in lowercase.
+assert_file_contains_i \
+  "impl SKILL.md states default 9 round cap" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "else default 9"
+
+# J-20c: soft cap of 24 is documented (warn-only, no clamp)
+assert_file_contains \
+  "impl SKILL.md states soft cap 24" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "soft cap 24"
+
 echo ""
 
 # =============================================================================
@@ -1295,6 +1345,22 @@ assert_file_contains \
   "P-10: impl SKILL.md has next_action references" \
   "$REPO_DIR/skills/impl/SKILL.md" \
   "next_action"
+
+# P-11: at least 1 occurrence of CHECKPOINT — RE-ANCHOR in scout
+# Diff: New assertion. Guards the post-/plan2doc handoff in /scout the same
+#        way P-9 guards the post-/audit handoff in /impl. Empirical trigger:
+#        a /scout run terminated after /plan2doc returned without emitting
+#        Step 10's `## [SW-CHECKPOINT]`, mirroring the /impl ↔ /audit failure
+#        mode that P-9 / impl-checkpoint-guard.sh already cover.
+COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/scout/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} P-11: scout CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} P-11: scout CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 1)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

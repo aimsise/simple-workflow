@@ -37,7 +37,7 @@ allowed-tools:
   - "shell(git stash:*)"
   - "shell(date:*)"
   - "shell(rm:*)"
-argument-hint: "[plan file path or additional instructions]"
+argument-hint: "[rounds=N] [plan file path or additional instructions]"
 ---
 
 Implement the latest plan using Generator → AC Evaluator → Code Quality Reviewer architecture.
@@ -94,6 +94,21 @@ Current state:
 ## Phase 1: Plan Loading & Size Detection
 
 1. Parse `$ARGUMENTS`:
+
+   **1a. Round-cap argument extraction** (must run before plan-path detection):
+   - **Token boundary**: tokenize `$ARGUMENTS` on whitespace, then test each token against `^[Rr][Oo][Uu][Nn][Dd][Ss]=([^[:space:]]*)$` (case-insensitive `rounds=` key; the captured value may be empty so a bare `rounds=` is recognized as a token and rejected at validation rather than silently dropped). Match only whole, whitespace-delimited tokens — substrings inside a quoted plan path (e.g. `.simple-workflow/docs/plans/some-rounds=5-test.md`) or inside other tokens (`myrounds=15`) are NOT recognized. If multiple matching tokens appear, the first wins.
+   - **Validate N**: the captured value MUST be a non-empty positive decimal integer (`^[1-9][0-9]*$`) AND MUST have at most 6 digits (`<= 999999`) so the soft-cap arithmetic stays safely inside bash signed-64-bit range.
+     - If malformed in form (e.g. `rounds=0`, `rounds=-1`, `rounds=abc`, `rounds=1.5`, `rounds==5`, or the bare key `rounds=` with empty value): emit a single stderr warning `[ARG-WARN] rounds=<raw> is not a positive integer; falling back to policy or default 9` and treat the argument as absent (fall through to the policy / default precedence below).
+     - If form-valid but exceeds the 6-digit hard cap (e.g. `rounds=1000000`): emit a single stderr warning `[ARG-WARN] rounds=<raw> exceeds 999999 (bash arithmetic safety hard cap); falling back to policy or default 9` and fall through. This is distinct from the soft cap of 24 below — the hard cap rejects, the soft cap warns and proceeds.
+     - If valid (1..999999 inclusive), set `arg_rounds = N`.
+   - **Soft cap of 24** (warn, do NOT clamp): if `arg_rounds > 24`, emit a single stderr warning `[ARG-WARN] rounds=<N> exceeds soft cap 24; proceeding with user-specified value` and continue with the user-specified value. The cap is advisory only — the loop will run for the full user-requested count. The boundary value `rounds=24` does NOT trigger the warning.
+   - **Strip the FIRST recognized `rounds=N` token from `$ARGUMENTS`** before plan-path detection — including when validation rejected its value (the strip is unconditional once the token boundary regex matches; rejection only affects the cap value, not the additional-instructions tail). Subsequent matching tokens are intentionally left in place as part of the additional-instructions tail; the "first wins" rule above already pinned which token is consumed. Then collapse any resulting double spaces and trim leading / trailing whitespace so the remaining tokens (plan path / additional instructions) are unaffected. **Note**: if the first recognized token is malformed (validation rejected), validation does NOT retry against subsequent matching tokens — the cap falls through to policy / default 9, and the user must fix the typo and re-invoke. This is an intentional simplification of the parser; "first valid wins" was considered and explicitly deferred.
+   - **Precedence for the round cap** (resolved in the Phase 2 init block — between Step 12 and Step 13 — and written into `phases.impl.max_rounds`): `rounds=N` argument (when valid) > `{ticket-dir}/autopilot-policy.yaml` `constraints.max_total_rounds` (when present) > **default 9**.
+   - **Stderr placeholder convention**: `<N>` = the parsed positive integer (used in the soft-cap warning, where parsing succeeded); `<raw>` = the captured right-hand side of the `rounds=` token (i.e. the regex's capture group `([^[:space:]]*)`) as it appeared in `$ARGUMENTS`, including any sign / decimal point / non-numeric chars (used in the malformed and hard-cap warnings, where parsing rejected the value). Examples: `rounds=abc` produces `[ARG-WARN] rounds=abc is not a positive integer ...` (capture is `abc`); `rounds==5` produces `[ARG-WARN] rounds==5 is not a positive integer ...` (capture is `=5`); bare `rounds=` produces `[ARG-WARN] rounds= is not a positive integer ...` (capture is the empty string). The two placeholders are NOT interchangeable; downstream log greps that key off the warning prefix should distinguish them.
+
+   **Quoted strings in `$ARGUMENTS`** are NOT part of the parser contract: shells deliver `$ARGUMENTS` as a flat post-shell-quoting string, so a quoted plan path like `"path with spaces/plan.md"` becomes `path with spaces/plan.md` after the shell strips the quotes — there is no quote-aware tokenization in `/impl`. Users who need spaces in plan paths should rely on the existing `.simple-workflow/backlog/active/{ticket-dir}/plan.md` auto-discovery rather than passing quoted paths. The `rounds=N` parser only sees whitespace-delimited tokens, so any spaces inside an originally-quoted argument will split the value mid-token and the regex will not match.
+
+   **1b. Plan-path detection** (operates on the post-strip `$ARGUMENTS`):
    - If it starts with `.simple-workflow/backlog/active/` or `.simple-workflow/docs/plans/` → use as plan path; remaining text is additional instructions.
    - Otherwise → entire argument is additional instructions. Auto-select from `.simple-workflow/backlog/active/`: list dirs containing `plan.md`; **Exclude** dirs containing `autopilot-policy.yaml` (autopilot-managed); sort by directory name ascending to select the lowest ticket number first (FIFO); pick first. Fallback: latest `.simple-workflow/docs/plans/*.md`.
    - No plan anywhere → print "No plan found in .simple-workflow/backlog/active/ or .simple-workflow/docs/plans/. Run /scout or /plan2doc first." and stop.
@@ -185,9 +200,12 @@ Current state:
 
 12. **Safety checkpoint**: Create a rollback point with `git stash push -m "impl-checkpoint" --include-untracked -- ':!.simple-workflow'` (preserves plugin artifacts). On success print "Safety checkpoint created. To rollback: git stash pop". If nothing to stash, skip silently.
 
-## Phase 2: Generator → AC Evaluator → Code Quality Reviewer Loop (max 3 rounds)
+## Phase 2: Generator → AC Evaluator → Code Quality Reviewer Loop (max N rounds, default 9)
 
-**Autopilot round limit**: If `{ticket-dir}/autopilot-policy.yaml` defines `constraints.max_total_rounds`, use that value; else default 3.
+**Round-limit precedence** (`rounds=N` argument > policy > default 9):
+- **First**: `rounds=N` argument from Phase 1 step 1a (when present and valid). Soft cap 24 — values above 24 emit `[ARG-WARN]` but are NOT clamped, so a deliberate `rounds=50` will run for 50 rounds.
+- **Else**, if `{ticket-dir}/autopilot-policy.yaml` defines `constraints.max_total_rounds`, use that value (autopilot's `aggressive` profile sets 12).
+- **Else default 9** — when the user passes no `rounds=N` and the ticket has no `autopilot-policy.yaml`, the cap defaults to **9**. (Raised from 3 in v6.4.4 to close the asymmetry with autopilot's `aggressive` profile and reduce manual fall-throughs to Phase 3 with unresolved AC issues.)
 
 **Why a Stop hook (and not PreToolUse) guards the post-`/audit` handoff**: the recurring failure this loop is hardened against is *omission* — emitting `/audit`'s structured block and then ending the turn before Step 18 → Phase 3 → `## [SW-CHECKPOINT]` runs. PreToolUse hooks (e.g. `pre-state-transition.sh`) can only fire on a tool invocation event; they cannot detect the **absence** of an invocation. A Stop hook (`hooks/impl-checkpoint-guard.sh`) at turn termination is the only layer where "the state that should have been written wasn't" is observable, which is why the harness-side defense lives there rather than in PreToolUse.
 
@@ -203,7 +221,7 @@ phases:
     status: in-progress
     started_at: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
     current_round: 1
-    max_rounds: {3 or autopilot policy value}
+    max_rounds: {resolved at runtime per Phase 1 step 1a precedence — see prose above; integer literal at write time, e.g. 9}  # precedence: arg > policy > default 9; soft cap 24 warning, no clamp
     phase_sub: generator-pending
     last_ac_status: null
     last_audit_status: null
@@ -273,7 +291,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
      e. Report save path — **`{eval-report-path}` MUST be resolved by the orchestrator and substituted into the template below**. Resolution:
         - Plan under `.simple-workflow/backlog/active/{ticket-dir}/` → `{eval-report-path}` = `.simple-workflow/backlog/active/{ticket-dir}/eval-round-{n}.md`.
         - Else match current branch against active ticket dirs: strip leading `NNN-` prefix from each dir (e.g. `001-add-search-feature` → `add-search-feature`), check if branch contains the slug; if match, `{eval-report-path}` = `.simple-workflow/backlog/active/{full-directory-name}/eval-round-{n}.md`. Else `{eval-report-path}` = `.simple-workflow/docs/eval-round/{topic}-eval-round-{n}.md` where `{topic}` is derived from plan filename.
-        `{n}` = current round (1, 2, or 3).
+        `{n}` = current round (1..max_rounds).
      f. Append verbatim: "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran)." Keeps Evaluator verdicts anchored to a pre-Generator rubric.
      g. **Return value cap**: Return per the Context Conservation Protocol in `agents/ac-evaluator.md` — the evaluator's return value MUST stay under 500 tokens (Status / Output / 3-5 bullets). The full evaluation lives in `eval-round-{n}.md`; the orchestrator reads the artifact only when feedback is needed for the next Generator round.
      h. **Plan-Compliance hint** (conditional, only when §14a emitted `[PLAN-COMPLIANCE-WARN]` lines): append a single paragraph naming each missing path: "Plan-Compliance hint: the Generator may have skipped these files declared in the plan's Affected files section: `<path-1>`, `<path-2>`, …. Verify them when checking AC coverage; mark the related AC FAIL if the missing files are load-bearing for it." Omit this field entirely when §14a printed `[PLAN-COMPLIANCE] OK ...` or `[PLAN-COMPLIANCE] no Affected-files section in plan; skipped`.
@@ -334,7 +352,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
     - Parse `/audit`'s structured return block: `**Status**` (PASS | PASS_WITH_CONCERNS | FAIL), `**Critical**`, `**Warnings**`, `**Suggestions**`, `**Reports**`, `**Summary**`.
     - **If `/audit` itself fails** (no structured block / malformed):
      - **Autopilot policy check**: If `autopilot-policy.yaml` exists, read `gates.audit_infrastructure_fail.action`: `treat_as_fail` → **Status: FAIL**, `Critical = 1`, print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=treat_as_fail`, continue with audit failure in feedback; `stop` → stop, print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=stop`.
-     - Else use `AskUserQuestion` "/audit failed. How do you want to proceed?" with: `stop` (exit, do NOT proceed to Phase 3); `fail` (treat as FAIL+Critical=1; combine with ac-evaluator PASS as feedback for next round; on round 3 proceed to Phase 3 with audit failure noted).
+     - Else use `AskUserQuestion` "/audit failed. How do you want to proceed?" with: `stop` (exit, do NOT proceed to Phase 3); `fail` (treat as FAIL+Critical=1; combine with ac-evaluator PASS as feedback for next round; on the final round proceed to Phase 3 with audit failure noted).
       - **Non-interactive fallback**: If `AskUserQuestion` unavailable / errors, default to `stop` (NOT `fail` — a silent FAIL retry would mask infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure." and exit. Do NOT hang.
       - **Never** silently treat audit failure as PASS / PASS_WITH_CONCERNS — Critical / security issues must not slip through.
 
@@ -344,7 +362,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
     - **FAIL** (Critical > 0) → combine ac-evaluator PASS + audit Critical findings (from the `**Reports**` paths) as feedback for next Generator round. Continue.
     - **PASS_WITH_CONCERNS** (Warnings/Suggestions only) → Phase 3, include concerns in summary.
     - **PASS** (all counts 0) → Phase 3.
-    - **Round 3 + FAIL** → Phase 3 with remaining AC and quality/security issues noted.
+    - **Final round + FAIL** → Phase 3 with remaining AC and quality/security issues noted.
 
 ## Phase 3: Summary
 
@@ -376,7 +394,7 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
 - **Generator failure**: Report and stop.
 - **AC Evaluator failure**: Report; Generator's changes remain.
 - **/audit failure**: Step 17 handles — ask `AskUserQuestion` STOP vs FAIL. Never treat audit failure as PASS / PASS_WITH_CONCERNS.
-- **3 rounds FAIL**: Report remaining issues; code remains changed.
+- **Max-rounds FAIL**: Report remaining issues; code remains changed.
 
 ## Evaluator Tuning
 

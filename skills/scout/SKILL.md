@@ -110,6 +110,9 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
    - `/plan2doc` will internally select the planner model based on the Size in `ticket.md` (sonnet for S, opus for M/L/XL).
    - `/plan2doc` MUST NOT write to `phase-state.yaml`; only `/scout` updates `phases.scout`.
    - **Return value cap**: Return per the Context Conservation Protocol in the planner agent definition — the spawned agent's return value MUST stay under 500 tokens (status, plan.md output path, 1-2 line summary). The full plan content lives in `plan.md`; the orchestrator reads it on demand.
+
+   > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `/plan2doc` has just returned (`plan2doc: ac-source=ticket.md verbatim=true` ssot-line + plan summary). That return value is `/scout`'s input, not your output. You are NOT done — Steps 8, 8a, 9, and 10 remain in this turn. Do NOT end your turn. Do NOT treat the plan2doc summary as the final response. Required next emit: `## [SW-CHECKPOINT]` in Step 10.
+
 8. Print the plan summary and file path returned by plan2doc.
 8a. **Complete scout phase (state update — only when `ticket-dir` is set and `phase-state.yaml` exists)**: After both `investigation.md` and `plan.md` are successfully written, read `.simple-workflow/backlog/active/{ticket-dir}/phase-state.yaml` and update ONLY the following fields (read-modify-write):
     - `phases.scout.status: completed`
