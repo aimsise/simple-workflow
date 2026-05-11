@@ -4497,5 +4497,158 @@ rm -f "$AI_SECTION_TMP"
 
 echo ""
 
+# ---------------------------------------------------------------------------
+# Category AJ: Skeptical Third-Pass step in /audit (T-5)
+# Covers: AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-12,
+#         Negative AC-3, Negative AC-5, Negative AC-6.
+# AC-9/AC-10 (live smoke tests) require fixture PRs and Agent invocation
+# counting; they are documented in skills/audit/SKILL.md and asserted via
+# the static contract checks below (the SKILL.md text is the contract that
+# the live runtime obeys; live invocation counting is manual verification).
+# ---------------------------------------------------------------------------
+echo "Category AJ: Skeptical Third-Pass in /audit (T-5)"
+
+AUDIT_MD="$REPO_DIR/skills/audit/SKILL.md"
+
+# Extract the Step 3.5 subsection body (heading -> next ### Triggers).
+AJ_STEP35_TMP=$(mktemp)
+awk '/^### Step 3\.5:/,/^### Triggers/' "$AUDIT_MD" \
+  | grep -v '^### Triggers' > "$AJ_STEP35_TMP"
+
+# Extract the Triggers subsection body (heading -> next ### Skeptical).
+AJ_TRIGGERS_TMP=$(mktemp)
+awk '/^### Triggers for Skeptical Third-Pass$/,/^### Skeptical/' "$AUDIT_MD" \
+  | grep -v '^### Skeptical' > "$AJ_TRIGGERS_TMP"
+
+# Extract the Prompt Template subsection body (heading -> next ## or ### at section boundary).
+AJ_PROMPT_TMP=$(mktemp)
+awk '/^### Skeptical Third-Pass Prompt Template$/,/^## /' "$AUDIT_MD" \
+  | grep -v '^## ' > "$AJ_PROMPT_TMP"
+
+# Extract the Aggregate Results subsection body (heading -> next ### Step 3.5).
+AJ_AGGREGATE_TMP=$(mktemp)
+awk '/^### 3\. Aggregate Results$/,/^### Step 3\.5:/' "$AUDIT_MD" \
+  | grep -v '^### Step 3\.5:' > "$AJ_AGGREGATE_TMP"
+
+# AJ-1 (AC-1): skills/audit/SKILL.md contains a heading with 'Skeptical Third-Pass'
+assert_file_contains \
+  "AJ-1 (AC-1): skills/audit/SKILL.md contains heading with 'Skeptical Third-Pass'" \
+  "$AUDIT_MD" \
+  "Skeptical Third-Pass"
+
+# AJ-2 (AC-2): Triggers subsection documents at least 5 triggers (T-A through T-E)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AJ2_TRIGGER_HITS=$(count_matches '\*\*T-[A-E]\*\*|\(T-[A-E]\)' "$AJ_TRIGGERS_TMP")
+if [ "$AJ2_TRIGGER_HITS" -ge 5 ]; then
+  echo -e "  ${GREEN}PASS${NC} AJ-2 (AC-2): Triggers subsection documents >=5 triggers T-A..T-E (${AJ2_TRIGGER_HITS})"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AJ-2 (AC-2): Triggers subsection documents only ${AJ2_TRIGGER_HITS} triggers (need >=5)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AJ-3 (AC-3): T-A sentence contains 'hooks/lib/' AND ('library' or 'shared')
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AJ3_HOOKLIB=$(count_matches 'hooks/lib/' "$AJ_TRIGGERS_TMP")
+AJ3_LIB=$(count_matches 'library|shared' "$AJ_TRIGGERS_TMP")
+if [ "$AJ3_HOOKLIB" -ge 1 ] && [ "$AJ3_LIB" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AJ-3 (AC-3): T-A documents hooks/lib/ and library/shared"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AJ-3 (AC-3): T-A incomplete — hooks/lib/:${AJ3_HOOKLIB} library/shared:${AJ3_LIB} (both need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AJ-4 (AC-4): T-B sentence contains at least 2 of: printf %q, escape, sanitize, quote, ERE
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AJ4_COUNT=0
+for AJ4_TERM in 'printf %q' 'escape' 'sanitize' 'quote' 'ERE'; do
+  HIT=$(count_matches "$AJ4_TERM" "$AJ_TRIGGERS_TMP")
+  [ "$HIT" -ge 1 ] && AJ4_COUNT=$((AJ4_COUNT + 1))
+done
+if [ "$AJ4_COUNT" -ge 2 ]; then
+  echo -e "  ${GREEN}PASS${NC} AJ-4 (AC-4): T-B documents >= 2 sanitization keywords (${AJ4_COUNT}/5)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AJ-4 (AC-4): T-B documents only ${AJ4_COUNT}/5 sanitization keywords (need >=2)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AJ-5 (AC-5): T-D sentence contains both 'PASS-WITH-CAVEATS' and 'skipped'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AJ5_PWC=$(count_matches 'PASS-WITH-CAVEATS' "$AJ_TRIGGERS_TMP")
+AJ5_SKIP=$(count_matches 'skipped' "$AJ_TRIGGERS_TMP")
+if [ "$AJ5_PWC" -ge 1 ] && [ "$AJ5_SKIP" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AJ-5 (AC-5): T-D documents PASS-WITH-CAVEATS and skipped"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AJ-5 (AC-5): T-D incomplete — PASS-WITH-CAVEATS:${AJ5_PWC} skipped:${AJ5_SKIP} (both need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AJ-6 (AC-6): Prompt Template subsection contains the three required literals
+assert_file_contains \
+  "AJ-6a (AC-6): Prompt Template contains 'general-purpose'" \
+  "$AJ_PROMPT_TMP" \
+  "general-purpose"
+assert_file_contains \
+  "AJ-6b (AC-6): Prompt Template contains 'DO_NOT_SHIP'" \
+  "$AJ_PROMPT_TMP" \
+  "DO_NOT_SHIP"
+assert_file_contains \
+  "AJ-6c (AC-6): Prompt Template contains 'outside the standard rubrics'" \
+  "$AJ_PROMPT_TMP" \
+  "outside the standard rubrics"
+
+# AJ-7 (AC-7): Aggregation rule documented in ### 3. Aggregate Results — DO_NOT_SHIP increments Critical
+# Scoped to $AJ_AGGREGATE_TMP to prevent vacuous match from DO_NOT_SHIP in the prompt template.
+assert_file_contains \
+  "AJ-7 (AC-7): Aggregation rule: DO_NOT_SHIP from third-pass increments Critical" \
+  "$AJ_AGGREGATE_TMP" \
+  "DO_NOT_SHIP.*Critical|Critical.*DO_NOT_SHIP"
+
+# AJ-8 (AC-8): Skip-by-default documented — behaviour unchanged when no trigger fires
+assert_file_contains \
+  "AJ-8 (AC-8): Skip-by-default: no-trigger behaviour documented as unchanged/byte-identical" \
+  "$AJ_STEP35_TMP" \
+  "byte-identical|behaviour is unchanged|no trigger fires"
+
+# AJ-9 (Neg-AC-3): only_security_scan=true suppresses third-pass
+assert_file_contains \
+  "AJ-9 (Neg-AC-3): only_security_scan=true suppresses third-pass" \
+  "$AJ_STEP35_TMP" \
+  "only_security_scan"
+
+# AJ-10 (Neg-AC-5): no 'always'/'every audit'/'unconditional' in the new Step 3.5 section
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AJ10_ALWAYS=$(count_matches 'always|every audit|unconditional' "$AJ_STEP35_TMP")
+if [ "$AJ10_ALWAYS" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} AJ-10 (Neg-AC-5): Step 3.5 section has no 'always/every audit/unconditional' (count=0)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AJ-10 (Neg-AC-5): Step 3.5 section has ${AJ10_ALWAYS} forbidden always/unconditional reference(s)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AJ-11 (Neg-AC-6): OR-set / fires-once documented
+assert_file_contains \
+  "AJ-11 (Neg-AC-6): Step 3.5 documents OR-set / at-most-once invocation" \
+  "$AJ_STEP35_TMP" \
+  "OR-set|at most once|fires.*once|once per"
+
+# AJ-12 (AC-12): CHANGELOG newest block has ### Added bullet referencing skeptical + T-A..T-E
+assert_file_contains \
+  "AJ-12a (AC-12): CHANGELOG has skeptical third-pass bullet" \
+  "$REPO_DIR/CHANGELOG.md" \
+  "skeptical.third.pass|Skeptical Third-Pass"
+assert_file_contains \
+  "AJ-12b (AC-12): CHANGELOG references trigger range T-A..T-E" \
+  "$REPO_DIR/CHANGELOG.md" \
+  "T-A\.\.T-E|T-A through T-E"
+
+rm -f "$AJ_STEP35_TMP" "$AJ_TRIGGERS_TMP" "$AJ_PROMPT_TMP" "$AJ_AGGREGATE_TMP"
+
+echo ""
+
 # --- Summary ---
 print_summary

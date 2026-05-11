@@ -209,6 +209,70 @@ Combine the results from the spawned agents into a single aggregated report:
 
 The aggregated counts MUST be calculated across both agents (or just security-scanner when code-reviewer is skipped).
 
+- When Step 3.5 (Skeptical Third-Pass) fires and returns `DO_NOT_SHIP`, treat this as `Critical += 1` in the aggregated tally. This causes `Status` to be `FAIL` via the existing `Critical > 0` rule. When Step 3.5 does not fire, the tally is unaffected.
+
+### Step 3.5: Skeptical Third-Pass (conditional)
+
+After Step 3 aggregation, evaluate the trigger conditions documented in `### Triggers for Skeptical Third-Pass` below. When **at least one trigger fires** AND `only_security_scan` is `false` (the short-circuit flag is not set), invoke a third `Agent` tool call:
+
+- `subagent_type: general-purpose`
+- Pass the prompt from the `### Skeptical Third-Pass Prompt Template` section below, filling in the changed file list and the rubric IDs already covered by `code-reviewer` and `security-scanner`.
+- Save the agent's response to `{ticket-dir}/skeptical-pass-{n}.md` (using the same round number `{n}` from Step 1). If no `ticket-dir` is set, save to `.simple-workflow/docs/reviews/skeptical-pass-{topic}.md`.
+- Receive the agent's verdict: `SHIP` or `DO_NOT_SHIP`. Feed the verdict into Step 3 aggregation per the rule documented at the end of `### 3. Aggregate Results`.
+
+When **no trigger fires**, skip this step entirely. `/audit`'s behaviour is byte-identical (modulo log entries) to the pre-T-5 behaviour.
+
+When `only_security_scan=true`, the third-pass **MUST NOT fire**, even if a trigger condition would otherwise be met. The flag's purpose is to restrict review to security-scanner only.
+
+The third-pass fires **at most once per `/audit` run**, regardless of how many triggers fire simultaneously. Triggers form an OR-set: all firing triggers are reported in the prompt context, but a single `general-purpose` Agent call is made.
+
+If the `general-purpose` Agent call itself fails (timeout, infrastructure error), treat the failure as `Critical += 1` (failed review infrastructure), consistent with the existing aggregation behaviour for failed contractual reviewers.
+
+### Triggers for Skeptical Third-Pass
+
+Any single trigger fires Step 3.5:
+
+- **T-A** The PR introduces or modifies a `hooks/lib/` shared library file. These files are leverage points — a defect in a shared library propagates to every hook that sources it.
+- **T-B** The PR introduces or modifies a sanitization or escaping function. Heuristic: diff hunks contain at least one of `printf %q`, `escape`, `sanitize`, `quote`, or ERE-escape patterns. Standard rubric-bound reviewers check syntactic patterns, not enumerative coverage of caller-controlled inputs.
+- **T-C** The PR adds or modifies a `tools:` permission entry in any `agents/*.md` file. Agent permission changes have orchestration consequences outside the categorical security rubric.
+- **T-D** The prior `ac-evaluator` round returned `PASS-WITH-CAVEATS` due to missing tooling. Heuristic: any `eval-round-{n}.md` file in `{ticket-dir}` contains both `PASS-WITH-CAVEATS` and `skipped` within the same AC entry. This indicates the evaluator accepted code inspection as evidence when a live execution tier was unavailable.
+- **T-E** The PR diff touches more than 3 files in total, with at least one file in each of `hooks/`, `agents/`, and `skills/` simultaneously. Cross-cutting changes are by definition outside any single rubric. A PR that only touches `tests/` does NOT fire T-E, regardless of file count.
+
+### Skeptical Third-Pass Prompt Template
+
+When Step 3.5 fires, use the following prompt verbatim, substituting `{changed_files}`, `{rubric_ids}`, and `{trigger_list}` from context:
+
+```
+You are a general-purpose reviewer acting as a skeptical third-pass auditor.
+
+The following files were changed in this PR:
+{changed_files}
+
+The standard rubric-bound reviewers have already evaluated this change:
+- code-reviewer (rubric IDs: {rubric_ids[code-reviewer]})
+- security-scanner (rubric IDs: {rubric_ids[security-scanner]})
+
+Triggers that fired for this review: {trigger_list}
+
+Note: if T-4 (Pre-existing Failure Attribution) is documented in agents/ac-evaluator.md, do NOT duplicate that check — focus on issues outside T-4's scope.
+
+Your task: identify any substantive ship-blockers that the standard rubric-bound reviewers would miss because they operate within categorical rubrics (code quality, security vulnerability patterns) and do not verify:
+- End-to-end behavioural correctness (e.g., live execution of a claimed production path)
+- Enumerative coverage of all caller-controlled inputs to a sanitization function
+- Cross-system orchestration consequences of permission changes
+- Any other substantive concern outside the standard rubrics
+
+Classify findings by severity matching the ac-evaluator scale:
+- **CRITICAL**: would cause data loss, security breach, or correctness failure in production
+- **HIGH**: would cause incorrect behaviour detectable in normal use
+- **MEDIUM**: potential concern that needs investigation before the next release
+
+Output format:
+**Verdict**: SHIP | DO_NOT_SHIP
+**Findings**: (list findings with severity; "None" if SHIP)
+**Reasoning**: (1–3 sentences on why the verdict was reached)
+```
+
 ### 4. Return Structured Result
 
 First, print a human-readable summary of the most important findings (Critical issues first, then Warnings, then Suggestions) with file:line references where available.
