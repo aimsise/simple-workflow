@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.0] — 2026-05-11
+
+### Added
+
+- `/audit` Step 3.5 (Skeptical Third-Pass): triggered, conditional `general-purpose` Agent call that runs in addition to `code-reviewer` and `security-scanner` when one or more of the documented triggers (T-A..T-E) fires. Trigger taxonomy: T-A `hooks/lib/` shared library changes, T-B sanitization/escape function changes, T-C `tools:` permission edits in `agents/*.md`, T-D prior `ac-evaluator` round returned `PASS-WITH-CAVEATS` due to missing tooling, T-E cross-cutting changes touching `hooks/` AND `agents/` AND `skills/`. The third-pass uses the built-in `general-purpose` subagent (deliberately not a new file under `agents/`) to preserve cross-rubric reasoning. A `DO_NOT_SHIP` verdict from the third-pass is treated as `Critical += 1` in the existing aggregation tally and produces `Status: FAIL`. The third-pass runs at most once per `/audit` invocation regardless of how many triggers fire (OR-set), is suppressed when `only_security_scan=true`, and saves its report to `{ticket-dir}/skeptical-pass-{n}.md`. For non-risk-elevated PRs (the common case), `/audit`'s behaviour is byte-identical to its pre-T-5 form.
+- `tests/test-skill-contracts.sh` Category AJ: 12 assertions locking the SKILL.md contract for Step 3.5, the Triggers subsection, the Prompt Template fenced block, the aggregation rule, the `only_security_scan` suppression, the OR-set / at-most-once invariant, and the CHANGELOG bullet itself.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 433/433 PASS (417 baseline + 16 new AJ-* assertion increments across AJ-1 through AJ-12b).
+- `bash tests/test-path-consistency.sh` — expected 0 failures (no path constants moved).
+- Manual smoke (AC-9, AC-10): documented in `skills/audit/SKILL.md`; live verification deferred to ad-hoc fixture PRs (a fixture PR adding `hooks/lib/foo.sh` MUST produce 3 Agent invocations + a `skeptical-pass-{n}.md` artifact; a fixture PR editing only `README.md` MUST produce exactly 2 Agent invocations and NO `skeptical-pass-*.md` file).
+
 ## [6.5.1] — 2026-05-11
 
 Patch release implementing T-4: robust pre-existing-failure attribution for `ac-evaluator`. The Round-1 ac-evaluator in T-003 / v6.3.2 had labelled a `tests/test-skill-contracts.sh:AF-2` failure as "pre-existing on clean HEAD" using bare `git stash` to validate — a verdict later proven wrong because `git stash` (without `--include-untracked` or `--all`) silently skips gitignored paths such as `.simple-workflow/`. This release adds a new `### Pre-existing Failure Attribution` sub-section to `agents/ac-evaluator.md` documenting the correct two-step recipe: (1) path-intersection via `git diff --name-only <base>..HEAD` (using `git merge-base HEAD origin/<default-branch>` for the base), and (2) when the evidence path is gitignored, a clean worktree rebuild via `git worktree add` against the base commit. A new anti-pattern callout explicitly forbids the bare `git stash` recipe. Post-impl security review tightened the new `git worktree` tool permissions to the scoped `add` / `remove` / `list` sub-commands instead of the originally proposed blanket wildcard. Non-breaking; no action required for existing tickets.
