@@ -3750,20 +3750,23 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# CT-MODE-GREP-C-2: agents/ac-evaluator.md `maxTurns` MUST stay >= 30. Defense
-# against accidental rollback to the v6.1.0 cap of 20, which silently halted
-# AC-heavy plans (e.g. T-002 with 22 ACs) before the Report Persistence
-# Contract's Write call. Higher AC counts (>20) should be addressed by
-# splitting the plan, not by lowering this floor.
+# CT-MODE-GREP-C-2: agents/ac-evaluator.md `maxTurns` MUST stay >= 200. Defense
+# against accidental rollback. v6.5.0 (T-2) raised the ceiling from 60 to 200
+# under Strategy B (the Agent tool's JSONSchema rejects per-invocation maxTurns
+# overrides; see T-2 probe-result in plan.md). The documented floor of 60 is
+# preserved via the EVALUATOR_MAX_TURNS = max(60, AC_COUNT * 4) formula in
+# Step 15, but the frontmatter ceiling must stay at 200 so AC-heavy plans
+# (AC_COUNT >= 22) can use all the turns the formula allocates. The threshold
+# here is >= 200 (not just >= 30) to guard against any future rollback to 60.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ACEVAL_PATH="$REPO_DIR/agents/ac-evaluator.md"
 ACEVAL_MAXTURNS=$(grep -E '^maxTurns:[[:space:]]*[0-9]+' "$ACEVAL_PATH" | head -1 | sed -E 's/^maxTurns:[[:space:]]*([0-9]+).*/\1/')
 ACEVAL_MAXTURNS=${ACEVAL_MAXTURNS:-0}
-if [ "$ACEVAL_MAXTURNS" -ge 30 ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS (>= 30)"
+if [ "$ACEVAL_MAXTURNS" -ge 200 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS (>= 200, T-2 Strategy B ceiling)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS is below the 30 floor (set in v6.2.2 to 60; do not lower below 30 — split the plan instead)" >&2
+  echo -e "  ${RED}FAIL${NC} CT-MODE-GREP-C-2: agents/ac-evaluator.md maxTurns=$ACEVAL_MAXTURNS is below the 200 ceiling (raised in v6.5.0 T-2 Strategy B; do not lower — use EVALUATOR_MAX_TURNS formula in Step 15 to control per-plan turn budget)" >&2
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -4286,6 +4289,124 @@ else
 fi
 rm -rf "$SS7_DIR"
 trap - EXIT
+
+echo ""
+
+# ---------------------------------------------------------------------------
+# Category AH: Dynamic maxTurns + AC-30 partition (T-2, v6.5.0)
+# Covers AC-1/AC-2/AC-3/AC-4/AC-5/Negative AC-4/Negative AC-6.
+# All assertions use count_matches (NOT raw grep -c) per CT-MODE-GREP-C-1.
+# ---------------------------------------------------------------------------
+echo "Category AH: Dynamic maxTurns + AC-30 partition (T-2)"
+
+# Extract Step 15 body from skills/impl/SKILL.md (from "^15. " heading to "^16. " heading).
+AH_SKILL_PATH="$REPO_DIR/skills/impl/SKILL.md"
+AH_STEP15_TMP=$(mktemp)
+awk '/^15\. /{in_s=1} in_s && /^16\. /{exit} in_s{print}' "$AH_SKILL_PATH" > "$AH_STEP15_TMP"
+
+# AH-1 (AC-1): Step 15 body MUST contain AC_COUNT at least twice AND
+#              a multiplication-by-4 expression at least once.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH1_AC_COUNT_HITS=$(count_matches 'AC_COUNT' "$AH_STEP15_TMP")
+AH1_TIMES4_HITS=$(count_matches '\* 4|times 4|x 4' "$AH_STEP15_TMP")
+if [ "$AH1_AC_COUNT_HITS" -ge 2 ] && [ "$AH1_TIMES4_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-1 (AC-1): Step 15 body contains AC_COUNT>=${AH1_AC_COUNT_HITS}x and *4 >= 1x"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-1 (AC-1): Step 15 body AC_COUNT=${AH1_AC_COUNT_HITS} (need>=2) *4=${AH1_TIMES4_HITS} (need>=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AH-2 (AC-2): Step 15 body MUST contain the max(60,...) floor formula.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH2_FLOOR_HITS=$(count_matches 'max\(60,|max\(\s*60\s*,' "$AH_STEP15_TMP")
+if [ "$AH2_FLOOR_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-2 (AC-2): Step 15 body contains max(60,...) floor formula"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-2 (AC-2): Step 15 body missing max(60,...) floor formula (hits=$AH2_FLOOR_HITS)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AH-3 (AC-3): Step 15 body MUST document the partition threshold of 30.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH3_THRESH_HITS=$(count_matches 'AC_COUNT\s*>=\s*30|AC_COUNT\s*>=\s*30|30\+ AC|30 or more' "$AH_STEP15_TMP")
+if [ "$AH3_THRESH_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-3 (AC-3): Step 15 body documents partition threshold 30"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-3 (AC-3): Step 15 body missing partition threshold 30 (hits=$AH3_THRESH_HITS)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AH-4 (AC-4): Step 15 body MUST contain eval-round- >= 2, part-1 >= 1, part-2 >= 1.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH4_EVALROUND_HITS=$(count_matches 'eval-round-' "$AH_STEP15_TMP")
+AH4_PART1_HITS=$(count_matches 'part-1' "$AH_STEP15_TMP")
+AH4_PART2_HITS=$(count_matches 'part-2' "$AH_STEP15_TMP")
+if [ "$AH4_EVALROUND_HITS" -ge 2 ] && [ "$AH4_PART1_HITS" -ge 1 ] && [ "$AH4_PART2_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-4 (AC-4): Step 15 body: eval-round->=${AH4_EVALROUND_HITS}x part-1>=${AH4_PART1_HITS}x part-2>=${AH4_PART2_HITS}x"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-4 (AC-4): eval-round-=${AH4_EVALROUND_HITS}(need>=2) part-1=${AH4_PART1_HITS}(need>=1) part-2=${AH4_PART2_HITS}(need>=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AH-5 (AC-5): agents/ac-evaluator.md MUST contain 'partition' and 'Do NOT cross-evaluate'.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH5_PARTITION_HITS=$(count_matches 'partition' "$REPO_DIR/agents/ac-evaluator.md")
+if [ "$AH5_PARTITION_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-5a (AC-5): agents/ac-evaluator.md contains 'partition' (${AH5_PARTITION_HITS}x)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-5a (AC-5): agents/ac-evaluator.md missing 'partition'" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+assert_file_contains \
+  "AH-5b (AC-5): agents/ac-evaluator.md contains literal 'Do NOT cross-evaluate'" \
+  "$REPO_DIR/agents/ac-evaluator.md" \
+  "Do NOT cross-evaluate"
+
+# AH-6 (Negative AC-4): code-reviewer and security-scanner MUST NOT contain 'partition'.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH6_CR_HITS=$(count_matches 'partition' "$REPO_DIR/agents/code-reviewer.md")
+if [ "$AH6_CR_HITS" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-6a (Neg-AC-4): agents/code-reviewer.md has no 'partition' references"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-6a (Neg-AC-4): agents/code-reviewer.md has ${AH6_CR_HITS} 'partition' reference(s) (must be 0)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH6_SS_HITS=$(count_matches 'partition' "$REPO_DIR/agents/security-scanner.md")
+if [ "$AH6_SS_HITS" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-6b (Neg-AC-4): agents/security-scanner.md has no 'partition' references"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-6b (Neg-AC-4): agents/security-scanner.md has ${AH6_SS_HITS} 'partition' reference(s) (must be 0)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AH-7 (Negative AC-6): AC-counting algorithm MUST stop at #### Negative Acceptance Criteria.
+# Run the algorithm against plan-5ac-5negac.md and assert AC_COUNT == 5.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AH7_FIXTURE="$REPO_DIR/tests/fixtures/ac-count-plans/plan-5ac-5negac.md"
+AH7_AC_COUNT=$(awk '
+  /^####?[[:space:]]+(Negative Acceptance Criteria)/{exit}
+  /^[0-9]+\.[[:space:]]+\*\*AC-/{count++}
+  /^- AC-/{count++}
+  /^AC-[0-9]/{count++}
+  END{print count+0}
+' "$AH7_FIXTURE")
+if [ "$AH7_AC_COUNT" -eq 5 ]; then
+  echo -e "  ${GREEN}PASS${NC} AH-7 (Neg-AC-6): AC-counting on plan-5ac-5negac.md returns AC_COUNT=5 (stop condition fires)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AH-7 (Neg-AC-6): AC-counting on plan-5ac-5negac.md returned AC_COUNT=${AH7_AC_COUNT} (expected 5; stop condition may not be firing)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+rm -f "$AH_STEP15_TMP"
 
 echo ""
 

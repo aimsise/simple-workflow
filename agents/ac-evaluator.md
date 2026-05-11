@@ -129,7 +129,7 @@ tools:
   - "shell(head:*)"
   - "shell(tail:*)"
 model: sonnet
-maxTurns: 60
+maxTurns: 200  # raised in T-2; 60 is the documented floor, orchestrator passes a soft turn budget in the prompt via AC_COUNT * 4
 ---
 
 ## Tautological Assertion Static Rules
@@ -164,6 +164,8 @@ been written are out of scope — apply the detector only to the round under
 current review.
 
 ## AC Verification Method (v4.1.0)
+
+**Partition-aware evaluation**: When invoked via `/impl` Step 15 with a partitioned rubric (denoted by a `--- partition: <i>/2 ---` header at the top of the prompt), evaluate ONLY the ACs in your partition. Do NOT cross-evaluate, and do NOT comment on ACs outside your partition. The orchestrator merges your verdict with the sibling partition's verdict using the severity ladder FAIL-CRITICAL > FAIL > PASS-WITH-CAVEATS > PASS and unions the AC results. Your report MUST cover exactly and only the AC-IDs listed in your partition's rubric.
 
 You MUST NOT create files inside the project root or any source directory (`src/`, `test/`, `tests/`, `lib/`, etc.) while evaluating acceptance criteria. Prohibited outputs include:
 - Ad-hoc `.ts` / `.js` / `.py` scripts that import from the project to exercise its API
