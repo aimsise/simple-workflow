@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.1] — 2026-05-11
+
+Patch release introducing `scout-checkpoint-guard.sh`, the harness-side
+defense for the `/scout ↔ /plan2doc` handoff. Mirrors the structural prior
+established by `impl-checkpoint-guard.sh` (v6.4.6+) for the `/impl ↔ /audit`
+handoff. The new hook anchors on the `plan2doc: ac-source=ticket.md
+verbatim=true` ssot-line in the transcript tail rather than on
+`phase-state.yaml`, so the legacy `product_backlog → active` ticket flow —
+which has no `phase-state.yaml` and was the canonical site of the
+recurring premature `end_turn` failure observed in conversation
+`22df418d-5716-472a-be05-42826729acef` — is now covered. The L1 prompt
+defense (a new `### Post-/plan2doc Checklist (mandatory)` section in
+`skills/scout/SKILL.md`) and the L3 contract assertion (P-12 in
+`tests/test-skill-contracts.sh`) round out the three-layer defense.
+
+### Added
+
+- **`hooks/scout-checkpoint-guard.sh`** — Stop hook that mirrors `impl-checkpoint-guard.sh` for the `/scout ↔ /plan2doc` handoff. Blocks `end_turn` when `/plan2doc` has emitted the ssot-line (`plan2doc: ac-source=ticket.md verbatim=true`) but `/scout` has not yet emitted `## [SW-CHECKPOINT]`, with the same 3-attempt counter+release UX as the impl variant. Counter file: `/tmp/.scout-checkpoint-${SESSION_ID}`; release at 3 emits `[SCOUT-CHECKPOINT-RELEASE] ... Resume with: /scout <ticket-dir>` (or `/autopilot <parent-slug>` inside autopilot context). Kill switch: `SW_SCOUT_CHECKPOINT_MODE` (`block` default, `metric-only`, `off`). Anchors on the transcript tail's ssot-line rather than `phase-state.yaml.phases.scout.status`, so the legacy `product_backlog → active` ticket flow (no `phase-state.yaml`) is covered (NAC-2).
+- **`skills/scout/SKILL.md` Post-/plan2doc Checklist** — new section immediately under `## Instructions` that enumerates Steps 8 / 8a / 9 / 10 as a mandatory checklist after `/plan2doc` returns, with a negative cue stating that the plan2doc summary is the delegate's return value, not `/scout`'s final output to the user. The existing `CHECKPOINT — RE-ANCHOR` blockquote ahead of Step 8 is preserved (P-11 still PASS).
+- **`tests/test-scout-checkpoint-guard.sh`** — fixture-driven regression suite covering 8 cases: C1 missing transcript, C2 missing ssot-line, C3 SW-CHECKPOINT present (counter cleared), C4 no /scout Skill invocation, C5 3-AND block without phase-state.yaml (the NAC-2 regression case), C6 3-AND block with phase-state.yaml in-progress, C7 short-circuit when scout.status == completed, C8 release at counter=3 with `[SCOUT-CHECKPOINT-RELEASE]` stdout.
+- **`tests/test-skill-contracts.sh` P-12** — static assertion that `skills/scout/SKILL.md` contains the new `Post-/plan2doc Checklist` heading at least once. Emits `PASS P-12: scout Post-/plan2doc Checklist count` on success. P-11 (`CHECKPOINT — RE-ANCHOR`) continues to be enforced alongside P-12.
+
+### Changed
+
+- **`hooks/hooks.json`** — registers `scout-checkpoint-guard.sh` in the `Stop` array between `impl-checkpoint-guard.sh` and `autopilot-continue.sh`. The three Stop hooks evaluate independently: disjoint session-scoped counter files (`/tmp/.impl-checkpoint-*`, `/tmp/.scout-checkpoint-*`, `/tmp/.autopilot-continue-*`) and mutually exclusive transcript-tail signatures (impl: `**Status**: ... **Reports**:`; scout: `plan2doc: ac-source=ticket.md verbatim=true`; autopilot: phase-level). Existing entries (`impl-checkpoint-guard.sh`, `autopilot-continue.sh`, `session-stop-log.sh`) are unchanged (NAC-7).
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` → exit 0; P-11 still PASS, P-12 added (NEW). Baseline shift: 433/433 (v6.6.0) → 434/434 (+1 from P-12).
+- `bash tests/test-path-consistency.sh` → exit 0; no new fixture files, path-consistency drift unchanged.
+- `bash tests/test-scout-checkpoint-guard.sh` → exit 0; 8/8 PASS (C1 through C8).
+- `bash tests/test-impl-checkpoint-guard.sh` → exit 0; existing 8/8 PASS (no regression, NAC-1).
+- `bash tests/test-checkpoint-template.sh` → exit 0; no template changes.
+- PATH-restricted matrix (`PATH=/usr/bin:/bin bash tests/test-scout-checkpoint-guard.sh`) exercises the three-tier fallback path (yq → python3+PyYAML → awk) for state-file parsing under minimal-PATH environments, matching the existing impl-checkpoint-guard.sh regime.
+
 ## [6.6.0] — 2026-05-11
 
 ### Added

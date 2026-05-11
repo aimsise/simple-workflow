@@ -72,6 +72,24 @@ Reference: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Instructions
 
+### Post-/plan2doc Checklist (mandatory)
+
+When `/plan2doc` returns, its return value will contain `**Status**: success`,
+`**Output**: <path>`, `**Summary**: ...`, and `**Next Steps**: ...`. **These
+lines are the delegate's return value, NOT `/scout`'s final output to the
+user.** A recurring failure mode is to treat the plan2doc summary as the
+terminal response and end the turn before emitting `## [SW-CHECKPOINT]`.
+
+Required after `/plan2doc` returns successfully:
+
+- [ ] Step 8: print the plan summary
+- [ ] Step 8a: update `phases.scout.status: completed` when `phase-state.yaml` exists
+- [ ] Step 9: print the final summary (paths + size)
+- [ ] Step 10: emit `## [SW-CHECKPOINT]` block
+
+If you have not yet emitted `## [SW-CHECKPOINT]` literally in this turn,
+the contract is unsatisfied — do NOT end your turn.
+
 1. Before calling /investigate, attempt to read the ticket file directly:
    - Search `.simple-workflow/backlog/product_backlog/` and `.simple-workflow/backlog/active/` for ticket files matching `$ARGUMENTS` keyword using Glob. Patterns are **depth-agnostic** so nested layouts (`.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`) as well as the legacy flat layout are covered: `.simple-workflow/backlog/product_backlog/**/*<keyword>*/ticket.md` and `.simple-workflow/backlog/active/**/*<keyword>*/ticket.md`.
    - If multiple matches, use the first. If zero matches or the directories do not exist, skip to step 3 (Size stays unset, non-ticket flow).
