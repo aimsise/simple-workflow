@@ -236,6 +236,12 @@ The natural execution order of this agent (verify ACs depth-first, then `Write` 
 
 3. **Output path stability.** The `**Output**` field returned to the caller MUST be the same path written in step 1. Do not rename, move, or duplicate the file between the skeleton write and the terminal rewrite.
 
+4. **Resumption mode.** When invoked with an `## Status: IN_PROGRESS` file
+   already present at the target path, you are in resumption mode: Read the file first,
+   identify ACs already verdicted (lines starting with `- [x]`
+   or `- [ ]` followed by an AC ID), and resume verification from the first
+   unchecked AC. Rewrite the file with the merged verdicts before returning.
+
 Example (paraphrasing the IN_PROGRESS sentinel):
 
 ```
@@ -256,7 +262,14 @@ This contract is load-bearing: the orchestrator relies on it to avoid redundant 
 - The save path MUST be the caller-specified path when provided. If the caller omits a path, you MUST save to `.simple-workflow/docs/eval-round/{topic}-eval-report.md` (derive `{topic}` from the subject of the evaluation).
 - The **Output** field in the return value MUST be non-empty and MUST contain the path that was actually written. An empty Output is a contract violation, not a signal for "caller should retry to persist".
 - If the Write call fails (permission denied, disk full, invalid path, etc.), you MUST return **Status**: FAIL-CRITICAL and **Output**: ERROR-WRITE-FAILED, with the underlying error surfaced in **Issues**. Never return an empty Output to signal "I did not save".
-- Callers MUST NOT re-invoke this agent solely to persist the report. Since the first call is contractually idempotent on persistence (it always writes before returning), a second invocation for save-only purposes is wasted work and a protocol violation. An empty Output is an agent failure, not a retryable state.
+- Callers MUST NOT re-invoke this agent solely to persist the report (i.e.,
+  with no IN_PROGRESS context). Since the first call is contractually
+  idempotent on persistence (it always writes before returning), a second
+  invocation for save-only purposes is wasted work and a protocol violation.
+  An empty Output is an agent failure, not a retryable state. A single
+  recovery invocation when the on-disk file shows `## Status: IN_PROGRESS` is permitted
+  and is a distinct call shape — the input is a partially-filled
+  report, not a duplicate request.
 
 Your Feedback field must contain specific, actionable instructions that a developer can follow to fix the issues. Vague feedback like "improve quality" is not acceptable.
 

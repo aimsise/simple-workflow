@@ -4049,5 +4049,236 @@ fi
 
 echo ""
 
+# === Cat T: Single-shot recovery from IN_PROGRESS envelope (T-3) ===
+# Diff: skills/impl/SKILL.md Step 16 gains 4-way decision with recovery branch;
+# agents/ac-evaluator.md gains rule 4 (resumption mode) and contract clarification.
+echo "--- Cat T: Single-shot recovery (T-3) ---"
+
+# CT-MODE-SINGLESHOT-1 (AC-1): Step 16 has IN_PROGRESS >= 2 times AND
+# recovery|resumption >= 1 time. Also includes Negative AC-3 cross-check:
+# IN_PROGRESS must NOT appear in Step 17 window.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS1_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$SS1_TMP"
+SS1_INPROGRESS=$(count_matches 'IN_PROGRESS' "$SS1_TMP")
+SS1_RECOVERY=$(count_matches 'recovery|resumption' "$SS1_TMP")
+rm -f "$SS1_TMP"
+STEP17_TMP=$(mktemp)
+awk '/^17\./,/^18\./' "$REPO_DIR/skills/impl/SKILL.md" > "$STEP17_TMP"
+STEP17_IP=$(count_matches 'IN_PROGRESS' "$STEP17_TMP")
+rm -f "$STEP17_TMP"
+if [ "${SS1_INPROGRESS:-0}" -ge 2 ] && [ "${SS1_RECOVERY:-0}" -ge 1 ] && [ "${STEP17_IP:-0}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-1: Step 16 has IN_PROGRESS x${SS1_INPROGRESS} + recovery/resumption x${SS1_RECOVERY}; Step 17 has IN_PROGRESS x0 (Neg-AC-3 OK)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-1: Step16 IN_PROGRESS=$SS1_INPROGRESS (need >=2), recovery=$SS1_RECOVERY (need >=1), Step17 IN_PROGRESS=$STEP17_IP (need 0)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-2 (AC-2): Step 16 has once|exactly 1|single-shot|max 1 >= 1
+# and the surrounding context contains 'recovery'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS2_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$SS2_TMP"
+SS2_CAP=$(count_matches 'once|exactly 1|single-shot|max[[:space:]]*1' "$SS2_TMP")
+SS2_RECOVERY=$(count_matches 'recovery' "$SS2_TMP")
+rm -f "$SS2_TMP"
+if [ "${SS2_CAP:-0}" -ge 1 ] && [ "${SS2_RECOVERY:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-2: Step 16 has single-shot cap x${SS2_CAP} + recovery context x${SS2_RECOVERY}"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-2: cap=$SS2_CAP (need >=1), recovery=$SS2_RECOVERY (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-3 (AC-3): Step 16 has resumption prompt fenced block with
+# required literals: 'Read the IN_PROGRESS file', 'resume from', '[ ]'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS3_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$SS3_TMP"
+SS3_READ=$(count_matches 'Read the IN_PROGRESS file' "$SS3_TMP")
+SS3_RESUME=$(count_matches 'resume from' "$SS3_TMP")
+SS3_CHECKBOX=$(count_matches '\[ \]' "$SS3_TMP")
+rm -f "$SS3_TMP"
+if [ "${SS3_READ:-0}" -ge 1 ] && [ "${SS3_RESUME:-0}" -ge 1 ] && [ "${SS3_CHECKBOX:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-3: resumption prompt has 'Read the IN_PROGRESS file' + 'resume from' + '[ ]' checkbox"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-3: read=$SS3_READ (need >=1), resume=$SS3_RESUME (need >=1), checkbox=$SS3_CHECKBOX (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-4 (AC-4): Persistence-First Protocol section has
+# 'resumption mode', 'Read the file first', and 'unchecked AC' or '[ ]'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS4_TMP=$(mktemp)
+awk '/^## Persistence-First Protocol$/,/^## Report Persistence Contract$/' "$REPO_DIR/agents/ac-evaluator.md" > "$SS4_TMP"
+SS4_RESUMPTION=$(count_matches 'resumption mode' "$SS4_TMP")
+SS4_READFIRST=$(count_matches 'Read the file first' "$SS4_TMP")
+SS4_UNCHECKED=$(count_matches 'unchecked AC|\[ \]' "$SS4_TMP")
+rm -f "$SS4_TMP"
+if [ "${SS4_RESUMPTION:-0}" -ge 1 ] && [ "${SS4_READFIRST:-0}" -ge 1 ] && [ "${SS4_UNCHECKED:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-4: Persistence-First Protocol has resumption mode + Read the file first + unchecked AC/[ ]"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-4: resumption=$SS4_RESUMPTION (need >=1), readfirst=$SS4_READFIRST (need >=1), unchecked=$SS4_UNCHECKED (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-5 (AC-5): Report Persistence Contract has
+# 'MUST NOT re-invoke', 'solely to persist', and a sentence with both
+# 'IN_PROGRESS' and 'permitted'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS5_TMP=$(mktemp)
+awk '/^## Report Persistence Contract$/,/^## Context Conservation Protocol$/' "$REPO_DIR/agents/ac-evaluator.md" > "$SS5_TMP"
+SS5_NOINVOKE=$(count_matches 'MUST NOT re-invoke' "$SS5_TMP")
+SS5_SOLELY=$(count_matches 'solely to persist' "$SS5_TMP")
+SS5_PERMITTED=$(count_matches 'IN_PROGRESS.*permitted|permitted.*IN_PROGRESS' "$SS5_TMP")
+rm -f "$SS5_TMP"
+if [ "${SS5_NOINVOKE:-0}" -ge 1 ] && [ "${SS5_SOLELY:-0}" -ge 1 ] && [ "${SS5_PERMITTED:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-5: Report Persistence Contract has MUST NOT re-invoke + solely to persist + IN_PROGRESS+permitted"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-5: noinvoke=$SS5_NOINVOKE (need >=1), solely=$SS5_SOLELY (need >=1), permitted=$SS5_PERMITTED (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# Step-16 simulator — exercises the same branching logic as Step 16 branch (ii)
+# without requiring a real LLM invocation.
+#
+# Env vars consumed:
+#   MOCK_EVALUATOR    — path to a fixture script to use as the evaluator.
+#   EVAL_REPORT_PATH  — path where the mock writes its report.
+#   COUNTER_FILE      — path to the call-count file managed by the mock.
+#
+# Returns 0 when the recovery path produces a terminal verdict.
+# Returns 1 with a [CONTRACT-VIOLATION] message when recovery does not
+# produce a terminal verdict (double IN_PROGRESS or missing file).
+# Never makes more than 2 evaluator calls total.
+# ---------------------------------------------------------------------------
+simulate_step16() {
+  local mock="$MOCK_EVALUATOR"
+  local report="$EVAL_REPORT_PATH"
+
+  # --- Round 1 invocation ---
+  local output
+  output=$(bash "$mock")
+
+  if [ -n "$output" ]; then
+    # Output non-empty: path (iv) — terminal, no recovery needed.
+    echo "OK: terminal"
+    return 0
+  fi
+
+  # Output empty — check for IN_PROGRESS file.
+  if [ ! -f "$report" ]; then
+    echo "[CONTRACT-VIOLATION] ac-evaluator Output was empty and no report was persisted; treating as FAIL-CRITICAL"
+    return 1
+  fi
+
+  local first_status
+  first_status=$(grep -m1 '^## Status:' "$report" 2>/dev/null || true)
+
+  if [ "$first_status" != "## Status: IN_PROGRESS" ]; then
+    # File exists but status is already terminal on path (i) edge — treat as
+    # contract violation (unexpected state for this simulator path).
+    echo "[CONTRACT-VIOLATION] unexpected file status after empty output: $first_status"
+    return 1
+  fi
+
+  # --- IN_PROGRESS detected: single-shot recovery (branch ii) ---
+  # Invoke the mock ONCE more. Do NOT loop.
+  local recovery_output
+  recovery_output=$(bash "$mock")
+
+  # Re-inspect the file after recovery.
+  if [ ! -f "$report" ]; then
+    echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
+    return 1
+  fi
+
+  local recovery_status
+  recovery_status=$(grep -m1 '^## Status:' "$report" 2>/dev/null || true)
+
+  case "$recovery_status" in
+    "## Status: PASS"|"## Status: FAIL"|"## Status: FAIL-CRITICAL"|"## Status: PASS-WITH-CAVEATS")
+      echo "OK: terminal"
+      return 0
+      ;;
+    *)
+      echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
+      return 1
+      ;;
+  esac
+}
+
+# CT-MODE-SINGLESHOT-6 (AC-6): terminal recovery smoke
+# Uses mock-ac-evaluator-second-call-terminal.sh — first call writes IN_PROGRESS
+# (empty stdout), second call writes PASS (non-empty stdout).
+# Asserts: counter == 2, final ## Status: is terminal, simulator exits 0,
+# no [CONTRACT-VIOLATION] in output.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS6_DIR=$(mktemp -d)
+trap 'rm -rf "$SS6_DIR"' EXIT
+SS6_COUNTER="$SS6_DIR/counter.txt"
+SS6_REPORT="$SS6_DIR/eval-round-1.md"
+printf '0\n' > "$SS6_COUNTER"
+export MOCK_EVALUATOR="$SCRIPT_DIR/fixtures/mock-ac-evaluator-second-call-terminal.sh"
+export EVAL_REPORT_PATH="$SS6_REPORT"
+export COUNTER_FILE="$SS6_COUNTER"
+set +e
+SS6_OUTPUT=$(simulate_step16 2>&1)
+SS6_EXIT=$?
+set -e
+SS6_COUNT=$(cat "$SS6_COUNTER" 2>/dev/null || echo 0)
+SS6_FINAL_STATUS=$(grep -m1 '^## Status:' "$SS6_REPORT" 2>/dev/null || echo "")
+SS6_CONTRACT_VIOLATION=$(echo "$SS6_OUTPUT" | count_matches '\[CONTRACT-VIOLATION\]')
+if [ "$SS6_EXIT" -eq 0 ] && \
+   [ "$SS6_COUNT" -eq 2 ] && \
+   echo "$SS6_FINAL_STATUS" | grep -qE '^## Status: (PASS|FAIL|FAIL-CRITICAL|PASS-WITH-CAVEATS)$' && \
+   [ "$SS6_CONTRACT_VIOLATION" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-6: recovery smoke — 2 invocations, terminal status='$SS6_FINAL_STATUS', no CONTRACT-VIOLATION"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-6: exit=$SS6_EXIT count=$SS6_COUNT status='$SS6_FINAL_STATUS' contract-violations=$SS6_CONTRACT_VIOLATION output='$SS6_OUTPUT'" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$SS6_DIR"
+trap - EXIT
+
+# CT-MODE-SINGLESHOT-7 (AC-7): double IN_PROGRESS halts after exactly 2 calls
+# Uses mock-ac-evaluator-always-in-progress.sh — EVERY call writes IN_PROGRESS
+# and returns empty stdout. Asserts: counter == 2 (NOT 3), output contains
+# [CONTRACT-VIOLATION], simulator exits 1.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS7_DIR=$(mktemp -d)
+trap 'rm -rf "$SS7_DIR"' EXIT
+SS7_COUNTER="$SS7_DIR/counter.txt"
+SS7_REPORT="$SS7_DIR/eval-round-1.md"
+printf '0\n' > "$SS7_COUNTER"
+export MOCK_EVALUATOR="$SCRIPT_DIR/fixtures/mock-ac-evaluator-always-in-progress.sh"
+export EVAL_REPORT_PATH="$SS7_REPORT"
+export COUNTER_FILE="$SS7_COUNTER"
+set +e
+SS7_OUTPUT=$(simulate_step16 2>&1)
+SS7_EXIT=$?
+set -e
+SS7_COUNT=$(cat "$SS7_COUNTER" 2>/dev/null || echo 0)
+SS7_CONTRACT_VIOLATION=$(echo "$SS7_OUTPUT" | count_matches '\[CONTRACT-VIOLATION\]')
+if [ "$SS7_EXIT" -ne 0 ] && \
+   [ "$SS7_COUNT" -eq 2 ] && \
+   [ "$SS7_CONTRACT_VIOLATION" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-7: double-IN_PROGRESS halt — 2 invocations, CONTRACT-VIOLATION emitted, exit 1 (no 3rd call)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-7: exit=$SS7_EXIT count=$SS7_COUNT (need 2) violations=$SS7_CONTRACT_VIOLATION output='$SS7_OUTPUT'" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$SS7_DIR"
+trap - EXIT
+
+echo ""
+
 # --- Summary ---
 print_summary

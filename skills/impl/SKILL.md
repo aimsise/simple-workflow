@@ -312,18 +312,57 @@ State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never
    ```
 
 16. AC Gate:
-    - **Output envelope check (precedence over Status parsing) — 3-way decision**:
+    - **Output envelope check (precedence over Status parsing) — 4-way decision**:
       (i) **Output empty AND no file at expected path** => print
           `[CONTRACT-VIOLATION] ac-evaluator Output was empty and no report
           was persisted; treating as FAIL-CRITICAL` and stop. Do NOT
           re-invoke ac-evaluator to persist.
       (ii) **Output empty AND file exists at expected path AND its first
-          `## Status:` line matches `^## Status: IN_PROGRESS$`** => print
-          `[IN_PROGRESS] ac-evaluator persisted partial state at <path>;
-          treating as FAIL-CRITICAL until T-3 recovery lands` and stop.
-          The file is a Persistence-First Protocol partial-state marker
-          (see agents/ac-evaluator.md `## Persistence-First Protocol`).
-          Do NOT re-invoke ac-evaluator to persist.
+          `## Status:` line matches `^## Status: IN_PROGRESS$`** =>
+          Single-shot recovery branch (exactly 1 recovery attempt per round
+          per file):
+
+          Print `[IN_PROGRESS] ac-evaluator persisted partial state at
+          <path>; attempting single-shot recovery`.
+
+          Invoke `ac-evaluator` exactly once more via the Agent tool using
+          the resumption prompt template below. This is a single-shot
+          recovery — do NOT retry more than once, and do NOT use a loop.
+
+          ```
+          # RECOVERY INVOCATION — substitute all {brace} placeholders before sending.
+          # This is NOT the original evaluator call. A partial state file already
+          # exists at the path below. Read it and resume from unchecked ACs.
+          IN_PROGRESS file path: {eval-report-path}
+          Read the IN_PROGRESS file first; resume from the first AC whose
+          checkbox is `[ ]` (unchecked); preserve already-recorded verdicts
+          for `[x]` ACs — do not re-verify them.
+          Acceptance Criteria (fixed rubric — same as original invocation):
+          {acceptance-criteria}
+          Save the report to: {eval-report-path}
+          The Acceptance Criteria text above is the fixed rubric — do NOT
+          re-derive it from the plan. Merge new verdicts with already-recorded
+          `[x]` lines; do not overwrite them.
+          ```
+
+          After the recovery invocation, re-inspect the Output envelope and
+          the on-disk file:
+          - Recovery Output non-empty AND first `## Status:` in file is a
+            terminal status (PASS, FAIL, FAIL-CRITICAL, PASS-WITH-CAVEATS)
+            => proceed to Status parsing (path iv).
+          - Recovery Output empty OR first `## Status:` in file is still
+            `IN_PROGRESS` => emit `[CONTRACT-VIOLATION] ac-evaluator
+            recovery invocation did not produce a terminal verdict; treating
+            as FAIL-CRITICAL` and stop. Do NOT invoke a third time.
+
+          **T-2 partition interaction**: when T-2's partition branch is
+          active, each partition has its own IN_PROGRESS file
+          (`eval-round-{n}-part-{i}.md`). T-3 recovery applies to each
+          partition independently — at most 1 recovery invocation per
+          partition per round. Worst-case for a 2-partition plan: 4 total
+          invocations (2 partitions × 2 invocations each). The single-shot
+          cap is per file, not per round globally.
+
       (iii) **Output begins with `ERROR-`** (e.g. `ERROR-WRITE-FAILED`) =>
           print `[CONTRACT-VIOLATION] ac-evaluator returned ERROR-prefixed
           Output; treating as FAIL-CRITICAL` and stop.
