@@ -1362,6 +1362,22 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# P-12: at least 1 occurrence of "Post-/plan2doc Checklist" in scout
+# Diff: New assertion. Guards the static-prompt strengthening introduced
+#        alongside scout-checkpoint-guard.sh. Mirrors P-11 in spirit:
+#        P-11 catches deletion of the RE-ANCHOR blockquote; P-12 catches
+#        deletion of the explicit post-/plan2doc checklist that lists
+#        Steps 8 / 8a / 9 / 10 as mandatory.
+COUNT=$(grep -c "Post-/plan2doc Checklist" "$REPO_DIR/skills/scout/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} P-12: scout Post-/plan2doc Checklist count ($COUNT found, expected >= 1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} P-12: scout Post-/plan2doc Checklist count ($COUNT found, expected >= 1)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 echo ""
 
 # =============================================================================
