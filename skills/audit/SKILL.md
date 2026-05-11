@@ -226,6 +226,23 @@ Then, print exactly the following structured block at the end of your output (th
 **Summary**: <one-line aggregated summary across all spawned agents>
 ```
 
+### 4-bis. MANDATORY: Handoff back to caller
+
+The structured block is INTERMEDIATE — input to `/impl` Step 18, not a turn-terminal artifact. When a `phase-state.yaml` exists under `.simple-workflow/backlog/active/*/`, the caller is `simple-workflow:impl` and the audit must hand control back rather than ending the turn.
+
+**Detection rule (hardcoded):** the presence of `phase-state.yaml` under `.simple-workflow/backlog/active/` is the trigger. `/audit` deliberately does not iterate a caller registry — when a future skill (e.g. `/refactor`) is added as a caller, expand this rule explicitly at that point.
+
+**MUST when phase-state.yaml is present:**
+
+- **Do NOT end your turn** after emitting the structured block above. The block is an input to `/impl`, not the final user-facing result.
+- **Read `phase-state.yaml`** for the active ticket — `phases.impl.next_action` records the calling skill's resume target.
+- **Continue executing** `phases.impl.next_action` immediately. For `/impl` callers, that means proceeding through Step 18 → Phase 3 (Steps 19-21) → Step 22 (`## [SW-CHECKPOINT]` emit) without summarizing the audit result back to the user.
+- The Phase 3 `## [SW-CHECKPOINT]` emit is what marks the end of the `/impl` invocation; until then, the turn is mid-orchestration.
+
+**Standalone fallback** (no `phase-state.yaml` under `.simple-workflow/backlog/active/`): the structured block above IS the terminal artifact. End the turn after Step 4a persistence runs. This covers manual `/audit` invocations and reviews of branches that have no active ticket directory.
+
+This handoff is enforced by `hooks/impl-checkpoint-guard.sh` (Stop hook). When the agent emits the structured block but ends the turn before `## [SW-CHECKPOINT]` lands, the hook returns `decision:"block"` for up to 3 consecutive attempts (kill switch: `SW_IMPL_CHECKPOINT_MODE`).
+
 ### 4a. Persist Aggregated Result (when ticket-dir is set)
 
 If an active ticket directory was detected in Step 1 (`ticket-dir`):

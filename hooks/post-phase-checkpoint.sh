@@ -151,13 +151,15 @@ _pphc_read_ticket_id() {
       return 0
     fi
   fi
-  if _pphc_have python3; then
+  # Tier 2: python3 + PyYAML. macOS ships /usr/bin/python3 WITHOUT PyYAML,
+  # so we must gate on PyYAML availability up front — otherwise the
+  # python3 spawn cost is paid every PostToolUse only to ImportError its
+  # way to the awk fallback. The gate matches the same pattern applied to
+  # parse_phase_status / parse_ticket_statuses in v6.4.2.
+  if _pphc_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
     out=$(python3 - "$file" <<'PY' 2>/dev/null || true
 import sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(1)
+import yaml  # gate already validated PyYAML availability
 with open(sys.argv[1], 'r', encoding='utf-8') as fh:
     doc = yaml.safe_load(fh) or {}
 if isinstance(doc, dict):
@@ -294,6 +296,23 @@ PY
   # so awk walks blocks delimited by the leading `- ` marker and checks
   # whether ticket_id / phase / boundary all match. The full array is
   # examined; no positional cap is applied.
+  #
+  # POSIX awk only — does NOT use the gawk-specific 3-arg `match(s, re, arr)`
+  # form, so this works on macOS's stock BSD awk as well as gawk. Capture-
+  # group extraction is replaced by `sub()` strip-by-prefix on a local
+  # copy of the line. Each `key:` regex is matched anywhere on the line
+  # (canonical YAML emits one such key per line inside an array element,
+  # so the match remains unambiguous).
+  #
+  # NOTE on `sub(/^.*key:.../, "", val)` semantics: this strips up to the
+  # LAST occurrence of `key:` on the line (regex-greedy), which differs
+  # from gawk's `match()` that returned the FIRST match. For the canonical
+  # writer-emitted shape (`autopilot-state.yaml` / `phase-state.yaml` only
+  # ever carry one such key per line) the two are equivalent. A
+  # hand-edited or polluted state file with multiple `ticket_id:` /
+  # `phase:` / `boundary:` substrings on one line would extract a
+  # different value than the gawk version did — out of scope for the
+  # canonical schema this hook supports.
   awk -v tid="$tid" -v ph="$ph" -v bnd="$bnd" '
     BEGIN { in_rm = 0; cur_tid = ""; cur_ph = ""; cur_bnd = "" }
     /^runtime_metrics:[[:space:]]*$/ { in_rm = 1; next }
@@ -308,16 +327,26 @@ PY
       }
       cur_tid = ""; cur_ph = ""; cur_bnd = ""
     }
-    in_rm {
-      if (match($0, /ticket_id:[[:space:]]*([^[:space:]]+)/, m)) {
-        v = m[1]; gsub(/^"|"$|^'\''|'\''$/, "", v); cur_tid = v
-      }
-      if (match($0, /phase:[[:space:]]*([^[:space:]]+)/, m)) {
-        v = m[1]; gsub(/^"|"$|^'\''|'\''$/, "", v); cur_ph = v
-      }
-      if (match($0, /boundary:[[:space:]]*([^[:space:]]+)/, m)) {
-        v = m[1]; gsub(/^"|"$|^'\''|'\''$/, "", v); cur_bnd = v
-      }
+    in_rm && /ticket_id:[[:space:]]/ {
+      val = $0
+      sub(/^.*ticket_id:[[:space:]]*/, "", val)
+      sub(/[[:space:]].*$/, "", val)
+      gsub(/^"|"$|^'\''|'\''$/, "", val)
+      cur_tid = val
+    }
+    in_rm && /phase:[[:space:]]/ {
+      val = $0
+      sub(/^.*phase:[[:space:]]*/, "", val)
+      sub(/[[:space:]].*$/, "", val)
+      gsub(/^"|"$|^'\''|'\''$/, "", val)
+      cur_ph = val
+    }
+    in_rm && /boundary:[[:space:]]/ {
+      val = $0
+      sub(/^.*boundary:[[:space:]]*/, "", val)
+      sub(/[[:space:]].*$/, "", val)
+      gsub(/^"|"$|^'\''|'\''$/, "", val)
+      cur_bnd = val
     }
     END {
       if (cur_tid == tid && cur_ph == ph && cur_bnd == bnd) {

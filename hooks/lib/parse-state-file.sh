@@ -34,6 +34,19 @@
 #         3. .simple-workflow/backlog/briefs/done/<parent_slug>/autopilot-state.yaml
 #       Prints the absolute path of the first match to stdout, or exits 1.
 #
+#   find_phase_state_file [start_dir]
+#     - Depth-agnostic search for the first
+#       `.simple-workflow/backlog/active/*/phase-state.yaml` under start_dir
+#       (default: the repo root resolved from $PWD). Prints the absolute path
+#       of the first match (sorted) to stdout, or returns 1 when no match.
+#       Thin wrapper over `find` — does not duplicate yaml-parsing logic.
+#
+#   parse_impl_next_action <file_path>
+#     - Reads `phases.impl.next_action` from the given phase-state.yaml-style
+#       YAML document. Prints the value to stdout (empty when null / unset).
+#       Thin wrapper that re-uses the same three-tier strategy as
+#       `parse_phase_status`. Exits non-zero only on file-not-found.
+#
 # Implementation strategy: prefer `yq` (mikefarah v4), fall back to
 # `python3 + PyYAML`, and finally to a portable `awk` shell parser. This
 # matches the graceful-degrade contract documented in CLAUDE.md
@@ -126,13 +139,15 @@ parse_phase_status() {
     return 0
   fi
 
-  if _psf_have python3; then
+  # Tier 2: python3 + PyYAML. macOS ships /usr/bin/python3 WITHOUT PyYAML,
+  # so we must gate on PyYAML availability up front — otherwise a fresh
+  # macOS without PyYAML would short-circuit here on ImportError and
+  # never reach the awk tier (a fail-CLOSED silent-empty result against
+  # the failure mode the consumers depend on detecting).
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$file" "$phase" <<'PY' 2>/dev/null || return 1
 import sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(1)
+import yaml
 path, phase = sys.argv[1], sys.argv[2]
 with open(path, "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
@@ -145,22 +160,31 @@ PY
   fi
 
   # awk fallback: locate `phases:` then the indented `<phase>:` then the
-  # `status:` underneath. Works for the canonical phase-state.yaml shape:
-  #   phases:
-  #     <name>:
-  #       status: <value>
+  # `status:` underneath. POSIX awk only — does NOT use the gawk-specific
+  # 3-arg `match(s, re, arr)` form, so this works on macOS's stock BSD
+  # awk as well as gawk. Capture-group extraction is replaced by `sub()`
+  # strip-by-prefix on a local copy of the line. Phase keys are anchored
+  # at exactly 2 spaces and `status:` at exactly 4 spaces (canonical yq
+  # output indent) so deeper-nested keys like `      next_action:` cannot
+  # falsely promote to phase status.
   awk -v phase="$phase" '
     BEGIN { in_phases = 0; in_target = 0 }
     /^phases:[[:space:]]*$/ { in_phases = 1; next }
     in_phases && /^[^[:space:]]/ { in_phases = 0; in_target = 0 }
-    in_phases && match($0, /^[[:space:]]+([A-Za-z0-9_-]+):[[:space:]]*$/, m) {
-      in_target = (m[1] == phase) ? 1 : 0
+    in_phases && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+      name = $0
+      sub(/^  /, "", name)
+      sub(/:[[:space:]]*$/, "", name)
+      in_target = (name == phase) ? 1 : 0
       next
     }
-    in_target && match($0, /^[[:space:]]+status:[[:space:]]*(.*)$/, m) {
-      val = m[1]
+    in_target && /^    status:[[:space:]]*/ {
+      val = $0
+      sub(/^    status:[[:space:]]*/, "", val)
       gsub(/^"|"$/, "", val)
       gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      if (val == "null" || val == "~") val = ""
       print val
       exit 0
     }
@@ -183,13 +207,13 @@ parse_ticket_statuses() {
     return 0
   fi
 
-  if _psf_have python3; then
+  # Tier 2: python3 + PyYAML. Same gating rationale as parse_phase_status:
+  # without the up-front `import yaml` probe a stock macOS without PyYAML
+  # would short-circuit here on ImportError and skip the awk tier.
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$file" <<'PY' 2>/dev/null
 import sys
-try:
-    import yaml
-except ImportError:
-    sys.exit(1)
+import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
 for entry in (doc.get("tickets") or []):
@@ -199,17 +223,27 @@ PY
     return 0
   fi
 
-  # awk fallback: walk the `tickets:` list looking for top-level `status:`
-  # values inside each `- ` element. Inline-flow `{status: pending}` maps
-  # are not produced by autopilot writers, so the line-oriented parser is
-  # sufficient for the canonical schema.
+  # awk fallback: walk the `tickets:` list looking for `status:` values
+  # inside each `- ` element. POSIX awk only — uses `sub()` strip-by-prefix
+  # instead of the gawk-specific 3-arg `match(s, re, arr)` so macOS's
+  # stock BSD awk handles this tier. `status:` is anchored at exactly 4
+  # spaces (canonical yq output for `tickets[].status`: the `- key:` line
+  # sits at 2-space indent, sibling keys at 4-space). Inline-flow
+  # `{status: pending}` maps are not produced by autopilot writers, so
+  # the line-oriented parser is sufficient for the canonical schema.
   awk '
     BEGIN { in_tickets = 0; in_item = 0 }
     /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
     in_tickets && /^[^[:space:]-]/ { in_tickets = 0; in_item = 0 }
     in_tickets && /^[[:space:]]*-[[:space:]]/ { in_item = 1 }
-    in_tickets && in_item && match($0, /status:[[:space:]]*([A-Za-z0-9_-]+)/, m) {
-      print m[1]
+    in_tickets && in_item && /^    status:[[:space:]]*/ {
+      val = $0
+      sub(/^    status:[[:space:]]*/, "", val)
+      gsub(/^"|"$/, "", val)
+      gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      if (val == "null" || val == "~") val = ""
+      print val
       in_item = 0
     }
   ' "$file"
@@ -246,7 +280,125 @@ find_state_file() {
   return 1
 }
 
-# Export the four functions so children that re-enter bash via `bash -c`
+# ---------------------------------------------------------------------------
+# Public function: find_phase_state_file
+# Usage: find_phase_state_file [start_dir]
+#
+# Thin wrapper over `find`. Located here (alongside `find_state_file` for
+# autopilot-state.yaml) to keep all backlog state-file lookups in one
+# helper, even though phase-state.yaml lives under
+# `.simple-workflow/backlog/active/<ticket-dir>/` rather than briefs/.
+# ---------------------------------------------------------------------------
+find_phase_state_file() {
+  local start_dir root
+  start_dir="${1:-$PWD}"
+  root="$(_psf_repo_root "$start_dir")"
+  [ -d "$root/.simple-workflow/backlog/active" ] || return 1
+
+  # Pick the most-recently-modified candidate as a proxy for "the active
+  # ticket". Lex-first selection (the earlier behaviour) misroutes the
+  # Stop hook to ticket 001 when the user is actually working on ticket
+  # 002 — bash's `-nt` test is portable across BSD and GNU find. Ties
+  # within the same mtime resolve to the order produced by `find`.
+  local match=""
+  while IFS= read -r _f; do
+    [ -f "$_f" ] || continue
+    if [ -z "$match" ] || [ "$_f" -nt "$match" ]; then
+      match="$_f"
+    fi
+  done < <(find "$root/.simple-workflow/backlog/active" -type f -name 'phase-state.yaml' 2>/dev/null)
+  unset _f
+
+  if [ -n "$match" ]; then
+    local dir base
+    dir="$(cd "$(dirname "$match")" && pwd -P)"
+    base="$(basename "$match")"
+    printf '%s/%s\n' "$dir" "$base"
+    return 0
+  fi
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Public function: parse_impl_next_action
+# Usage: parse_impl_next_action <file_path>
+#
+# Thin wrapper that reads `phases.impl.next_action` via the same three-tier
+# fallback as `parse_phase_status`. yq returns the literal string "null"
+# when the key is unset; that is normalised to an empty string here so
+# callers can do a single empty-check against either.
+# ---------------------------------------------------------------------------
+parse_impl_next_action() {
+  local file="$1"
+  if [ -z "$file" ]; then
+    return 2
+  fi
+  if [ ! -f "$file" ]; then
+    return 1
+  fi
+
+  if _psf_have yq; then
+    local out
+    out="$(yq -r '.phases.impl.next_action // ""' "$file" 2>/dev/null || true)"
+    [ "$out" = "null" ] && out=""
+    printf '%s\n' "$out"
+    return 0
+  fi
+
+  # Tier 2: python3 + PyYAML. macOS ships /usr/bin/python3 WITHOUT PyYAML,
+  # so we must gate on PyYAML availability up front — otherwise a fresh
+  # macOS without PyYAML would short-circuit here on ImportError and
+  # never reach the awk tier (a fail-closed silent-empty result against
+  # the failure mode this hook is supposed to detect).
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$file" <<'PY' 2>/dev/null || return 1
+import sys
+import yaml
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+phases = doc.get("phases") or {}
+impl = phases.get("impl") or {}
+val = impl.get("next_action", "")
+if val is None:
+    val = ""
+print(val)
+PY
+    return 0
+  fi
+
+  # awk fallback: walk into `phases:` -> `impl:` -> `next_action:` and emit
+  # the value. POSIX awk only — does NOT use the gawk-specific 3-arg
+  # `match(s, re, arr)` form, so this works on macOS's stock BSD awk as
+  # well as gawk. Capture-group extraction is replaced by `sub()`
+  # strip-by-prefix on a local copy of the line. The phase-key matcher is
+  # anchored at exactly 2 spaces (canonical yq output indent) so it does
+  # not falsely match deeper nested keys like `    artifacts:`.
+  awk '
+    BEGIN { in_phases = 0; in_impl = 0 }
+    /^phases:[[:space:]]*$/ { in_phases = 1; next }
+    in_phases && /^[^[:space:]]/ { in_phases = 0; in_impl = 0 }
+    in_phases && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+      name = $0
+      sub(/^  /, "", name)
+      sub(/:[[:space:]]*$/, "", name)
+      in_impl = (name == "impl") ? 1 : 0
+      next
+    }
+    in_impl && /^    next_action:[[:space:]]*/ {
+      val = $0
+      sub(/^    next_action:[[:space:]]*/, "", val)
+      gsub(/^"|"$/, "", val)
+      gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      if (val == "null" || val == "~") val = ""
+      print val
+      exit 0
+    }
+  ' "$file"
+  return 0
+}
+
+# Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_phase_state_file parse_impl_next_action 2>/dev/null || true

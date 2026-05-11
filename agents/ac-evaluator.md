@@ -220,10 +220,39 @@ When invoking a test runner (`bun test`, `npm test`, `pytest`, `cargo test`, etc
 - **PASS-WITH-CAVEATS**: All AC pass based on code inspection AND no [MEDIUM]+ issues, BUT automated test/lint verification was skipped due to unavailable runner. The Caveats field must list which verifications were skipped.
 - **FAIL**: One or more AC fail, OR [HIGH] issues exist
 - **FAIL-CRITICAL**: Any [CRITICAL] issue exists
+- **IN_PROGRESS**: pre-terminal on-disk marker only — written by the Persistence-First Protocol skeleton step (see below). MUST NEVER be returned in the `Status` field of the agent's return envelope. The orchestrator inspects this marker on disk when the `Output` envelope is empty.
 
 Save your detailed evaluation report to the file path specified by the caller. If no path is specified, save to `.simple-workflow/docs/eval-round/{topic}-eval-report.md` where {topic} is derived from the subject of the evaluation.
 
 You MUST NOT modify source code. Use Write only to save your evaluation report.
+
+## Persistence-First Protocol
+
+The natural execution order of this agent (verify ACs depth-first, then `Write` the report, then return) has produced empty `Output` envelopes on plans with 20+ ACs because the turn budget is exhausted before the `Write` step is reached. To eliminate this no-recovery cliff, you MUST follow the Persistence-First Protocol on every invocation:
+
+1. **Skeleton write before verification.** As your FIRST action, `Write` the report path with a top-of-file line `## Status: IN_PROGRESS` followed by an AC checklist (one `- [ ] AC-N: <description>` line per AC extracted from the plan). This MUST happen before invoking any Bash, Read, or Grep verification tool. The resulting file is a partial-state marker that the orchestrator can detect even if you terminate mid-verification.
+
+2. **Terminal rewrite before return.** After completing AC verification, rewrite the same file with final verdicts (`- [x] AC-N` or `- [ ] AC-N — FAILED: reason`) and replace the top-of-file `## Status: IN_PROGRESS` with the terminal `## Status: PASS`, `## Status: PASS-WITH-CAVEATS`, `## Status: FAIL`, or `## Status: FAIL-CRITICAL`. The terminal `## Status:` line MUST be the FIRST `## Status:` line in the file (the orchestrator inspects the first match).
+
+3. **Output path stability.** The `**Output**` field returned to the caller MUST be the same path written in step 1. Do not rename, move, or duplicate the file between the skeleton write and the terminal rewrite.
+
+4. **Resumption mode.** When invoked with an `## Status: IN_PROGRESS` file
+   already present at the target path, you are in resumption mode: Read the file first,
+   identify ACs already verdicted (lines starting with `- [x]`
+   or `- [ ]` followed by an AC ID), and resume verification from the first
+   unchecked AC. Rewrite the file with the merged verdicts before returning.
+
+Example (paraphrasing the IN_PROGRESS sentinel):
+
+```
+## Status: IN_PROGRESS
+
+- [ ] AC-1: <description copied from plan>
+- [ ] AC-2: <description copied from plan>
+...
+```
+
+This protocol is additive to the `## Report Persistence Contract` below — it does not relax any existing rule.
 
 ## Report Persistence Contract
 
@@ -233,7 +262,14 @@ This contract is load-bearing: the orchestrator relies on it to avoid redundant 
 - The save path MUST be the caller-specified path when provided. If the caller omits a path, you MUST save to `.simple-workflow/docs/eval-round/{topic}-eval-report.md` (derive `{topic}` from the subject of the evaluation).
 - The **Output** field in the return value MUST be non-empty and MUST contain the path that was actually written. An empty Output is a contract violation, not a signal for "caller should retry to persist".
 - If the Write call fails (permission denied, disk full, invalid path, etc.), you MUST return **Status**: FAIL-CRITICAL and **Output**: ERROR-WRITE-FAILED, with the underlying error surfaced in **Issues**. Never return an empty Output to signal "I did not save".
-- Callers MUST NOT re-invoke this agent solely to persist the report. Since the first call is contractually idempotent on persistence (it always writes before returning), a second invocation for save-only purposes is wasted work and a protocol violation. An empty Output is an agent failure, not a retryable state.
+- Callers MUST NOT re-invoke this agent solely to persist the report (i.e.,
+  with no IN_PROGRESS context). Since the first call is contractually
+  idempotent on persistence (it always writes before returning), a second
+  invocation for save-only purposes is wasted work and a protocol violation.
+  An empty Output is an agent failure, not a retryable state. A single
+  recovery invocation when the on-disk file shows `## Status: IN_PROGRESS` is permitted
+  and is a distinct call shape — the input is a partially-filled
+  report, not a duplicate request.
 
 Your Feedback field must contain specific, actionable instructions that a developer can follow to fix the issues. Vague feedback like "improve quality" is not acceptable.
 

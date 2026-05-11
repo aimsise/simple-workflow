@@ -313,6 +313,87 @@ else
   TESTS_PASSED=$((TESTS_PASSED + 1))
 fi
 
+# ---------------------------------------------------------------------------
+# Section 2-bis: tier-3 BSD awk regression for parse_phase_status /
+# parse_ticket_statuses. These functions previously used the gawk-only
+# 3-arg `match($0, regex, m)` form in their awk fallback, which silently
+# failed under macOS's stock /usr/bin/awk. The regression test forces
+# tier-3 by mocking _psf_have to disable yq + python3 tiers, then pins
+# `awk` resolution to /usr/bin/awk via PATH so any future re-introduction
+# of gawk-only syntax fails CI on macOS hosts.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- tier-3 BSD awk regression (parse_phase_status / parse_ticket_statuses) ---"
+
+# Save and override _psf_have so the yq and python3 tiers report unavailable
+# even when the host has them installed.
+_psf_have_saved="$(declare -f _psf_have)"
+_psf_have() {
+  case "$1" in
+    yq|python3) return 1 ;;
+    *) command -v "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
+# Save PATH and restrict to /usr/bin:/bin so `awk` resolves to BSD awk on
+# macOS (and to whichever awk is at /usr/bin on Linux — both lack gawk's
+# 3-arg match()).
+PATH_SAVED="$PATH"
+PATH="/usr/bin:/bin"
+
+# 2-bis.1: parse_phase_status — completed (BSD awk).
+out="$(parse_phase_status "$PSF_TMP/phase-state.yaml" scout)"
+assert_eq "tier-3 BSD awk: parse_phase_status scout -> completed" "completed" "$out"
+
+# 2-bis.2: parse_phase_status — in_progress (BSD awk).
+out="$(parse_phase_status "$PSF_TMP/phase-state.yaml" impl)"
+assert_eq "tier-3 BSD awk: parse_phase_status impl -> in_progress" "in_progress" "$out"
+
+# 2-bis.3: parse_phase_status — pending (BSD awk).
+out="$(parse_phase_status "$PSF_TMP/phase-state.yaml" ship)"
+assert_eq "tier-3 BSD awk: parse_phase_status ship -> pending" "pending" "$out"
+
+# 2-bis.4: parse_phase_status — missing phase (BSD awk).
+out="$(parse_phase_status "$PSF_TMP/phase-state.yaml" nonexistent)"
+assert_eq "tier-3 BSD awk: parse_phase_status nonexistent -> empty" "" "$out"
+
+# 2-bis.5: parse_ticket_statuses — three statuses in order (BSD awk).
+expected="completed
+in_progress
+pending"
+actual="$(parse_ticket_statuses \
+  "$PSF_TMP/.simple-workflow/backlog/briefs/active/example-slug/autopilot-state.yaml")"
+assert_eq "tier-3 BSD awk: parse_ticket_statuses lists 3 statuses in order" "$expected" "$actual"
+
+# 2-bis.6: parse_ticket_statuses — single failed ticket (BSD awk).
+actual="$(parse_ticket_statuses \
+  "$PSF_TMP/.simple-workflow/backlog/product_backlog/legacy-slug/autopilot-state.yaml")"
+assert_eq "tier-3 BSD awk: parse_ticket_statuses single ticket -> failed" "failed" "$actual"
+
+# 2-bis.7: parse_impl_next_action via tier-3 — gawk-free since v6.4.1.
+# A phase-state.yaml with phases.impl.next_action exercises the same awk
+# tier and would catch any future re-introduction of gawk-only syntax.
+cat >"$PSF_TMP/phase-state-with-next-action.yaml" <<'YAML'
+version: 1
+phases:
+  scout:
+    status: completed
+  impl:
+    status: in_progress
+    next_action: read-and-resume-impl-step-18
+  ship:
+    status: pending
+YAML
+out="$(parse_impl_next_action "$PSF_TMP/phase-state-with-next-action.yaml")"
+assert_eq "tier-3 BSD awk: parse_impl_next_action -> read-and-resume-impl-step-18" \
+  "read-and-resume-impl-step-18" "$out"
+
+# Restore PATH and _psf_have so subsequent sections see the host environment.
+PATH="$PATH_SAVED"
+unset -f _psf_have
+eval "$_psf_have_saved"
+unset _psf_have_saved PATH_SAVED
+
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -444,13 +525,17 @@ assert_exit_zero "AC-7: jsonl_tail_most_recent_skill on empty fixture exits 0" "
 assert_eq "AC-7: most recent skill on 3-skill fixture is simple-workflow:ship" "simple-workflow:ship" "$jta_ac7_ship"
 assert_eq "AC-7: most recent skill on empty fixture is empty" "" "$jta_ac7_empty"
 
-# Negative AC-1: exactly 4 new public functions after sourcing (none besides the declared 4)
+# Negative AC-1: exactly 5 new public functions after sourcing — the four
+# declared in v6.2.1 (jsonl_tail_skill_uses, jsonl_tail_agent_uses,
+# jsonl_tail_tool_use_count, jsonl_tail_most_recent_skill) plus
+# transcript_contains_skill_invocation added in v6.4.0 for
+# impl-checkpoint-guard.sh's 5-AND condition (e).
 # Use jta_before_source_funcs (captured before sourcing the lib above) and compare
 # against what the current shell declares now (after sourcing the lib).
 jta_after_source_funcs="$(declare -F | awk '{print $3}' | sort -u)"
 jta_new_public_funcs="$(comm -13 <(printf '%s\n' "$jta_before_source_funcs") <(printf '%s\n' "$jta_after_source_funcs") | grep -vE '^_' || true)"
 jta_new_public_count="$(printf '%s\n' "$jta_new_public_funcs" | grep -c '[^[:space:]]' || true)"
-assert_eq "Negative-AC-1: exactly 4 new public functions (no _ prefix)" "4" "$jta_new_public_count"
+assert_eq "Negative-AC-1: exactly 5 new public functions (no _ prefix)" "5" "$jta_new_public_count"
 
 # Negative AC-2: no tail -n with variable expansion in lib
 # grep returns 1 on no match (the success path here), which would trip
@@ -468,6 +553,211 @@ assert_eq "Negative-AC-3: no unbounded JSONL read paths in lib" "0" "$neg_ac3_co
 
 # Negative AC-4: no skills/ or agents/ path references in lib
 assert_eq "Negative-AC-4: no skills/ or agents/ path references in lib" "0" "$neg_ac4_count"
+
+# ---------------------------------------------------------------------------
+# Cross-session staleness window (5000-line tail) for
+# transcript_contains_skill_invocation. The window is wider than the
+# 500-line literal used by the other helpers because the /impl Skill
+# invocation that triggered an /audit handoff can be hundreds-to-thousands
+# of records back in long autopilot runs. Generate large transcripts
+# inline via awk (~10 ms total) instead of checking 2 MB of fixtures
+# into the repo. `yes | head` is avoided here because SIGPIPE under
+# `set -o pipefail` would abort the test script.
+# ---------------------------------------------------------------------------
+JTA_NOISE='{"type":"assistant","uuid":"noise","message":{"role":"assistant","content":[{"type":"text","text":"noise"}]}}'
+JTA_SKILL_IMPL='{"type":"assistant","uuid":"impl-skill","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-impl","name":"Skill","input":{"skill":"simple-workflow:impl","args":""}}]}}'
+
+JTA_F5_TMP="$(mktemp)"
+JTA_F6_TMP="$(mktemp)"
+JTA_TRACE_X="$(mktemp)"
+# shellcheck disable=SC2064
+trap "rm -rf '$PSF_TMP' '$NEG_TMP' '$JTA_TRACE_TMP' '$JTA_F5_TMP' '$JTA_F6_TMP' '$JTA_TRACE_X'" EXIT
+
+# Within-window fixture: 4900-line transcript with Skill(impl) at line 4500.
+# Entire file fits inside the 5000-line tail window — detection MUST succeed.
+awk -v n=4499 -v line="$JTA_NOISE" 'BEGIN { for (i=0; i<n; i++) print line }' > "$JTA_F5_TMP"
+printf '%s\n' "$JTA_SKILL_IMPL" >> "$JTA_F5_TMP"
+awk -v n=400 -v line="$JTA_NOISE" 'BEGIN { for (i=0; i<n; i++) print line }' >> "$JTA_F5_TMP"
+
+# Overflow fixture: 6000-line transcript with Skill(impl) at line 100.
+# tail -n 5000 covers lines 1001-6000, so the Skill record at line 100 is
+# OUTSIDE the window — detection MUST fail (returns 1).
+awk -v n=99 -v line="$JTA_NOISE" 'BEGIN { for (i=0; i<n; i++) print line }' > "$JTA_F6_TMP"
+printf '%s\n' "$JTA_SKILL_IMPL" >> "$JTA_F6_TMP"
+awk -v n=5900 -v line="$JTA_NOISE" 'BEGIN { for (i=0; i<n; i++) print line }' >> "$JTA_F6_TMP"
+
+# AC-CS-1: within-window detection succeeds.
+set +e
+transcript_contains_skill_invocation "simple-workflow:impl" "$JTA_F5_TMP"
+jta_cs1_exit=$?
+set -e
+assert_exit_zero "AC-CS-1: transcript_contains_skill_invocation finds Skill(impl) in 4900-line transcript (within 5000 window)" "$jta_cs1_exit"
+
+# AC-CS-2: overflow detection fails (skill at line 100 is outside the
+# last-5000 window of a 6000-line transcript).
+set +e
+transcript_contains_skill_invocation "simple-workflow:impl" "$JTA_F6_TMP"
+jta_cs2_exit=$?
+set -e
+assert_exit_nonzero "AC-CS-2: transcript_contains_skill_invocation does NOT find Skill(impl) at line 100 of 6000-line transcript (outside 5000 window)" "$jta_cs2_exit"
+
+# AC-CS-3: bash -x trace shows tail -n 5000 (the new cross-session window),
+# distinct from the 500-line literal used by _jta_iter_tool_uses callers.
+bash -xc "source '$JTA_PATH' && transcript_contains_skill_invocation 'simple-workflow:impl' '$JTA_F5_TMP'" 2>"$JTA_TRACE_X" >/dev/null
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qE 'tail -n[[:space:]]+5000' "$JTA_TRACE_X"; then
+  echo -e "  ${GREEN}PASS${NC} AC-CS-3: bash -x trace contains 'tail -n 5000'"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-CS-3: bash -x trace does NOT contain 'tail -n 5000'"
+  echo -e "         (expected the new _JTA_CROSS_SESSION_TAIL constant in transcript_contains_skill_invocation)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AC-CS-4 (v6.4.3 / F-3'): tier-2 (python3 + json) regression. The previous
+# heredoc form `python3 - "$arg" <<'PY' ... PY` overrode python3's stdin
+# with the heredoc body, so `for line in sys.stdin` iterated the python
+# source itself and the tier always returned 1. v6.4.3 routes the source
+# through `python3 -c "$src"` so stdin stays the `tail | ...` pipe.
+#
+# To exercise tier-2 deterministically we need to disable tier-1 (jq) for
+# the call. We do that by spawning a subshell with a stripped PATH that
+# contains python3 + tail + cat (everything tier-2 needs) but lacks jq.
+# A symlinked bin dir is the smallest hermetic approach: each link points
+# to the absolute resolution of the host binary, and PATH points only at
+# that dir for the duration of the subshell.
+#
+# IMPORTANT: do NOT symlink `grep` into `JTA_TIER2_BIN`. Today's
+# `transcript_contains_skill_invocation` tier-2 ends with `return 0` /
+# `return 1` so tier-3 never runs once tier-2 is reached, and adding
+# grep would not silently change THIS test's outcome. The omission is
+# a forward-looking hermetic seal: if a future refactor relaxes tier-2
+# into a fall-through-on-failure shape (e.g. for graceful degradation),
+# a stray grep here would let tier-3 mask a tier-2 regression. Keeping
+# the bin dir minimal pins what tier this test actually exercises.
+JTA_TIER2_BIN="$(mktemp -d)"
+JTA_TIER2_TRANSCRIPT="$(mktemp)"
+JTA_TIER2_TRANSCRIPT_NEG="$(mktemp)"
+# shellcheck disable=SC2064
+trap "rm -rf '$PSF_TMP' '$NEG_TMP' '$JTA_TRACE_TMP' '$JTA_F5_TMP' '$JTA_F6_TMP' '$JTA_TRACE_X' '$JTA_TIER2_BIN' '$JTA_TIER2_TRANSCRIPT' '$JTA_TIER2_TRANSCRIPT_NEG'" EXIT
+
+# Wire the tier-2-only PATH (python3 + tail + cat exist; jq does not).
+for _bin in python3 tail cat; do
+  if _resolved="$(command -v "$_bin")" && [ -n "$_resolved" ]; then
+    ln -sf "$_resolved" "$JTA_TIER2_BIN/$_bin"
+  fi
+done
+unset _bin _resolved
+
+# Positive transcript: contains a Skill(simple-workflow:impl) tool_use record.
+printf '%s\n' '{"type":"assistant","uuid":"impl-skill","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-impl","name":"Skill","input":{"skill":"simple-workflow:impl","args":""}}]}}' \
+  > "$JTA_TIER2_TRANSCRIPT"
+# Negative transcript: noise only, no Skill records.
+printf '%s\n' '{"type":"assistant","uuid":"noise","message":{"role":"assistant","content":[{"type":"text","text":"noise"}]}}' \
+  > "$JTA_TIER2_TRANSCRIPT_NEG"
+
+set +e
+# NOTE: invoke bash via its absolute path. The PATH override below points
+# only at the symlink dir (no jq), so a bare `bash` would not be found by
+# the parent shell's command lookup if the parent is zsh / not bash.
+JTA_BASH_BIN="$(command -v bash)"
+PATH="$JTA_TIER2_BIN" "$JTA_BASH_BIN" -c "source '$JTA_PATH' && transcript_contains_skill_invocation 'simple-workflow:impl' '$JTA_TIER2_TRANSCRIPT'" >/dev/null 2>&1
+jta_cs4_pos_exit=$?
+PATH="$JTA_TIER2_BIN" "$JTA_BASH_BIN" -c "source '$JTA_PATH' && transcript_contains_skill_invocation 'simple-workflow:impl' '$JTA_TIER2_TRANSCRIPT_NEG'" >/dev/null 2>&1
+jta_cs4_neg_exit=$?
+set -e
+assert_exit_zero "AC-CS-4 (F-3'): tier-2 finds Skill(impl) when jq absent (positive transcript)" "$jta_cs4_pos_exit"
+assert_exit_nonzero "AC-CS-4 (F-3'): tier-2 returns 1 when jq absent and no Skill record (negative transcript)" "$jta_cs4_neg_exit"
+
+echo ""
+
+# ---------------------------------------------------------------------------
+# Section 3-bis (v6.4.3 / F-1'): tier-3 BSD awk regression for
+# post-phase-checkpoint.sh::_pphc_entry_already_present. The function
+# previously used the gawk-only 3-arg `match($0, regex, m)` form in its
+# pure-shell idempotency probe. Under BSD awk + no PyYAML + no yq the
+# probe always returned "not present" and `runtime_metrics:` rows were
+# duplicated on every reentry. v6.4.3 replaces the 3-arg form with POSIX
+# `sub()` strip-by-prefix; this micro-test exercises the function
+# directly under BSD awk so any future re-introduction of gawk-only
+# syntax fails CI.
+#
+# Test shape: write a state file with one canonical runtime_metrics
+# entry, force tier-3 by stripping yq + python3 + jq from PATH, and
+# assert (a) probing the present triple returns 0 and (b) probing an
+# absent triple returns non-zero.
+# ---------------------------------------------------------------------------
+echo "--- tier-3 BSD awk regression (post-phase-checkpoint::_pphc_entry_already_present) ---"
+
+PPHC_TIER3_TMP="$(mktemp -d)"
+PPHC_TIER3_BIN="$(mktemp -d)"
+# shellcheck disable=SC2064
+trap "rm -rf '$PSF_TMP' '$NEG_TMP' '$JTA_TRACE_TMP' '$JTA_F5_TMP' '$JTA_F6_TMP' '$JTA_TRACE_X' '$JTA_TIER2_BIN' '$JTA_TIER2_TRANSCRIPT' '$JTA_TIER2_TRANSCRIPT_NEG' '$PPHC_TIER3_TMP' '$PPHC_TIER3_BIN'" EXIT
+
+# Build a tier-3-only PATH: awk + grep + tail + cat + dirname + basename
+# present, but yq + python3 + jq absent so the function falls through to
+# the awk fallback unconditionally. /usr/bin/awk on macOS is BSD awk.
+for _bin in awk grep tail cat dirname basename printf sed mktemp date uname tr; do
+  if _resolved="$(command -v "$_bin")" && [ -n "$_resolved" ]; then
+    ln -sf "$_resolved" "$PPHC_TIER3_BIN/$_bin"
+  fi
+done
+unset _bin _resolved
+
+# Canonical runtime_metrics entry — three keys per element with the same
+# 4-space indent the writer emits.
+cat > "$PPHC_TIER3_TMP/state.yaml" <<'YAML'
+runtime_metrics:
+  - boundary: phase_complete
+    stop_reason: null
+    ticket_id: T-001
+    phase: scout
+    timestamp: 2026-05-10T00:00:00Z
+    cache_creation_input_tokens: null
+    cache_read_input_tokens: null
+    input_tokens: null
+    consecutive_stop_blocks: null
+YAML
+
+# Source the hook script's helper; we only want the function definition
+# without firing the top-level main flow. Wrap in a subshell that exits
+# before the main flow runs by sourcing into a fresh shell process and
+# calling the function directly via bash -c.
+PPHC_HOOK="$REPO_DIR/hooks/post-phase-checkpoint.sh"
+
+# Spawn the call under the tier-3 PATH so awk resolves to /usr/bin/awk
+# (BSD on macOS) and yq / python3 / jq are NOT visible. We inline the
+# function definition extracted from the hook to avoid running the hook's
+# top-level main flow (which reads stdin via `cat` and would block).
+# NOTE: invoke bash via its absolute path because the restricted PATH
+# below does not contain bash itself (parent zsh would otherwise fail to
+# resolve the command name).
+PPHC_BASH_BIN="$(command -v bash)"
+set +e
+PATH="$PPHC_TIER3_BIN" "$PPHC_BASH_BIN" -c '
+  set -uo pipefail
+  _pphc_have() { command -v "$1" >/dev/null 2>&1; }
+  # Source just the function definition from the hook by sed-extracting
+  # it. This is fragile across hook revisions but documented as the
+  # intended shape: the function spans from `_pphc_entry_already_present()`
+  # through the matching close brace at column 1.
+  fn_src=$(sed -n "/^_pphc_entry_already_present()/,/^}$/p" "'"$PPHC_HOOK"'")
+  eval "$fn_src"
+  _pphc_entry_already_present "'"$PPHC_TIER3_TMP/state.yaml"'" T-001 scout phase_complete
+' >/dev/null 2>&1
+pphc_present_exit=$?
+PATH="$PPHC_TIER3_BIN" "$PPHC_BASH_BIN" -c '
+  set -uo pipefail
+  _pphc_have() { command -v "$1" >/dev/null 2>&1; }
+  fn_src=$(sed -n "/^_pphc_entry_already_present()/,/^}$/p" "'"$PPHC_HOOK"'")
+  eval "$fn_src"
+  _pphc_entry_already_present "'"$PPHC_TIER3_TMP/state.yaml"'" T-002 impl phase_failed
+' >/dev/null 2>&1
+pphc_absent_exit=$?
+set -e
+
+assert_exit_zero "tier-3 BSD awk: _pphc_entry_already_present detects present triple" "$pphc_present_exit"
+assert_exit_nonzero "tier-3 BSD awk: _pphc_entry_already_present returns non-zero for absent triple" "$pphc_absent_exit"
 
 echo ""
 

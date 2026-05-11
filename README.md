@@ -66,7 +66,7 @@ Canonical pipeline — one ticket from idea to PR:
   └─ /plan2doc     →  planner
   │   produces: investigation.md, plan.md
   ▼
-/impl                           🔁 max 3 rounds; FAIL → implementer
+/impl                           🔁 max 9 rounds (default; override via rounds=N); FAIL → implementer
   ├─ implementer       Generator (writes code)
   ├─ ac-evaluator      acceptance-criteria verifier (loop driver)
   └─ /audit (chained):
@@ -132,7 +132,7 @@ Treats the context window as a consumable resource and systematically conserves 
 
 ### Harness Engineering
 
-A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 3 rounds. The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
+A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 9 rounds by default (configurable per invocation via `/impl rounds=N` or per ticket via `autopilot-policy.yaml`). The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
 
 Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. Orchestrator skills enforce sub-agent dispatch via the `Skill` tool with MUST/NEVER/Fail language, making proper context isolation a structural contract rather than a suggestion. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
 
@@ -172,7 +172,7 @@ simple-workflow is composed of three component types: **Skills** (slash commands
 
 Models are auto-selected based on ticket size (S/M/L/XL): `planner` uses Sonnet for S and Opus for M/L/XL, `implementer` uses Sonnet for S/M and Opus for L/XL. Both agents accept a dynamic model parameter — orchestrator skills pass the appropriate model at invocation time.
 
-Inside `/impl`, the Generator-Evaluator loop runs up to three rounds. Each round (1) the **implementer** writes code with a test-first approach, (2) **ac-evaluator** independently verifies acceptance criteria from `git diff` and test output, and (3) on AC pass, `/audit` runs `security-scanner` and `code-reviewer` in parallel and aggregates a `Status / Critical / Warnings / Suggestions` block. Round artifacts are persisted as `eval-round-{n}.md`, `quality-round-{n}.md`, and `security-scan-{n}.md` under the ticket directory, providing a complete evaluation history that `/tune` later mines for cross-session patterns.
+Inside `/impl`, the Generator-Evaluator loop runs up to 9 rounds by default (override per invocation with `/impl rounds=N`, with a soft cap warning above 24). Each round (1) the **implementer** writes code with a test-first approach, (2) **ac-evaluator** independently verifies acceptance criteria from `git diff` and test output, and (3) on AC pass, `/audit` runs `security-scanner` and `code-reviewer` in parallel and aggregates a `Status / Critical / Warnings / Suggestions` block. Round artifacts are persisted as `eval-round-{n}.md`, `quality-round-{n}.md`, and `security-scan-{n}.md` under the ticket directory, providing a complete evaluation history that `/tune` later mines for cross-session patterns.
 
 **Hooks** fire automatically on tool execution: `pre-bash-safety` (best-effort blocking of common destructive commands — *not* a security boundary), `pre-write-safety` / `pre-edit-safety` (block writes to `.env`, private keys, credentials), `session-start` (initialize session, auto-append `.gitignore` entries), `pre-compact-save` (snapshot state before compaction), `session-stop-log` (work log on session end), `autopilot-continue` (block premature `end_turn` during `/autopilot`), and `pre-level1-guard` (block expensive integration tests without `RUN_LEVEL1_TESTS=true`).
 

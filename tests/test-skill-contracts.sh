@@ -63,6 +63,27 @@ assert_file_contains() {
   fi
 }
 
+# Case-insensitive variant of assert_file_contains. Use when the documented
+# canonical capitalization differs from the prose realization (e.g. a label
+# bullet `**Else default 9**` vs the lowercase `else default 9` referenced by
+# the precedence-rule contract). Avoids fragile dependence on a meta-comment
+# that happens to spell the term in the matching case.
+assert_file_contains_i() {
+  local description="$1"
+  local file="$2"
+  local pattern="$3"
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if grep -qiE -- "$pattern" "$file"; then
+    echo -e "  ${GREEN}PASS${NC} $description"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $description"
+    echo -e "       File: $file"
+    echo -e "       Expected pattern (case-insensitive): $pattern"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
 assert_true() {
   local description="$1"
   local condition="$2" # "true" or "false"
@@ -915,6 +936,35 @@ assert_file_contains \
   "$REPO_DIR/skills/brief/SKILL.md" \
   'allow_breaking_changes:.*true.*aggressive'
 
+# J-20: impl SKILL.md documents the rounds=N argument, the new default 9 cap,
+#       and the soft cap of 24. Added in v6.4.4 to lock in the manual-vs-autopilot
+#       asymmetry fix (manual default raised 3 -> 9, plus an explicit `rounds=N`
+#       override and a 24-round soft warning).
+
+# J-20a: argument-hint advertises the rounds=N token (anchored to the
+#        frontmatter line so the assertion does not silently pass on a
+#        SKILL.md that mentions rounds=N only in body / examples while the
+#        argument-hint itself was deleted).
+assert_file_contains \
+  "impl SKILL.md argument-hint advertises rounds=N" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "^argument-hint:.*rounds=N"
+
+# J-20b: precedence prose explicitly names the new default 9 fallback.
+#        Case-insensitive so the canonical bullet header `**Else default 9**`
+#        (capital E) directly satisfies the contract — no fragile dependence
+#        on a meta-comment that happens to spell the term in lowercase.
+assert_file_contains_i \
+  "impl SKILL.md states default 9 round cap" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "else default 9"
+
+# J-20c: soft cap of 24 is documented (warn-only, no clamp)
+assert_file_contains \
+  "impl SKILL.md states soft cap 24" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "soft cap 24"
+
 echo ""
 
 # =============================================================================
@@ -1295,6 +1345,22 @@ assert_file_contains \
   "P-10: impl SKILL.md has next_action references" \
   "$REPO_DIR/skills/impl/SKILL.md" \
   "next_action"
+
+# P-11: at least 1 occurrence of CHECKPOINT — RE-ANCHOR in scout
+# Diff: New assertion. Guards the post-/plan2doc handoff in /scout the same
+#        way P-9 guards the post-/audit handoff in /impl. Empirical trigger:
+#        a /scout run terminated after /plan2doc returned without emitting
+#        Step 10's `## [SW-CHECKPOINT]`, mirroring the /impl ↔ /audit failure
+#        mode that P-9 / impl-checkpoint-guard.sh already cover.
+COUNT=$(grep -c "CHECKPOINT — RE-ANCHOR" "$REPO_DIR/skills/scout/SKILL.md" || true)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} P-11: scout CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 1)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} P-11: scout CHECKPOINT — RE-ANCHOR count ($COUNT found, expected >= 1)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 
@@ -3757,6 +3823,469 @@ else
   echo -e "  ${RED}FAIL${NC} CT-MODE-STATE-AUTH-3: F-M2 violated (REPO_HOOKS_DIR hits=$SA_M2_REPO_HITS, \$SCRIPT_DIR/lib source hits=$SA_M2_SOURCE_HITS, expected 0+2)" >&2
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
+
+echo ""
+
+# === Cat R: Persistence-First Protocol (T-1, v6.3.3) ===
+# Diff: agents/ac-evaluator.md gains `## Persistence-First Protocol` section;
+# skills/impl/SKILL.md Step 16 gains an IN_PROGRESS branch.
+# All grep -c uses route through count_matches per CT-MODE-GREP-C-1.
+echo "--- Cat R: Persistence-First Protocol ---"
+
+# CT-MODE-PERSIST-FIRST-1 (AC-1): ac-evaluator has the heading
+assert_file_contains \
+  "CT-MODE-PERSIST-FIRST-1: agents/ac-evaluator.md has ## Persistence-First Protocol section" \
+  "$REPO_DIR/agents/ac-evaluator.md" \
+  '^## Persistence-First Protocol$'
+
+# CT-MODE-PERSIST-FIRST-2 (AC-2): IN_PROGRESS appears >= 2 times in the section,
+# and 'before invoking any' appears >= 1 time
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PFP_TMP=$(mktemp)
+awk '/^## Persistence-First Protocol$/,/^## Report Persistence Contract$/' "$REPO_DIR/agents/ac-evaluator.md" > "$PFP_TMP"
+PFP_INPROGRESS=$(count_matches 'IN_PROGRESS' "$PFP_TMP")
+PFP_BEFORE=$(count_matches 'before invoking any' "$PFP_TMP")
+rm -f "$PFP_TMP"
+if [ "${PFP_INPROGRESS:-0}" -ge 2 ] && [ "${PFP_BEFORE:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-2: Persistence-First section has IN_PROGRESS x2 + 'before invoking any' x1"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-2: got IN_PROGRESS=$PFP_INPROGRESS, before=$PFP_BEFORE" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PERSIST-FIRST-3 (AC-3): Output path stability rule documented
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PFP_TMP2=$(mktemp)
+awk '/^## Persistence-First Protocol$/,/^## Report Persistence Contract$/' "$REPO_DIR/agents/ac-evaluator.md" > "$PFP_TMP2"
+PFP_OUTPUT=$(count_matches 'Output' "$PFP_TMP2")
+PFP_SAMEPATH=$(count_matches 'same path' "$PFP_TMP2")
+rm -f "$PFP_TMP2"
+if [ "${PFP_OUTPUT:-0}" -ge 1 ] && [ "${PFP_SAMEPATH:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-3: Output path stability rule present"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-3: got Output=$PFP_OUTPUT, same path=$PFP_SAMEPATH" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PERSIST-FIRST-4 (AC-4): /impl Step 16 has IN_PROGRESS token and retains CONTRACT-VIOLATION
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+STEP16_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$STEP16_TMP"
+STEP16_INPROGRESS=$(count_matches 'IN_PROGRESS' "$STEP16_TMP")
+rm -f "$STEP16_TMP"
+STEP16_VIOLATION=$(count_matches 'CONTRACT-VIOLATION' "$REPO_DIR/skills/impl/SKILL.md")
+if [ "${STEP16_INPROGRESS:-0}" -ge 1 ] && [ "${STEP16_VIOLATION:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-4: Step 16 has IN_PROGRESS + retains CONTRACT-VIOLATION branch"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-4: got Step 16 IN_PROGRESS=$STEP16_INPROGRESS, file CONTRACT-VIOLATION=$STEP16_VIOLATION" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-PERSIST-FIRST-5 (AC-7 + Negative AC-4): the v6.3.3 CHANGELOG block
+# names Persistence-First and both files. The "newest block" framing was
+# correct at v6.3.3 ship time; subsequent releases push v6.3.3 down the
+# stack, so the assertion now anchors on the literal `## [6.3.3]` header
+# and stops at the next `## [` header. This keeps the regression contract
+# active without re-publishing PFP wording in every later release.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CL_TMP=$(mktemp)
+awk '/^## \[6\.3\.3\]/{found=1; print; next} found && /^## \[/{exit} found{print}' "$REPO_DIR/CHANGELOG.md" > "$CL_TMP"
+CL_PF=$(count_matches 'Persistence-First' "$CL_TMP")
+CL_AGENT=$(count_matches 'ac-evaluator\.md' "$CL_TMP")
+CL_SKILL=$(count_matches 'impl/SKILL\.md' "$CL_TMP")
+CL_BAD=$(count_matches 'stable contract|semantically identical|backward compatible|forward compatible' "$CL_TMP")
+rm -f "$CL_TMP"
+if [ "${CL_PF:-0}" -ge 1 ] && [ "${CL_AGENT:-0}" -ge 1 ] && [ "${CL_SKILL:-0}" -ge 1 ] && [ "${CL_BAD:-0}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-PERSIST-FIRST-5: [6.3.3] block names Persistence-First + both files; no SemVer-inflation phrases"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-PERSIST-FIRST-5: PF=$CL_PF agent=$CL_AGENT skill=$CL_SKILL banned=$CL_BAD" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# === Cat S: impl-checkpoint-guard /audit handoff backstop (T-2, v6.4.0) ===
+# Diff: hooks/impl-checkpoint-guard.sh + audit-block-pattern.sh + Step 4-bis
+# (audit/SKILL.md) + Step 17 CHECKPOINT (impl/SKILL.md). Asserts the
+# documentation, single-source-of-truth literals, and release-stdout
+# contract that the Stop hook depends on.
+echo "--- Cat S: impl-checkpoint-guard backstop ---"
+
+AUDIT_SKILL="$REPO_DIR/skills/audit/SKILL.md"
+IMPL_SKILL="$REPO_DIR/skills/impl/SKILL.md"
+AUDIT_BLOCK_PATTERN_LIB="$REPO_DIR/hooks/lib/audit-block-pattern.sh"
+ICG_HOOK="$REPO_DIR/hooks/impl-checkpoint-guard.sh"
+
+# CT-MODE-ICG-1: audit/SKILL.md contains the literal Step 4-bis heading.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '### 4-bis. MANDATORY: Handoff back to caller' "$AUDIT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-1: audit/SKILL.md has Step 4-bis heading"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-1: audit/SKILL.md missing '### 4-bis. MANDATORY: Handoff back to caller'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-2: audit/SKILL.md Step 4 example contains both **Status**:
+# and **Reports**: literals (the literals the Stop hook greps for via
+# audit-block-pattern.sh).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '**Status**:' "$AUDIT_SKILL" && grep -qF '**Reports**:' "$AUDIT_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-2: audit/SKILL.md Step 4 contains **Status**: and **Reports**:"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-2: audit/SKILL.md missing required structured-block literals"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-3: distance guard — `phase-state.yaml` MUST appear within 200
+# characters after the Step 4 structured-block example's closing fence so
+# the handoff instruction is colocated with the artifact it describes.
+# Anchored on the Step 4 heading + a fenced block whose first line is
+# `**Status**:` (the structured block's invariant first field) so:
+#   - inserting an unrelated `\`\`\`bash\` example into Step 4's prose
+#     description does NOT silently shift the matcher onto the wrong fence
+#     pair, and
+#   - adding or removing fields BELOW `**Status**:` (e.g. a future
+#     `**Caveats**:`) inside the structured block still matches.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ICG_DIST=$(python3 - <<PY
+import re, sys
+with open("$AUDIT_SKILL") as f:
+    content = f.read()
+# Match from the Step 4 heading through the closing fence of the first
+# fenced block whose body starts with **Status**: (uniquely identifies
+# the structured block, not a stray code example). Sentinel return values:
+#   -1: regex did not match (structural drift — Step 4 heading missing,
+#       structured block missing, or **Status**: line moved out of the
+#       opening fence)
+#   -2: phase-state.yaml literal not present in the rest of the document
+m4 = re.search(r'### 4\. .*?\`\`\`\n\*\*Status\*\*:.*?\n\`\`\`', content, re.DOTALL)
+if not m4:
+    print(-1)
+    sys.exit(0)
+rest = content[m4.end():]
+pos = rest.find("phase-state.yaml")
+if pos < 0:
+    print(-2)
+else:
+    print(pos)
+PY
+)
+case "$ICG_DIST" in
+  -1)
+    echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: Step 4 structured-block matcher failed (heading or fence regex did not match audit/SKILL.md)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    ;;
+  -2)
+    echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: phase-state.yaml literal not found after Step 4 block"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    ;;
+  *)
+    if [ "$ICG_DIST" -ge 0 ] && [ "$ICG_DIST" -le 200 ]; then
+      echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-3: phase-state.yaml within 200 chars after Step 4 block (distance=$ICG_DIST)"
+      TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+      echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-3: phase-state.yaml distance regression — distance=$ICG_DIST chars after Step 4 block (max 200)"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    ;;
+esac
+
+# CT-MODE-ICG-4: impl/SKILL.md Step 17 CHECKPOINT contains the literal
+# "Required next emit: `## [SW-CHECKPOINT]`" so the strengthened anchor
+# cannot drift back to the original wording silently.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'Required next emit: `## [SW-CHECKPOINT]`' "$IMPL_SKILL"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-4: impl/SKILL.md Step 17 carries the strengthened CHECKPOINT line"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-4: impl/SKILL.md missing 'Required next emit: \`## [SW-CHECKPOINT]\`'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-5: audit-block-pattern.sh exports the same literals (Status,
+# Reports) the Stop hook greps for. The exported value is an ERE pattern
+# (`\*\*Status\*\*:`) — when sourced and used with `grep -E`, it matches
+# the literal `**Status**:` in transcripts. To verify the file actually
+# carries the correct ERE-escaped pattern (single source of truth),
+# we source the file in a sub-shell and inspect the runtime values.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ICG_VAL_STATUS=$(bash -c "source \"$AUDIT_BLOCK_PATTERN_LIB\" && printf '%s' \"\$AUDIT_BLOCK_PATTERN_STATUS\"")
+ICG_VAL_REPORTS=$(bash -c "source \"$AUDIT_BLOCK_PATTERN_LIB\" && printf '%s' \"\$AUDIT_BLOCK_PATTERN_REPORTS\"")
+if [ "$ICG_VAL_STATUS" = '\*\*Status\*\*:' ] && [ "$ICG_VAL_REPORTS" = '\*\*Reports\*\*:' ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-5: audit-block-pattern.sh exports STATUS + REPORTS literals matching audit/SKILL.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-5: audit-block-pattern.sh exports do not match expected ERE patterns"
+  echo -e "       STATUS:  $ICG_VAL_STATUS"
+  echo -e "       REPORTS: $ICG_VAL_REPORTS"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-ICG-6: impl-checkpoint-guard.sh contains the [IMPL-CHECKPOINT-RELEASE]
+# prefix AND both Resume variants ('/impl' for non-autopilot, '/autopilot'
+# for autopilot context) — Patch 3 of the design. Both Resume tokens MUST
+# appear on lines that ALSO carry the '[IMPL-CHECKPOINT-RELEASE] Pipeline
+# halted' prefix, not scattered across header comments or other prose, so
+# the proximity guarantee is enforced at the contract layer.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ICG_PASS=true
+ICG_RELEASE_LINES=$(grep -F '[IMPL-CHECKPOINT-RELEASE] Pipeline halted' "$ICG_HOOK" || true)
+[ -n "$ICG_RELEASE_LINES" ] || ICG_PASS=false
+printf '%s\n' "$ICG_RELEASE_LINES" | grep -qF 'Resume with: /impl' || ICG_PASS=false
+printf '%s\n' "$ICG_RELEASE_LINES" | grep -qF 'Resume with: /autopilot' || ICG_PASS=false
+if [ "$ICG_PASS" = true ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh emits both Resume variants on Pipeline-halted lines"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh missing 'Pipeline halted' release line or one of the Resume variants on those lines"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# === Cat T: Single-shot recovery from IN_PROGRESS envelope (T-3) ===
+# Diff: skills/impl/SKILL.md Step 16 gains 4-way decision with recovery branch;
+# agents/ac-evaluator.md gains rule 4 (resumption mode) and contract clarification.
+echo "--- Cat T: Single-shot recovery (T-3) ---"
+
+# CT-MODE-SINGLESHOT-1 (AC-1): Step 16 has IN_PROGRESS >= 2 times AND
+# recovery|resumption >= 1 time. Also includes Negative AC-3 cross-check:
+# IN_PROGRESS must NOT appear in Step 17 window.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS1_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$SS1_TMP"
+SS1_INPROGRESS=$(count_matches 'IN_PROGRESS' "$SS1_TMP")
+SS1_RECOVERY=$(count_matches 'recovery|resumption' "$SS1_TMP")
+rm -f "$SS1_TMP"
+STEP17_TMP=$(mktemp)
+awk '/^17\./,/^18\./' "$REPO_DIR/skills/impl/SKILL.md" > "$STEP17_TMP"
+STEP17_IP=$(count_matches 'IN_PROGRESS' "$STEP17_TMP")
+rm -f "$STEP17_TMP"
+if [ "${SS1_INPROGRESS:-0}" -ge 2 ] && [ "${SS1_RECOVERY:-0}" -ge 1 ] && [ "${STEP17_IP:-0}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-1: Step 16 has IN_PROGRESS x${SS1_INPROGRESS} + recovery/resumption x${SS1_RECOVERY}; Step 17 has IN_PROGRESS x0 (Neg-AC-3 OK)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-1: Step16 IN_PROGRESS=$SS1_INPROGRESS (need >=2), recovery=$SS1_RECOVERY (need >=1), Step17 IN_PROGRESS=$STEP17_IP (need 0)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-2 (AC-2): Step 16 has once|exactly 1|single-shot|max 1 >= 1
+# and the surrounding context contains 'recovery'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS2_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$SS2_TMP"
+SS2_CAP=$(count_matches 'once|exactly 1|single-shot|max[[:space:]]*1' "$SS2_TMP")
+SS2_RECOVERY=$(count_matches 'recovery' "$SS2_TMP")
+rm -f "$SS2_TMP"
+if [ "${SS2_CAP:-0}" -ge 1 ] && [ "${SS2_RECOVERY:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-2: Step 16 has single-shot cap x${SS2_CAP} + recovery context x${SS2_RECOVERY}"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-2: cap=$SS2_CAP (need >=1), recovery=$SS2_RECOVERY (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-3 (AC-3): Step 16 has resumption prompt fenced block with
+# required literals: 'Read the IN_PROGRESS file', 'resume from', '[ ]'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS3_TMP=$(mktemp)
+awk '/^16\. AC Gate:/,/^17\./' "$REPO_DIR/skills/impl/SKILL.md" > "$SS3_TMP"
+SS3_READ=$(count_matches 'Read the IN_PROGRESS file' "$SS3_TMP")
+SS3_RESUME=$(count_matches 'resume from' "$SS3_TMP")
+SS3_CHECKBOX=$(count_matches '\[ \]' "$SS3_TMP")
+rm -f "$SS3_TMP"
+if [ "${SS3_READ:-0}" -ge 1 ] && [ "${SS3_RESUME:-0}" -ge 1 ] && [ "${SS3_CHECKBOX:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-3: resumption prompt has 'Read the IN_PROGRESS file' + 'resume from' + '[ ]' checkbox"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-3: read=$SS3_READ (need >=1), resume=$SS3_RESUME (need >=1), checkbox=$SS3_CHECKBOX (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-4 (AC-4): Persistence-First Protocol section has
+# 'resumption mode', 'Read the file first', and 'unchecked AC' or '[ ]'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS4_TMP=$(mktemp)
+awk '/^## Persistence-First Protocol$/,/^## Report Persistence Contract$/' "$REPO_DIR/agents/ac-evaluator.md" > "$SS4_TMP"
+SS4_RESUMPTION=$(count_matches 'resumption mode' "$SS4_TMP")
+SS4_READFIRST=$(count_matches 'Read the file first' "$SS4_TMP")
+SS4_UNCHECKED=$(count_matches 'unchecked AC|\[ \]' "$SS4_TMP")
+rm -f "$SS4_TMP"
+if [ "${SS4_RESUMPTION:-0}" -ge 1 ] && [ "${SS4_READFIRST:-0}" -ge 1 ] && [ "${SS4_UNCHECKED:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-4: Persistence-First Protocol has resumption mode + Read the file first + unchecked AC/[ ]"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-4: resumption=$SS4_RESUMPTION (need >=1), readfirst=$SS4_READFIRST (need >=1), unchecked=$SS4_UNCHECKED (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-SINGLESHOT-5 (AC-5): Report Persistence Contract has
+# 'MUST NOT re-invoke', 'solely to persist', and a sentence with both
+# 'IN_PROGRESS' and 'permitted'
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS5_TMP=$(mktemp)
+awk '/^## Report Persistence Contract$/,/^## Context Conservation Protocol$/' "$REPO_DIR/agents/ac-evaluator.md" > "$SS5_TMP"
+SS5_NOINVOKE=$(count_matches 'MUST NOT re-invoke' "$SS5_TMP")
+SS5_SOLELY=$(count_matches 'solely to persist' "$SS5_TMP")
+SS5_PERMITTED=$(count_matches 'IN_PROGRESS.*permitted|permitted.*IN_PROGRESS' "$SS5_TMP")
+rm -f "$SS5_TMP"
+if [ "${SS5_NOINVOKE:-0}" -ge 1 ] && [ "${SS5_SOLELY:-0}" -ge 1 ] && [ "${SS5_PERMITTED:-0}" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-5: Report Persistence Contract has MUST NOT re-invoke + solely to persist + IN_PROGRESS+permitted"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-5: noinvoke=$SS5_NOINVOKE (need >=1), solely=$SS5_SOLELY (need >=1), permitted=$SS5_PERMITTED (need >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# Step-16 simulator — exercises the same branching logic as Step 16 branch (ii)
+# without requiring a real LLM invocation.
+#
+# Env vars consumed:
+#   MOCK_EVALUATOR    — path to a fixture script to use as the evaluator.
+#   EVAL_REPORT_PATH  — path where the mock writes its report.
+#   COUNTER_FILE      — path to the call-count file managed by the mock.
+#
+# Returns 0 when the recovery path produces a terminal verdict.
+# Returns 1 with a [CONTRACT-VIOLATION] message when recovery does not
+# produce a terminal verdict (double IN_PROGRESS or missing file).
+# Never makes more than 2 evaluator calls total.
+# ---------------------------------------------------------------------------
+simulate_step16() {
+  local mock="$MOCK_EVALUATOR"
+  local report="$EVAL_REPORT_PATH"
+
+  # --- Round 1 invocation ---
+  local output
+  output=$(bash "$mock")
+
+  if [ -n "$output" ]; then
+    # Output non-empty: path (iv) — terminal, no recovery needed.
+    echo "OK: terminal"
+    return 0
+  fi
+
+  # Output empty — check for IN_PROGRESS file.
+  if [ ! -f "$report" ]; then
+    echo "[CONTRACT-VIOLATION] ac-evaluator Output was empty and no report was persisted; treating as FAIL-CRITICAL"
+    return 1
+  fi
+
+  local first_status
+  first_status=$(grep -m1 '^## Status:' "$report" 2>/dev/null || true)
+
+  if [ "$first_status" != "## Status: IN_PROGRESS" ]; then
+    # File exists but status is already terminal on path (i) edge — treat as
+    # contract violation (unexpected state for this simulator path).
+    echo "[CONTRACT-VIOLATION] unexpected file status after empty output: $first_status"
+    return 1
+  fi
+
+  # --- IN_PROGRESS detected: single-shot recovery (branch ii) ---
+  # Invoke the mock ONCE more. Do NOT loop.
+  local recovery_output
+  recovery_output=$(bash "$mock")
+
+  # Step 16 prose: "Recovery Output non-empty AND Status is terminal → proceed
+  # to Status parsing (path iv). Recovery Output empty OR first `## Status:`
+  # still `IN_PROGRESS` → emit `[CONTRACT-VIOLATION]`". Enforce the Output
+  # envelope here so empty recovery stdout is a CV regardless of file state.
+  if [ -z "$recovery_output" ]; then
+    echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
+    return 1
+  fi
+
+  # Re-inspect the file after recovery.
+  if [ ! -f "$report" ]; then
+    echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
+    return 1
+  fi
+
+  local recovery_status
+  recovery_status=$(grep -m1 '^## Status:' "$report" 2>/dev/null || true)
+
+  case "$recovery_status" in
+    "## Status: PASS"|"## Status: FAIL"|"## Status: FAIL-CRITICAL"|"## Status: PASS-WITH-CAVEATS")
+      echo "OK: terminal"
+      return 0
+      ;;
+    *)
+      echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
+      return 1
+      ;;
+  esac
+}
+
+# CT-MODE-SINGLESHOT-6 (AC-6): terminal recovery smoke
+# Uses mock-ac-evaluator-second-call-terminal.sh — first call writes IN_PROGRESS
+# (empty stdout), second call writes PASS (non-empty stdout).
+# Asserts: counter == 2, final ## Status: is terminal, simulator exits 0,
+# no [CONTRACT-VIOLATION] in output.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS6_DIR=$(mktemp -d)
+trap 'rm -rf "$SS6_DIR"' EXIT
+SS6_COUNTER="$SS6_DIR/counter.txt"
+SS6_REPORT="$SS6_DIR/eval-round-1.md"
+printf '0\n' > "$SS6_COUNTER"
+export MOCK_EVALUATOR="$SCRIPT_DIR/fixtures/mock-ac-evaluator-second-call-terminal.sh"
+export EVAL_REPORT_PATH="$SS6_REPORT"
+export COUNTER_FILE="$SS6_COUNTER"
+set +e
+SS6_OUTPUT=$(simulate_step16 2>&1)
+SS6_EXIT=$?
+set -e
+SS6_COUNT=$(cat "$SS6_COUNTER" 2>/dev/null || echo 0)
+SS6_FINAL_STATUS=$(grep -m1 '^## Status:' "$SS6_REPORT" 2>/dev/null || echo "")
+SS6_CONTRACT_VIOLATION=$(echo "$SS6_OUTPUT" | count_matches '\[CONTRACT-VIOLATION\]')
+if [ "$SS6_EXIT" -eq 0 ] && \
+   [ "$SS6_COUNT" -eq 2 ] && \
+   echo "$SS6_FINAL_STATUS" | grep -qE '^## Status: (PASS|FAIL|FAIL-CRITICAL|PASS-WITH-CAVEATS)$' && \
+   [ "$SS6_CONTRACT_VIOLATION" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-6: recovery smoke — 2 invocations, terminal status='$SS6_FINAL_STATUS', no CONTRACT-VIOLATION"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-6: exit=$SS6_EXIT count=$SS6_COUNT status='$SS6_FINAL_STATUS' contract-violations=$SS6_CONTRACT_VIOLATION output='$SS6_OUTPUT'" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$SS6_DIR"
+trap - EXIT
+
+# CT-MODE-SINGLESHOT-7 (AC-7): double IN_PROGRESS halts after exactly 2 calls
+# Uses mock-ac-evaluator-always-in-progress.sh — EVERY call writes IN_PROGRESS
+# and returns empty stdout. Asserts: counter == 2 (NOT 3), output contains
+# [CONTRACT-VIOLATION], simulator exits 1.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SS7_DIR=$(mktemp -d)
+trap 'rm -rf "$SS7_DIR"' EXIT
+SS7_COUNTER="$SS7_DIR/counter.txt"
+SS7_REPORT="$SS7_DIR/eval-round-1.md"
+printf '0\n' > "$SS7_COUNTER"
+export MOCK_EVALUATOR="$SCRIPT_DIR/fixtures/mock-ac-evaluator-always-in-progress.sh"
+export EVAL_REPORT_PATH="$SS7_REPORT"
+export COUNTER_FILE="$SS7_COUNTER"
+set +e
+SS7_OUTPUT=$(simulate_step16 2>&1)
+SS7_EXIT=$?
+set -e
+SS7_COUNT=$(cat "$SS7_COUNTER" 2>/dev/null || echo 0)
+SS7_CONTRACT_VIOLATION=$(echo "$SS7_OUTPUT" | count_matches '\[CONTRACT-VIOLATION\]')
+if [ "$SS7_EXIT" -ne 0 ] && \
+   [ "$SS7_COUNT" -eq 2 ] && \
+   [ "$SS7_CONTRACT_VIOLATION" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-7: double-IN_PROGRESS halt — 2 invocations, CONTRACT-VIOLATION emitted, exit 1 (no 3rd call)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-SINGLESHOT-7: exit=$SS7_EXIT count=$SS7_COUNT (need 2) violations=$SS7_CONTRACT_VIOLATION output='$SS7_OUTPUT'" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$SS7_DIR"
+trap - EXIT
 
 echo ""
 

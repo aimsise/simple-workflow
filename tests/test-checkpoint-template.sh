@@ -79,18 +79,20 @@ done
 
 # --- AC 13.4 + AC 14.2: /audit and /plan2doc do NOT emit a SW-CHECKPOINT ---
 # They reference the template doc to document "we do not emit", but must
-# not have an inline SW-CHECKPOINT block. The concrete grep AC 14.2 uses
-# is "no SW-CHECKPOINT string at all" in /plan2doc, and by extension the
-# same is expected of /audit (pre-existing invariant).
+# not have an inline SW-CHECKPOINT block. The contract is no *emit* — i.e.
+# no standalone `## [SW-CHECKPOINT]` H2 header in the skill body. Inline
+# prose mentions (e.g. v6.4.0 audit/SKILL.md Step 4-bis describing the
+# caller's continuation pattern) are allowed: they reference the marker
+# the caller will emit, they do NOT instruct /audit to emit one.
 for skill in audit plan2doc; do
   skill_file="$REPO_DIR/skills/$skill/SKILL.md"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if [ -f "$skill_file" ] && ! grep -q 'SW-CHECKPOINT' "$skill_file"; then
-    echo -e "  ${GREEN}PASS${NC} AC 13.4 / AC 14.2: /$skill does NOT reference SW-CHECKPOINT"
+  if [ -f "$skill_file" ] && ! grep -qE '^## \[SW-CHECKPOINT\]' "$skill_file"; then
+    echo -e "  ${GREEN}PASS${NC} AC 13.4 / AC 14.2: /$skill does NOT emit a SW-CHECKPOINT block"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
-    echo -e "  ${RED}FAIL${NC} AC 13.4 / AC 14.2: /$skill unexpectedly references SW-CHECKPOINT"
-    grep -n 'SW-CHECKPOINT' "$skill_file" | sed 's/^/       /'
+    echo -e "  ${RED}FAIL${NC} AC 13.4 / AC 14.2: /$skill unexpectedly contains a standalone SW-CHECKPOINT H2 header"
+    grep -nE '^## \[SW-CHECKPOINT\]' "$skill_file" | sed 's/^/       /'
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done

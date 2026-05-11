@@ -31,7 +31,7 @@ Conversations with the user may be in any language — translate before writing 
 - SemVer with the `v` prefix (`v6.0.0`, never `6.0.0`).
 - `.claude-plugin/plugin.json` `version` MUST match the newest `## [X.Y.Z]` in `CHANGELOG.md` (enforced by CT-MODE-14).
 - CHANGELOG headers use a real ISO date — `YYYY-MM-DD` placeholders are rejected by CT-MODE-13.
-- Group entries under `### BREAKING CHANGES`, `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`, `### Security` (Keep a Changelog).
+- Group entries under `### BREAKING CHANGES`, `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`, `### Security` (Keep a Changelog). Plus a project-specific `### Verification` group documenting test-run evidence (test suite counts, baseline comparisons, PATH-restricted matrix runs) — this is an accepted extension to Keep a Changelog and is exercised by every release entry from v6.4.1 onwards.
 - For breaking changes, write a concrete migration sentence. Do not claim "semantically identical" when the behavior shifted.
 - Commit subject: `release(vX.Y.Z): <summary>` for non-breaking, `release(vX.Y.Z)!: <summary>` for breaking (`!` required).
 - Use **annotated** tags: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>" && git push origin vX.Y.Z`. Lightweight tags are not propagated to forks and are ignored by `git describe`. Legacy lightweight tags stay as-is — switch only for new releases.
