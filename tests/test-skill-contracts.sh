@@ -4525,21 +4525,31 @@ echo ""
 echo "Category AJ: Skeptical Third-Pass in /audit (T-5)"
 
 AUDIT_MD="$REPO_DIR/skills/audit/SKILL.md"
+AJ_SKEPTICAL_REF="$REPO_DIR/skills/audit/references/skeptical-pass.md"
 
-# Extract the Step 3.5 subsection body (heading -> next ### Triggers).
+# Extract the Step 3.5 subsection body (heading -> next ### 4. or end of file).
+# The trigger definitions and prompt template have been moved to
+# skills/audit/references/skeptical-pass.md; Step 3.5 retains the
+# orchestration semantics (when to fire, where to save, OR-set rule, etc.)
+# and links to the reference file for the trigger labels and prompt body.
 AJ_STEP35_TMP=$(mktemp)
-awk '/^### Step 3\.5:/,/^### Triggers/' "$AUDIT_MD" \
-  | grep -v '^### Triggers' > "$AJ_STEP35_TMP"
+awk '/^### Step 3\.5:/,/^### 4\. /' "$AUDIT_MD" \
+  | grep -v '^### 4\. ' > "$AJ_STEP35_TMP"
 
-# Extract the Triggers subsection body (heading -> next ### Skeptical).
+# Extract the Triggers subsection body from the reference file
+# (## Triggers heading -> next ## heading).
 AJ_TRIGGERS_TMP=$(mktemp)
-awk '/^### Triggers for Skeptical Third-Pass$/,/^### Skeptical/' "$AUDIT_MD" \
-  | grep -v '^### Skeptical' > "$AJ_TRIGGERS_TMP"
+awk '/^## Triggers/,/^## /' "$AJ_SKEPTICAL_REF" \
+  | sed -E '/^## Triggers/d; /^## /d' > "$AJ_TRIGGERS_TMP" || true
+# Re-include the Triggers heading line in case the body skip stripped too much;
+# the trigger label scan below looks at the body lines under the heading.
+awk '/^## Triggers/{f=1; next} f && /^## /{f=0} f' "$AJ_SKEPTICAL_REF" \
+  > "$AJ_TRIGGERS_TMP"
 
-# Extract the Prompt Template subsection body (heading -> next ## or ### at section boundary).
+# Extract the Prompt Template subsection body from the reference file
+# (## Prompt Template heading -> end of file).
 AJ_PROMPT_TMP=$(mktemp)
-awk '/^### Skeptical Third-Pass Prompt Template$/,/^## /' "$AUDIT_MD" \
-  | grep -v '^## ' > "$AJ_PROMPT_TMP"
+awk '/^## Prompt Template/{f=1; next} f' "$AJ_SKEPTICAL_REF" > "$AJ_PROMPT_TMP"
 
 # Extract the Aggregate Results subsection body (heading -> next ### Step 3.5).
 AJ_AGGREGATE_TMP=$(mktemp)
