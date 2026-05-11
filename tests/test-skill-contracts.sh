@@ -4192,6 +4192,15 @@ simulate_step16() {
   local recovery_output
   recovery_output=$(bash "$mock")
 
+  # Step 16 prose: "Recovery Output non-empty AND Status is terminal → proceed
+  # to Status parsing (path iv). Recovery Output empty OR first `## Status:`
+  # still `IN_PROGRESS` → emit `[CONTRACT-VIOLATION]`". Enforce the Output
+  # envelope here so empty recovery stdout is a CV regardless of file state.
+  if [ -z "$recovery_output" ]; then
+    echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
+    return 1
+  fi
+
   # Re-inspect the file after recovery.
   if [ ! -f "$report" ]; then
     echo "[CONTRACT-VIOLATION] ac-evaluator recovery invocation did not produce a terminal verdict; treating as FAIL-CRITICAL"
