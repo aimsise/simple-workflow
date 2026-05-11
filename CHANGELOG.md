@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.2] — 2026-05-11
+
+Patch release replacing the timestamp-proxy review gate in `/ship` Phase 2
+Step 9 with a content-identity check based on git blob SHAs. `/audit` now
+appends an HTML-comment-fenced YAML coverage block to
+`quality-round-{n}.md` that records the per-file blob SHAs of every
+changed file the audit reviewed; `/ship` reads that block and confirms
+the committed tree's blob SHAs match before passing the gate. This
+eliminates the structural false positive in chained `/impl → /ship`
+flows (where `quality-round-*.md` mtime always predates commit time even
+when content is unchanged), and works correctly across sessions and in
+manual sequences. The autopilot-policy (`stop` / `proceed_if_eval_passed`)
+and interactive sub-flows are preserved verbatim — only their trigger
+condition narrows.
+
+### Added
+
+- `hooks/lib/audit-coverage.sh` — new shared library exporting two
+  helper functions (one to emit a coverage block at `/audit` time and
+  one to check content identity at `/ship` time). Captures per-file
+  blob SHAs at `/audit` time and verifies content identity at `/ship`
+  time. Three-tier YAML fallback (`yq` → `python3 + PyYAML` → pure-shell
+  `awk`).
+- `/audit` Step 4b — appends an HTML-comment-fenced YAML coverage block
+  to `quality-round-{n}.md` after the structured review body, recording
+  the base commit SHA, the working-state tree SHA, and per-file blob
+  SHAs of every changed file the audit reviewed.
+- 5 hermetic fixtures under `tests/fixtures/quality-rounds/`
+  (match-clean, blob-mismatch, extra-file-in-commit,
+  deleted-file-handling, legacy-no-block) and contract category
+  **Cat AK** (CT-MODE-COV-1..6 + CT-MODE-COV-DOC-1..4).
+
+### Changed
+
+- `/ship` Phase 2 Step 9 review gate now compares git blob SHAs recorded
+  by `/audit` against the blob SHAs in the committed tree, instead of
+  comparing `quality-round-*.md` mtime with commit time. The trigger
+  condition narrows from "mtime predates commit" to "blob SHA mismatch
+  (or legacy file missing the coverage block AND mtime predates commit)".
+  Autopilot policy semantics (`stop` / `proceed_if_eval_passed`) and the
+  interactive prompt are preserved verbatim.
+
+  **Migration**: legacy `quality-round-*.md` files (those written before
+  v6.6.2) lack the coverage block and continue to use the timestamp
+  heuristic — no re-audit is required for in-flight tickets. Set the
+  `SW_AUDIT_COVERAGE=off` environment variable to force legacy mtime
+  behavior for all files; default is `on`.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` exits 0; 10 new assertions under
+  Cat AK (CT-MODE-COV-1..6 + CT-MODE-COV-DOC-1..4).
+- `bash tests/test-path-consistency.sh` exits 0; no new fixture-path
+  drift.
+- All 5 hermetic fixtures under `tests/fixtures/quality-rounds/` exit 0
+  individually under both default and `SW_AUDIT_COVERAGE=off` modes.
+
 ## [6.6.1] — 2026-05-11
 
 Patch release introducing `scout-checkpoint-guard.sh`, the harness-side

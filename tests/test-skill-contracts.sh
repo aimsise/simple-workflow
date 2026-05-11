@@ -4666,5 +4666,138 @@ rm -f "$AJ_STEP35_TMP" "$AJ_TRIGGERS_TMP" "$AJ_PROMPT_TMP" "$AJ_AGGREGATE_TMP"
 
 echo ""
 
+# ---------------------------------------------------------------------------
+# Category AK: audit-coverage review-gate (CT-MODE-COV-1..6 + CT-MODE-COV-DOC-1..4, v6.6.2)
+# Covers AC-1..AC-14 of the audit-coverage-review-gate plan:
+#   - Functional (fixture-driven): CT-MODE-COV-1..6 spawn each hermetic
+#     fixture under tests/fixtures/quality-rounds/ and assert the fixture's
+#     own internal assertions pass (exit 0).
+#   - Structural (grep-driven): CT-MODE-COV-DOC-1..4 verify SKILL.md wiring
+#     and the absence of `--no-filters` in the helper.
+# ---------------------------------------------------------------------------
+echo "Category AK: audit-coverage review-gate (v6.6.2)"
+
+AK_HELPER="$REPO_DIR/hooks/lib/audit-coverage.sh"
+AK_AUDIT_MD="$REPO_DIR/skills/audit/SKILL.md"
+AK_SHIP_MD="$REPO_DIR/skills/ship/SKILL.md"
+AK_FIX_DIR="$REPO_DIR/tests/fixtures/quality-rounds"
+
+# CT-MODE-COV-1: match-clean fixture passes.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash "$AK_FIX_DIR/match-clean/run.sh" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-1: match-clean fixture exits 0"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-1: match-clean fixture did not exit 0" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-2: blob-mismatch fixture passes.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash "$AK_FIX_DIR/blob-mismatch/run.sh" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-2: blob-mismatch fixture exits 0"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-2: blob-mismatch fixture did not exit 0" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-3: extra-file-in-commit fixture passes.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash "$AK_FIX_DIR/extra-file-in-commit/run.sh" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-3: extra-file-in-commit fixture exits 0"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-3: extra-file-in-commit fixture did not exit 0" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-4: deleted-file-handling fixture (covers both sub-cases) passes.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash "$AK_FIX_DIR/deleted-file-handling/run.sh" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-4: deleted-file-handling fixture exits 0"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-4: deleted-file-handling fixture did not exit 0" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-5: legacy-no-block fixture passes.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash "$AK_FIX_DIR/legacy-no-block/run.sh" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-5: legacy-no-block fixture exits 0"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-5: legacy-no-block fixture did not exit 0" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-6: kill-switch path (SW_AUDIT_COVERAGE=off makes check return LEGACY).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if SW_AUDIT_COVERAGE=off bash "$AK_FIX_DIR/match-clean/run.sh" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-6: match-clean fixture with SW_AUDIT_COVERAGE=off returns LEGACY"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-6: match-clean fixture with SW_AUDIT_COVERAGE=off did not exit 0" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-DOC-1: helper exists and exports both functions.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$AK_HELPER" ]; then
+  AK_FN_COUNT=$(count_matches '^(audit_coverage_emit|audit_coverage_check)\s*\(\)\s*\{?' "$AK_HELPER")
+  if [ "$AK_FN_COUNT" -ge 2 ]; then
+    echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-DOC-1: hooks/lib/audit-coverage.sh defines both functions (count=${AK_FN_COUNT})"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} CT-MODE-COV-DOC-1: only ${AK_FN_COUNT} of 2 helper functions found" >&2
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-DOC-1: hooks/lib/audit-coverage.sh does not exist" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-MODE-COV-DOC-2: /audit Step 4b references audit_coverage_emit.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AK_STEP4B_TMP=$(mktemp)
+awk '/^### 4b\./,/^### |^## /' "$AK_AUDIT_MD" > "$AK_STEP4B_TMP"
+AK_EMIT_HITS=$(count_matches 'audit_coverage_emit' "$AK_STEP4B_TMP")
+if [ "$AK_EMIT_HITS" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-DOC-2: /audit Step 4b references audit_coverage_emit (count=${AK_EMIT_HITS})"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-DOC-2: /audit Step 4b does not reference audit_coverage_emit" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$AK_STEP4B_TMP"
+
+# CT-MODE-COV-DOC-3: /ship Step 9 references audit_coverage_check and the success log.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AK_STEP9_TMP=$(mktemp)
+awk '/^9\. \*\*Review gate\*\*/,/^10\. /' "$AK_SHIP_MD" > "$AK_STEP9_TMP"
+AK_SHIP_HITS=$(count_matches 'audit_coverage_check|\[REVIEW-GATE\] audit-coverage match' "$AK_STEP9_TMP")
+if [ "$AK_SHIP_HITS" -ge 2 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-DOC-3: /ship Step 9 references helper and success log (count=${AK_SHIP_HITS})"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-DOC-3: /ship Step 9 references only ${AK_SHIP_HITS}/2 of helper+log" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$AK_STEP9_TMP"
+
+# CT-MODE-COV-DOC-4: --no-filters is NOT used in the helper (CRLF/filter-mismatch guard).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AK_NOFILT_HITS=$(count_matches '\-\-no\-filters' "$AK_HELPER")
+if [ "$AK_NOFILT_HITS" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-COV-DOC-4: hooks/lib/audit-coverage.sh has 0 occurrences of --no-filters"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-COV-DOC-4: hooks/lib/audit-coverage.sh uses --no-filters (count=${AK_NOFILT_HITS})" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary

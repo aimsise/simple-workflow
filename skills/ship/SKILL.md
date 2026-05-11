@@ -252,11 +252,14 @@ Proceed to Phase 2.
 
 8. `gh auth status`. If not authenticated, tell the user to run `gh auth login` and stop.
 
-9. **Review gate**: Check for recent code review:
-    - If a ticket completed (`{ticket-dir}` now in `.simple-workflow/backlog/done/` after step 5), run `ls -t .simple-workflow/backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1` for the latest review.
-    - No ticket → skip the review gate.
-    - Review file exists → compare its mtime with the last commit time.
-    - NO review file, or review predates last code-changing commit:
+9. **Review gate**: Verify the latest code review covers the committed content.
+    - If no ticket completed in step 5, skip this gate (proceed to step 10).
+    - Locate latest review: `ls -t .simple-workflow/backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1`. No file → treat as "no review", jump to **Gate-failure flow** below.
+    - **Content-identity check**: source `hooks/lib/audit-coverage.sh` and call `audit_coverage_check "{quality-round-path}"`. Interpret stdout/exit:
+      - `OK <N>` (exit 0): print `[REVIEW-GATE] audit-coverage match (<N> files) — gate passed`, proceed to step 10. **No interactive prompt, no autopilot-policy lookup.**
+      - `STALE <reason>` (exit 1): print `[REVIEW-GATE] audit-coverage stale: <reason>`, jump to **Gate-failure flow**.
+      - `LEGACY` (exit 2): fall back to the legacy mtime comparison. Compare quality-round mtime against `git log -1 --format=%ct HEAD`. If review predates commit, jump to **Gate-failure flow**; otherwise proceed to step 10 with `[REVIEW-GATE] legacy mtime ok`.
+    - **Gate-failure flow** (no review file, STALE, or LEGACY-predates):
       - **Autopilot policy check**: If `.simple-workflow/backlog/done/{ticket-dir}/autopilot-policy.yaml` exists, read `gates.ship_review_gate.action`:
         - `proceed_if_eval_passed`: Check latest `eval-round-*.md` Status:
           - PASS / PASS-WITH-CAVEATS → proceed. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to PR body.
