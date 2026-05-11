@@ -327,6 +327,25 @@ If an active ticket directory was detected in Step 1 (`ticket-dir`):
 
 If no ticket directory was detected, skip this persistence step (no audit-round file is written for non-ticket flows).
 
+### 4b. Emit audit-coverage block via `audit_coverage_emit` (`hooks/lib/audit-coverage.sh`)
+
+After writing `{ticket-dir}/quality-round-{n}.md` (Step 4a), source
+`hooks/lib/audit-coverage.sh` and call:
+
+    audit_coverage_emit "{ticket-dir}/quality-round-{n}.md"
+
+This appends an HTML-comment-fenced YAML block recording the base commit
+SHA, the working-state tree SHA, and per-file blob SHAs of every changed
+file the audit reviewed. The block is consumed by `/ship` Phase 2 Step 9
+to verify content identity between audit and commit.
+
+If `audit_coverage_emit` returns non-zero (git failure or `SW_AUDIT_COVERAGE=off`),
+log `warn: audit-coverage emit skipped (exit=<code>); /ship review-gate will fall back to legacy mtime heuristic` to stderr and continue — the
+review gate degrades gracefully.
+
+Block format and schema version are documented in
+`hooks/lib/audit-coverage.sh` header comments.
+
 ## Error Handling
 
 - **No changes at all**: Print "No changes to audit." and return Status: PASS with all counts at 0.
