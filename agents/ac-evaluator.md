@@ -13,6 +13,12 @@ tools:
   - "Bash(git log:*)"
   - "Bash(git show:*)"
   - "Bash(git branch:*)"
+  - "Bash(git merge-base:*)"
+  # `git worktree` scoped to add/remove/list — the recipe only needs those.
+  # Avoids granting `prune`, `lock`, `unlock` and future sub-commands.
+  - "Bash(git worktree add:*)"
+  - "Bash(git worktree remove:*)"
+  - "Bash(git worktree list:*)"
   # Test/lint runners — JS ecosystem
   - "Bash(npm test:*)"
   - "Bash(npm run:*)"
@@ -76,6 +82,12 @@ tools:
   - "shell(git log:*)"
   - "shell(git show:*)"
   - "shell(git branch:*)"
+  - "shell(git merge-base:*)"
+  # `git worktree` scoped to add/remove/list — the recipe only needs those.
+  # Avoids granting `prune`, `lock`, `unlock` and future sub-commands.
+  - "shell(git worktree add:*)"
+  - "shell(git worktree remove:*)"
+  - "shell(git worktree list:*)"
   # Test/lint runners — JS ecosystem
   - "shell(npm test:*)"
   - "shell(npm run:*)"
@@ -196,6 +208,50 @@ Independently verify by running:
 
 - **Project-attributable failures** (genuine test failures, lint errors, type errors, assertion mismatches — i.e. failures that point to a defect in the implementation or configuration under review) MUST NOT be re-run within the same evaluation. A retry is permitted ONLY after a separate implementer round has corrected the implementation or configuration (this preserves the implementer-side "max 3 attempts" retry contract).
 - **Infrastructure-attributable / transient failures** (runner crash, network failure, missing dependency download, transient sandbox / environment issue, OS-level resource exhaustion — i.e. failures that do not indicate a defect in the code under review) MAY be retried in-place without an intervening implementer round, since no implementer correction is meaningful for these. Record the retry and the suspected cause in the evaluation report.
+
+### Pre-existing Failure Attribution
+
+When a failing test or lint diagnostic occurs, you MUST determine whether the failure is pre-existing (present on the base commit before this PR) or PR-caused (introduced by this PR's changes) before applying the "pre-existing" label.
+
+**Correct recipe — path-intersection via `git diff --name-only`**:
+
+```bash
+# 1. Resolve the PR base commit (works for single- and multi-commit branches).
+#    `--short` returns the form `origin/main`, so we strip the `origin/`
+#    prefix. On shallow clones / missing remote HEAD, the pipeline returns
+#    empty and `|| echo main` defaults to `main`.
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null \
+  | sed 's@^origin/@@' | grep . || echo main)
+BASE=$(git merge-base HEAD "origin/${DEFAULT_BRANCH}")
+
+# 2. Compute the set of paths changed by this PR
+CHANGED_PATHS=$(git diff --name-only "${BASE}..HEAD")
+
+# 3. For each failing diagnostic, identify the evidence path(s) it consumes
+#    (test file, fixture, plan.md, config file, etc.)
+
+# 4. If ANY evidence path appears in CHANGED_PATHS, the failure is PR-caused.
+#    Label it PR-caused and do NOT mark it pre-existing.
+
+# 5. ONLY when NO evidence path intersects CHANGED_PATHS is the failure
+#    eligible for the "pre-existing" label.
+```
+
+For compound failures where the transitive dependency chain makes path-intersection ambiguous, use a worktree to rebuild a fully clean base state:
+
+```bash
+WORKTREE_DIR="${TMPDIR:-/tmp}/clean-base-$$"
+git worktree add "$WORKTREE_DIR" "$BASE"
+# ... re-run the failing command inside $WORKTREE_DIR ...
+git worktree remove "$WORKTREE_DIR"
+```
+
+> **DO NOT use `git stash` (without `--all`) to validate pre-existing claims.**
+> `git stash` skips gitignored paths (e.g. `.simple-workflow/`); plan and fixture
+> artefacts living there will silently survive the stash and leak into the
+> supposedly-clean state, producing false "pre-existing" verdicts.
+> Use `git diff --name-only <base>..HEAD` for path-intersection instead,
+> OR `git worktree add` (with the cleanup shown above) for a fully clean rebuild.
 
 When invoking a test runner (`bun test`, `npm test`, `pytest`, `cargo test`, etc.) you MUST NOT pass flags that **increase output verbosity or change reporter format** — concretely, this bans `--reporter`, `--reporter=*` (e.g. `--reporter=verbose`, `--reporter=dots`), `--verbose`, `-vv`/`-vvv`, and any equivalent flag whose effect is to enlarge or restructure the runner's default output. This restriction does NOT apply to: path / file / test-id arguments that scope the run (e.g. `pytest tests/foo_test.py`, `cargo test my_module::my_test`, `npm test -- path/to/spec`), nor to flags that **decrease** verbosity (e.g. `pytest -q`, `cargo test --quiet`), nor to non-output-shaping flags required by the project's documented test contract. If the default output is genuinely insufficient to determine pass/fail, record that as a [MEDIUM] observation rather than retrying with extra verbosity flags.
 

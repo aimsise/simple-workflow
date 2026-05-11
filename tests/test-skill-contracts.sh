@@ -4410,5 +4410,92 @@ rm -f "$AH_STEP15_TMP"
 
 echo ""
 
+# ---------------------------------------------------------------------------
+# Category AI: Pre-existing Failure Attribution recipe in ac-evaluator (T-4)
+# Covers: AC-1, AC-2, AC-3, AC-4, AC-5
+# Uses count_matches (not raw grep -c) per CT-MODE-GREP-C-1.
+# References only agents/ac-evaluator.md per Negative-AC-6.
+# ---------------------------------------------------------------------------
+echo "Category AI: Pre-existing Failure Attribution (T-4)"
+
+AI_SECTION_TMP=$(mktemp)
+# Extract the ### Pre-existing Failure Attribution section to a temp file.
+# The section runs from the heading line until the next H2 heading. The
+# end-anchor is a generic `^## ` rather than a hardcoded heading text so a
+# future rename of `## Status Decision` does not silently extend the awk
+# range to EOF and let count_matches pass vacuously.
+awk '/^### Pre-existing Failure Attribution$/,/^## /' \
+  "$REPO_DIR/agents/ac-evaluator.md" \
+  | grep -v '^## ' > "$AI_SECTION_TMP"
+
+# AI-1 (AC-1): Section heading exists in agents/ac-evaluator.md
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AI1_COUNT=$(count_matches '^### Pre-existing Failure Attribution$' "$REPO_DIR/agents/ac-evaluator.md")
+if [ "$AI1_COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AI-1 (AC-1): '### Pre-existing Failure Attribution' heading found in agents/ac-evaluator.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AI-1 (AC-1): '### Pre-existing Failure Attribution' heading NOT found in agents/ac-evaluator.md" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AI-2 (AC-2): Path-intersection recipe: git diff --name-only AND merge-base appear in section
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AI2A_COUNT=$(count_matches 'git diff --name-only' "$AI_SECTION_TMP")
+AI2B_COUNT=$(count_matches 'merge-base' "$AI_SECTION_TMP")
+if [ "$AI2A_COUNT" -ge 1 ] && [ "$AI2B_COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AI-2 (AC-2): 'git diff --name-only' and 'merge-base' both found in Pre-existing Failure Attribution section"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AI-2 (AC-2): path-intersection recipe incomplete — diff-name-only:${AI2A_COUNT} merge-base:${AI2B_COUNT} (both must be >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AI-3 (AC-3): Anti-pattern callout: 'git stash' AND 'gitignored' AND one of
+#              'skip'/'silently survive'/'does not stash' appear in section
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AI3A_COUNT=$(count_matches 'git stash' "$AI_SECTION_TMP")
+AI3B_COUNT=$(count_matches 'gitignored' "$AI_SECTION_TMP")
+AI3C_COUNT=$(count_matches 'skip|silently survive|does not stash' "$AI_SECTION_TMP")
+if [ "$AI3A_COUNT" -ge 1 ] && [ "$AI3B_COUNT" -ge 1 ] && [ "$AI3C_COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AI-3 (AC-3): 'git stash' anti-pattern callout with 'gitignored' and skip-phrase found in section"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AI-3 (AC-3): anti-pattern callout incomplete — stash:${AI3A_COUNT} gitignored:${AI3B_COUNT} skip-phrase:${AI3C_COUNT} (all must be >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AI-4 (AC-4): Worktree recipe: 'git worktree add' appears in section
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AI4_COUNT=$(count_matches 'git worktree add' "$AI_SECTION_TMP")
+if [ "$AI4_COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AI-4 (AC-4): 'git worktree add' recipe found in Pre-existing Failure Attribution section"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AI-4 (AC-4): 'git worktree add' NOT found in Pre-existing Failure Attribution section" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# AI-5 (AC-5): All four tool-permission entries present in agents/ac-evaluator.md frontmatter
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AI5A_COUNT=$(count_matches 'Bash\(git merge-base:' "$REPO_DIR/agents/ac-evaluator.md")
+# `worktree add` (the recipe's primary write op) is the canonical scoped
+# variant we require; broader `Bash(git worktree:*)` is intentionally NOT
+# accepted by this assertion so the security tightening cannot regress.
+AI5B_COUNT=$(count_matches 'Bash\(git worktree add:' "$REPO_DIR/agents/ac-evaluator.md")
+AI5C_COUNT=$(count_matches 'shell\(git merge-base:' "$REPO_DIR/agents/ac-evaluator.md")
+AI5D_COUNT=$(count_matches 'shell\(git worktree add:' "$REPO_DIR/agents/ac-evaluator.md")
+if [ "$AI5A_COUNT" -ge 1 ] && [ "$AI5B_COUNT" -ge 1 ] && [ "$AI5C_COUNT" -ge 1 ] && [ "$AI5D_COUNT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} AI-5 (AC-5): all four tool-permission entries (Bash+shell × merge-base+worktree-add) present in agents/ac-evaluator.md"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AI-5 (AC-5): tool-permission entries incomplete — Bash(merge-base):${AI5A_COUNT} Bash(worktree add):${AI5B_COUNT} shell(merge-base):${AI5C_COUNT} shell(worktree add):${AI5D_COUNT} (all must be >=1)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+rm -f "$AI_SECTION_TMP"
+
+echo ""
+
 # --- Summary ---
 print_summary
