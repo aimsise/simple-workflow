@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.1] — 2026-05-11
+
+Patch release implementing T-4: robust pre-existing-failure attribution for `ac-evaluator`. The Round-1 ac-evaluator in T-003 / v6.3.2 had labelled a `tests/test-skill-contracts.sh:AF-2` failure as "pre-existing on clean HEAD" using bare `git stash` to validate — a verdict later proven wrong because `git stash` (without `--include-untracked` or `--all`) silently skips gitignored paths such as `.simple-workflow/`. This release adds a new `### Pre-existing Failure Attribution` sub-section to `agents/ac-evaluator.md` documenting the correct two-step recipe: (1) path-intersection via `git diff --name-only <base>..HEAD` (using `git merge-base HEAD origin/<default-branch>` for the base), and (2) when the evidence path is gitignored, a clean worktree rebuild via `git worktree add` against the base commit. A new anti-pattern callout explicitly forbids the bare `git stash` recipe. Post-impl security review tightened the new `git worktree` tool permissions to the scoped `add` / `remove` / `list` sub-commands instead of the originally proposed blanket wildcard. Non-breaking; no action required for existing tickets.
+
+### Added
+
+- **`### Pre-existing Failure Attribution` sub-section in `agents/ac-evaluator.md`** documenting the path-intersection recipe (with explicit `merge-base` / `<base>..HEAD` references), the worktree fallback for gitignored evidence paths, and a `DO NOT use git stash` anti-pattern callout that names `.simple-workflow/` as the canonical gitignored leak source.
+- **Six new tool-permission entries** in the `agents/ac-evaluator.md` frontmatter (Claude-Code `tools:` and Copilot `shell()` sections): `Bash(git merge-base:*)`, `Bash(git worktree add:*)`, `Bash(git worktree remove:*)`, `Bash(git worktree list:*)`, plus the matching `shell()` entries.
+- **Category AI in `tests/test-skill-contracts.sh`** (5 assertions: AI-1 through AI-5) covering the new sub-section heading, the path-intersection recipe (`git diff --name-only` + `merge-base`), the anti-pattern callout (`git stash` + `gitignored` + skip-phrase), the worktree recipe (`git worktree add`), and the scoped tool-permission entries (`Bash(git worktree add:` + matching `shell()` form).
+
+### Fixed
+
+- **ac-evaluator pre-existing attribution**: replaced the ad-hoc `git stash` approach (which silently skips gitignored paths such as `.simple-workflow/`) with the documented path-intersection + worktree recipes in `agents/ac-evaluator.md`. The previous behaviour produced false "pre-existing" verdicts whenever the failing diagnostic's evidence path lived under a gitignored directory — the canonical T-003 / v6.3.2 AF-2 misclassification scenario this ticket fixes.
+- **`DEFAULT_BRANCH` resolution in the documented recipe** uses `git symbolic-ref --short refs/remotes/origin/HEAD | sed 's@^origin/@@'` so the strip step targets the canonical `origin/<branch>` short form. The previous un-`--short` recipe would have leaked the full `refs/remotes/origin/...` path through `sed` unchanged on environments with unexpected ref prefixes (shallow clones, detached remote HEAD).
+
+### Security
+
+- **`git worktree` tool permissions scoped from blanket wildcard to `add` / `remove` / `list`** in both the Claude-Code (`tools:`) and Copilot (`shell()`) frontmatter sections of `agents/ac-evaluator.md`. The original draft used `Bash(git worktree:*)` / `shell(git worktree:*)`, which also granted `prune`, `lock`, `unlock`, and any future `git worktree` sub-command. The post-impl security review (S-1, Medium) flagged this as broader than the documented recipe needs. AC-5 (T-4 plan / ticket) and Category AI assertion AI-5 were updated to require the scoped variants so a regression to the broader wildcard is caught by `tests/test-skill-contracts.sh`.
+
+### Changed (test infrastructure)
+
+- **`tests/test-skill-contracts.sh` Category AI awk end-anchor relaxed** from `^## Status Decision$` to a generic `^## ` (any H2 boundary). The hardcoded heading text would have silently extended the awk range to EOF on a future rename of `## Status Decision`, letting `count_matches` pass vacuously against an over-extended buffer. The generic H2 anchor is robust to that rename.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 417/417 PASS (5 new Category AI assertions AI-1 through AI-5 added on top of the v6.5.0 release tree).
+- `bash tests/test-path-consistency.sh` — 138/138 PASS. No new fixture files; path-consistency drift unchanged.
+- AC-7 smoke verification: a transient fixture under `.simple-workflow/backlog/active/T-4-smoke-fixture/af2-fixture/` with a `## 5. Acceptance Criteria` heading reproduced the exact T-003 / v6.3.2 failure mode (`ac-ssot: drift (missing-heading)`). The post-fix recipe correctly classified the failure as **PR-caused** via the worktree alternative (`git worktree add` at the BASE commit had no fixture present, so `ac-ssot-scan` returned `synced` — the failure was not pre-existing). Persistent evidence saved to `eval-round-1-ac7-smoke.md` under the T-4 ticket directory.
+
 ## [6.5.0] — 2026-05-11
 
 Minor release implementing T-2: dynamic `maxTurns` and horizontal-split partitioning for AC-heavy plans in `/impl` Step 15. The `ac-evaluator` agent is now invoked with an AC-count-aware soft turn budget (`EVALUATOR_MAX_TURNS = max(60, AC_COUNT * 4)`) embedded in the prompt. Plans with `AC_COUNT >= 30` trigger a partition branch: the rubric is split into two contiguous halves by AC-ID order, each evaluated by a separate `ac-evaluator` invocation whose report is persisted as `eval-round-{n}-part-1.md` or `eval-round-{n}-part-2.md`; the orchestrator merges verdicts using the severity ladder FAIL-CRITICAL > FAIL > PASS-WITH-CAVEATS > PASS and unions the AC results. Plans with fewer than 30 ACs continue to use a single evaluator invocation with `EVALUATOR_MAX_TURNS = max(60, AC_COUNT * 4)` — the `max(60, ...)` floor ensures that small plans (AC_COUNT <= 15) always receive exactly 60 turns, preserving the v6.3.2 baseline. The Agent tool's JSONSchema was inspected at implementation time: the tool does not accept per-invocation `maxTurns` overrides (Strategy A), so the frontmatter ceiling of `agents/ac-evaluator.md` was raised to `maxTurns: 200` (Strategy B) and the soft turn budget is communicated to the agent via a prompt-level field. The `ac-evaluator` agent now recognises a `--- partition: <i>/2 ---` header in its prompt and evaluates only the AC subset in its partition. Partition awareness is strictly scoped to `ac-evaluator`: `code-reviewer` and `security-scanner` are not modified. Migration: no action required for existing tickets. The only behavioural change is for plans where `ac-evaluator` previously exhausted its 60-turn budget mid-evaluation (the empty-envelope / IN_PROGRESS pattern observed at 18–22 ACs in v6.3.0 and T-002/T-003). Those plans now receive up to 88–128 turns depending on AC count.
