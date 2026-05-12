@@ -1,9 +1,16 @@
 ---
 name: refactor
 description: >-
-  Plan and execute a refactoring with safety checks. Uses planner agent, then
-  implements incrementally with test/lint verification and code review loop.
-  Use only when the user explicitly asks to refactor code.
+  Plans and executes a refactoring with safety checks by delegating to the
+  planner and code-reviewer agents, then iterating implementation + review up
+  to three rounds. Use when (1) the user runs `/refactor {target}` directly to
+  refactor a specific function, file, or pattern, (2) refactoring is invoked
+  inside a ticket workflow with `ticket-dir={dir-name}` so the review artifact
+  lands at `{ticket-dir}/quality-refactor-{n}.md`, or (3) the user wants the
+  refactor protected by a `backup/pre-refactor-{timestamp}` branch and a
+  bounded review loop. Use only when the user explicitly asks to refactor
+  code. Triggers on "/refactor", "refactor code", "restructure",
+  "extract method", "rename", "clean up".
 disable-model-invocation: true
 allowed-tools:
   # Claude Code
@@ -93,6 +100,23 @@ Current branch:
 Active tickets:
 !`ls -d .simple-workflow/backlog/active/*/ 2>/dev/null || echo "(none)"`
 
+Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is intentional because `/refactor` performs destructive changes (file edits, possible structural moves) and creates a `backup/pre-refactor-{timestamp}` branch as the only rollback point. The safety design assumes the user has made an explicit decision to refactor; chain-call from another skill is not supported without re-evaluating that assumption. Manual `/refactor <target>` invocation is the sole supported entry point. Flipping `disable-model-invocation` to `false` is not appropriate without re-evaluating the safety checkpoint design (in particular the backup-branch contract in Phase 2 Step 3b and the bounded review loop in Phase 3).
+
+## Mandatory Skill Invocations
+
+`/refactor` is a two-agent orchestrator: it MUST delegate planning to the `planner` agent and quality review to the `code-reviewer` agent. The orchestrator itself writes no plan content and produces no review report; its role is argument parsing, ticket detection, backup-branch creation, implementation orchestration, and loop control.
+
+| Invocation Target | When | Skip consequence |
+|---|---|---|
+| `planner` agent (Agent tool) | Phase 1 Step 1 — always, before user approval is sought | No refactoring plan exists; Phase 2 has nothing to seek approval for; Phase 3 has no scope to implement against. Detected by the absence of a planner agent return value in the conversation transcript. |
+| `code-reviewer` agent (Agent tool) | Phase 3 Step 6 — each iteration of the implement → verify → review loop, up to 3 iterations | Quality review SKIPPED; Critical and Warning findings cannot be detected; loop exit condition `Critical = 0 AND Warning = 0` cannot be evaluated, so Critical bugs may slip through unverified. Detected by absence of the configured output file (`{ticket-dir}/quality-refactor-{n}.md` or the default `.simple-workflow/docs/reviews/{topic}.md`). |
+
+**Binding rules**:
+- `MUST invoke the planner agent` in Phase 1 Step 1 before presenting any plan summary to the user. The orchestrator MUST NOT fabricate a plan in lieu of the planner return value.
+- `MUST invoke the code-reviewer agent` in every iteration of Phase 3 Step 6 (up to the 3-iteration ceiling). The orchestrator MUST NOT skip review by self-judging "no issues".
+- `NEVER bypass the code-reviewer` by treating an Agent-tool infrastructure failure as a clean review — Phase 3 Step 7 defines the explicit `AskUserQuestion` fallback (`stop` / `continue without review`) and the non-interactive default-to-stop; bypass is allowed only via that documented path.
+- `Fail the task immediately` when the planner agent cannot be invoked at all (no fallback exists — Phase 2 backup branch creation cannot proceed without a plan). Print the failure reason and stop.
+
 ## Instructions
 
 ### Phase 1: Planning
@@ -134,3 +158,13 @@ Active tickets:
    - Review iterations completed
    - Remaining issues (if loop exited at max iterations)
    - Test and lint final status
+
+`/refactor` does NOT emit a `[SW-CHECKPOINT]` block. The Final Report above is the canonical end-of-skill artifact; downstream tooling that watches for checkpoint markers should ignore `/refactor` invocations. See `skills/create-ticket/references/sw-checkpoint-template.md` for the canonical block contract and the list of skills that DO emit it.
+
+## Error Handling
+
+- **Empty arguments**: Print `Usage: /refactor <refactoring target and goal> [ticket-dir=<dir-name>]` and stop.
+- **planner agent failure** (Phase 1 Step 1): Print the failure reason and stop before Phase 2. Do not create a backup branch when there is no plan to back up against.
+- **Backup branch failure** (Phase 2 Step 3b): If `git branch backup/pre-refactor-$(date +%Y%m%d-%H%M%S)` fails (e.g. duplicate timestamp under rapid re-runs, working-tree conflict), print the error and stop before Phase 3. Do not proceed with destructive implementation without a successful safety branch.
+- **code-reviewer agent failure** (Phase 3 Step 6): Handled inline by Phase 3 Step 7 — `AskUserQuestion` prompts the user with `stop` / `continue without review`. In non-interactive environments (`claude -p` / CI), the default is `stop`. Never silently treat the failure as "no issues found".
+- **Loop exit at max iterations** (Phase 3 Step 7): If iteration 3 is reached with remaining Critical or Warning findings, exit the loop and report the remaining findings in Phase 4 Final Report. Do not silently retry beyond the 3-iteration ceiling.
