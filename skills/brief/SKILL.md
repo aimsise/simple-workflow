@@ -1,8 +1,12 @@
 ---
 name: brief
 description: >-
-  Conduct a structured interview to gather requirements and generate
-  a brief document with autopilot policy for a new feature or task.
+  Conducts a structured Socratic interview that gathers requirements, then
+  writes a brief and an autopilot policy file for a new feature or task.
+  Use when (1) a user starts /brief with a feature description, (2) requirements
+  are unclear and need iterative Q&A, or (3) downstream skills (/create-ticket,
+  /autopilot) need a structured brief artifact. Triggers on "/brief", "draft a
+  brief", "start a new feature brief", "feature scoping interview".
 disable-model-invocation: true
 allowed-tools:
   # Claude Code
@@ -57,20 +61,16 @@ User input: $ARGUMENTS
 
 ## Scope boundary
 
-`/brief` produces two artifacts and stops: `.simple-workflow/backlog/briefs/active/{slug}/brief.md` and `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`. **`/brief` never writes `split-plan.md`** — ticket decomposition is owned by `/create-ticket` (bare, `brief=<path>`, or `findings=<path>` modes). The obsolete frontmatter fields `split:` and `ticket_count:` are **not emitted** by this skill.
+`/brief` produces two artifacts and stops: `.simple-workflow/backlog/briefs/active/{slug}/brief.md` and `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`. **`/brief` never writes `split-plan.md`** — ticket decomposition is owned by `/create-ticket`. Obsolete frontmatter fields `split:` and `ticket_count:` are **not emitted**.
 
 ## Argument Parsing
 
 Parse `$ARGUMENTS`:
-- Extract `mode=<value>` if present. **Value normalization**: trim leading/trailing whitespace and lowercase the value before comparison (`mode=AUTO`, `mode=Manual`, `mode= auto ` all normalize to `auto` / `manual`). The token name `mode=` itself is matched case-insensitively. Accepted normalized values:
-  - `auto` (default if `mode=` is omitted entirely)
-  - `manual`
-  - Any other value → print `ERROR: invalid mode=<value>. Use mode=auto or mode=manual` and stop. Do NOT create any directories, do NOT write `brief.md`, and do NOT write `auto-kick.yaml`.
-- **`auto=true` removal (v6.0.0)**: if `auto=true` (case-insensitive) appears in `$ARGUMENTS`, print `ERROR: 'auto=true' has been removed in v6.0.0; use 'mode=auto' or 'mode=manual'` and stop. Do NOT silently rewrite — the removal is intentional to surface stale automation invocations. Do NOT create any directories, do NOT write `brief.md`, and do NOT write `auto-kick.yaml`.
-- Remove the parsed `mode=` token from the description.
-- Remaining text is `<what-to-build>`.
+- Extract `mode=<value>` if present. **Value normalization**: trim whitespace and lowercase the value (`mode=AUTO`, `mode=Manual`, `mode= auto ` normalize to `auto`/`manual`). Token `mode=` is matched case-insensitively. Accepted: `auto` (default if `mode=` is omitted), `manual`. Any other value → stop and emit the invalid-mode error (see ## Error Handling for exact message + side-effect contract).
+- **`auto=true` removal (v6.0.0)**: if `auto=true` (case-insensitive) appears in `$ARGUMENTS`, stop and emit the v6.0.0 removal error (see ## Error Handling). The removal is intentional and `auto=true` is NOT silently rewritten.
+- Remove the parsed `mode=` token from the description; remaining text is `<what-to-build>`.
 - If `<what-to-build>` is empty, print `Usage: /brief <what-to-build> [mode=auto|manual]` and stop.
-- Generate `{slug}` from `<what-to-build>` using kebab-case (e.g., "Add User Auth" -> `add-user-auth`). The brief `{slug}` also serves as the `{parent-slug}` downstream (see Finalization CHECKPOINT below).
+- Generate `{slug}` from `<what-to-build>` using kebab-case (e.g., "Add User Auth" -> `add-user-auth`). The brief `{slug}` also serves as the `{parent-slug}` downstream.
 
 ## Phase 1: Initial Investigation
 
@@ -84,7 +84,7 @@ Parse `$ARGUMENTS`:
 
 Conduct an iterative Q&A to gather comprehensive requirements.
 
-**`mode` independence guard (load-bearing)**: Phase 2 Structured Interview (Socratic) **MUST** run regardless of the parsed `mode` value (`auto` or `manual`, including when `mode=` is omitted and defaults to `auto`). The `mode` argument **MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2 — it has **no effect whatsoever** on Phase 2's execution. Any non-interactive wording elsewhere in this skill (for example, in the Finalization Phase Step 2 chain-confirmation context which is gated on `mode=auto`) is scoped to that specific step and **MUST NOT** be generalized to Phase 2. The **ONLY** condition under which Phase 2 is skipped is the existing **"Non-interactive environment fallback"** defined below (triggered strictly by `AskUserQuestion` itself being unavailable or returning an error, e.g. `claude -p` / CI automation without a TTY) — **not** by the value of `mode`.
+**`mode` independence guard (load-bearing)**: Phase 2 Structured Interview (Socratic) **MUST** run regardless of the parsed `mode` value (`auto` or `manual`, including when `mode=` is omitted and defaults to `auto`). The `mode` argument **MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2 — it has **no effect whatsoever** on Phase 2's execution. Any non-interactive wording elsewhere in this skill (e.g. the Finalization Phase Step 2 chain-confirmation context gated on `mode=auto`) is scoped to that specific step and **MUST NOT** be generalized to Phase 2. The **ONLY** condition under which Phase 2 is skipped is the existing **"Non-interactive environment fallback"** below (triggered strictly by `AskUserQuestion` itself being unavailable or returning an error, e.g. `claude -p` / CI automation without a TTY) — **not** by the value of `mode`.
 
 **Caps (load-bearing for contract)**:
 - At most **3 questions per round** (single `AskUserQuestion` call holds up to 3 items).
@@ -94,53 +94,22 @@ Conduct an iterative Q&A to gather comprehensive requirements.
 
 #### Dynamic Phase 2 shrinkage (one-shot read of `runtime_metrics:`)
 
-At Phase 2 start, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` (or the parent_backlog mirror — see the location precedence in `skills/autopilot/SKILL.md ### State file initialization`). This read happens **exactly once** at Phase 2 start; it is **not** repeated per round. If the file is absent (standalone `/brief` invocation, no autopilot session in flight), no read is performed and the standalone fallback below applies.
+At Phase 2 start, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` and tier-classify on `remaining_pct = 1 - ((input_tokens + cache_read_input_tokens) / context_window_size)`. The tier table maps the four bands (`≥ 70%`, `50-70%`, `30-50%`, `< 30%`) to round/question caps and the **standalone fallback (state-file-absent)** restores the 10 rounds × 3 questions ceiling. Full formula, table, and caveats: see [phase2-dynamic-shrinkage](references/phase2-dynamic-shrinkage.md).
 
-When the file exists, take the **last entry** of its `runtime_metrics:` list and compute:
-
-```
-current_context_tokens = input_tokens + cache_read_input_tokens
-context_window_size    = 1000000   # static default (Opus 1M)
-                                    # Sonnet would use 200000, but a single static
-                                    # default is sufficient for this tier-classifier
-                                    # use case — precise estimation is out of scope
-remaining_pct          = 1.0 - (current_context_tokens / context_window_size)
-```
-
-Both `input_tokens` and `cache_read_input_tokens` are written by the Plan-01 Stop / PreCompact hooks; their schema is fixed in `skills/autopilot/SKILL.md ### State file initialization`. The signal `input_tokens + cache_read_input_tokens` represents the size of the input the API actually saw last turn (cache hits + new bytes), and is the chosen approximation of current context occupancy. `cache_creation_input_tokens` is **not** used as the signal because per-turn cache rebuilds inflate it without reflecting standing context.
-
-The **practical-approximation caveat** applies: this is a tier-classifier (`≥ 70% / 50-70% / 30-50% / < 30%`), not a precise estimator. TTL-driven cache rebuilds may briefly inflate `input_tokens`, and Sonnet runs are misclassified by the static 1M divisor; both conditions are tolerated because all that matters is the resulting tier.
-
-Apply the following table to choose the Phase 2 limits **for this run only**:
-
-| `remaining_pct` | Phase 2 round limit | Phase 2 questions/round | Phase 2 total ceiling |
-|---|---|---|---|
-| ≥ 70% | 10 rounds | 3 questions | up to 30 questions (existing behaviour) |
-| 50-70% (i.e., 50% ≤ `remaining_pct` < 70%) | 5 rounds | 3 questions | up to 15 questions |
-| 30-50% (i.e., 30% ≤ `remaining_pct` < 50%) | 3 rounds | 2 questions | up to 6 questions |
-| < 30% | 1 round | 1 question | up to 1 question |
-
-**Standalone fallback (state-file-absent)**: when `autopilot-state.yaml` does **not** exist on disk at the canonical paths above (i.e., `/brief` was invoked without an autopilot session — the typical "standalone" case), the dynamic shrinkage is **bypassed**: the existing **10 rounds × 3 questions = max 30 questions** ceiling applies as before. This guarantees that direct `/brief` invocations are not regressed by Plan 07. The bypass is also taken when the file exists but its `runtime_metrics:` list is empty (no entry to read).
-
-Once the tier is selected at Phase 2 start, the round counter and questions/round caps are fixed for the remainder of the interview. The "Caps (load-bearing for contract)" stated above remain the **upper bound** — the dynamic table never raises them, only lowers them inside an autopilot run.
+Once the tier is selected at Phase 2 start, the round counter and questions/round caps are fixed for the remainder of the interview. The Caps stated above remain the **upper bound** — the dynamic table never raises them, only lowers them inside an autopilot run.
 
 **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), skip Phase 2 entirely and proceed directly to Phase 3 with the researcher's findings only. In this case, set `interview_complete: false` for the frontmatter (Phase 3) and do NOT count any rounds. Note "Phase 2 skipped (non-interactive mode)" in the final summary. Do NOT hang waiting for input.
 
-For each round (up to 10 rounds, at most 3 questions per round, at most 30 questions total):
+For each round (up to the active tier cap, at most 3 questions per round, at most 30 questions total):
 
-1. Based on the researcher's findings and any previous answers, identify the most important unanswered questions from the interview templates (see Pre-computed Context above).
-2. Select **up to 3** questions from the template categories that are most relevant and not yet answered. Adapt the questions based on the specific context — do not ask generic template questions verbatim. The `AskUserQuestion` call in a single round MUST carry at most 3 items.
+1. From the researcher's findings and prior answers, pick the most important unanswered questions from the interview templates (see Pre-computed Context).
+2. Select **up to 3** questions from the template categories most relevant and not yet answered. Adapt to the specific context; do not ask generic template questions verbatim. A single `AskUserQuestion` call MUST carry at most 3 items.
 3. Use `AskUserQuestion` to ask the selected questions.
-4. After receiving answers, output a brief summary of "Current understanding" to the user:
-   - What is known so far
-   - What categories still need information
-5. **Convergence check**: Stop the interview if ANY of these conditions are met:
-   - The user responds with "sufficient", "enough", or similar.
-   - All 7 categories (see `references/interview-templates.md`) have sufficient information.
-   - **10 rounds have been completed** (hard ceiling; combined with the 3/round cap this also enforces the 30-questions-total ceiling).
-6. Continue to next round if convergence is not reached and the round counter is below 10.
+4. After receiving answers, output a brief "Current understanding" summary (what is known, what categories still need information).
+5. **Convergence check** — stop if ANY: user responds "sufficient"/"enough"/similar; all 7 categories (`references/interview-templates.md`) covered; **10 rounds have been completed** (hard ceiling; with the 3/round cap, enforces the 30-questions ceiling).
+6. Otherwise continue to next round while the counter is below the tier cap.
 
-At the end of Phase 2, record `interview_complete = true` iff **at least one round produced a user response**; otherwise `interview_complete = false` (non-interactive fallback, or `AskUserQuestion` returned an error before any answer was received).
+At end of Phase 2, record `interview_complete = true` iff **at least one round produced a user response**; otherwise `interview_complete = false`.
 
 ## Phase 3: Brief Document Generation
 
@@ -173,86 +142,21 @@ interview_complete: {true|false}
 - **Do NOT emit `split:`** (obsolete — decomposition is `/create-ticket`'s job).
 - **Do NOT emit `ticket_count:`** (obsolete — decomposition is `/create-ticket`'s job).
 
-**Body** (after frontmatter):
-
-```
-## Vision
-[Refined expression of the user's goal]
-
-## Business Context
-[Motivation, stakeholders, timeline — from interview or "Not specified"]
-
-## Technical Requirements
-[Specific technical requirements gathered from investigation + interview]
-
-## Scope
-### In Scope
-- [items]
-### Out of Scope
-- [items, or "Not explicitly defined"]
-### Edge Cases
-- [case]: [expected behavior]
-
-## Constraints
-[Technical constraints, compatibility requirements]
-
-## Quality Expectations
-[Test coverage expectations, review requirements]
-
-## Investigation Summary
-[Key findings from Phase 1 researcher]
-```
+**Body schema**: render the canonical sections (Vision / Business Context / Technical Requirements / Scope with In Scope / Out of Scope / Edge Cases / Constraints / Quality Expectations / researcher summary) per [brief-body-template](references/brief-body-template.md). Synthesize the Phase 1 researcher's findings into the final body section so the brief stands alone for downstream skills.
 
 ## Phase 4: Policy Generation
 
-1. Read `.simple-workflow/kb/index.yaml` if it exists.
-   - Filter entries under the `autopilot` section. These are historical decision patterns (from `/tune` analysis of autopilot-log.md) that inform default policy values.
-   - For each gate in the policy template, search the `autopilot` section for patterns whose `summary` matches the gate name (e.g., `ac_eval_fail`, `ship_review_gate`).
-2. Determine default policy values based on:
-   - User's risk tolerance answers from Phase 2 (maps to conservative/moderate/aggressive). If Phase 2 was skipped (`interview_complete: false`), default to **conservative** and emit default gates.
-   - KB autopilot patterns (if any), applying confidence-based 3-tier judgment per gate:
-     - confidence >= 0.7 → use the pattern's action as recommended default; append `# kb-suggested` comment to the gate line
-     - confidence 0.5-0.7 → use the pattern's action but append `# [low confidence]` comment
-     - confidence < 0.5 → use conservative default (stop)
-   - **Size-scoped pattern priority**: If the `autopilot` section contains patterns with a `scope` matching the current brief's `estimated_size` (S/M/L/XL), prefer those over patterns with `scope=general`. Fall back to `scope=general` only when no size-specific pattern exists for a gate.
-   - If `.simple-workflow/kb/index.yaml` does not exist or has no `autopilot` section (first run), use conservative defaults for all gates and add `# KB patterns: none` comment to the generated policy file.
-3. Write to `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml` regardless of Phase 2 outcome **and regardless of the parsed `mode` value** (policy generation is preserved even when Phase 2 was skipped or when `mode=manual` was passed — the top-level `gates:` line MUST be present). Even in `mode=manual`, the brief-level `autopilot-policy.yaml` is written here as a **rescue path**: per-ticket propagation is suppressed by `/create-ticket` (so manual-mode tickets work like bare-mode tickets and are picked up by `/impl`'s FIFO selector), but the brief-level policy file remains on disk so a user can later opt into autopilot by running `/autopilot {slug}` directly — the autopilot's brief-level policy fallback (see `skills/autopilot/SKILL.md` Phase 1 step 2, "Brief optionality") consumes this file:
+1. Read `.simple-workflow/kb/index.yaml`, filter the `autopilot` section (historical decision patterns produced by `/tune` analysis), and apply confidence-based 3-tier judgment per gate (`>= 0.7` → annotate with `# kb-suggested`; `0.5-0.7` → `# [low confidence]`; `< 0.5` → conservative default). Apply size-scoped pattern priority before falling back to `scope=general`. Full integration logic: see [kb-policy-integration](references/kb-policy-integration.md).
+2. Determine default policy values based on the user's risk tolerance answers from Phase 2 (maps to conservative/moderate/aggressive). If Phase 2 was skipped (`interview_complete: false`), default to **conservative** and emit default gates.
+3. Write to `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml` regardless of Phase 2 outcome **and regardless of the parsed `mode` value** (the top-level `gates:` line MUST be present). Even in `mode=manual`, the brief-level `autopilot-policy.yaml` is written as a **rescue path**: per-ticket propagation is suppressed by `/create-ticket` (so manual-mode tickets work like bare-mode tickets via `/impl`'s FIFO selector), but the brief-level policy file remains so a user can later opt into autopilot by running `/autopilot {slug}` directly — the autopilot's brief-level policy fallback (see `skills/autopilot/SKILL.md` Phase 1 step 2, "Brief optionality") consumes this file.
 
-```yaml
-version: 1
-risk_tolerance: {conservative|moderate|aggressive}
+The emitted YAML follows the template in [policy-template](references/policy-template.md) (version 1 / risk_tolerance / gates / constraints, with conservative/moderate/aggressive branches inlined as comments).
 
-gates:
-  ticket_quality_fail:
-    action: retry_with_feedback
-    max_retries: 3
-    allow_partial_split_commit: false  # opt-in: when true, successful sub-tickets in an N>1 split are committed even if one sub-ticket exhausts retries. Default false preserves the atomic all-or-nothing contract.
-  evaluator_dry_run_fail:
-    action: {proceed_without|stop}  # conservative=stop, moderate/aggressive=proceed_without
-  ac_eval_fail:
-    action: retry
-    on_critical: stop
-  audit_infrastructure_fail:
-    action: {treat_as_fail|stop}  # conservative=stop, moderate/aggressive=treat_as_fail
-  ship_review_gate:
-    action: {proceed_if_eval_passed|stop}  # conservative=stop, moderate/aggressive=proceed_if_eval_passed
-  ship_ci_pending:
-    action: wait
-    timeout_minutes: {30|60}  # conservative/moderate=30, aggressive=60
-    on_timeout: stop
-  unexpected_error:
-    action: stop
-
-constraints:
-  max_total_rounds: {9|12}  # conservative/moderate=9, aggressive=12
-  allow_breaking_changes: {false|true}  # conservative/moderate=false, aggressive=true
-```
-
-The split judgement that used to live here has been removed: `/brief` no longer analyzes `estimated_size` L / XL to produce `split-plan.md`. `/create-ticket brief=<path>` receives the brief and is responsible for decomposing the scope (via its `planner` Split Judgment or via `findings=<path>` mode + `decomposer`). See `.simple-workflow/docs/fix_structure/spec-migration-policy.md` for the updated ownership boundary.
+Split judgement has been removed: `/brief` no longer analyzes `estimated_size` to produce `split-plan.md`, and the legacy `planner` Split Judgment was retired in v6.2.0. `/create-ticket brief=<path>` receives the brief and decomposes the scope via `findings=<path>` mode + `decomposer`.
 
 ## Finalization: Output, `mode=auto` handoff, and SW-CHECKPOINT
 
-This is the final phase of `/brief`. It handles the summary print, the `mode=auto` chained skill invocations (Step 2), the `mode=manual` no-chain manual flow guidance (Step 3), and the mandatory SW-CHECKPOINT emission (Step 4). **No further file writes occur after this phase**.
+Final phase of `/brief`: summary print, `mode=auto` chained skill invocations (Step 2), `mode=manual` no-chain guidance (Step 3), mandatory SW-CHECKPOINT (Step 4). **No further file writes occur after this phase**.
 
 ### Step 1 — Summary
 
@@ -264,9 +168,9 @@ Print:
 
 ### Step 2 — `mode=auto` handoff
 
-Only runs when mode=auto. (The parsed `mode` value is `auto` — i.e. `mode=auto` was passed explicitly, or `mode=` was omitted entirely so the default `auto` was applied. When the parsed `mode` is `manual`, this entire Step 2 is skipped and execution proceeds directly to Step 3.) Within **Step 2's chain-confirmation context**, the flow is strictly linear (display → status update → auto-kick write → `/create-ticket` → `/autopilot`): Step 2 **MUST NOT** call `AskUserQuestion`, nor otherwise prompt the user for a yes/no confirmation, to gate the chain between these sub-steps. The brief + policy display in (a) is the only user-facing surface in this branch and is a passive display — it does not gate the chain.
+Only runs when mode=auto. (`mode=auto` was passed explicitly, or `mode=` was omitted so the default `auto` was applied. When the parsed `mode` is `manual`, this entire Step 2 is skipped and execution proceeds directly to Step 3.) Within **Step 2's chain-confirmation context**, the flow is strictly linear (display → status update → auto-kick write → `/create-ticket` → `/autopilot`): Step 2 **MUST NOT** call `AskUserQuestion`, nor otherwise prompt the user for a yes/no confirmation, to gate the chain between these sub-steps. The brief + policy display in (a) is passive — it does not gate the chain.
 
-**Scope disclaimer (Step 2-only)**: The non-interactive restriction described above is **scoped exclusively to Step 2's chain confirmation** (and is itself only reachable when `mode=auto`). It **MUST NOT** be generalized to the rest of `/brief`. In particular, **Phase 2 Structured Interview (Socratic) is independent of this restriction and MUST run regardless of the parsed `mode` value** — `mode` has no effect on Phase 2's behavior. Phase 2 is the requirements-gathering interview and is governed solely by its own rules (see `## Phase 2` above).
+**Scope disclaimer (Step 2-only)**: The non-interactive restriction above is **scoped exclusively to Step 2's chain confirmation** (only reachable when `mode=auto`) and **MUST NOT** be generalized to the rest of `/brief`. In particular, **Phase 2 Structured Interview (Socratic) is independent of this restriction and MUST run regardless of the parsed `mode` value** — `mode` has no effect on Phase 2's behavior (see `## Phase 2` above).
 
 a. Display the brief content and policy content to the user. This display is passive — it informs the user of what will be chained but does not pause for acknowledgement.
 b. Update `brief.md` `status:` from `draft` to `confirmed`.
@@ -306,27 +210,26 @@ The brief-level autopilot-policy.yaml is preserved at .simple-workflow/backlog/b
 
 ### Step 4 — Emit the final `## [SW-CHECKPOINT]` block
 
-The block MUST be the LAST section of the skill's output. Format + the literal `context_advice` sentence are defined **once** in `skills/create-ticket/references/sw-checkpoint-template.md`; emit the block verbatim per that template (including the literal `context_advice:` sentence shown there — do NOT retype it here).
+The block MUST be the LAST section of the skill's output. Format + the literal `context_advice` sentence are defined **once** in `skills/create-ticket/references/sw-checkpoint-template.md`; emit the block verbatim per that template (do NOT retype the `context_advice:` sentence).
 
 Fields:
 - `phase: brief`
 - `ticket: none`
-- **Success path** (`brief.md` + `autopilot-policy.yaml` both written successfully) — branch on the parsed `mode`:
+- **Success path** (`brief.md` + `autopilot-policy.yaml` both written) — branch on the parsed `mode`:
   - `artifacts:` — list containing the two repo-relative paths: `.simple-workflow/backlog/briefs/active/{slug}/brief.md` and `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`.
   - **`mode=auto`**:
     - Emit EXACTLY ONE line matching `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$` with value `/autopilot {slug}`.
     - Emit EXACTLY ONE line matching `^next_recommended_manual:[[:space:]]+/create-ticket[[:space:]]+brief=\S+$` with value `/create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
   - **`mode=manual`**:
-    - Emit `next_recommended_auto: ""` (literal empty string). This empty value does NOT match the AC #11 regex `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$`, so the Stop hook's auto-`/autopilot` firing path does NOT trigger — this is the load-bearing safety guarantee of `mode=manual`.
+    - Emit `next_recommended_auto: ""` (literal empty string). This empty value does NOT match the AC #11 regex `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$`, so the Stop hook's auto-`/autopilot` firing path does NOT trigger — load-bearing safety guarantee of `mode=manual`.
     - Emit EXACTLY ONE line matching `^next_recommended_manual:[[:space:]]+/create-ticket[[:space:]]+brief=\S+$` with value `/create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
-  - Do NOT emit a bare `next_recommended:` line alongside these two (in either branch).
-  - The `{slug}` attached to `/autopilot` is the brief's `{slug}` (= `parent-slug` downstream; they are aliases in this skill).
-- **Failure path** (any write failure — `mkdir` failed, `brief.md` write failed, `autopilot-policy.yaml` write failed, or `mode=auto` chained `/create-ticket` failed):
+  - Do NOT emit a bare `next_recommended:` line alongside these two.
+  - `{slug}` is the brief's `{slug}` (= `parent-slug` downstream; aliases here).
+- **Failure path** (any write failure — `mkdir`, `brief.md`, `autopilot-policy.yaml`, or `mode=auto` chained `/create-ticket` failed):
   - `artifacts: []` on a single line.
-  - Emit BOTH recommendation lines with empty-string values: `next_recommended_auto: ""` AND `next_recommended_manual: ""`.
-  - AC #11's regex does not match empty-string values, so downstream automation does not misfire after a `/brief` error. Both keys are still present (shape-preserving) so parsers can distinguish "brief emitted a failure block" from "no block at all".
+  - Emit BOTH recommendation lines with empty-string values: `next_recommended_auto: ""` AND `next_recommended_manual: ""`. AC #11's regex does not match empty-string values, so downstream automation does not misfire. Both keys remain present (shape-preserving).
 
-In all three shapes (mode=auto success, mode=manual success, failure), both `next_recommended_auto:` and `next_recommended_manual:` keys are present; only their values differ. This shape-preserving discipline means downstream parsers can always read both fields.
+In all three shapes (mode=auto success, mode=manual success, failure), both `next_recommended_auto:` and `next_recommended_manual:` keys are present; only their values differ.
 
 ## Error Handling
 

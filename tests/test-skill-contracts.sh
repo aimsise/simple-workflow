@@ -839,22 +839,22 @@ assert_file_contains \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "topological"
 
-# J-8: brief SKILL.md has KB reference from index.yaml
+# J-8: brief references kb-policy-integration.md has KB reference from index.yaml
 assert_file_contains \
-  "brief SKILL.md has KB reference from index.yaml" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/kb-policy-integration.md has KB reference from index.yaml" \
+  "$REPO_DIR/skills/brief/references/kb-policy-integration.md" \
   "index\\.yaml"
 
-# J-9: brief SKILL.md has role=autopilot filtering
+# J-9: brief references kb-policy-integration.md has role=autopilot filtering
 assert_file_contains \
-  "brief SKILL.md has autopilot role filtering" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/kb-policy-integration.md has autopilot role filtering" \
+  "$REPO_DIR/skills/brief/references/kb-policy-integration.md" \
   "autopilot"
 
-# J-10: brief SKILL.md mentions confidence threshold 0.7
+# J-10: brief references kb-policy-integration.md mentions confidence threshold 0.7
 assert_file_contains \
-  "brief SKILL.md mentions confidence threshold" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/kb-policy-integration.md mentions confidence threshold" \
+  "$REPO_DIR/skills/brief/references/kb-policy-integration.md" \
   "0\\.7"
 
 # J-11: impl SKILL.md has gates.ac_eval_fail
@@ -920,20 +920,20 @@ assert_file_contains \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   'aggressive.*allow_breaking_changes: true'
 
-# J-19: brief SKILL.md policy template has aggressive-specific values
+# J-19: brief references policy-template.md has aggressive-specific values
 assert_file_contains \
-  "brief SKILL.md has timeout_minutes aggressive branch (60)" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/policy-template.md has timeout_minutes aggressive branch (60)" \
+  "$REPO_DIR/skills/brief/references/policy-template.md" \
   'timeout_minutes:.*60.*aggressive'
 
 assert_file_contains \
-  "brief SKILL.md has max_total_rounds aggressive branch (12)" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/policy-template.md has max_total_rounds aggressive branch (12)" \
+  "$REPO_DIR/skills/brief/references/policy-template.md" \
   'max_total_rounds:.*12.*aggressive'
 
 assert_file_contains \
-  "brief SKILL.md has allow_breaking_changes aggressive branch (true)" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/policy-template.md has allow_breaking_changes aggressive branch (true)" \
+  "$REPO_DIR/skills/brief/references/policy-template.md" \
   'allow_breaking_changes:.*true.*aggressive'
 
 # J-20: impl SKILL.md documents the rounds=N argument, the new default 9 cap,
@@ -975,10 +975,10 @@ echo ""
 # =============================================================================
 echo "--- Cat K: kb-suggested / kb_override contract ---"
 
-# K-1: brief SKILL.md Phase 4 instructs annotating with kb-suggested comments
+# K-1: brief references kb-policy-integration.md instructs annotating with kb-suggested comments
 assert_file_contains \
-  "brief SKILL.md instructs annotating with kb-suggested comments" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/kb-policy-integration.md instructs annotating with kb-suggested comments" \
+  "$REPO_DIR/skills/brief/references/kb-policy-integration.md" \
   "kb-suggested"
 
 # K-2: autopilot SKILL.md step 6 has kb-suggested comment detection logic
@@ -1011,10 +1011,10 @@ assert_file_contains \
   "$REPO_DIR/skills/autopilot/SKILL.md" \
   "human_override.*kb_override"
 
-# K-7: brief SKILL.md describes confidence >= 0.7 and kb-suggested on the same line
+# K-7: brief references kb-policy-integration.md describes confidence >= 0.7 and kb-suggested on the same line
 assert_file_contains \
-  "brief SKILL.md ties kb-suggested to the confidence >= 0.7 branch" \
-  "$REPO_DIR/skills/brief/SKILL.md" \
+  "brief references/kb-policy-integration.md ties kb-suggested to the confidence >= 0.7 branch" \
+  "$REPO_DIR/skills/brief/references/kb-policy-integration.md" \
   "0\.7.*kb-suggested"
 
 echo ""
