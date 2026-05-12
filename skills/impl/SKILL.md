@@ -1,10 +1,7 @@
 ---
 name: impl
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
-  Use after /scout or /plan2doc to execute the implementation plan.
-  Implements the latest plan with independent AC verification and
-  code quality review.
+  Do not auto-invoke. Only invoke when called by name. Implements the latest plan via Generator -> AC Evaluator -> Code Quality Reviewer loop. Use when (1) /scout or /plan2doc produced a plan and user calls `/impl`, (2) /autopilot delegates the per-ticket impl step, or (3) an explicit plan path is passed. Triggers on "/impl", "implement the plan", "generator-evaluator loop".
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -40,53 +37,31 @@ allowed-tools:
 argument-hint: "[rounds=N] [plan file path or additional instructions]"
 ---
 
-Implement the latest plan using Generator → AC Evaluator → Code Quality Reviewer architecture.
+Implement the latest plan via Generator → AC Evaluator → Code Quality Reviewer.
 User arguments: $ARGUMENTS
 
 ## Mandatory Skill Invocations
 
-`/impl` MUST delegate to each target below via the prescribed tool. `/impl` writes no code and renders no AC verdict — its role is to orchestrate the Generator → Evaluator → /audit loop with strict information firewalls. Bypasses are detected by the artifact presence gate and the skill invocation audit (Phase A+).
+`/impl` orchestrates Generator → Evaluator → /audit with strict firewalls; writes no code, renders no AC verdict.
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `implementer` agent (Agent tool, "Generator") | Phase 2 step 13 — once per round | No code produced by a dedicated Generator; `/impl` is tempted to self-write edits (firewall broken). Detected by missing implementer trace in skill invocation audit |
-| `ac-evaluator` agent (Agent tool, Dry Run) | Phase 1 step 8 — round 1, L/XL only | No pre-committed verification rubric. Detected by missing evaluator trace for L/XL round 1 |
-| `ac-evaluator` agent (Agent tool, main gate) | Phase 2 step 15 — once per round | No independent AC verdict (Ticket 002 failure mode). Missing `eval-round-{n}.md` triggers `[PIPELINE] impl: ARTIFACT-MISSING`; ticket marked failed |
-| `/audit` (Skill tool) | Phase 2 step 17 — when AC gate is PASS / PASS-WITH-CAVEATS | No code-reviewer + security-scanner review. Missing `audit-round-{n}.md` / `quality-round-{n}.md` / `security-scan-{n}.md` triggers `[PIPELINE] impl: ARTIFACT-MISSING`; ticket marked failed |
+| `implementer` agent (Agent tool, "Generator") | step 13 | missing trace |
+| `ac-evaluator` agent (Agent tool, Dry Run) | step 8 (round 1, L/XL) | no rubric |
+| `ac-evaluator` agent (Agent tool, main gate) | step 15 | missing `eval-round-{n}.md` → `[PIPELINE] impl: ARTIFACT-MISSING` |
+| `/audit` (Skill tool) | step 17 (PASS/PASS-WITH-CAVEATS) | missing report → `[PIPELINE] impl: ARTIFACT-MISSING` |
 
 **Binding rules**:
-- `MUST invoke implementer via the Agent tool` — the orchestrator / Generator firewall is load-bearing for AC independence.
-- `MUST invoke ac-evaluator via the Agent tool` — never self-assess AC compliance from build/test output; the Evaluator reads the code via `git diff`.
-- `MUST invoke /audit via the Skill tool` — never spawn `code-reviewer` / `security-scanner` directly; `/audit` enforces the "single agent failure = FAIL" invariant.
-- `NEVER bypass these via direct file operations` — writing `eval-round-{n}.md` / `quality-round-{n}.md` / `audit-round-{n}.md` from `/impl` itself is a contract violation.
-- `Fail the task immediately if any mandatory invocation cannot be completed` — print the reason, set `phases.impl.status: failed` and `overall_status: failed` in `phase-state.yaml`, and stop; do not fabricate a PASS.
-- `ac-evaluator is contractually idempotent on persistence (see agents/ac-evaluator.md Report Persistence Contract): it always writes the report on the first call and returns a non-empty Output path. NEVER re-invoke ac-evaluator solely to persist a report — an empty Output is an agent failure, not a retryable state.`
+- `MUST invoke implementer via the Agent tool`; `MUST invoke ac-evaluator via the Agent tool`; `MUST invoke /audit via the Skill tool`.
+- `NEVER bypass via direct file operations` — writing `eval-round-{n}.md` / `quality-round-{n}.md` / `audit-round-{n}.md` from `/impl` violates the contract.
+- `Fail the task immediately on any missing invocation` — set `phases.impl.status: failed` + `overall_status: failed`.
+- `ac-evaluator is contractually idempotent on persistence` (`agents/ac-evaluator.md`); first call writes and returns non-empty Output. NEVER re-invoke to persist.
 
 ## phase-state.yaml write ownership
 
-Writes ONLY `phases.impl` plus top-level `current_phase` / `last_completed_phase` / `overall_status`. Never modify `phases.create_ticket` / `phases.scout` / `phases.ship`. Legacy `impl-state.yaml` retired; intra-impl state lives under `phases.impl.*`.
-
-Start-time one-shot migrations:
-- Legacy `impl-state.yaml` + no `phase-state.yaml` → migrate (§11a).
-- Neither file exists + plan.md given → bootstrap with prior phases backfilled completed (§11b).
-
-`phase-state.yaml` is never deleted. On completion, set `phases.impl.status: completed` and leave the file for `/ship` / downstream tools.
-
-Reference: `skills/create-ticket/references/phase-state-schema.md`.
+Writes ONLY `phases.impl` + top-level `current_phase` / `last_completed_phase` / `overall_status`. Legacy `impl-state.yaml` retired. Start-time: legacy → migrate; neither + plan.md → bootstrap. See [state-file-resolution.md](references/state-file-resolution.md). Never deleted. Schema: `skills/create-ticket/references/phase-state-schema.md`.
 
 ## Pre-computed Context
-
-Oldest non-autopilot plan:
-!`for d in $(ls -d .simple-workflow/backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}plan.md" ] && echo "${d}plan.md" && break; done || true`
-
-Latest plan in .simple-workflow/docs/plans/:
-!`ls -t .simple-workflow/docs/plans/*.md 2>/dev/null | head -1`
-
-Oldest non-autopilot research:
-!`for d in $(ls -d .simple-workflow/backlog/active/*/ 2>/dev/null | sort); do [ ! -f "${d}autopilot-policy.yaml" ] && [ -f "${d}investigation.md" ] && echo "${d}investigation.md" && break; done || true`
-
-Latest research in .simple-workflow/docs/research/:
-!`ls -t .simple-workflow/docs/research/*.md 2>/dev/null | head -1`
 
 Current state:
 !`git status --short`
@@ -95,397 +70,118 @@ Current state:
 
 1. Parse `$ARGUMENTS`:
 
-   **1a. Round-cap argument extraction** (must run before plan-path detection):
-   - **Token boundary**: tokenize `$ARGUMENTS` on whitespace, then test each token against `^[Rr][Oo][Uu][Nn][Dd][Ss]=([^[:space:]]*)$` (case-insensitive `rounds=` key; the captured value may be empty so a bare `rounds=` is recognized as a token and rejected at validation rather than silently dropped). Match only whole, whitespace-delimited tokens — substrings inside a quoted plan path (e.g. `.simple-workflow/docs/plans/some-rounds=5-test.md`) or inside other tokens (`myrounds=15`) are NOT recognized. If multiple matching tokens appear, the first wins.
-   - **Validate N**: the captured value MUST be a non-empty positive decimal integer (`^[1-9][0-9]*$`) AND MUST have at most 6 digits (`<= 999999`) so the soft-cap arithmetic stays safely inside bash signed-64-bit range.
-     - If malformed in form (e.g. `rounds=0`, `rounds=-1`, `rounds=abc`, `rounds=1.5`, `rounds==5`, or the bare key `rounds=` with empty value): emit a single stderr warning `[ARG-WARN] rounds=<raw> is not a positive integer; falling back to policy or default 9` and treat the argument as absent (fall through to the policy / default precedence below).
-     - If form-valid but exceeds the 6-digit hard cap (e.g. `rounds=1000000`): emit a single stderr warning `[ARG-WARN] rounds=<raw> exceeds 999999 (bash arithmetic safety hard cap); falling back to policy or default 9` and fall through. This is distinct from the soft cap of 24 below — the hard cap rejects, the soft cap warns and proceeds.
-     - If valid (1..999999 inclusive), set `arg_rounds = N`.
-   - **Soft cap of 24** (warn, do NOT clamp): if `arg_rounds > 24`, emit a single stderr warning `[ARG-WARN] rounds=<N> exceeds soft cap 24; proceeding with user-specified value` and continue with the user-specified value. The cap is advisory only — the loop will run for the full user-requested count. The boundary value `rounds=24` does NOT trigger the warning.
-   - **Strip the FIRST recognized `rounds=N` token from `$ARGUMENTS`** before plan-path detection — including when validation rejected its value (the strip is unconditional once the token boundary regex matches; rejection only affects the cap value, not the additional-instructions tail). Subsequent matching tokens are intentionally left in place as part of the additional-instructions tail; the "first wins" rule above already pinned which token is consumed. Then collapse any resulting double spaces and trim leading / trailing whitespace so the remaining tokens (plan path / additional instructions) are unaffected. **Note**: if the first recognized token is malformed (validation rejected), validation does NOT retry against subsequent matching tokens — the cap falls through to policy / default 9, and the user must fix the typo and re-invoke. This is an intentional simplification of the parser; "first valid wins" was considered and explicitly deferred.
-   - **Precedence for the round cap** (resolved in the Phase 2 init block — between Step 12 and Step 13 — and written into `phases.impl.max_rounds`): `rounds=N` argument (when valid) > `{ticket-dir}/autopilot-policy.yaml` `constraints.max_total_rounds` (when present) > **default 9**.
-   - **Stderr placeholder convention**: `<N>` = the parsed positive integer (used in the soft-cap warning, where parsing succeeded); `<raw>` = the captured right-hand side of the `rounds=` token (i.e. the regex's capture group `([^[:space:]]*)`) as it appeared in `$ARGUMENTS`, including any sign / decimal point / non-numeric chars (used in the malformed and hard-cap warnings, where parsing rejected the value). Examples: `rounds=abc` produces `[ARG-WARN] rounds=abc is not a positive integer ...` (capture is `abc`); `rounds==5` produces `[ARG-WARN] rounds==5 is not a positive integer ...` (capture is `=5`); bare `rounds=` produces `[ARG-WARN] rounds= is not a positive integer ...` (capture is the empty string). The two placeholders are NOT interchangeable; downstream log greps that key off the warning prefix should distinguish them.
-
-   **Quoted strings in `$ARGUMENTS`** are NOT part of the parser contract: shells deliver `$ARGUMENTS` as a flat post-shell-quoting string, so a quoted plan path like `"path with spaces/plan.md"` becomes `path with spaces/plan.md` after the shell strips the quotes — there is no quote-aware tokenization in `/impl`. Users who need spaces in plan paths should rely on the existing `.simple-workflow/backlog/active/{ticket-dir}/plan.md` auto-discovery rather than passing quoted paths. The `rounds=N` parser only sees whitespace-delimited tokens, so any spaces inside an originally-quoted argument will split the value mid-token and the regex will not match.
+   **1a. Round-cap argument extraction** (before plan-path detection): find `rounds=N` (case-insensitive, first wins); validate `N` as positive integer (6-digit hard cap). **Soft cap 24** — `arg_rounds > 24` emits `[ARG-WARN]` without clamping (soft cap 24 is advisory). Strip first recognized token. **Precedence** (→ `phases.impl.max_rounds`): `rounds=N` argument > `{ticket-dir}/autopilot-policy.yaml` `constraints.max_total_rounds` > **Else default 9**. See [round-cap-parser.md](references/round-cap-parser.md) for regex/validation/hard-cap/strip/precedence/stderr/quoted-strings.
 
    **1b. Plan-path detection** (operates on the post-strip `$ARGUMENTS`):
-   - If it starts with `.simple-workflow/backlog/active/` or `.simple-workflow/docs/plans/` → use as plan path; remaining text is additional instructions.
-   - Otherwise → entire argument is additional instructions. Auto-select from `.simple-workflow/backlog/active/`: list dirs containing `plan.md`; **Exclude** dirs containing `autopilot-policy.yaml` (autopilot-managed); sort by directory name ascending to select the lowest ticket number first (FIFO); pick first. Fallback: latest `.simple-workflow/docs/plans/*.md`.
-   - No plan anywhere → print "No plan found in .simple-workflow/backlog/active/ or .simple-workflow/docs/plans/. Run /scout or /plan2doc first." and stop.
-   - If `.simple-workflow/backlog/active/` contains only autopilot-managed tickets, print "All active tickets are managed by /autopilot. To implement manually, specify the plan path explicitly: /impl .simple-workflow/backlog/active/{ticket-dir}/plan.md" and fall back to `.simple-workflow/docs/plans/*.md`.
+   - Starts with `.simple-workflow/backlog/active/` or `.simple-workflow/docs/plans/` → use as plan path.
+   - Else auto-select from `.simple-workflow/backlog/active/`: list dirs with `plan.md`; **Exclude** dirs containing `autopilot-policy.yaml`; sort ascending by directory name (FIFO, lowest ticket number first); pick first. Fallback: latest `.simple-workflow/docs/plans/*.md`.
+   - No plan → "No plan found in .simple-workflow/backlog/active/ or .simple-workflow/docs/plans/. Run /scout or /plan2doc first." and stop.
+   - Only autopilot-managed tickets → "All active tickets are managed by /autopilot. To implement manually, specify the plan path explicitly: /impl .simple-workflow/backlog/active/{ticket-dir}/plan.md" and fall back to `.simple-workflow/docs/plans/*.md`.
 
-2. Confirm the plan file exists (Glob or minimal `Read(limit=5)`). Do NOT read the plan in full — the implementer agent reads it in Phase 2.
+2. Confirm plan exists (Glob or `Read(limit=5)`); do NOT read in full.
 
-3. Size detection:
-   - Plan in `.simple-workflow/backlog/active/{ticket-dir}/plan.md` → `Read(ticket.md, limit=30)` and extract Size from `| Size |`. Fallback `limit=80` once. Default `M` if still missing.
-   - Plan in `.simple-workflow/docs/plans/` → default `M`.
+3. Size detection: ticket → `Read(ticket.md, limit=30)` for `| Size |` (fallback `limit=80`; default `M`). `.simple-workflow/docs/plans/` → default `M`.
 
-4. **Worktree recommendation** (L/XL only): Print "Tip: Size {size} ticket. Consider a worktree: `git worktree add -b impl/{slug} ../impl-{slug} && cd ../impl-{slug}`. Then re-run /impl." `{slug}` = ticket dir with `NNN-` prefix stripped. Non-blocking.
+4. **Worktree recommendation** (L/XL): non-blocking tip `git worktree add -b impl/{slug} ../impl-{slug}` (`{slug}` = dir minus `NNN-`).
 
-5. **Locate and extract the Acceptance Criteria section** — bounded read, do NOT read the plan in full:
-   a. `Grep -n "^### Acceptance Criteria" <plan-path>` (fallbacks: `^## Acceptance Criteria` / `^#### Acceptance Criteria`).
-   b. If found at line `L`: `Read(<plan-path>, offset=L, limit=200)` (200-line hard cap).
-   c. Terminate at the first `^#{1,6} ` line AFTER the AC header, or at EOF / end of window.
-   d. If the 200-line window is fully consumed without a terminator and does not reach EOF, emit `"AC section exceeds 200 lines; using the first 200 lines"` and proceed with the 200-line window.
-   e. Extract the AC bullet list. Keep the text for Generator (§13 field b) and Evaluator (§8, §15 field b) prompts.
+5. **Locate AC section** — bounded: `Grep -n "^### Acceptance Criteria" <plan-path>` (fallbacks `^## Acceptance Criteria` / `^#### Acceptance Criteria`). At line `L`, `Read(<plan-path>, offset=L, limit=200)` (200-line cap); terminate at first `^#{1,6} ` AFTER header (or EOF). If window exhausted without terminator, emit `"AC section exceeds 200 lines; using the first 200 lines"`. Keep for Generator (§13 b) and Evaluator (§8, §15 b).
 
-6. If step 5 Grep returns no header line, print "ERROR: Plan has no Acceptance Criteria. Add an '### Acceptance Criteria' section to the plan before running /impl." and stop.
+6. No header → "ERROR: Plan has no Acceptance Criteria. Add an '### Acceptance Criteria' section to the plan before running /impl." and stop.
 
-7. **AC Sanity Check** (round 1, M/L/XL only): In Generator prompt: "Before implementing, review each AC. If any is ambiguous or infeasible, flag it in your **Next Steps** field." If Generator flags ambiguous AC, report and stop.
+7. **AC Sanity Check** (round 1, M/L/XL only): Generator prompt "Before implementing, review each AC. If any is ambiguous or infeasible, flag it in your **Next Steps** field." If flagged, stop.
 
-8. **Evaluator Dry Run** (round 1 only, **L/XL size only**):
-   **MUST invoke the `ac-evaluator` agent via the Agent tool** with a verification planning prompt. **NEVER bypass the Evaluator** by self-drafting the plan. Fail the task immediately if the Evaluator cannot be invoked.
-   - Prompt: "You are preparing a verification plan. For each Acceptance Criterion below, describe HOW you will verify it (commands, code checks, edge cases). Do NOT evaluate any implementation — no code exists yet. Return only the verification plan."
-   - Include: Plan path: `<path>`. Acceptance Criteria: <text>. Append: "Read the plan at the given path before drafting. The AC text above is the fixed rubric — do not re-derive it from the plan."
-   - **If Evaluator fails or returns partial**:
-     - **Autopilot policy check**: If `{ticket-dir}/autopilot-policy.yaml` exists, read `gates.evaluator_dry_run_fail.action`: `proceed_without` → proceed without the plan (print `[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=proceed_without`); `stop` → stop (print `[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=stop`).
-     - Else use `AskUserQuestion` "Evaluator could not agree on a verification plan. Continue?" with yes (proceed without plan) / no (stop).
-     - **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors, default to "no". Print "Stopped: /impl requires interactive mode to recover from Evaluator Dry Run failure." and exit. Do NOT hang.
-   - **On success**: Save the plan for Generator prompt (step 13g).
+8. **Evaluator Dry Run** (round 1, **L/XL only**): **MUST invoke `ac-evaluator` via the Agent tool** with a planning prompt (HOW each AC verified; no code yet). **NEVER bypass** by self-drafting. Include plan path + AC + "AC above is the fixed rubric — do not re-derive". Failure: read `gates.evaluator_dry_run_fail.action` — `proceed_without` → proceed (`[AUTOPILOT-POLICY] gate=evaluator_dry_run_fail action=proceed_without`); `stop` → stop. Else `AskUserQuestion` yes/no (Non-interactive default `no`). Success → save plan for Generator (step 13g).
 
-9. If a related investigation file exists (same-dir `investigation.md` or latest `.simple-workflow/docs/research/`), locate via Glob and pass the path to Generator field c.
+9. If related investigation exists (same-dir `investigation.md` or latest `.simple-workflow/docs/research/`), pass path to Generator field c.
 
-10. If working tree has uncommitted changes unrelated to the plan, warn user.
+10. If working tree has uncommitted changes unrelated to the plan, warn.
 
-11. **State file resolution, legacy migration, and bootstrap**. Let `{ticket-dir}` be the directory containing the plan file. Set `impl_resume_mode` based on which state file is present.
+11. **State file resolution, migration, bootstrap**. Dispatch on state-file presence + `phases.impl.status`. Sets `impl_resume_mode`.
+    - §11-completed/§11-failed: early-exit gates.
+    - §11a.0 Both files exist — Sub-case A (already complete, skip to §11c) / Sub-case B (partial, re-populate).
+    - §11a.1 Clean legacy migration: **Read `impl-state.yaml`**, write `phase-state.yaml`; `mv impl-state.yaml impl-state.yaml.migrated-{YYYYMMDD}.bak` (NEVER `rm`); preserve unknown keys via `legacy_extras`.
+    - §11b Bootstrap. §11c Resume dispatch. §11d Fresh-start (post-`/scout`).
+    See [state-file-resolution.md](references/state-file-resolution.md) for all dispatch sub-cases.
 
-    **§11-completed**: If `phase-state.yaml` exists and `phases.impl.status == completed`, print `Ticket already completed: phases.impl.completed_at = {timestamp}. Run /ship next, or specify a different plan path.` and stop. Do NOT re-run the loop on a completed ticket.
-
-    **§11-failed**: If `phase-state.yaml` exists and `phases.impl.status == failed`, print `Previous /impl run marked phases.impl.status: failed. To retry: reset phases.impl.status to 'pending' and next_action to null, then re-run.` and stop. Automatic retry would mask recurring infrastructure issues.
-
-    **11a. Legacy migration**: Before migrating, **read `skills/create-ticket/references/phase-state-migration.md`** — authoritative for the rename table, `legacy_extras` preservation rule, `.bak` cleanup convention, and sunset timeline. Three dispatch branches:
-
-    **§11a.0 — Both files exist**: If `impl-state.yaml` AND `phase-state.yaml` both exist, read phase-state.yaml:
-    - Sub-case A: `phases.impl.status != null` OR `current_round != null` → migration already complete; legacy file is stale leftover. Skip to §11c. Do NOT re-migrate or touch the legacy file.
-    - Sub-case B: Empty skeleton (both fields null) → partial migration. Proceed to §11a.1 but re-populate the existing file's `phases.impl.*` section rather than creating a new file (other sections remain intact); impl-state.yaml cleanup (step 4) still runs.
-
-    **§11a.1 — Clean legacy migration**: If ONLY `impl-state.yaml` exists:
-    1. Read `impl-state.yaml`.
-    2. Identify unknown top-level keys (not in the migration doc's rename table). Known legacy fields: `phase`, `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `next_action`, `feedback_files.*`, `plan_file`, `ticket_dir`, `size`, `started`. Unknown keys are preserved per `legacy_extras` rule (migration doc §3).
-    3. Write `phase-state.yaml` with the canonical schema (see `phase-state-schema.md`):
-       - Top-level: `version: 1`; `size:` = legacy `size`; `created:` = legacy `started` (fallback `{now}`); `current_phase: impl`; `last_completed_phase: scout`; `overall_status: in-progress`. No top-level `ticket_dir:`.
-       - `phases.create_ticket.status: completed`, `completed_at: {now}`, `artifacts.ticket: .simple-workflow/backlog/active/{ticket-dir}/ticket.md` if exists else `null`.
-       - `phases.scout.status: completed`, `completed_at: {now}`, `artifacts.investigation` / `artifacts.plan` if the files exist else `null`.
-       - `phases.impl.status: in-progress`, `started_at:` = legacy `started`. Copy legacy fields 1:1 under `phases.impl.*` per rename table (legacy `phase → phase_sub`; `started → started_at`; `plan_file` / `ticket_dir` dropped; other fields keep name).
-       - `phases.impl.legacy_extras:` preserves unknown keys (omit field if none).
-       - `phases.ship.status: pending`, all fields `null`.
-    4. On successful write, rename legacy: `mv impl-state.yaml impl-state.yaml.migrated-{YYYYMMDD}.bak`. NEVER `rm`. If the write failed, do NOT rename — migration is all-or-nothing.
-    5. Print `[PHASE-STATE-MIGRATION] impl-state.yaml → phase-state.yaml migrated for {ticket-dir}; legacy preserved at impl-state.yaml.migrated-{YYYYMMDD}.bak`.
-    6. Set `impl_resume_mode = true` and proceed to §11c.
-
-    **11b. Bootstrap**: If NEITHER file exists but a plan.md is present:
-    - Under `.simple-workflow/backlog/active/{ticket-dir}/`:
-      1. Create `phase-state.yaml` with the canonical schema: top-level `version: 1`, `size:` = detected Size, `created: {now}`, `current_phase: impl`, `last_completed_phase: scout`, `overall_status: in-progress`; `phases.create_ticket` and `phases.scout` marked completed with artifact fields pointing to existing files (else null); `phases.impl.status: in-progress`, `started_at: {now}`, other fields at pending defaults; `phases.ship.status: pending`.
-      2. Print `[PHASE-STATE-BOOTSTRAP] phase-state.yaml bootstrapped for {ticket-dir} (no prior state found)`.
-      3. Set `impl_resume_mode = false` and proceed to Step 12.
-    - Under `.simple-workflow/docs/plans/` (non-ticket flow): skip state creation; all state-update steps (incl. Step 21 cleanup) become no-ops.
-
-    **11c. Resume dispatch**: If `phase-state.yaml` exists, `phases.impl.status == in-progress`, and `next_action` is non-null:
-    - Set `impl_resume_mode = true`. Read `phases.impl.*`.
-    - Print resume summary:
-      ```
-      [IMPL-RESUME] The previous /impl run stopped midway. Resuming from where it left off.
-      [IMPL-RESUME] Round: {current_round}/{max_rounds}
-      [IMPL-RESUME] Phase: {phase_sub}
-      [IMPL-RESUME] Next action: {next_action}
-      ```
-    - Carry forward `feedback_files`. Skip to the step matching `next_action`:
-      - `start-round-{N}-generator` → Step 13 with `current_round = N` (pass `feedback_files.eval` / `quality` to Generator if present).
-      - `start-evaluator` → Step 15. `start-audit` → Step 17. `proceed-to-phase-3` → Phase 3 (Step 19).
-      - `stop-critical` → print "Previous run stopped due to CRITICAL. Reset `phases.impl` (status: pending, next_action: null) to re-run." and stop.
-
-    **11d. Fresh-start**: If `phase-state.yaml` exists but `phases.impl.status == pending` (typical post-`/scout`): set `impl_resume_mode = false` and proceed to Step 12. State updates happen at Step 13+ per the state-management section below.
-
-    If the plan lies outside any active ticket dir (e.g. `.simple-workflow/docs/plans/...`), skip all state resolution and proceed with `impl_resume_mode = false`.
-
-12. **Safety checkpoint**: Create a rollback point with `git stash push -m "impl-checkpoint" --include-untracked -- ':!.simple-workflow'` (preserves plugin artifacts). On success print "Safety checkpoint created. To rollback: git stash pop". If nothing to stash, skip silently.
+12. **Safety checkpoint**: `git stash push -m "impl-checkpoint" --include-untracked -- ':!.simple-workflow'`. Print "Safety checkpoint created. To rollback: git stash pop". Skip if empty.
 
 ## Phase 2: Generator → AC Evaluator → Code Quality Reviewer Loop (max N rounds, default 9)
 
-**Round-limit precedence** (`rounds=N` argument > policy > default 9):
-- **First**: `rounds=N` argument from Phase 1 step 1a (when present and valid). Soft cap 24 — values above 24 emit `[ARG-WARN]` but are NOT clamped, so a deliberate `rounds=50` will run for 50 rounds.
-- **Else**, if `{ticket-dir}/autopilot-policy.yaml` defines `constraints.max_total_rounds`, use that value (autopilot's `aggressive` profile sets 12).
-- **Else default 9** — when the user passes no `rounds=N` and the ticket has no `autopilot-policy.yaml`, the cap defaults to **9**. (Raised from 3 in v6.4.4 to close the asymmetry with autopilot's `aggressive` profile and reduce manual fall-throughs to Phase 3 with unresolved AC issues.)
-
-**Why a Stop hook (and not PreToolUse) guards the post-`/audit` handoff**: the recurring failure this loop is hardened against is *omission* — emitting `/audit`'s structured block and then ending the turn before Step 18 → Phase 3 → `## [SW-CHECKPOINT]` runs. PreToolUse hooks (e.g. `pre-state-transition.sh`) can only fire on a tool invocation event; they cannot detect the **absence** of an invocation. A Stop hook (`hooks/impl-checkpoint-guard.sh`) at turn termination is the only layer where "the state that should have been written wasn't" is observable, which is why the harness-side defense lives there rather than in PreToolUse.
+Round-limit precedence per Step 1a. Stop hook (`hooks/impl-checkpoint-guard.sh`) guards the post-`/audit` handoff — Stop (not PreToolUse) because the failure mode is *omission* (turn ending after `/audit`'s structured block but before Step 18 → Phase 3 → `## [SW-CHECKPOINT]`); only a turn-termination hook detects a tool call that never happens.
 
 ### phase-state.yaml phases.impl state management
 
-All intra-impl loop state lives under `phases.impl.*` in `{ticket-dir}/phase-state.yaml`. See `phase-state-schema.md` for the canonical schema.
+Intra-impl state lives under `phases.impl.*` in `{ticket-dir}/phase-state.yaml`. Initialise before the loop (`status: in-progress`, `phase_sub: generator-pending`, `next_action: start-round-1-generator`, `current_round: 1`, `max_rounds`). Per-step updates touch only `phases.impl.*`. Non-ticket flow: no-op. See [phase-state-impl-management.md](references/phase-state-impl-management.md) for init YAML, value lists, per-Step rules.
 
-If `impl_resume_mode = false` and `phase-state.yaml` exists, initialize `phases.impl` to the in-progress state **before entering the loop** via read-modify-write; touch only the fields listed:
+13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** via `Edit`/`Write` from `/impl` — firewall requires zero orchestrator code changes. Fail immediately if not invocable.
+    - `subagent_type: implementer`; description "Implement plan for <feature>". Model per `constraints.sonnet_size_threshold` in `{ticket-dir}/autopilot-policy.yaml` (`S`/`M`/`L`/`off`; default `M`; `off` → opus); see `skills/create-ticket/references/autopilot-policy-reference.md`.
+    - Prompt fields a-g: plan path (read full), AC list ("You will be evaluated by an independent evaluator"), investigation, user instructions, round 2+ feedback (`eval-round-{n-1}.md` / `quality-round-{n-1}.md`), CLAUDE.md lint/test ref, round-1 Dry-Run plan.
+      h. KB injection: Read `.simple-workflow/kb/index.yaml`; filter `role=implementer` and `confidence >= 0.8`; include up to 20 summary lines under "## Known Project Patterns". If `.simple-workflow/kb/index.yaml` does not exist, skip silently. **AC always wins over KB patterns on conflict.**
+      i. Autopilot: if `autopilot-policy.yaml` has `constraints.allow_breaking_changes: false`, include "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions."
+      j. **CONSTRAINT — Input immutability** (verbatim): "Do NOT modify `plan.md`, `ticket.md`, or `investigation.md` at any point. These are read-only inputs. Source code changes and new files are fine. If you believe the plan needs revision, flag it in your Next Steps field — the orchestrator will invoke `/plan2doc` separately."
+      k. **Return value cap**: Return per the Context Conservation Protocol in `agents/implementer.md` — under 500 tokens (status, changed-files, lint/test summary).
 
-```yaml
-phases:
-  impl:
-    status: in-progress
-    started_at: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
-    current_round: 1
-    max_rounds: {resolved at runtime per Phase 1 step 1a precedence — see prose above; integer literal at write time, e.g. 9}  # precedence: arg > policy > default 9; soft cap 24 warning, no clamp
-    phase_sub: generator-pending
-    last_ac_status: null
-    last_audit_status: null
-    last_audit_critical: 0
-    next_action: start-round-1-generator
-    feedback_files:
-      eval: null
-      quality: null
-# plus top-level:
-current_phase: impl
-```
-
-`phase_sub` values: `generator-pending`, `generator-complete`, `evaluator-complete`, `audit-complete`, `round-complete`, `done`. `next_action` values: `start-round-{N}-generator`, `start-evaluator`, `start-audit`, `proceed-to-phase-3`, `stop-critical`.
-
-State updates (read-modify-write, touch ONLY fields under `phases.impl.*`; never touch `phases.create_ticket` / `phases.scout` / `phases.ship`):
-- **Before Generator (step 13)**: `phase_sub: generator-pending`, `next_action: start-round-{N}-generator`, `current_round: {N}`.
-- **Start of step 14 (pre `git diff --shortstat`)**: `phase_sub: generator-complete`, `next_action: start-evaluator`.
-- **After Evaluator (step 16)**: `phase_sub: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action: start-audit` (PASS) / `start-round-{N+1}-generator` (FAIL, rounds remain) / `stop-critical` (FAIL-CRITICAL).
-- **After /audit (step 18)**: `phase_sub: audit-complete`, `last_audit_status: {PASS|PASS_WITH_CONCERNS|FAIL}`, `last_audit_critical: {count}`, `next_action` per decision, `feedback_files.eval`/`feedback_files.quality` = round-N report paths.
-
-**Non-ticket flow**: When the plan is under `.simple-workflow/docs/plans/` there is no `phase-state.yaml` and all state updates are no-ops.
-
-13. **MUST invoke the Generator (`implementer`) agent via the Agent tool**. **NEVER bypass the Generator** by writing code directly via `Edit`/`Write` from `/impl` — the Generator → Evaluator firewall requires the orchestrator to produce no code changes. Fail the task immediately if the Generator cannot be invoked.
-    - subagent_type: `implementer` (always; no -light variant).
-    - model: per Size → model routing. Read `constraints.sonnet_size_threshold` from `{ticket-dir}/autopilot-policy.yaml` if present. Values `S`, `M`, `L`, `off`; default `M` when policy/field absent. Mapping: `S` → sonnet only on Size S; `M` (default) → sonnet on S or M; `L` → sonnet on S, M, or L; `off` → always opus. Otherwise opus. See `skills/create-ticket/references/autopilot-policy-reference.md`.
-    - description: "Implement plan for <feature>"
-    - Prompt must include:
-      a. Plan path: `<path>`. Implementer MUST read the full plan before implementing.
-      b. Acceptance Criteria (highlighted: "You will be evaluated by an independent evaluator against these criteria")
-      c. Investigation path (if exists) as background context.
-      d. User's additional instructions (if any)
-      e. Round 2+: Pass previous round's feedback file paths: "Read feedback before implementing — AC Evaluator: {eval-round-{n-1}.md} (or 'All AC passed'); Code Quality: {quality-round-{n-1}.md} (or 'Not run' / 'No issues')."
-      f. "Refer to CLAUDE.md for lint/test commands and coding standards."
-      g. Round 1 with Dry Run: AC Evaluator's verification plan prefixed with "The AC evaluator will verify your implementation against the acceptance criteria using this plan:"
-      h. Knowledge-base injection: Read `.simple-workflow/kb/index.yaml`; filter `role=implementer` and `confidence >= 0.8`; include up to 20 summary lines under "## Known Project Patterns". If `.simple-workflow/kb/index.yaml` does not exist, skip this injection silently. **AC always wins over KB patterns on conflict.**
-      i. Autopilot constraints: If `autopilot-policy.yaml` exists and `constraints.allow_breaking_changes: false`, include: "CONSTRAINT: Do not introduce breaking changes to existing public APIs, interfaces, or exported functions. Maintain backward compatibility." Omit otherwise.
-      j. **CONSTRAINT — Input immutability** (verbatim): "Do NOT modify `plan.md`, `ticket.md`, or `investigation.md` at any point. These are read-only inputs. Source code changes and new files (test files, eval reports are produced separately) are fine. If you believe the plan needs revision, flag it in your Next Steps field — the orchestrator will invoke `/plan2doc` separately." Prevents Generator / Evaluator contamination via input-artifact mutation.
-      k. **Return value cap**: Return per the Context Conservation Protocol in `agents/implementer.md` — the implementer's return value MUST stay under 500 tokens (status, changed-files list, lint/test summary). The orchestrator reads the diff via `git diff --shortstat` independently; do not echo file contents back.
-    - Receive Generator's return value (changed files list + lint/test status).
-
-14. **Immediately** update `phase-state.yaml` (touch only `phases.impl.*`):
-      phases.impl.phase_sub: generator-complete
-      phases.impl.next_action: start-evaluator
-    Then `git diff --shortstat` for a one-line summary. Do NOT run `git diff --stat` in the main session — the ac-evaluator invokes it via its own `Bash(git diff:*)` permission.
-
-    **§14a — Plan-Compliance Pre-Check** (warn-only; never blocks the round, never burns round budget):
-
-    a. `Grep -nE "^## Affected [Ff]iles$|^## Critical files to modify$" <plan-path>`. If no header matches, emit `[PLAN-COMPLIANCE] no Affected-files section in plan; skipped` and proceed to the CHECKPOINT below. Some plans (per-task `## Task 1 / Task 2` style) intentionally omit this section — the skip is a clean PASS, not a gap.
-    b. If a header matches at line `L`, `Read(<plan-path>, offset=L, limit=80)` and parse the markdown table that follows. Extract file paths from the first column. Accept paths in backticks (`` `path/to/file` ``) or bare; strip backticks. Stop at the first non-table line (blank line, or a new `^#{1,6} ` heading) after the header. Hard cap: 80 lines / 50 paths.
-    c. Compute `actual_files` as the union of `git diff --name-only HEAD` and `git ls-files --others --exclude-standard` (the same union used elsewhere for artifact verification).
-    d. Compute `missing = expected ∖ actual_files` (set-difference on path strings, exact match).
-    e. If `missing` is non-empty, emit one stdout line per missing path: `[PLAN-COMPLIANCE-WARN] plan declares "<path>" in Affected files but it is not in git diff (round={n})`. Carry the same list into the Step 15 Evaluator prompt as field `i` (see §15.i).
-    f. If `missing` is empty, emit `[PLAN-COMPLIANCE] OK ({count} files matched)` and proceed.
-
-    **Why warn-only, not auto-retry**: hard-failing the round on a missing file would consume a round budget on plans where the Affected-files table is stale, aspirational, or partially refactored mid-implementation. A soft warning surfaces the gap to both the user (visible in stdout) and the Evaluator (folded into the prompt), without altering round semantics. If the Evaluator subsequently fails the round on AC coverage, the warning is already in its context and round 2's Generator prompt carries the same gap via the standard feedback file.
-
-    **Idempotency**: this sub-step is pure read-only work (`Grep` + `Read` + `Bash(git diff:*)` + `Bash(git ls-files:*)`) plus stdout. No state-file writes, no agent invocations, no side effects beyond a few orchestrator turns.
+14. **Immediately** update `phase-state.yaml`: `phase_sub: generator-complete`, `next_action: start-evaluator`. Then `git diff --shortstat`. Do NOT run `git diff --stat`.
+    **§14a — Plan-Compliance Pre-Check** (warn-only): `Grep -nE "^## Affected [Ff]iles$|^## Critical files to modify$"`. No match → `[PLAN-COMPLIANCE] no Affected-files section in plan; skipped`. Else parse col-1 paths (80 lines / 50 cap), diff against `git diff --name-only HEAD` ∪ `git ls-files --others --exclude-standard`. Missing → `[PLAN-COMPLIANCE-WARN] plan declares "<path>" in Affected files but it is not in git diff (round={n})` per path; field `h` to Step 15. Else `[PLAN-COMPLIANCE] OK`. Read-only.
 
     > **CHECKPOINT**: Read `phase-state.yaml`, confirm `next_action: start-evaluator`, proceed to Step 15. Do NOT end your turn.
 
-15. **MUST invoke the AC Evaluator (`ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** from Generator return / build / test output alone — the Evaluator reads the code via `git diff` and renders its own PASS/FAIL. This is the Ticket 002 failure mode (L554-L559). Fail the task immediately if the Evaluator cannot be invoked.
+15. **MUST invoke the AC Evaluator (`ac-evaluator`) agent via the Agent tool** (always sonnet). **NEVER self-assess AC compliance** — Evaluator reads code via `git diff` and renders PASS/FAIL (Ticket 002 failure mode L554-L559). Fail immediately if not invocable.
 
-   ### AC-counting helper
+   Count positive ACs (`AC_COUNT`); compute `EVALUATOR_MAX_TURNS = max(60, AC_COUNT * 4)` (field `j`; hard `maxTurns: 200` in frontmatter; e.g. `AC_COUNT = 22` → 88).
+   `AC_COUNT >= 30` → split by AC-ID order, invoke twice with `--- partition: <i>/2 ---` headers (field `k`), persist `eval-round-{n}-part-1.md` / `eval-round-{n}-part-2.md`, merge worst-of-2. Else single invocation with `eval-round-{n}.md`. See [ac-evaluator-orchestration.md](references/ac-evaluator-orchestration.md) for counting, partition, merge, fields `j`/`k`, template.
 
-   Before invoking the Evaluator, count the positive Acceptance Criteria in the extracted rubric (field `b`). This count drives the turn-budget formula and the partition branch below.
-
-   **Counting algorithm** (apply in order; first regex that matches any line wins for that line):
-
-   1. Primary regex: `^[0-9]+\.\s+\*\*AC-` — numbered bold AC entries (canonical form).
-   2. Fallback 1: `^- AC-` — bulleted AC lines.
-   3. Fallback 2: `^AC-` — bare AC lines with no list prefix.
-
-   **Stop condition**: stop counting when a line matches `^### Negative Acceptance Criteria` OR `^#### Negative Acceptance Criteria`. Lines beneath that heading are Negative ACs and MUST NOT be included in `AC_COUNT` (Negative AC-6).
-
-   Let `AC_COUNT` = total positive AC lines matched before the stop condition fires (or before end-of-rubric if no stop condition fires).
-
-   **Turn-budget formula**: `EVALUATOR_MAX_TURNS = max(60, AC_COUNT * 4)`. The `max(60, ...)` floor ensures that plans with fewer than 15 ACs receive exactly 60 turns — no reduction below the v6.3.2 baseline (Negative AC-2). For `AC_COUNT = 22`: `EVALUATOR_MAX_TURNS = max(60, 88) = 88`. For `AC_COUNT = 5`: `EVALUATOR_MAX_TURNS = max(60, 20) = 60`.
-
-   Under Strategy B (active in this release — the Agent tool's JSONSchema does not expose a per-invocation `maxTurns` override; the field is rejected at schema-validation time): embed the computed `EVALUATOR_MAX_TURNS` value as a **soft turn budget** in the Evaluator prompt body (see template field `j` below). The hard ceiling is set by the `agents/ac-evaluator.md` frontmatter (`maxTurns: 200`).
-
-   **Partition branch** (fires when `AC_COUNT >= 30`):
-
-   When `AC_COUNT >= 30`, split the rubric into two contiguous halves by AC-ID order (never by file or topic boundaries). Let part 1 cover AC-1 through AC-⌊AC_COUNT/2⌋ and part 2 cover the remainder.
-
-   - Invoke `ac-evaluator` **twice** — once per partition.
-   - Persist reports as `eval-round-{n}-part-1.md` and `eval-round-{n}-part-2.md` (both paths under the same directory as the unpartitioned `eval-round-{n}.md` path would be, e.g. `.simple-workflow/backlog/active/{ticket-dir}/eval-round-{n}-part-1.md`).
-   - Inject a `--- partition: <i>/2 ---` header into each evaluator prompt (where `<i>` is 1 or 2). The `ac-evaluator` agent uses this header to confirm it should evaluate ONLY the ACs in its partition.
-   - Each invocation receives only the AC lines belonging to its partition in field `b`.
-
-   **Merge algorithm** (after both partition invocations complete):
-
-   - **Severity ladder**: FAIL-CRITICAL > FAIL > PASS-WITH-CAVEATS > PASS. The merged verdict is the worst-of-2 using this ordering.
-   - **AC-result union**: union the AC verdicts from both partitions. The overlap invariant `partition-1 AC-IDs ∩ partition-2 AC-IDs = ∅` MUST hold — no AC appears in both partitions (Negative AC-3). If overlap is detected, treat as FAIL-CRITICAL.
-   - **Issues / Feedback**: concatenate the Issues and Feedback fields from both partitions.
-   - Emit the merged verdict as the effective Step 15 result and proceed to Step 16.
-
-   When `AC_COUNT < 30`, invoke `ac-evaluator` exactly once (no partition) with `eval-round-{n}.md` as the report path. Negative AC-1: a 29-AC plan MUST NOT trigger the partition branch.
-
-   **Prompt template field additions under Strategy B**:
-
-   - Field `j` (soft turn budget, always present): append `Soft turn budget: approximately {EVALUATOR_MAX_TURNS} turns (hard ceiling: 200, set in frontmatter). AC_COUNT = {AC_COUNT}.` where `{EVALUATOR_MAX_TURNS} = max(60, {AC_COUNT} * 4)`. This is informational — the agent uses it to pace its verification, not as a hard cap.
-   - Field `k` (partition header, only when partition branch is active): prepend `--- partition: {i}/2 ---` to the prompt body so the agent recognises it is evaluating a subset.
-
-   - Prompt must include:
-     a. Plan path: `<path>`. Read it in full before evaluating.
-     b. Acceptance Criteria
-     c. Output of `git diff --shortstat` from step 14
-     d. "The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
-     e. Report save path — **`{eval-report-path}` MUST be resolved by the orchestrator and substituted into the template below**. Resolution:
-        - Plan under `.simple-workflow/backlog/active/{ticket-dir}/` → `{eval-report-path}` = `.simple-workflow/backlog/active/{ticket-dir}/eval-round-{n}.md`.
-        - Else match current branch against active ticket dirs: strip leading `NNN-` prefix from each dir (e.g. `001-add-search-feature` → `add-search-feature`), check if branch contains the slug; if match, `{eval-report-path}` = `.simple-workflow/backlog/active/{full-directory-name}/eval-round-{n}.md`. Else `{eval-report-path}` = `.simple-workflow/docs/eval-round/{topic}-eval-round-{n}.md` where `{topic}` is derived from plan filename.
-        `{n}` = current round (1..max_rounds).
-     f. Append verbatim: "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran)." Keeps Evaluator verdicts anchored to a pre-Generator rubric.
-     g. **Return value cap**: Return per the Context Conservation Protocol in `agents/ac-evaluator.md` — the evaluator's return value MUST stay under 500 tokens (Status / Output / 3-5 bullets). The full evaluation lives in `eval-round-{n}.md`; the orchestrator reads the artifact only when feedback is needed for the next Generator round.
-     h. **Plan-Compliance hint** (conditional, only when §14a emitted `[PLAN-COMPLIANCE-WARN]` lines): append a single paragraph naming each missing path: "Plan-Compliance hint: the Generator may have skipped these files declared in the plan's Affected files section: `<path-1>`, `<path-2>`, …. Verify them when checking AC coverage; mark the related AC FAIL if the missing files are load-bearing for it." Omit this field entirely when §14a printed `[PLAN-COMPLIANCE] OK ...` or `[PLAN-COMPLIANCE] no Affected-files section in plan; skipped`.
-   - Prompt must NOT include: Generator's return value (bias elimination); a second invocation whose sole purpose is to persist the report (the save path is always in THIS first call — see Binding rules).
-   - Receive AC Evaluator's return value (PASS/FAIL/FAIL-CRITICAL + feedback).
-
-   **Copy-pasteable Evaluator prompt template** (substitute `{plan-path}`, `{acceptance-criteria}`, `{git-diff-shortstat}`, `{eval-report-path}`, `{n}` per 15.e):
-
-   ```
-   # Orchestrator: substitute all {brace} placeholders ({plan-path}, {acceptance-criteria}, {git-diff-shortstat}, {eval-report-path}, {n}) with concrete values BEFORE sending this prompt. A raw placeholder like `{eval-report-path}` in the Save line will cause ac-evaluator to write to a literal file named `{eval-report-path}`, reintroducing the FU-1 bug.
-   Plan path: {plan-path}. Read it in full before evaluating.
-   Acceptance Criteria:
-   {acceptance-criteria}
-   git diff --shortstat: {git-diff-shortstat}
-   The following files have been changed. Run `git diff` to inspect changes, run lint/test independently, and verify each AC.
-   Save your evaluation report to: {eval-report-path}
-   The Acceptance Criteria text above is the fixed rubric — do NOT re-derive it from the plan. The plan path is provided as context; if the plan's current AC text differs from the rubric above, trust the rubric (it was extracted by the orchestrator before the Generator ran).
-   ```
+   - Prompt fields (a-d): plan path (read full), AC, `git diff --shortstat` from step 14, "Run `git diff` to inspect changes, run lint/test independently, and verify each AC."
+     e. Save path — emit `Save your evaluation report to: {eval-report-path}`. **Orchestrator MUST substitute `{eval-report-path}` (and every `{brace}` placeholder) BEFORE sending; a raw placeholder reintroduces the FU-1 bug.** Resolution: ticket → `.simple-workflow/backlog/active/{ticket-dir}/eval-round-{n}.md`; else strip `NNN-` prefix from active dirs and check if branch contains slug → `.simple-workflow/backlog/active/{full-directory-name}/eval-round-{n}.md`; else `.simple-workflow/docs/eval-round/{topic}-eval-round-{n}.md`. `{n}` = current round.
+     f. Append: "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive from the plan. If the plan's AC differs, trust the rubric."
+     g. **Return value cap**: Return per the Context Conservation Protocol in `agents/ac-evaluator.md` — under 500 tokens (Status / Output / 3-5 bullets). Full evaluation in `eval-round-{n}.md`.
+     h. **Plan-Compliance hint** (only when §14a emitted `[PLAN-COMPLIANCE-WARN]`): name missing paths so Evaluator can mark related AC FAIL if load-bearing.
+   - Prompt must NOT include Generator's return value (bias) or a second invocation to persist.
+   - Receive return value (PASS / FAIL / FAIL-CRITICAL + feedback).
 
 16. AC Gate:
-    - **Output envelope check (precedence over Status parsing) — 4-way decision**:
-      (i) **Output empty AND no file at expected path** => print
-          `[CONTRACT-VIOLATION] ac-evaluator Output was empty and no report
-          was persisted; treating as FAIL-CRITICAL` and stop. Do NOT
-          re-invoke ac-evaluator to persist.
-      (ii) **Output empty AND file exists at expected path AND its first
-          `## Status:` line matches `^## Status: IN_PROGRESS$`** =>
-          Single-shot recovery branch (exactly 1 recovery attempt per round
-          per file):
+    - **Output envelope check (precedence over Status parsing) — 4-way** over `(empty / file + IN_PROGRESS / ERROR- / non-empty)`:
+      (i) **Empty + no file** → `[CONTRACT-VIOLATION]`, FAIL-CRITICAL, stop. Do NOT re-invoke.
+      (ii) **Empty + file with first `## Status: IN_PROGRESS`** → exactly one single-shot recovery invocation per file per round. Recovery prompt MUST tell agent to **Read the IN_PROGRESS file** at `{eval-report-path}` first and **resume from** the first `[ ]` (unchecked) AC; preserve `[x]` verdicts. If recovery yields no terminal verdict → `[CONTRACT-VIOLATION]`, FAIL-CRITICAL, stop.
+      (iii) **Output begins with `ERROR-`** → `[CONTRACT-VIOLATION]`, FAIL-CRITICAL, stop.
+      (iv) **Non-empty AND not `ERROR-`** → Status parsing.
 
-          Print `[IN_PROGRESS] ac-evaluator persisted partial state at
-          <path>; attempting single-shot recovery`.
+      See [ac-gate-decision.md](references/ac-gate-decision.md) for IN_PROGRESS recovery prompt, `[CONTRACT-VIOLATION]` strings, Partition × IN_PROGRESS rules.
 
-          Invoke `ac-evaluator` exactly once more via the Agent tool using
-          the resumption prompt template below. This is a single-shot
-          recovery — do NOT retry more than once, and do NOT use a loop.
+    - **FAIL-CRITICAL** → stop. Report CRITICAL.
+    - **ac_eval_fail policy**: if `autopilot-policy.yaml` exists, read `gates.ac_eval_fail`: `on_critical: stop` always enforced; `action: retry` → continue (`[AUTOPILOT-POLICY] gate=ac_eval_fail action=retry round={n}`); `action: stop` → stop.
+    - **FAIL** → save Feedback; next round (skip quality review).
+    - **PASS-WITH-CAVEATS** → treat as PASS; record Caveats for Phase 3. Continue to step 17.
+    - **PASS** (distinct from `/audit`'s `PASS_WITH_CONCERNS`) → step 17.
 
-          ```
-          # RECOVERY INVOCATION — substitute all {brace} placeholders before sending.
-          # This is NOT the original evaluator call. A partial state file already
-          # exists at the path below. Read it and resume from unchecked ACs.
-          IN_PROGRESS file path: {eval-report-path}
-          Read the IN_PROGRESS file first; resume from the first AC whose
-          checkbox is `[ ]` (unchecked); preserve already-recorded verdicts
-          for `[x]` ACs — do not re-verify them.
-          Acceptance Criteria (fixed rubric — same as original invocation):
-          {acceptance-criteria}
-          Save the report to: {eval-report-path}
-          The Acceptance Criteria text above is the fixed rubric — do NOT
-          re-derive it from the plan. Merge new verdicts with already-recorded
-          `[x]` lines; do not overwrite them.
-          ```
+    Update `phase-state.yaml`: `phase_sub: evaluator-complete`, `last_ac_status: {PASS|FAIL|FAIL-CRITICAL}`, `next_action`: `start-audit` (PASS/PASS-WITH-CAVEATS) / `start-round-{N+1}-generator` (FAIL) / `stop-critical` (FAIL-CRITICAL).
 
-          After the recovery invocation, re-inspect the Output envelope and
-          the on-disk file:
-          - Recovery Output non-empty AND first `## Status:` in file is a
-            terminal status (PASS, FAIL, FAIL-CRITICAL, PASS-WITH-CAVEATS)
-            => proceed to Status parsing (path iv).
-          - Recovery Output empty OR first `## Status:` in file is still
-            `IN_PROGRESS` => emit `[CONTRACT-VIOLATION] ac-evaluator
-            recovery invocation did not produce a terminal verdict; treating
-            as FAIL-CRITICAL` and stop. Do NOT invoke a third time.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING** (skip if FAIL-CRITICAL): Read `phase-state.yaml`; execute `phases.impl.next_action` (`start-audit` → Step 17; `start-round-{N+1}-generator` → Step 13). Do NOT end your turn.
 
-          **Partition × IN_PROGRESS recovery (live behavior)**: when the
-          Step 15 partition branch is active (`AC_COUNT >= 30`), each
-          partition has its own report file (`eval-round-{n}-part-1.md`,
-          `eval-round-{n}-part-2.md`). The single-shot IN_PROGRESS recovery
-          applies independently to each partition file — at most 1 recovery
-          invocation per partition per round. Worst-case for a 2-partition
-          plan: 4 total invocations (2 partitions × 2 invocations each). The
-          single-shot cap is per file, not per round globally. Recovery paths
-          for `eval-round-{n}-part-1.md` and `eval-round-{n}-part-2.md` are
-          evaluated in sequence; the merged verdict from Step 15 is used only
-          after both partition files reach terminal status.
+17. **MUST invoke `/audit` via the Skill tool**. **NEVER bypass /audit** by spawning `code-reviewer` / `security-scanner` directly. Fail immediately if not invocable. Call with `round={n}` (matches `eval-round-{n}.md`); ticket plan → also pass `ticket-dir={ticket-dir}` (bare name). Do NOT pass `only_security_scan`. `/audit` writes `quality-round-{n}.md`, `security-scan-{n}.md`, `audit-round-{n}.md` under `.simple-workflow/backlog/active/{ticket-dir}/`; firewall preserved — `/audit` reads `git diff` independently and must NOT receive Generator's or AC Evaluator's return value. **Return value cap**: per Context Conservation Protocol — under 500 tokens per spawned return.
+    - Parse `/audit`'s structured return: `**Status**` (PASS | PASS_WITH_CONCERNS | FAIL), `**Critical**`, `**Warnings**`, `**Suggestions**`, `**Reports**`, `**Summary**`.
+    - **If `/audit` itself fails**: read `gates.audit_infrastructure_fail.action` — `treat_as_fail` → Status: FAIL, Critical=1, `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=treat_as_fail`; `stop` → stop. Else `AskUserQuestion` `stop`/`fail` (non-interactive default `stop`). **Never** silently treat audit failure as PASS / PASS_WITH_CONCERNS.
 
-      (iii) **Output begins with `ERROR-`** (e.g. `ERROR-WRITE-FAILED`) =>
-          print `[CONTRACT-VIOLATION] ac-evaluator returned ERROR-prefixed
-          Output; treating as FAIL-CRITICAL` and stop.
-      (iv) **Output non-empty AND not ERROR-prefixed** => proceed to Status
-          parsing below (unchanged path).
-    - **FAIL-CRITICAL** → stop immediately. Report CRITICAL issues. Do NOT continue rounds.
-    - **Autopilot policy check for ac_eval_fail**: If `autopilot-policy.yaml` exists, read `gates.ac_eval_fail`: `on_critical: stop` is always enforced (FAIL-CRITICAL safety invariant); `action: retry` → continue (print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=retry round={n}`); `action: stop` → stop (print `[AUTOPILOT-POLICY] gate=ac_eval_fail action=stop`). Else proceed with behavior below.
-    - **FAIL** → save ac-evaluator's Feedback; continue to next round (skip quality review this round).
-    - **PASS-WITH-CAVEATS** → treat as PASS; record Caveats for Phase 3 summary ("AC passed with caveats: {caveats}"). Continue to step 17.
-    - **PASS** → continue to step 17.
+    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `/audit`'s structured block is `/impl`'s input, not your output. Read `phase-state.yaml`; execute `phases.impl.next_action` (you are AT Step 18). Do NOT end your turn. Required next emit: `## [SW-CHECKPOINT]` in Phase 3.
 
-    Update `phase-state.yaml` (touch only `phases.impl.*`):
-      phases.impl.phase_sub: evaluator-complete
-      phases.impl.last_ac_status: {PASS|FAIL|FAIL-CRITICAL}
-      phases.impl.next_action: start-audit                    ← PASS / PASS-WITH-CAVEATS
-                           or: start-round-{N+1}-generator   ← FAIL
-                           or: stop-critical                  ← FAIL-CRITICAL (already stopped)
-
-    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING** (skip if FAIL-CRITICAL): Read `phase-state.yaml`; execute `phases.impl.next_action` immediately (`start-audit` → Step 17; `start-round-{N+1}-generator` → Step 13). Do NOT end your turn.
-
-17. **MUST invoke `/audit` via the Skill tool** (replaces direct code-reviewer spawning). **NEVER bypass /audit** by spawning `code-reviewer` / `security-scanner` directly or skipping review after AC PASS. Fail the task immediately if `/audit` cannot be invoked — do not proceed to Phase 3 without a valid structured return block.
-    - Call `/audit` with `round={n}` (matches `eval-round-{n}.md`). If plan is under `.simple-workflow/backlog/active/{ticket-dir}/plan.md`, also pass `ticket-dir={ticket-dir}` (bare directory name, e.g. `003-fix-login`) to `/audit`. Do NOT pass `only_security_scan` — both code-reviewer and security-scanner must run.
-    - `/audit` writes reports to `.simple-workflow/backlog/active/{ticket-dir}/quality-round-{n}.md`, `security-scan-{n}.md`, `audit-round-{n}.md`. `round={n}` keeps round files aligned across retries / resumes.
-    - `/audit` must NOT receive Generator's or AC Evaluator's return value — firewall is preserved because `/audit` inspects `git diff` independently.
-    - **Return value cap**: `/audit` and the agents it spawns (`code-reviewer`, `security-scanner`) Return per the Context Conservation Protocol in their agent definitions — every spawned return value MUST stay under 500 tokens. The full reports live at the `Reports` paths above; the orchestrator reads the artifact only for the next Generator round's feedback.
-    - Parse `/audit`'s structured return block: `**Status**` (PASS | PASS_WITH_CONCERNS | FAIL), `**Critical**`, `**Warnings**`, `**Suggestions**`, `**Reports**`, `**Summary**`.
-    - **If `/audit` itself fails** (no structured block / malformed):
-     - **Autopilot policy check**: If `autopilot-policy.yaml` exists, read `gates.audit_infrastructure_fail.action`: `treat_as_fail` → **Status: FAIL**, `Critical = 1`, print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=treat_as_fail`, continue with audit failure in feedback; `stop` → stop, print `[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=stop`.
-     - Else use `AskUserQuestion` "/audit failed. How do you want to proceed?" with: `stop` (exit, do NOT proceed to Phase 3); `fail` (treat as FAIL+Critical=1; combine with ac-evaluator PASS as feedback for next round; on the final round proceed to Phase 3 with audit failure noted).
-      - **Non-interactive fallback**: If `AskUserQuestion` unavailable / errors, default to `stop` (NOT `fail` — a silent FAIL retry would mask infrastructure failure). Print "Stopped: /impl requires interactive mode to recover from /audit failure." and exit. Do NOT hang.
-      - **Never** silently treat audit failure as PASS / PASS_WITH_CONCERNS — Critical / security issues must not slip through.
-
-    > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: `/audit` has just emitted its structured block. That block is `/impl`'s input, not your output. Read `phase-state.yaml`; execute `phases.impl.next_action` immediately (you are now AT Step 18, not done with `/impl`). Do NOT end your turn. Do NOT summarize the audit. Required next emit: `## [SW-CHECKPOINT]` in Phase 3.
-
-18. Combined Decision (from `/audit` structured return):
-    - **FAIL** (Critical > 0) → combine ac-evaluator PASS + audit Critical findings (from the `**Reports**` paths) as feedback for next Generator round. Continue.
-    - **PASS_WITH_CONCERNS** (Warnings/Suggestions only) → Phase 3, include concerns in summary.
-    - **PASS** (all counts 0) → Phase 3.
-    - **Final round + FAIL** → Phase 3 with remaining AC and quality/security issues noted.
+18. Combined Decision: **FAIL** (Critical>0) → combine ac-evaluator PASS + audit Critical as feedback for next round. **PASS_WITH_CONCERNS** → Phase 3 with concerns. **PASS** (all 0) → Phase 3. **Final round + FAIL** → Phase 3 noting remaining issues.
 
 ## Phase 3: Summary
 
-19. Run `git status -s` and display.
+19. `git status -s` and display.
 
-20. Print summary: plan file, files changed/created, rounds completed, final status (PASS / PASS_WITH_CONCERNS with listed concerns / remaining AC+quality issues), evaluation report paths, and "Review the changes above, then run `/ship` to commit and create PR".
+20. Print summary: plan, files changed/created, rounds, final status, evaluation report paths, "Review the changes above, then run `/ship` to commit and create PR".
 
-21. **phase-state.yaml finalization**: When Phase 3 is reached via `proceed-to-phase-3` (success / PASS_WITH_CONCERNS), update `phase-state.yaml` (touch only listed fields):
-    - `phases.impl.status: completed`
-    - `phases.impl.completed_at: {now}` (ISO-8601 UTC)
-    - `phases.impl.phase_sub: done`
-    - `phases.impl.last_round: {final round N}`
-    - `phases.impl.next_action: null` (volatile resume state cleared)
-    - `last_completed_phase: impl`
-    - `current_phase: ship`
+21. **phase-state.yaml finalization** (`proceed-to-phase-3`): set `phases.impl.status: completed` + `completed_at: {now}` (ISO-8601 UTC) + `phase_sub: done` + `last_round: {N}` + `next_action: null`; top-level `last_completed_phase: impl`, `current_phase: ship`. Do NOT delete (consumed by `/ship`, `/catchup`). Non-ticket flow: no-op. Max-rounds FAIL → `status: completed` but `overall_status: in-progress`. `status: failed` + `overall_status: failed` only on invocation failure / FAIL-CRITICAL.
 
-    Do NOT delete `phase-state.yaml` — it is the permanent record consumed by `/ship` and `/catchup`. `eval-round-*.md`, `quality-round-*.md`, `audit-round-*.md`, `security-scan-*.md` remain in the ticket directory (Glob-discoverable). `current_round`, `max_rounds`, `last_ac_status`, `last_audit_status`, `last_audit_critical`, `feedback_files.*` remain as historical trace.
-
-    **Non-ticket flow**: No `phase-state.yaml`, step is a no-op.
-
-    **Failure case**: If `/impl` exits with remaining AC/quality issues after the max-rounds cap, set `phases.impl.status: completed` but leave `overall_status: in-progress` — user decides whether to re-run. Only set `phases.impl.status: failed` and `overall_status: failed` when the skill itself cannot complete (Generator/Evaluator invocation failure, FAIL-CRITICAL early stop).
-
-22. **Emit SW-CHECKPOINT block (Phase 3 final output only)**. Emit `## [SW-CHECKPOINT]` per `skills/create-ticket/references/sw-checkpoint-template.md` as the FINAL section, after step 20 summary and step 21 finalization. **Only once per invocation** — never after each round / inside the loop. Fill: `phase=impl`; `ticket=.simple-workflow/backlog/active/{ticket-dir}` when under a ticket dir, else `none`; `artifacts=[<repo-relative paths to every eval-round-*.md / quality-round-*.md / audit-round-*.md / security-scan-*.md across all rounds + changed source files from `git diff --name-only`>]`; `next_recommended=/ship` on `proceed-to-phase-3`, else `""` (FAIL-CRITICAL / infra failure). Emit on failure paths with `artifacts: []`.
+22. **Emit `## [SW-CHECKPOINT]`** (Phase 3 final, once per invocation) per `skills/create-ticket/references/sw-checkpoint-template.md` as FINAL section. Fill: `phase=impl`; `ticket=.simple-workflow/backlog/active/{ticket-dir}` else `none`; `artifacts=` repo-relative paths to every round's eval/quality/audit/security report + changed sources (`git diff --name-only`); `next_recommended=/ship` on `proceed-to-phase-3` else `""`. Failure: `artifacts: []`.
 
 ## Error Handling
 
-- **No plan**: Print the no-plan message and stop.
-- **Dirty working tree**: Warn and ask whether to continue.
-- **Generator failure**: Report and stop.
-- **AC Evaluator failure**: Report; Generator's changes remain.
-- **/audit failure**: Step 17 handles — ask `AskUserQuestion` STOP vs FAIL. Never treat audit failure as PASS / PASS_WITH_CONCERNS.
-- **Max-rounds FAIL**: Report remaining issues; code remains changed.
+- **No plan / Generator failure / AC Evaluator failure / Max-rounds FAIL**: report and stop (changes remain).
+- **Dirty working tree**: warn; ask to continue.
+- **/audit failure**: Step 17 handles via `AskUserQuestion` STOP vs FAIL; never PASS / PASS_WITH_CONCERNS.
 
 ## Evaluator Tuning
 
-Automated via the `/tune` skill:
-1. `/ship` invokes `/tune` automatically (Step 6) to extract patterns from evaluation logs.
-2. Patterns land in `.simple-workflow/kb/candidates.yaml`, promoted to `entries.yaml` at confidence 0.8.
-3. Promoted patterns are injected into the Generator prompt (Step 13h) via `index.yaml`.
-4. Manual: `/tune {ticket-dir}` or `/tune all`.
-5. Review: `.simple-workflow/kb/entries.yaml` and `.simple-workflow/kb/index.yaml`.
+`/ship` invokes `/tune` (Step 6) to extract patterns into `.simple-workflow/kb/candidates.yaml`, promoted at confidence 0.8 to `entries.yaml`, injected via `index.yaml` into Generator prompt (Step 13h). Manual: `/tune {ticket-dir}` or `/tune all`.
