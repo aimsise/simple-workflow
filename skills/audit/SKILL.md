@@ -287,7 +287,7 @@ If an active ticket directory was detected in Step 1 (`ticket-dir`):
   ticket's Category matches one of the canonical six. When the
   Category is `unspecified` or an unknown value, no such lines are
   required.
-- This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0 (impl-loop resume detection).
+- This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0-legacy (impl-loop resume detection).
 
 If no ticket directory was detected, skip this persistence step (no audit-round file is written for non-ticket flows).
 
