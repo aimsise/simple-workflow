@@ -9,8 +9,8 @@
     {
       "name": "simple-workflow",
       "source": {
-        "source": "github",
-        "repo": "aimsise/simple-workflow"
+        "source": "url",
+        "url": "https://github.com/aimsise/simple-workflow.git"
       },
       "description": "Complete development lifecycle plugin with built-in ticket management, Generator-Evaluator quality pipeline, context conservation, unified phase-state.yaml ticket lifecycle, and [SW-CHECKPOINT] checkpoints for long-running sessions.",
       "homepage": "https://github.com/aimsise/simple-workflow#readme",
