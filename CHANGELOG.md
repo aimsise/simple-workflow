@@ -5,6 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.3] — 2026-05-13
+
+Patch release completing the BP-compliance refactor sweep across every
+skill under `skills/`. All 13 skills (`audit`, `autopilot`, `brief`,
+`catchup`, `create-ticket`, `impl`, `investigate`, `plan2doc`,
+`refactor`, `scout`, `ship`, `test`, `tune`) now follow the
+`.docs/create-skill/index.html` template — third-person verb-led
+`description` with `(1) (2) (3)` scenarios and `Triggers on "..."`
+keyword enumeration, an `Invocation policy:` paragraph in the body
+(not the description), a `## Mandatory Skill Invocations` table for
+each delegated agent or Skill, an explicit orchestrator/subagent
+boundary statement in the agent-spawning step, and a `Return contract`
+block citing the delegate's 5-field envelope from its
+`## Context Conservation Protocol`. This is a structural alignment
+release: no behavior, no Acceptance Criteria, no skill chain, and no
+external contract surface changed. The full
+`tests/test-skill-contracts.sh` (452/452 PASS) and
+`tests/test-path-consistency.sh` (139/139 PASS) suites remain green
+without modification.
+
+### Changed
+
+- 13 `skills/*/SKILL.md` files restructured to the BP template
+  (`audit`, `autopilot`, `brief`, `catchup`, `create-ticket`, `impl`,
+  `investigate`, `plan2doc`, `refactor`, `scout`, `ship`, `test`,
+  `tune`). Each refactor: (a) rewrites `description` to third-person
+  verb-led prose with three numbered invocation scenarios and a
+  `Triggers on "..."` keyword list; (b) relocates the "Do not
+  auto-invoke" / "Invocation policy" prose out of the description and
+  into the body; (c) adds or strengthens a `## Mandatory Skill
+  Invocations` table with `MUST invoke` / `NEVER bypass` / `Fail the`
+  binding rules for each delegated agent or Skill chain-call; (d)
+  adds an explicit orchestrator/subagent boundary sentence in the
+  agent-spawning step; (e) adds a `Return contract` block citing the
+  delegate's 5-field envelope (`**Status**`, `**Output**`, plus
+  delegate-specific fields) and the under-500-tokens cap from the
+  `## Context Conservation Protocol`. Each refactor preserves all
+  pre-existing pin literals (`name:`, `disable-model-invocation:`,
+  `argument-hint:`, `allowed-tools` entries, Step numbering, YAML
+  schema references, Error Handling cases, Pre-computed Context
+  shell substitutions) byte-identical, and preserves every Cat I,
+  Cat A-2/A-3, Cat V, Cat Y, Cat 11, and Cat AE trigger literal so
+  the existing test contracts stay green without modification.
+
+- `.gitignore` — track `.DS_Store` exclusion (chore, no functional
+  impact).
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` exits 0 → 452/452 PASS
+  (unchanged baseline from v6.6.2; no new assertions, no removed
+  assertions; all Cat I, Cat A-2/A-3, Cat V, Cat Y, Cat AE, Cat AK
+  invariants stay green across all 13 refactored SKILL.md files).
+- `bash tests/test-path-consistency.sh` exits 0 → 139/139 PASS
+  (unchanged baseline; Cat 11 `Bash(*)` scope guard still finds only
+  `agents/implementer.md` + `agents/test-writer.md`; no refactored
+  SKILL.md acquired `Bash(*)`).
+- Each of the 13 refactors was driven through a Generator-Evaluator
+  (`/gen-eval`) loop and reached PASS in round 1 with no round 2
+  needed. Independent verification per refactor (4-stage protocol):
+  (1) round-1 Evaluator AC verification with per-AC `grep`/`awk`
+  evidence; (2) cross-reference auditor enumerating every external
+  callsite of the refactored skill (sibling SKILL.md citations,
+  agent-file references, README/CHANGELOG mentions, hook comments,
+  test assertions) and confirming each still resolves; (3) regression
+  evaluator comparing pre-refactor and post-refactor diffs surface by
+  surface to confirm additive-only change with byte-identical or
+  semantically equivalent preservation of all pre-existing behavior;
+  (4) direct re-run of both full test suites.
+
 ## [6.6.2] — 2026-05-11
 
 Patch release replacing the timestamp-proxy review gate in `/ship` Phase 2
