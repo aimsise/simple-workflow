@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.4] — 2026-05-13
+
+Patch release that makes the plugin installable from a clean Claude
+Code environment. v6.6.3 and earlier shipped
+`.claude-plugin/plugin.json` but no marketplace manifest, so
+`claude plugin marketplace add aimsise/simple-workflow` could not
+register the repo and downstream `claude plugin install …` calls
+failed with `Plugin "aimsise/simple-workflow" not found in any
+configured marketplace`. This release adds the required
+`.claude-plugin/marketplace.json` and rewrites the README Quick Start
+to the correct two-step `marketplace add` → `install` flow. No skill,
+sub-agent, hook, test, or runtime behavior changed; the
+`tests/test-skill-contracts.sh` (452/452 PASS) and
+`tests/test-path-consistency.sh` (139/139 PASS) suites remain green
+without modification.
+
+### Added
+
+- `.claude-plugin/marketplace.json` — minimal Claude Code marketplace
+  manifest declaring the `aimsise-simple-workflow` marketplace with a
+  single `simple-workflow` plugin entry rooted at the repo
+  (`source: "."`). This is the file `claude plugin marketplace add
+  aimsise/simple-workflow` looks for; without it the repo cannot be
+  registered as a marketplace and no `claude plugin install` command
+  can resolve `simple-workflow`.
+
+### Fixed
+
+- README `## Quick Start` previously instructed users to run a
+  single-line `claude plugin install aimsise/simple-workflow`, which
+  always failed because Claude Code's `plugin install` resolves plugin
+  names only against marketplaces that were previously registered via
+  `claude plugin marketplace add`. The section now documents the
+  correct two-step flow (`marketplace add` then `install
+  simple-workflow@aimsise-simple-workflow`) and matches the manifest
+  added under `### Added`.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 452/452 PASS, identical to
+  the v6.6.3 baseline (no `SKILL.md`, agent, or hook contract was
+  touched in this release).
+- `bash tests/test-path-consistency.sh` — 139/139 PASS, identical to
+  the v6.6.3 baseline.
+- End-to-end install rehearsal (`claude plugin marketplace add
+  aimsise/simple-workflow` followed by `claude plugin install
+  simple-workflow@aimsise-simple-workflow`) is intentionally
+  post-merge-only: `marketplace add` resolves against the GitHub
+  default branch (`main`), so the new manifest is only fetchable after
+  this PR merges and the `v6.6.4` annotated tag plus matching GitHub
+  Release are published.
+
 ## [6.6.3] — 2026-05-13
 
 Patch release completing the BP-compliance refactor sweep across every

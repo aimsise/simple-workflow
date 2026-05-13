@@ -1,0 +1,28 @@
+{
+  "name": "aimsise-simple-workflow",
+  "owner": {
+    "name": "aimsise",
+    "url": "https://github.com/aimsise"
+  },
+  "description": "Marketplace manifest for the simple-workflow plugin.",
+  "plugins": [
+    {
+      "name": "simple-workflow",
+      "source": ".",
+      "description": "Complete development lifecycle plugin with built-in ticket management, Generator-Evaluator quality pipeline, context conservation, unified phase-state.yaml ticket lifecycle, and [SW-CHECKPOINT] checkpoints for long-running sessions.",
+      "homepage": "https://github.com/aimsise/simple-workflow#readme",
+      "repository": "https://github.com/aimsise/simple-workflow",
+      "license": "Apache-2.0",
+      "keywords": [
+        "workflow",
+        "ticket-management",
+        "code-review",
+        "quality-assurance",
+        "sub-agents",
+        "generator-evaluator",
+        "context-conservation",
+        "harness"
+      ]
+    }
+  ]
+}
