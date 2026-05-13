@@ -48,7 +48,7 @@ You receive from the caller:
 
 If `autopilot-log.md` exists in the ticket directory, extract decision patterns:
 
-1. Read the "Decisions Made" section of autopilot-log.md. Each row matches the `decisions-table-row` regex `^\| [a-z][a-z0-9_-]* \| (allow|deny|skip) \| (evaluated|not_reached|condition_unmet|dependency_skipped) \| .+ \|$` (see `skills/autopilot/SKILL.md` Gate-decision canonical format).
+1. Read the "Decisions Made" section of autopilot-log.md. Each row matches the `decisions-table-row` regex `^\| [a-z][a-z0-9_-]* \| (allow|deny|skip) \| (evaluated|not_reached|condition_unmet|dependency_skipped) \| .+ \|$` (see `skills/autopilot/references/gate-decisions.md` "decisions-table-row").
 2. For each decision entry, extract:
    - gate name (e.g., `ac_eval_fail`, `ship_review_gate`, or one of the five canonical pipeline gates `scout` / `plan` / `build` / `verify` / `retro`)
    - action taken (one of `allow`, `deny`, `skip`)

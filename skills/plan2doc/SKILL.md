@@ -1,10 +1,17 @@
 ---
 name: plan2doc
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
-  Create an implementation plan and save to ticket dir or .simple-workflow/docs/plans/.
-  Spawns planner agent with model auto-selected by ticket size
-  (sonnet for S, opus for M/L/XL). Use for any size of planning work.
+  Creates an implementation plan by spawning the planner subagent with a
+  size-routed model (sonnet for Size S, opus for M/L/XL) and writing the
+  plan to disk. Use when (1) the user runs `/plan2doc <feature>` directly
+  to draft a plan for a ticket workflow, (2) `/scout` delegates the plan
+  step of a ticket workflow via the Skill tool, or (3) the user requests
+  a plan for a feature outside any ticket workflow (output lands in
+  `.simple-workflow/docs/plans/{feature}.md`). When a paired `ticket.md`
+  exists, the generated `plan.md` carries a verbatim copy of the ticket's
+  `## Acceptance Criteria` (AC SSoT discipline). Triggers on "/plan2doc",
+  "write a plan", "plan the feature", "create an implementation plan",
+  "design the implementation".
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -41,6 +48,8 @@ Current changes:
 
 Existing research (if any):
 !`ls -t .simple-workflow/docs/research/*.md 2>/dev/null | head -5`
+
+Invocation policy: Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill (e.g. `/scout` Step 7). `disable-model-invocation: false` is intentional because this skill is chain-called from `/scout` by name via the Skill tool; flipping to `true` breaks the chain-call surface for `/scout` and any direct `/plan2doc <feature>` user invocation.
 
 ## Mandatory Skill Invocations
 
@@ -92,7 +101,7 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
 
 3. **Scan available tooling**. Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present), and listing installed plugin skills/agents. Read frontmatter only (not full file contents). This list will be passed to the planner agent so it can reference them in the `### Claude Code Workflow` section.
 
-4. **MUST invoke the `planner` agent via the Agent tool**. **NEVER bypass the planner** by writing `plan.md` directly from `/plan2doc` — the planner agent is the sole author of plan content. Fail the task immediately if the planner agent cannot be invoked. Set the `Agent` tool call as follows:
+4. **MUST invoke the `planner` agent via the Agent tool** (see `## Mandatory Skill Invocations` above for the binding rules). Set the `Agent` tool call as follows:
    - `subagent_type`: `planner`
    - `model`:
      - If `Size == S` → `"sonnet"`

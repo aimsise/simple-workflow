@@ -1,11 +1,15 @@
 ---
 name: audit
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
-  Comprehensive multi-agent code audit using code-reviewer and
-  security-scanner. Always runs security-scanner. Set only_security_scan=true
-  to skip code-reviewer (security-only mode). Use to verify changes before
-  shipping or as part of /impl review loop.
+  Comprehensive multi-agent code audit that delegates to the code-reviewer
+  and security-scanner sub-agents. Always runs security-scanner; set
+  only_security_scan=true to restrict to a security-only review. Use when
+  (1) verifying changes before shipping, (2) running review feedback inside
+  the /impl Generator-Evaluator loop, or (3) reviewing a topic branch with
+  no active ticket directory. Triggers on "audit changes", "review the
+  diff", "code review", "security review", "/audit". Chain-invoked by
+  /impl Step 17 and /ship review-gate; disable-model-invocation: false is
+  intentional because callers reference this skill by name.
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -22,6 +26,8 @@ argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>
 ---
 
 Audit current code changes. Args: $ARGUMENTS
+
+Invocation policy: Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill (e.g. `/impl` Step 17, `/ship` review-gate). `disable-model-invocation: false` is intentional because this skill is chain-called from other skills by name.
 
 ## Mandatory Skill Invocations
 
@@ -93,7 +99,8 @@ Parse `$ARGUMENTS` for the following:
 
 Before spawning agents, resolve the per-ticket Category and the matching
 checklist body that will be propagated to each agent. The canonical
-checklist source is `skills/audit/references/categories.md`; this path is
+checklist source is [references/categories.md](references/categories.md)
+(repo path `skills/audit/references/categories.md`); this path is
 recorded verbatim in the dispatch log so the propagation is auditable.
 
 When `ticket-dir` is set (Step 1 resolved a path under
@@ -213,10 +220,10 @@ The aggregated counts MUST be calculated across both agents (or just security-sc
 
 ### Step 3.5: Skeptical Third-Pass (conditional)
 
-After Step 3 aggregation, evaluate the trigger conditions documented in `### Triggers for Skeptical Third-Pass` below. When **at least one trigger fires** AND `only_security_scan` is `false` (the short-circuit flag is not set), invoke a third `Agent` tool call:
+After Step 3 aggregation, evaluate the trigger conditions defined in [references/skeptical-pass.md](references/skeptical-pass.md). When **at least one trigger fires** AND `only_security_scan` is `false` (the short-circuit flag is not set), invoke a third `Agent` tool call:
 
 - `subagent_type: general-purpose`
-- Pass the prompt from the `### Skeptical Third-Pass Prompt Template` section below, filling in the changed file list and the rubric IDs already covered by `code-reviewer` and `security-scanner`.
+- Pass the prompt template from [references/skeptical-pass.md](references/skeptical-pass.md) verbatim, substituting `{changed_files}`, `{rubric_ids}`, and `{trigger_list}` from context (the rubric IDs already covered by `code-reviewer` and `security-scanner`).
 - Save the agent's response to `{ticket-dir}/skeptical-pass-{n}.md` (using the same round number `{n}` from Step 1). If no `ticket-dir` is set, save to `.simple-workflow/docs/reviews/skeptical-pass-{topic}.md`.
 - Receive the agent's verdict: `SHIP` or `DO_NOT_SHIP`. Feed the verdict into Step 3 aggregation per the rule documented at the end of `### 3. Aggregate Results`.
 
@@ -228,50 +235,7 @@ The third-pass fires **at most once per `/audit` run**, regardless of how many t
 
 If the `general-purpose` Agent call itself fails (timeout, infrastructure error), treat the failure as `Critical += 1` (failed review infrastructure), consistent with the existing aggregation behaviour for failed contractual reviewers.
 
-### Triggers for Skeptical Third-Pass
-
-Any single trigger fires Step 3.5:
-
-- **T-A** The PR introduces or modifies a `hooks/lib/` shared library file. These files are leverage points — a defect in a shared library propagates to every hook that sources it.
-- **T-B** The PR introduces or modifies a sanitization or escaping function. Heuristic: diff hunks contain at least one of `printf %q`, `escape`, `sanitize`, `quote`, or ERE-escape patterns. Standard rubric-bound reviewers check syntactic patterns, not enumerative coverage of caller-controlled inputs.
-- **T-C** The PR adds or modifies a `tools:` permission entry in any `agents/*.md` file. Agent permission changes have orchestration consequences outside the categorical security rubric.
-- **T-D** The prior `ac-evaluator` round returned `PASS-WITH-CAVEATS` due to missing tooling. Heuristic: any `eval-round-{n}.md` file in `{ticket-dir}` contains both `PASS-WITH-CAVEATS` and `skipped` within the same AC entry. This indicates the evaluator accepted code inspection as evidence when a live execution tier was unavailable.
-- **T-E** The PR diff touches more than 3 files in total, with at least one file in each of `hooks/`, `agents/`, and `skills/` simultaneously. Cross-cutting changes are by definition outside any single rubric. A PR that only touches `tests/` does NOT fire T-E, regardless of file count.
-
-### Skeptical Third-Pass Prompt Template
-
-When Step 3.5 fires, use the following prompt verbatim, substituting `{changed_files}`, `{rubric_ids}`, and `{trigger_list}` from context:
-
-```
-You are a general-purpose reviewer acting as a skeptical third-pass auditor.
-
-The following files were changed in this PR:
-{changed_files}
-
-The standard rubric-bound reviewers have already evaluated this change:
-- code-reviewer (rubric IDs: {rubric_ids[code-reviewer]})
-- security-scanner (rubric IDs: {rubric_ids[security-scanner]})
-
-Triggers that fired for this review: {trigger_list}
-
-Note: if T-4 (Pre-existing Failure Attribution) is documented in agents/ac-evaluator.md, do NOT duplicate that check — focus on issues outside T-4's scope.
-
-Your task: identify any substantive ship-blockers that the standard rubric-bound reviewers would miss because they operate within categorical rubrics (code quality, security vulnerability patterns) and do not verify:
-- End-to-end behavioural correctness (e.g., live execution of a claimed production path)
-- Enumerative coverage of all caller-controlled inputs to a sanitization function
-- Cross-system orchestration consequences of permission changes
-- Any other substantive concern outside the standard rubrics
-
-Classify findings by severity matching the ac-evaluator scale:
-- **CRITICAL**: would cause data loss, security breach, or correctness failure in production
-- **HIGH**: would cause incorrect behaviour detectable in normal use
-- **MEDIUM**: potential concern that needs investigation before the next release
-
-Output format:
-**Verdict**: SHIP | DO_NOT_SHIP
-**Findings**: (list findings with severity; "None" if SHIP)
-**Reasoning**: (1–3 sentences on why the verdict was reached)
-```
+The five trigger labels (`T-A`, `T-B`, `T-C`, `T-D`, `T-E`) and the verbatim prompt template are documented in [references/skeptical-pass.md](references/skeptical-pass.md); load that file when Step 3.5 fires. The prompt template instructs the third-pass agent to skip the T-4 Pre-existing Failure Attribution scope already covered by `agents/ac-evaluator.md`.
 
 ### 4. Return Structured Result
 
@@ -323,7 +287,7 @@ If an active ticket directory was detected in Step 1 (`ticket-dir`):
   ticket's Category matches one of the canonical six. When the
   Category is `unspecified` or an unknown value, no such lines are
   required.
-- This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0 (impl-loop resume detection).
+- This file is consumed by `hooks/pre-compact-save.sh` to compute `last_round_outcome` in the compact-state snapshot, which in turn drives `/catchup` Rule 0-legacy (impl-loop resume detection).
 
 If no ticket directory was detected, skip this persistence step (no audit-round file is written for non-ticket flows).
 
@@ -334,17 +298,8 @@ After writing `{ticket-dir}/quality-round-{n}.md` (Step 4a), source
 
     audit_coverage_emit "{ticket-dir}/quality-round-{n}.md"
 
-This appends an HTML-comment-fenced YAML block recording the base commit
-SHA, the working-state tree SHA, and per-file blob SHAs of every changed
-file the audit reviewed. The block is consumed by `/ship` Phase 2 Step 9
-to verify content identity between audit and commit.
-
-If `audit_coverage_emit` returns non-zero (git failure or `SW_AUDIT_COVERAGE=off`),
-log `warn: audit-coverage emit skipped (exit=<code>); /ship review-gate will fall back to legacy mtime heuristic` to stderr and continue — the
-review gate degrades gracefully.
-
-Block format and schema version are documented in
-`hooks/lib/audit-coverage.sh` header comments.
+The block schema, the `SW_AUDIT_COVERAGE=off` kill switch, and the
+fail-open fallback log are documented in [references/audit-coverage.md](references/audit-coverage.md).
 
 ## Error Handling
 
@@ -360,3 +315,4 @@ Block format and schema version are documented in
   Example stderr output:
   "/audit: all spawned agents failed. code-reviewer: <error>. security-scanner: <error>."
 - **Invalid only_security_scan value** (e.g., `only_security_scan=yes`): Print warning and treat as `false` (default behavior).
+- **Shell execution disabled** (`disableSkillShellExecution: true` policy-replaces the `!`...`` context blocks at the top of this skill): the `Current branch:`, `Active tickets:`, `Staged changes:`, `Unstaged changes:`, and `Changed files:` blocks render as policy-replacement placeholders instead of live command output. In that fallback mode, invoke the equivalent commands explicitly via the Bash tool (`git branch --show-current`, `git diff --cached --stat`, `git diff --stat`, `git diff --cached --name-only`, and `ls -d .simple-workflow/backlog/active/*/`), then continue Step 1 using those Bash-tool results as if they were the pre-computed context.

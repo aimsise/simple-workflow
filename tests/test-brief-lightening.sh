@@ -21,6 +21,7 @@ source "$SCRIPT_DIR/test-helper.sh"
 
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BRIEF_SKILL="$REPO_DIR/skills/brief/SKILL.md"
+BRIEF_SHRINKAGE_REF="$REPO_DIR/skills/brief/references/phase2-dynamic-shrinkage.md"
 FIXTURES_DIR="$REPO_DIR/tests/fixtures/autopilot-state-samples"
 
 assert_grep() {
@@ -71,8 +72,8 @@ echo "--- Case 80pct selects >=70 tier ---"
 assert_grep "SKILL.md contains the >=70% tier row" \
   "$BRIEF_SKILL" \
   '≥ 70%|>= 70%'
-assert_grep "SKILL.md >=70% tier mentions 30 questions" \
-  "$BRIEF_SKILL" \
+assert_grep "phase2-dynamic-shrinkage.md >=70% tier mentions 30 questions" \
+  "$BRIEF_SHRINKAGE_REF" \
   'up to 30 questions'
 echo ""
 
@@ -82,8 +83,8 @@ echo "--- Case 40pct selects 30-50 tier ---"
 assert_grep "SKILL.md contains the 30-50% tier row" \
   "$BRIEF_SKILL" \
   '30-50%'
-assert_grep "SKILL.md 30-50% tier mentions 6 questions" \
-  "$BRIEF_SKILL" \
+assert_grep "phase2-dynamic-shrinkage.md 30-50% tier mentions 6 questions" \
+  "$BRIEF_SHRINKAGE_REF" \
   'up to 6 questions'
 echo ""
 
@@ -93,8 +94,8 @@ echo "--- Case 10pct selects <30 tier ---"
 assert_grep "SKILL.md contains the <30% tier row" \
   "$BRIEF_SKILL" \
   '< 30%'
-assert_grep "SKILL.md <30% tier mentions 1 question" \
-  "$BRIEF_SKILL" \
+assert_grep "phase2-dynamic-shrinkage.md <30% tier mentions 1 question" \
+  "$BRIEF_SHRINKAGE_REF" \
   'up to 1 question'
 echo ""
 

@@ -684,7 +684,7 @@ assert_file_contains \
 
 assert_file_contains \
   "catchup/SKILL.md documents per-ticket dir field" \
-  "$REPO_DIR/skills/catchup/SKILL.md" \
+  "$REPO_DIR/skills/catchup/references/compact-state-schema.md" \
   '- dir:'
 
 assert_file_contains \

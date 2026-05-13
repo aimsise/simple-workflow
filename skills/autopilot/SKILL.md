@@ -1,11 +1,17 @@
 ---
 name: autopilot
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
   Consume a pre-built ticket list (split-plan.md under
   .simple-workflow/backlog/product_backlog/{parent-slug}/) and drive the per-ticket
-  /scout → /impl → /ship pipeline in topological order with policy-based
-  autonomous decision making at each gate.
+  /scout -> /impl -> /ship pipeline in topological order with policy-based
+  autonomous decision making at each gate. Use when:
+  (1) the user explicitly invokes /autopilot with a parent-slug;
+  (2) another skill chains to /autopilot via the Skill tool after /brief
+  and /create-ticket have populated a split-plan;
+  (3) a resumable autopilot-state.yaml exists and the user re-runs
+  /autopilot to continue from the last checkpoint.
+  Triggers on "autopilot", "run the autopilot", "/autopilot <slug>",
+  "continue the autopilot run", "drive scout impl ship pipeline".
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -47,481 +53,153 @@ argument-hint: "<parent-slug>"
 
 ## Pre-computed Context
 
-Brief files:
-!`find .simple-workflow/backlog/briefs/active -mindepth 2 -maxdepth 2 -name brief.md 2>/dev/null`
+Briefs: !`find .simple-workflow/backlog/briefs/active -mindepth 2 -maxdepth 2 -name brief.md 2>/dev/null`
 
-Split plans under product_backlog (source of truth for /autopilot):
-!`find .simple-workflow/backlog/product_backlog -mindepth 2 -maxdepth 2 -name split-plan.md 2>/dev/null`
+Split plans (SSoT): !`find .simple-workflow/backlog/product_backlog -mindepth 2 -maxdepth 2 -name split-plan.md 2>/dev/null`
 
-Active tickets:
-!`find .simple-workflow/backlog/active -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -10`
+Active: !`find .simple-workflow/backlog/active -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -10`
 
-Current branch:
-!`git branch --show-current`
+Current branch: !`git branch --show-current`
 
-Default branch:
-!`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
+Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 ## Mandatory Skill Invocations
 
-`/autopilot` MUST delegate to each target below via the Skill tool. Direct file ops, ad-hoc bash, or self-judgment are never acceptable substitutes. Bypasses are detected by the artifact presence gate and the skill invocation audit (Phase A+).
+`/autopilot` MUST delegate to each target below via the Skill tool. Direct file ops / ad-hoc bash are not substitutes. Bypasses detected by Artifact Presence Gate + audit.
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
-| `/scout` (Skill) | Per ticket, Phase 2 step 3c (from split-plan consumption) | Missing `investigation.md` + `plan.md` triggers `[PIPELINE] scout: ARTIFACT-MISSING`; ticket marked failed |
-| `/impl` (Skill) | Per ticket, Phase 2 step 3d, after scout | Missing `eval-round-*.md` (and `audit-round-*.md` / `quality-round-*.md` on PASS) triggers `[PIPELINE] impl: ARTIFACT-MISSING`; ticket marked failed |
-| `/ship` (Skill) | Per ticket, Phase 2 step 3e, after impl | Ticket not moved to `.simple-workflow/backlog/done/` triggers `[PIPELINE] ship: ARTIFACT-MISSING`; no PR created |
+| `/scout` (Skill) | 3b | missing `investigation.md`+`plan.md` → `[PIPELINE] scout: ARTIFACT-MISSING`; ticket failed |
+| `/impl` (Skill) | 3c | missing `eval-round-*.md` (+`audit-round-*.md`/`quality-round-*.md` on PASS) → `[PIPELINE] impl: ARTIFACT-MISSING`; ticket failed |
+| `/ship` (Skill) | 3d | ticket not moved to `.simple-workflow/backlog/done/` → `[PIPELINE] ship: ARTIFACT-MISSING`; no PR |
 
 **Binding rules**:
-- `MUST invoke /scout via the Skill tool` — never call `/investigate` or `/plan2doc` standalone; `/scout` is the sole entry point.
-- `MUST invoke /impl via the Skill tool` — never spawn `implementer` / `ac-evaluator` directly.
-- `MUST invoke /ship via the Skill tool` — never run `git commit` / `gh pr create` / `mv` directly.
-- `NEVER bypass these skills via direct file operations` — pipeline correctness depends on each skill's internal state-management and artifact side effects.
-- `Fail this ticket immediately if any mandatory invocation cannot be completed via the prescribed Skill tool` — record in `autopilot-state.yaml` and proceed to the next ticket. Do NOT fabricate artifacts.
+- `MUST invoke /scout via the Skill tool`; never call `/investigate`/`/plan2doc` standalone.
+- `MUST invoke /impl via the Skill tool`; never spawn `implementer`/`ac-evaluator` directly.
+- `MUST invoke /ship via the Skill tool`; never run `git commit`/`gh pr create`/`mv` directly.
+- `NEVER bypass these skills via direct file operations`.
+- `Fail this ticket immediately if any mandatory invocation cannot be completed via the prescribed Skill tool`; record in `autopilot-state.yaml`, next ticket. No fabricated artifacts.
 
-**Ticket creation is NOT a responsibility of `/autopilot`.** As of Plan 4 of the v4.0.0 findings-mode refactor, `/create-ticket` is invoked upstream by the user and writes both the ticket directories under `.simple-workflow/backlog/product_backlog/{parent-slug}/` AND (for N>1 runs) the `split-plan.md` that `/autopilot` consumes. `/autopilot` MUST NOT emit any line beginning with the literal string `/create-ticket` to its stdout — the skill never invokes `/create-ticket`, never writes `ticket.md`, never bumps `.simple-workflow/.ticket-counter`. If a user reaches `/autopilot` without having run `/create-ticket` first, the skill exits with an `ERROR:` message (see Phase 1 below) and the error text is phrased so that no stdout line matches `^/create-ticket`.
+**Ticket creation is NOT in scope.** Upstream `/create-ticket` writes ticket dirs under `.simple-workflow/backlog/product_backlog/{parent-slug}/` + `split-plan.md`. `/autopilot` never writes `ticket.md`, never bumps `.simple-workflow/.ticket-counter`, and MUST NOT emit stdout lines starting with `/create-ticket` — the upstream-missing ERROR keeps `/create-ticket` mid-line so no line matches `^/create-ticket`.
 
-# /autopilot
+Invocation policy: Do not auto-invoke. `/autopilot` runs only via Skill chain call (explicit `/autopilot <parent-slug>` or chain from another skill). `disable-model-invocation: false` is intentional because callers reference this skill by name; flipping to `true` breaks the chain-call surface for `/brief`, `/create-ticket`, and resume workflows.
 
 Target parent-slug: $ARGUMENTS
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS`: extract `{parent-slug}` (first arg); empty → "Usage: /autopilot <parent-slug>" and stop. Throughout this document, `{parent-slug}` is used; legacy docs called it `{slug}` (the names are interchangeable — the input is the directory basename under `.simple-workflow/backlog/product_backlog/` for consuming a split-plan, and the brief slug under `.simple-workflow/backlog/briefs/active/` when a brief is present).
+Parse `$ARGUMENTS`: extract `{parent-slug}` (first arg). `{parent-slug}` is the dir basename under `.simple-workflow/backlog/product_backlog/` (or brief slug under `briefs/active/`); legacy `{slug}` is interchangeable. Empty → see `## Error Handling`.
 
 ## Phase 1: Pre-flight Checks
 
-The pre-flight gate decides whether `/autopilot` has a runnable input. The single source of truth for the ticket list is `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (new path, Plan 4). Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` is explicitly NOT read (Plan 4 Negative AC).
+Pre-flight gate decides whether `/autopilot` has a runnable input. SSoT is `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`; the legacy `briefs/active/.../split-plan.md` path is NOT read.
 
-0. **Auto-kick cleanup**: If `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` exists, delete it. This signals to the Stop hook that the auto-chain has entered `/autopilot` and the pre-autopilot guard is no longer needed. Deletion is idempotent — missing file is not an error. Do NOT touch `brief.md`, `autopilot-policy.yaml`, or `autopilot-state.yaml` in this step — only `auto-kick.yaml` is removed.
+0. **Auto-kick cleanup**: delete `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` if present (idempotent). Do NOT touch `brief.md`, `autopilot-policy.yaml`, `autopilot-state.yaml`. `hooks/post-skill-cleanup.sh` (PostToolUse) removes stale `auto-kick.yaml` as defense-in-depth.
 
-   > Note: A `PostToolUse` hook (`hooks/post-skill-cleanup.sh`) physically removes any stale `auto-kick.yaml` after every `simple-workflow:autopilot` Skill invocation as a safety net. The MUST above remains the primary contract; the hook is defense-in-depth.
+1. **Split-plan discovery**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`. Exists → parse Phase 2. Missing + brief exists → print exactly `ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and exit non-zero (no stdout matches `^/create-ticket`). Neither → print exactly `ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and exit non-zero. Never create/modify `active/`.
 
-1. **Split-plan discovery (single source of truth)**:
-   - Let `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`.
-   - Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` MUST NOT be read. Even if such a file exists on disk, `/autopilot` does not fall back to it. This is enforced by the Plan 4 Negative AC: "A `split-plan.md` located at the legacy path is not read by `/autopilot` as the authoritative ticket source — the skill's execution transcript for `/autopilot <slug>` against such a fixture emits stdout containing `ERROR:` or `not found` referencing the new path."
-   - If `SPLIT_PLAN` exists → parsed in Phase 2 (Split Execution Flow).
-   - If `SPLIT_PLAN` is missing:
-     a. If `.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md` exists → print exactly:
-        ```
-        ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.
-        ```
-        Exit non-zero. Do NOT create or modify any file under `.simple-workflow/backlog/active/`. (No stdout line matches `^/create-ticket` — the `/create-ticket` token sits mid-line after `Run `.)
-     b. If no brief either (AC #8) → print exactly:
-        ```
-        ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.
-        ```
-        Exit non-zero. Do NOT create or modify any file under `.simple-workflow/backlog/active/`.
+2. **Brief optionality**: brief not required; runs whenever `SPLIT_PLAN` exists. Policy propagation is upstream (`/create-ticket brief=<path>` copies `autopilot-policy.yaml` into each ticket dir). No policy → Policy guard aborts. Brief-level `autopilot-policy.yaml` at `briefs/active/{parent-slug}/` is read for decision logging; else per-ticket policy serves the same role.
 
-2. **Brief optionality (Plan 4)**: A brief is no longer required for `/autopilot` to proceed. When `SPLIT_PLAN` exists, `/autopilot` runs even if `.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md` is absent. Policy propagation is upstream (`/create-ticket brief=<path>` copied `autopilot-policy.yaml` into each ticket dir, Plan 1). If a ticket dir has no policy, the Policy guard below aborts that ticket — explicit "not autopilot-eligible" signal.
+3. Brief `status`: `confirmed` proceeds; `draft` → print `ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with mode=auto.` and stop. Read brief `mode` (default `auto`); if `mode: manual` + `/autopilot` invoked, emit `[WARN] brief mode=manual but /autopilot was invoked; per-ticket autopilot-policy.yaml is absent (only brief-level policy is in effect).` and continue.
 
-3. If the brief does exist, read it for decision logging and status verification:
-   - `status` must be `confirmed` (if `draft`, print "ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with mode=auto." and stop). If the brief is absent (split-plan-only runs), skip this step — there is no brief status to check.
-   - Read the `mode` field from brief frontmatter (default `auto` when absent — legacy compat). If `mode: manual` AND `/autopilot` was nonetheless invoked against this slug (manual-mode briefs do not auto-chain `/autopilot`, so reaching this branch indicates an explicit user override), emit a single warning line to stdout for audit trail: `[WARN] brief mode=manual but /autopilot was invoked; per-ticket autopilot-policy.yaml is absent (only brief-level policy is in effect).` This is informational only — `/autopilot` continues running using the brief-level `autopilot-policy.yaml` (the rescue path preserved by `/brief` Phase 4).
+4. **Human override detection**: compare each gate in `autopilot-policy.yaml` to defaults for `risk_tolerance`. `conservative` defaults + `moderate` defaults: in [references/state-file.md](references/state-file.md). `aggressive` defaults: moderate + `aggressive ship_ci_pending.timeout_minutes: 60`, `aggressive constraints.max_total_rounds: 12`, `aggressive constraints.allow_breaking_changes: true`. Gate differs + `# kb-suggested` → `kb_override` else `human_override`. Render to `## Human Overrides` / `## KB Overrides`; `## Decisions Made` distinguishes `human_override` from `kb_override`. **Exclude `kb_override`** from `## Human Overrides`. No diff → "No human overrides detected."
 
-4. If `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-policy.yaml` exists, read it for decision logging; otherwise per-ticket policy files (copied in by `/create-ticket`) serve the same role.
-
-5. **Human override detection**: Compare each gate's action in the per-ticket or brief-level `autopilot-policy.yaml` to the expected defaults for the declared `risk_tolerance`:
-   - `conservative` defaults: `ticket_quality_fail.action: retry_with_feedback`, `evaluator_dry_run_fail.action: stop`, `ac_eval_fail.action: retry`, `audit_infrastructure_fail.action: stop`, `ship_review_gate.action: stop`, `ship_ci_pending.action: wait`, `ship_ci_pending.timeout_minutes: 30`, `constraints.max_total_rounds: 9`, `constraints.allow_breaking_changes: false`, `unexpected_error.action: stop`
-   - `moderate` defaults: conservative except `evaluator_dry_run_fail.action: proceed_without`, `audit_infrastructure_fail.action: treat_as_fail`, `ship_review_gate.action: proceed_if_eval_passed`
-   - `aggressive` defaults: moderate except `ship_ci_pending.timeout_minutes: 60`, `constraints.max_total_rounds: 12`, `constraints.allow_breaking_changes: true`
-   - Gate differs from default: check for `# kb-suggested` comment. Present → `kb_override`; absent → `human_override`. Store (gate, expected, actual, type) for the log.
-   - No differences → "No human overrides detected."
-
-6. **State recovery**: `autopilot-state.yaml` absent at `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` (or any previously-chosen location) → `resume_mode = false`. Else `resume_mode = true`, parse:
-   - Print:
-     ```
-     [RESUME] The previous /autopilot run stopped midway. Resuming from where it left off.
-     [RESUME] Execution mode: {execution_mode}
-     [RESUME] Progress: {completed_count}/{total_tickets} tickets completed
-     ```
-   - Per ticket: `[RESUME] {logical_id} → {ticket_dir}: {status} (last completed: {last_completed_step})`.
-   - `started` older than 7 days: `[RESUME] WARNING: State file is from {started}. Codebase may have changed. Consider deleting autopilot-state.yaml and re-running.`
-   - Carry `ticket_mapping`. Per-ticket resume: `completed` → skip (`[RESUME] Skipping {logical_id}: already completed`); `failed` / `skipped` → retry from first non-completed step; `in_progress` → re-run that step; `pending` → normal. Skip `scout` → ticket already in `.simple-workflow/backlog/active/{parent-slug}/{ticket-dir}/`.
+5. **State recovery**: absent `autopilot-state.yaml` → `resume_mode = false`. Else `resume_mode = true`; emit `[RESUME] ...` summary (resume msg, execution mode, progress N/total, per-ticket status). If `started` is older than 7 days, emit `[RESUME] WARNING` to delete `autopilot-state.yaml` and re-run. Carry `ticket_mapping`. Per-ticket: `completed` → skip (`[RESUME] Skipping {logical_id}: already completed`); `failed`/`skipped` → retry first non-completed; `in_progress` → re-run; `pending` → normal.
 
 ## Phase 2: Pipeline Execution
 
-### Execution Mode Detection
-
-- `SPLIT_PLAN` present (the only success path — see Phase 1 step 1) → parse the file, extract each ticket's logical id + `ticket_dir` + `depends_on`, build the dependency graph, run topological sort, use **Split Execution Flow** (below). Even if the split-plan lists exactly 1 ticket, the Split Execution Flow handles it uniformly.
-
-There is no longer a "no split-plan.md → Single Ticket Flow" branch. `/autopilot` is a pure consumer of `split-plan.md` produced by `/create-ticket`. If you have a brief but no split-plan, the Phase 1 error message directs you to run `/create-ticket` first.
-
 ### State file initialization
 
-Skip if `resume_mode = true` (state exists). This brief-level / parent-level `autopilot-state.yaml` is distinct from each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
-
-#### `autopilot-state.yaml` location precedence
-
-`/autopilot` chooses **one** location based on what is already on disk. Both locations are valid for state; the choice is determined at runtime, not configured.
-
-| Order | Path | Selected when |
-|-------|------|---------------|
-| 1 | `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-state.yaml` | The brief directory exists (i.e. the run originated from `/brief` -> `/create-ticket brief=<path>`). |
-| 2 | `.simple-workflow/backlog/product_backlog/{parent-slug}/autopilot-state.yaml` | The brief directory does not exist on disk (i.e. `/create-ticket` was invoked without `brief=<path>`, or the brief directory was never created). |
-
-Resolution rule on resume: read whichever of the two paths exists. If neither exists, `resume_mode = false` and a fresh state file is written at the active location above. The two paths are never both authoritative simultaneously — `/autopilot` always commits to one location for a given run, then mirrors the same location to `briefs/done/` at the end of the run (see Split Brief Lifecycle below).
-
-Write the state file:
-
-```yaml
-version: 1
-parent_slug: {parent-slug}
-started: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
-execution_mode: split
-total_tickets: {N}
-ticket_mapping: {}
-tickets:
-  - logical_id: {parent-slug}-part-{N}   # one entry per split-plan ticket, in topological order
-    ticket_dir: {ticket-dir from split-plan}
-    status: pending
-    steps: {scout: pending, impl: pending, ship: pending}
-    invocation_method: {scout: unknown, impl: unknown, ship: unknown}
-runtime_metrics: []                      # append-only, written by Stop / PreCompact hooks
-# Sample entry (one full session_end snapshot, all 7 canonical keys):
-#   - boundary: session_end                    # session_compaction | session_end (see references/stop-reason-taxonomy.md)
-#     stop_reason: normal_completion           # one of self_abort | loop_guard_release | policy_gate_stop | partial_completion | normal_completion | harness_terminated; null when boundary != session_end
-#     timestamp: 2026-04-29T19:39:10Z          # ISO-8601 UTC (`date -u +%Y-%m-%dT%H:%M:%SZ`)
-#     cache_creation_input_tokens: 716586      # integer or null (from hook payload)
-#     cache_read_input_tokens: 0               # integer or null (from hook payload)
-#     input_tokens: 0                          # integer or null (from hook payload, used by Plan 07)
-#     consecutive_stop_blocks: 5               # integer or null; meaningful only for boundary: session_end
-```
-
-Note: the `steps:` / `invocation_method:` maps no longer contain a `create-ticket` key — ticket creation is no longer an `/autopilot` step (Plan 4). Existing state files from pre-Plan-4 runs that still carry a `create-ticket` key are tolerated on resume but not written fresh.
-
-#### `runtime_metrics:` schema
-
-`runtime_metrics:` is an **append-only** list written exclusively by the Stop hook (`hooks/autopilot-continue.sh`) and the PreCompact hook (`hooks/pre-compact-save.sh`). The list survives ticket completion (Split State File Cleanup keeps it intact when moving the state file to `briefs/done/`). Skills MUST NOT write `runtime_metrics:` directly — hook-only ownership keeps the schema observable from a single audit point.
-
-Value domains for `boundary` and `stop_reason`, plus the Stop hook's discrimination heuristic, are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md). Tracked files MUST cite that file rather than the planning-phase document under `.docs/` (which is not shipped with the plugin).
-
-#### Stop-hook loop guards
-
-`hooks/autopilot-continue.sh` runs two parallel counters and AND-combines them to decide when to release end_turn:
-
-| Counter | Source of truth | Reset condition | Threshold |
-| --- | --- | --- | --- |
-| `FILE_COUNT` (a.k.a. `MTIME_COUNT`) | `/tmp/.autopilot-continue-${session_id}` | `STATE_FILE -nt COUNTER_FILE` (state file advanced) | `>= 5` |
-| `NOTOOL_COUNT` | `/tmp/.autopilot-notool-${session_id}` | The most recent assistant turn in `transcript_path` carries a `tool_use` block whose `name` is one of `Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit` (`Read` is intentionally excluded — pure investigation turns are not progress) | `>= 5` |
-
-Release fires only when **both** counters meet their thresholds. The two-counter rule replaces the pre-Plan-02 single-counter logic in which "state stuck for 5 blocks" alone was sufficient — that single signal misfired when the model emitted text-only end_turns without making real progress. With `NOTOOL_COUNT` in place the hook holds its `decision: block` until the model has actually given up on tools as well.
-
-When `transcript_path` is empty / missing / malformed, the hook gracefully degrades to the pre-Plan-02 single-counter behaviour (`NOTOOL_COUNT` is treated as already met).
-
-On release the hook emits the literal line `[AUTOPILOT-STALL] ...` to **both** stdout (for user-visible recovery instructions) and stderr (for the runtime-metrics discrimination heuristic), then writes a `boundary: session_end, stop_reason: loop_guard_release` entry to `runtime_metrics:`.
-
-Kill switch: setting `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment short-circuits `NOTOOL_COUNT` (treats it as already met) so `FILE_COUNT` alone gates release — exactly the pre-Plan-02 behaviour. Use this only when the new logic is misfiring; the kill switch is meant for immediate rollback, not as a default operating mode.
+Skip if `resume_mode = true`. Brief-level `autopilot-state.yaml` ≠ per-ticket `phase-state.yaml`. Write at `briefs/active/{parent-slug}/` (else `product_backlog/{parent-slug}/`); hooks also accept `briefs/done/{parent-slug}/`. Fields: `ticket_mapping`, per-ticket `ticket_dir:` + `status` + `steps` + `invocation_method` ∈ `skill`/`manual-bash`/`unknown`, append-only `runtime_metrics: []` (`hooks/autopilot-continue.sh` + `hooks/pre-compact-save.sh` only; skills MUST NOT write). Loop-guard emits `[AUTOPILOT-STALL] ...`. Schema + precedence + counters + kill switch + `boundary`/`stop_reason` domains in [references/state-file.md](references/state-file.md) + [references/stop-reason-taxonomy.md](references/stop-reason-taxonomy.md).
 
 ### Split Execution Flow
 
-**Input**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (parsed in Phase 1 discovery). This is the **single source of truth** for the ticket set. Legacy path `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md` is ignored.
-
-#### Parse `split-plan.md`
-
-Per `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md`:
-
-1. Read frontmatter: `parent_slug`, `ticket_count`, `version`. If any is missing, print `ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md has invalid frontmatter` and exit non-zero.
-2. Verify `parent_slug` in frontmatter equals the `{parent-slug}` argument. Mismatch → `ERROR: split-plan.md parent_slug mismatch (file=<frontmatter-value>, argument=<parent-slug>)` and exit non-zero.
-3. Enumerate ticket entries under `## Tickets`: each `### N. {parent-slug}-part-N: <Title>` heading with its meta lines (`- ticket_dir: \`...\``, `- size: ...`, `- depends_on: [...]`).
-
-#### Edge: zero ticket entries
-
-If the `## Tickets` section contains **zero** `### N.` entries (equivalently, `ticket_count: 0` or no entries found), print exactly:
-
-```
-ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).
-```
-
-Exit non-zero. Do NOT create or modify any file under `.simple-workflow/backlog/active/`. (The literal word `empty` is load-bearing — Plan 4 Edge Case asserts `stdout containing 'ERROR:' and the literal 'empty'`.)
-
-#### Edge: cyclic `depends_on` graph
-
-Build a directed graph over ticket logical IDs (`{parent-slug}-part-N`) using each entry's `depends_on` list. Run **Kahn's algorithm** (or DFS with colored nodes) to detect cycles.
-
-If a cycle is detected (e.g., A depends on B AND B depends on A), print exactly:
-
-```
-ERROR: circular dependency detected in split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <list cycle members>
-```
-
-Exit non-zero **before any ticket work begins**. Do NOT create or modify any file under `.simple-workflow/backlog/active/{parent-slug}/` (Plan 4 Edge Case asserts "no `.simple-workflow/backlog/active/{parent-slug}/` subdirectories are created during this failed invocation"). The literal word `circular` MUST appear in stdout; the word `cycle` is also acceptable (Plan 4 Edge Case allows either).
-
-#### Topological sort with lexicographic tiebreak
-
-Run Kahn's algorithm with a **FIFO queue ordered by lexicographic ticket_dir**:
-
-1. Compute in-degree per node (number of `depends_on` entries).
-2. Initial ready queue = all nodes with in-degree 0 (roots, i.e. `depends_on: []`), sorted in **ascending lexicographic order of `ticket_dir`** (the physical directory path string).
-3. Pop the lexicographically smallest ready node, emit it to the processing order, and decrement in-degrees of its dependents. When a dependent's in-degree reaches 0, insert it into the ready queue maintaining lexicographic order.
-4. Continue until all nodes emitted or queue is empty (empty + unprocessed nodes means a cycle — already caught above).
-
-The resulting `PROCESSING_ORDER` is a list of tickets. For each ticket in `PROCESSING_ORDER` (in that exact order), emit a single stdout line:
-
-```
-Processing order: {NNN-slug}
-```
-
-where `{NNN-slug}` is the basename of `ticket_dir` (e.g. `005-add-user-auth`). All `Processing order:` lines appear at the top of Phase 2 output — one per ticket — in topological order. AC #10: when every ticket has `depends_on: []`, the `Processing order:` lines appear in ascending lexicographic order of `NNN-slug`.
-
-#### Mapping table
-
-If `resume_mode`, use `ticket_mapping` from state; else seed empty and add each ticket from the split-plan as `{parent-slug}-part-{N}` → `{ticket-dir}` immediately (we already know all ticket_dir paths from the split-plan; no `/create-ticket` invocation needed to resolve them).
+Parse `SPLIT_PLAN` frontmatter + tickets, build dependency graph, run topological sort (lex tiebreak), emit `Processing order: {NNN-slug}` per ticket. Parsing/algorithm in [references/split-plan-parsing.md](references/split-plan-parsing.md). Edge-case ERROR literals (zero entries, cyclic `depends_on`) in `## Error Handling`. Single-ticket plans flow through the same path.
 
 #### Per-ticket pipeline
 
-> **MUST NOT directive — Non-interactive orchestrator contract**: `/autopilot` is a fully non-interactive orchestrator. From the moment the per-ticket pipeline begins until every ticket in `PROCESSING_ORDER` has reached a terminal status (`completed`, `failed`, or `skipped`), the skill **MUST NOT** call `AskUserQuestion` under any circumstance. This prohibition applies **uniformly** to every boundary inside the pipeline — mid-step, between steps (after `/scout`, after `/impl`, after `/ship`), at the loop tail between tickets, and on resume from a prior `autopilot-state.yaml`. The skill **MUST NOT** ask the user to confirm continuation, choose the next ticket, approve the next step, or otherwise gate progress on an interactive prompt. The **only legitimate stop** inside the pipeline is a gate evaluation in each ticket's `autopilot-policy.yaml` whose `action` resolves to `stop` — that is the contracted stop path and it is decided by reading YAML, **not** by prompting the user. Interactive prompts (`AskUserQuestion` or equivalent) are explicitly out of contract and MUST NOT be used as a substitute for the policy-gate stop path. Stop hooks cannot intercept `AskUserQuestion`, so this SKILL-level prohibition is the sole enforcement mechanism.
+> **Non-interactive orchestrator contract**: `/autopilot` MUST NOT call `AskUserQuestion` from per-ticket pipeline start until every ticket is terminal (`completed`/`failed`/`skipped`). Only legitimate stop is a gate with `action: stop`. Stop hooks cannot intercept `AskUserQuestion`, so this SKILL-level prohibition is the sole enforcement.
 
-For each ticket in `PROCESSING_ORDER` (let `i` = 0-based index in `PROCESSING_ORDER`):
+For each ticket in `PROCESSING_ORDER` (`i` = 0-based):
 
-1. **Resume skip check** (`resume_mode = true` only):
-   - `tickets[i].status == completed` → skip; print `[RESUME] Skipping ticket {logical_id}: already completed`; next ticket.
-   - `skipped` → re-evaluate dependencies (may now be satisfied).
-   - `failed` or `in_progress` → resume from first non-completed step.
+1. **Resume skip check** (`resume_mode = true` only): `completed` → skip with `[RESUME] Skipping ticket {logical_id}: already completed`; `skipped` → re-evaluate dependencies; `failed`/`in_progress` → resume from first non-completed step.
 
-2. **Dependency check**: All `depends_on` tickets must have `status == completed`.
-   - Any dep `failed` / `skipped` → mark this ticket `skipped` reason "dependency {dep-slug} {status}". state `tickets[i].status = skipped`; record `[PIPELINE] {ticket-part}: skipped | reason=dependency_{dep-slug}_{status} | ticket-dir={ticket-dir}`; next ticket. `ticket-dir` is always known (from split-plan).
-   - All deps `completed` → proceed.
+2. **Dependency check**: all `depends_on` must be `completed`. Any dep `failed`/`skipped` → this ticket `skipped` (reason `dependency_{dep-slug}_{status}`), record `[PIPELINE] {ticket-part}: skipped | reason=dependency_... | ticket-dir={ticket-dir}`, next ticket. Skip-transition invariant + `hooks/pre-state-transition.sh` enforcement in [references/state-file.md](references/state-file.md).
 
-   **Skip-transition invariant**: `/autopilot` MUST NOT transition a ticket from `pending` / `in_progress` / `completed` to `status: skipped` while any sibling ticket in the same `autopilot-state.yaml` is still `pending` or `in_progress`, unless one of the two contracted exceptions applies:
-   - The skip is a **dependency cascade** — the `skip_reason` contains `dependency_failed` or `dependency_skipped`, matching this `Dependency check` step's own output (the only sanctioned auto-skip path; `depends_on` is the originating signal).
-   - An **explicit ticket-level override** is recorded — the affected ticket carries `override_skip: true` at the same indentation as its `status:` field AND the `skip_reason` does NOT match any forbidden rationale pattern in `hooks/lib/forbidden-rationale-patterns.sh`. A top-level or commented `override_skip` placement is structurally invalid and is rejected.
+3. **Execute pipeline** (ticket dir starts in `product_backlog/{parent-slug}/`; `/scout` moves it to `active/{parent-slug}/`):
 
-   Any other rationale — context budget pressure, deferred-to-resume, manual override without `override_skip: true`, etc. — MUST NOT skip a ticket while siblings are active. The PreToolUse:Write/Edit guard (`hooks/pre-state-transition.sh`) intercepts violation attempts before the state file is written and emits `decision: block` with reason `unauthorized_skip_with_active_siblings` or `unauthorized_skip_with_forbidden_rationale`. There is no environment-variable bypass; recovery flows through the same two paths as `## Context-Pressure Response Paths` (auto-compaction or `unexpected_error.action: stop`).
+   a. **Pre-scout Policy guard** — `autopilot-policy.yaml` in `product_backlog/{ticket-dir}/` (copied by `/create-ticket`). Missing → `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket failed, next ticket.
 
-3. **Execute pipeline for this ticket** (no ticket-creation step — the ticket dir already exists under `.simple-workflow/backlog/product_backlog/{parent-slug}/` when the pipeline starts, and `/scout` moves it into `.simple-workflow/backlog/active/{parent-slug}/`):
+   b. **Step: scout**.
+      - State update (before): `steps.scout = in_progress`, `invocation_method.scout = skill`.
+      - Invoke `/scout .simple-workflow/backlog/product_backlog/{parent-slug}/{NNN}-{slug}` via Skill.
+      - Artifacts: `investigation.md` + `plan.md`. Missing → `[PIPELINE] scout: ARTIFACT-MISSING`, state failed, next ticket.
+      - State update (after): `steps.scout = completed`.
 
-   a. **Pre-scout: Policy guard**
-      - Verify `autopilot-policy.yaml` exists at `.simple-workflow/backlog/product_backlog/{ticket-dir}/autopilot-policy.yaml` (it was copied there by `/create-ticket` when `brief=<path>` was passed upstream; see Plan 1 AC #14).
-      - If missing → log `[PIPELINE] scout: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.scout = failed`, `status = failed`, next ticket. Do NOT proceed. This is the explicit "not autopilot-eligible" signal for tickets created without a brief (findings-only or bare-description — Plan 1 AC #15).
+      **CHECKPOINT — RE-ANCHOR**: Read `autopilot-state.yaml`; execute next pending step. Do NOT end turn or summarize.
 
-   b. *(Former step `create-ticket` removed in Plan 4. `/autopilot` does not invoke `/create-ticket` and does not write `ticket.md` or mutate `.simple-workflow/.ticket-counter`. The ticket dir and `ticket.md` are produced upstream by `/create-ticket` before `/autopilot` runs.)*
+   c. **Step: impl**.
+      - State update (before): `steps.impl = in_progress`, `invocation_method.impl = skill`. Policy guard missing → `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket failed, next ticket.
+      - Invoke `/impl .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/plan.md` via Skill.
+      - Artifacts: ≥1 `eval-round-*.md`; on PASS also ≥1 `audit-round-*.md` AND `quality-round-*.md` (skip when all AC evaluation rounds FAILED). Missing → `[PIPELINE] impl: ARTIFACT-MISSING`, state failed, next ticket.
+      - State update (after): `steps.impl = completed`.
 
-   c. **Step: scout**
-      Resume: if `scout = completed`, skip to 3d (ticket already in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`).
-      - Emit stdout line: `scout: {NNN-slug} start` (where `{NNN-slug}` is the ticket_dir basename).
-      - **State update (before)**: `steps.scout = in_progress`, `invocation_method.scout = skill`.
-      - **MUST invoke `/scout {ticket-dir}` via the Skill tool**, passing the full path `.simple-workflow/backlog/product_backlog/{parent-slug}/{NNN}-{slug}` (the source location in product_backlog; `/scout` moves it to `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`). **NEVER bypass /scout** via `/investigate` / `/plan2doc`. Fail immediately if not invokable.
-      - On Bash fallback: `invocation_method.scout = manual-bash`. On success verify policy in active dir; if missing, log `[PIPELINE] scout: WARN — autopilot-policy.yaml missing in active dir after /scout` — do NOT copy from briefs (Plan 1 moved the copy responsibility to `/create-ticket`).
-      - **Artifact verification**: `investigation.md` and `plan.md` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → `[PIPELINE] scout: ARTIFACT-MISSING — investigation.md or plan.md not found in .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
-      - On `/scout` failure: state `steps.scout = failed`, `status = failed`, next ticket.
-      - **State update (after)**: `steps.scout = completed`.
-      - Emit stdout line: `scout: {NNN-slug} complete`.
+      **CHECKPOINT — RE-ANCHOR**: Read `autopilot-state.yaml`; execute next pending step. Do NOT end turn or summarize.
 
-      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read the `autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
+   d. **Step: ship**.
+      - State update (before): `steps.ship = in_progress`, `invocation_method.ship = skill`. Policy guard missing → `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket failed, next ticket.
+      - Invoke `/ship {target-branch} ticket-dir={ticket-dir}` via Skill (no `merge=true`). `/ship` atomically commits + moves ticket + runs `/tune` + opens PR.
+      - Artifacts: `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` must exist. Missing → `[PIPELINE] ship: ARTIFACT-MISSING`, state failed, next ticket.
+      - **Artifact Presence Gate** (7 patterns, `done/` first else `active/`): `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`. Missing → `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}`, ticket failed. Exception: last `eval-round-*.md` FAIL or FAIL-CRITICAL (all AC evaluation rounds FAILED) → skip last 3.
+      - State update (after): `steps.ship = completed`, `status = completed`. Record PR URL.
 
-   d. **Step: impl**
-      Resume: if `impl = completed`, skip to 3e.
-      - **State update (before)**: `steps.impl = in_progress`, `invocation_method.impl = skill`.
-      - **Policy guard**: `autopilot-policy.yaml` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] impl: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.impl = failed`, `status = failed`, next ticket.
-      - **MUST invoke `/impl .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/plan.md` via the Skill tool**. **NEVER bypass /impl** by spawning `implementer` / `ac-evaluator` directly. Fail immediately if not invokable.
-      - On Bash fallback: `invocation_method.impl = manual-bash`. On failure: state `steps.impl = failed`, `status = failed`, next ticket.
-      - **Artifact verification** in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`: at least one `eval-round-*.md`; if PASS (AC passed + `/audit` ran) at least one `audit-round-*.md` AND `quality-round-*.md` (skip when `/impl` ended FAIL at AC stage, i.e. all AC evaluation rounds FAILED). Missing → `[PIPELINE] impl: ARTIFACT-MISSING — {missing-file-pattern} not found in .simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`, state failed, next ticket.
-      - **State update (after)**: `steps.impl = completed`.
+      **CHECKPOINT — RE-ANCHOR**: Read `autopilot-state.yaml`; execute next pending step. Do NOT end turn or summarize.
 
-      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read the `autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
+   e. **Loop-tail CHECKPOINT — iterate or exit**: terminal status (`completed`/`failed`/`skipped`). Re-enter step 1 for `i+1`. **MUST NOT** `end_turn`, **MUST NOT** summarize. **Exit** when all terminal → post-loop phase (Split Autopilot Log → Completion Report → Brief Lifecycle → State File Cleanup → final `## [SW-CHECKPOINT]`).
 
-   e. **Step: ship**
-      Resume: if `ship = completed`, skip to 3f.
-      - **State update (before)**: `steps.ship = in_progress`, `invocation_method.ship = skill`.
-      - **Policy guard**: `autopilot-policy.yaml` must exist in `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. Missing → log `[PIPELINE] ship: ABORT — autopilot-policy.yaml missing in ticket dir`, mark this ticket as failed, state `steps.ship = failed`, `status = failed`, next ticket.
-      - Determine target branch from Pre-computed Context.
-      - **MUST invoke `/ship {target-branch} ticket-dir={ticket-dir}` via the Skill tool** (no `merge=true`). **NEVER bypass /ship** with direct `git commit` / `gh pr create` / `mv` — /ship is the atomic orchestrator for commit + ticket move + `/tune` + PR. Fail immediately if not invokable.
-      - On Bash fallback: `invocation_method.ship = manual-bash`. On failure: state `steps.ship = failed`, `status = failed`, next ticket.
-      - **Artifact verification**: `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` must exist (nested layout) — or `.simple-workflow/backlog/done/{NNN}-{slug}/` for any legacy flat-layout tickets. Missing → `[PIPELINE] ship: ARTIFACT-MISSING — done ticket-dir not found after ship`, state failed, next ticket.
-      - **Artifact Presence Gate**: Verify 7 patterns (check `done/{...}/` first, else `active/{...}/`): `ticket.md`, `investigation.md`, `plan.md`, `eval-round-*.md`, `audit-round-*.md`, `quality-round-*.md`, `security-scan-*.md`. Missing → `[PIPELINE] {step}: ARTIFACT-MISSING: {patterns}`, ticket failed. **Exception**: Last `eval-round-*.md` FAIL or FAIL-CRITICAL (all AC evaluation rounds FAILED) → skip checking the last 3 patterns.
-      - **State update (after)**: `steps.ship = completed`, `status = completed`.
-
-   f. Record PR URL and status.
-
-      > **CHECKPOINT — RE-ANCHOR BEFORE CONTINUING**: Read the `autopilot-state.yaml`; execute the next pending step. Do NOT end your turn or summarize.
-
-   g. **Loop-tail CHECKPOINT — iterate or exit**:
-
-      > **CHECKPOINT — LOOP TAIL (this ticket complete → iterate to next ticket in PROCESSING_ORDER)**: This ticket is complete (every step of this ticket's pipeline has reached a terminal status — `completed`, `failed`, or `skipped`). The next action is to **iterate to the next ticket in `PROCESSING_ORDER`** by re-entering the per-ticket pipeline at step 1 (Resume skip check) for index `i+1`. You **MUST NOT** call `AskUserQuestion` at this loop-tail boundary. You **MUST NOT** `end_turn` at this loop-tail boundary. You **MUST NOT** summarize progress, print a "Part N complete" status, or otherwise pause for acknowledgement at this loop-tail boundary. **Exit condition**: when every ticket in `PROCESSING_ORDER` has reached a terminal status (`completed` / `failed` / `skipped`) — i.e., there is no next index to iterate to — exit the per-ticket loop and proceed to the post-loop phase (Split Autopilot Log → Split Completion Report → Split Brief Lifecycle → Split State File Cleanup → final `## [SW-CHECKPOINT]` emission).
-
-4. **Error handling per ticket**: Any step failure → ticket `failed` (state already updated), log error. Continue to next ticket (do NOT stop the pipeline). Tickets with a failed dependency are skipped (step 2). Independent tickets still run.
+4. **Per-ticket error handling**: any step failure → ticket `failed`, log error, next ticket (do NOT stop pipeline). Dependents skipped (step 2). Independent tickets still run.
 
 ### Split Autopilot Log
 
-Write both the overall and per-ticket logs:
-
-1. **Overall log**: `.simple-workflow/backlog/briefs/active/{parent-slug}/autopilot-log.md` (or `briefs/done/{parent-slug}/autopilot-log.md` if the brief was moved; if no brief dir exists, write at `.simple-workflow/backlog/product_backlog/{parent-slug}/autopilot-log.md`).
-2. **Per-ticket logs**: Each processed ticket (completed / failed / skipped) MUST have its own `autopilot-log.md` at its ticket dir. Location priority: `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` first (if `/ship` reached Step 5), else `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`.
-
-IMPORTANT: Per-ticket logs are required — no skipping.
-
-Overall autopilot-log.md includes additional fields:
-
-```yaml
----
-parent_slug: {parent-slug}
-started: {timestamp}
-completed: {timestamp}
-final_status: completed | completed-with-warnings | partial | failed
-ticket_count: {N}
-tickets_completed: {N}
-tickets_failed: {N}
-tickets_skipped: {N}
-ticket_mapping:
-  {parent-slug}-part-1: {ticket-dir-1}
-  {parent-slug}-part-2: {ticket-dir-2}
----
-```
-
-Each ticket gets its own subsection in ## Pipeline Execution:
-
-```markdown
-### Ticket: {parent-slug}-part-{N} → {ticket-dir} ({status})
-- scout: {status}
-- impl: {status} ({rounds} rounds)
-- ship: {status} → PR: {url}
-- Manual Bash Fallbacks: {rendered from manual_bash_fallbacks[] — see below}
-```
-
-**Single source of truth for Manual Bash Fallbacks**: the authoritative log is the structured `manual_bash_fallbacks[]` list recorded in this ticket's `autopilot-state.yaml` (schema defined in the Manual Bash Fallback Discipline section below). Every entry in the structured list MUST be rendered verbatim in the per-ticket subsection as `{timestamp} | {command} | {reason} (exit={exit_code}, destructive={destructive})`. When the list is empty or absent, print `none`. The per-step `invocation_method == manual-bash` flag (used elsewhere in this document) is a derived indicator — it MUST be set if and only if a matching `manual_bash_fallbacks[]` entry exists for that step, never independently.
-
-Include `## Warnings` when any ticket's `manual_bash_fallbacks[]` is non-empty (equivalently: any step with `invocation_method == manual-bash`, which is derived from the list): list ticket IDs and replay each fallback entry with its `reason` and `destructive` flag. Omit if every ticket's `manual_bash_fallbacks[]` is empty.
+Write overall `autopilot-log.md` at `briefs/active/{parent-slug}/` (or `briefs/done/` post-move; no brief dir → `product_backlog/{parent-slug}/`) AND per-ticket logs in each ticket dir (`done/...` if `/ship` Step 5 reached, else `active/...`). Per-ticket logs required. Frontmatter + per-ticket subsection + six common sections (`## Pipeline Execution`, `## Warnings`, `## Human Overrides`, `## KB Overrides`, `## Decisions Made`, `## Unreached Gates`) + Manual Bash Fallback rendering (`manual_bash_fallbacks[]` SSoT in `autopilot-state.yaml`; per-step `invocation_method == manual-bash` derived) live in [references/autopilot-log.md](references/autopilot-log.md).
 
 ### Split Completion Report
 
-Print: overall status (completed / partial / failed); per-ticket table (status + PR URL); counts `{completed}/{failed}/{skipped} of {total}`. On partial / failed: "To resume, re-run `/autopilot {parent-slug}`. The pipeline will automatically continue from the last checkpoint. To start fresh, remove the `autopilot-state.yaml` (or rename it aside) before re-running."
+Print: overall status (completed/partial/failed); per-ticket table (status + PR URL); counts `{completed}/{failed}/{skipped} of {total}`. On partial/failed: tell user to re-run `/autopilot {parent-slug}` (resumes from checkpoint) or remove `autopilot-state.yaml` to start fresh.
 
 ### Split Brief Lifecycle
 
-- All tickets completed AND brief exists → brief `completed`, move to `briefs/done/`.
-- Any ticket failed / skipped AND brief exists → brief `stopped`, stays in `briefs/active/`.
-- No brief (split-plan-only run) → skip brief lifecycle; the `split-plan.md` and per-ticket `autopilot-log.md` artefacts are the permanent record.
-- `final_status`: all completed AND every ticket's `manual_bash_fallbacks[]` empty → `completed`; all completed but at least one ticket has a non-empty `manual_bash_fallbacks[]` → `completed-with-warnings`; mixed completed + failed/skipped → `partial`; first ticket failed → `failed`.
+All completed + brief exists → brief `completed`, move to `briefs/done/`. Any failed/skipped + brief exists → brief `stopped`, stays in `briefs/active/`. No brief → skip. `final_status` (`completed`/`completed-with-warnings`/`partial`/`failed`) discrimination in [references/autopilot-log.md](references/autopilot-log.md).
 
 ### Split State File Cleanup
 
-After Split Brief Lifecycle, **move** the `autopilot-state.yaml` from its active location (`.simple-workflow/backlog/briefs/active/{parent-slug}/` or `.simple-workflow/backlog/product_backlog/{parent-slug}/`) to `.simple-workflow/backlog/briefs/done/{parent-slug}/autopilot-state.yaml` (creating the dir if missing). NEVER delete — post-mortem and Manual Bash Fallback history must be preserved. Logs and state together form the permanent record of the run. (This is the "State file cleanup" step — absence of this text is a contract violation.)
+**Move** `autopilot-state.yaml` to `briefs/done/{parent-slug}/autopilot-state.yaml` (create dir if missing). NEVER delete — Manual Bash Fallback history must be preserved. ("State file cleanup" step.) Stop + PreCompact hooks treat `briefs/done/` as a third lookup root after `briefs/active/` → `product_backlog/`, adopted ONLY when every step has `completed`.
 
-The Stop hook (`hooks/autopilot-continue.sh`) and the PreCompact hook (`hooks/pre-compact-save.sh`) recognise `briefs/done/` as a third fallback lookup root for the moved state file, evaluated in the order (1) `briefs/active/` → (2) `product_backlog/` → (3) `briefs/done/`. This closes the same-turn race where Split State File Cleanup completes and the terminal Stop / PreCompact hook fires before the surrounding turn ends — without the fallback those terminal events would silently skip the `runtime_metrics:` append. The hooks adopt a `briefs/done/` candidate ONLY when every pipeline step has reached `completed`; a `briefs/done/` state file with any `in_progress` or `pending` step is treated as anomalous and ignored, so a premature `partial_completion` entry is never emitted against a half-finished run that was moved by mistake.
+### Gate decisions and Unreached gates
 
-### Autopilot Log Sections (common to overall + per-ticket)
+Canonical gates: `scout`, `plan`, `build`, `verify`, `retro`. Each emits `[AUTOPILOT-POLICY] gate=<name> action=<allow|deny|skip> reason=<reason>` + a `## Decisions Made` row. Canonical reasons: `evaluated`, `not_reached`, `condition_unmet`, `dependency_skipped` — `evaluated` pairs any action; rest pair `action=skip` only. Terminate before considering gates → `autopilot-log.md` MUST contain `## Unreached Gates` listing each as `- <gate>: not_reached`. Every gate has a row → heading MUST NOT appear. Edge: empty decisions → enumerate all five. Regexes + reason-semantics + enumeration regex + edge in [references/gate-decisions.md](references/gate-decisions.md).
 
-Every `autopilot-log.md` (overall or per-ticket) includes the following sections derived from Phase 1 step 5 (Human override detection) and runtime `[AUTOPILOT-POLICY]` lines:
-
-- `## Pipeline Execution` — per-step status per ticket.
-- `## Warnings` (only on `completed-with-warnings`): replay every ticket's `manual_bash_fallbacks[]` entries verbatim (`timestamp | command | reason | exit_code | destructive`). Each entry MUST appear; silent drops are a contract violation. The structured list is the single source of truth — do NOT derive the Warnings section from `invocation_method` flags alone.
-- `## Human Overrides`: step-5 `human_override` rows `| {gate} | {expected_action} | {actual_action} | human_override |`. **Exclude `kb_override` rows** from this section — they go to `## KB Overrides` instead. None → "No human overrides detected."
-- `## KB Overrides`: step-5 `kb_override` rows `| {gate} | {expected_action} | {actual_action} | kb_override |` (gates where the value differs from the risk_tolerance default AND a `# kb-suggested` comment is attached in the policy file). None → "No KB overrides detected."
-- `## Decisions Made` table: parse `[AUTOPILOT-POLICY]` lines and emit one row per gate following the **gate-decision canonical format** (see below); "No policy decisions were triggered" if none. Include step-5 overrides — **distinguish `human_override` and `kb_override` type** via the free-form notes column so a reviewer can tell which differences came from the user and which came from the KB suggestion layer.
-- `## Unreached Gates` (only when at least one gate was not considered before the run terminated): see **Unreached gate enumeration discipline** below. The literal heading `## Unreached Gates` MUST NOT appear when every gate was evaluated.
-- `## Stop Reason` (only on stopped/failed).
-
-### Gate-decision canonical format
-
-The autopilot canonical gate set is `scout`, `plan`, `build`, `verify`, `retro` (the five pipeline gates). Policy gates emitted by `/scout`, `/impl`, `/ship` (e.g. `ac_eval_fail`, `ship_review_gate`, `ticket_quality_fail`, `unexpected_error`) are also rendered using the same canonical line and table-row shapes — the regexes below admit any `[a-z][a-z0-9_-]*` gate name.
-
-**`gate-decision-line` (stdout, one line per decision)** — emitted as autopilot decides each gate:
-
-```
-[AUTOPILOT-POLICY] gate=<name> action=<allow|deny|skip> reason=<evaluated|not_reached|condition_unmet|dependency_skipped>
-```
-
-The line MUST match regex `^\[AUTOPILOT-POLICY\] gate=[a-z][a-z0-9_-]* action=(allow|deny|skip) reason=(evaluated|not_reached|condition_unmet|dependency_skipped)$` exactly. No trailing whitespace, no extra fields. The line is also written verbatim into `autopilot-log.md` (non-fenced lines only — illustrative `[AUTOPILOT-POLICY]` lines inside triple-backtick fences or HTML comments are documentation, not contract events, and are ignored by readers).
-
-**`decisions-table-row` (autopilot-log.md, one row per gate)** — emitted under the `## Decisions Made` heading:
-
-```
-| <gate> | <action> | <reason> | <free-form notes> |
-```
-
-Each row MUST match regex `^\| [a-z][a-z0-9_-]* \| (allow|deny|skip) \| (evaluated|not_reached|condition_unmet|dependency_skipped) \| .+ \|$` exactly. The fourth column is free-form notes (e.g., `human_override`, `kb_override`, `eval_status=PASS`, the cited policy path) and MUST be non-empty.
-
-**Reason semantics** (the only four canonical values):
-
-| reason | When to emit |
-|---|---|
-| `evaluated` | The gate's conditions were considered and the decision (`allow` / `deny` / `skip`) follows from that evaluation. This is the default outcome for any gate that runs. |
-| `not_reached` | The run terminated (stop, fatal failure, exhausted iteration budget, etc.) before this gate was considered. The gate was never evaluated against its policy. |
-| `condition_unmet` | The gate's preconditions were not satisfied (e.g., `retro` requires the upstream `build` to have emitted `action=allow`). The action will always be `skip`. |
-| `dependency_skipped` | An upstream gate emitted `action=deny` and this gate is skipped as a cascade. The action will always be `skip`. |
-
-`reason=evaluated` is paired with any of the three actions (`allow` / `deny` / `skip`). The other three reasons (`not_reached`, `condition_unmet`, `dependency_skipped`) are paired with `action=skip` only — they describe a non-evaluation, not a deny.
-
-### Unreached gate enumeration discipline
-
-When the run terminates **before considering** one or more canonical gates (e.g., a fatal failure during `build` short-circuits `verify` and `retro`, or `scout` exits with `ERROR:` so `plan`/`build`/`verify`/`retro` are never considered), `autopilot-log.md` MUST contain an `## Unreached Gates` section enumerating each unreached gate on its own line:
-
-```
-## Unreached Gates
-
-- plan: not_reached
-- build: not_reached
-- verify: not_reached
-- retro: not_reached
-```
-
-Each enumerated line MUST match regex `^- (scout|plan|build|verify|retro): not_reached$`. The number of enumerated lines equals the count of canonical gates that have **zero** corresponding `decisions-table-row` in the `## Decisions Made` table. When every canonical gate has a row in `## Decisions Made`, the literal heading `## Unreached Gates` MUST NOT appear anywhere in the log body — its presence-without-need is a contract violation flagged by `tests/test-skill-contracts.sh`.
-
-**Edge — empty decisions table**: if `## Decisions Made` contains zero rows (e.g., the run aborted in pre-flight before any gate was decided), the `## Unreached Gates` section enumerates **all five** canonical gates `scout`, `plan`, `build`, `verify`, `retro` each on a separate line followed by `: not_reached`.
-
-**Relationship to runtime gate-decision lines**: an unreached gate has no `[AUTOPILOT-POLICY]` line on stdout (it was never decided). The `## Unreached Gates` section is the only mechanism that records its non-evaluation. Tooling (`/tune`, `tune-analyzer`) reads both the `## Decisions Made` table and the `## Unreached Gates` enumeration to compute consecutive-`not_reached` counts per gate across runs.
-
-**`completed-with-warnings`**: all tickets completed AND at least one ticket has a non-empty `manual_bash_fallbacks[]` in its state (equivalently: at least one step with `invocation_method == manual-bash`, which is derived from the structured list). Log fallbacks in `## Warnings` by replaying every `manual_bash_fallbacks[]` entry — the structured list is authoritative, the per-step flag is derived.
+**`completed-with-warnings`**: all tickets completed + ≥1 ticket has non-empty `manual_bash_fallbacks[]`. Replay every entry in `## Warnings`; per-step `invocation_method == manual-bash` is derived.
 
 ### Manual Bash Fallback Discipline
 
-A Manual Bash Fallback is an orchestrator-level `Bash` call used to recover from an anomaly that a subagent could not handle. It is a last resort.
-
-Context window / context budget pressure is **NEVER** an anomaly that justifies a Manual Bash Fallback. Context pressure is a normal operating condition with two designed responses (see `## Context-Pressure Response Paths` below): auto-compaction via the PreCompact hook, or a `unexpected_error.action: stop` policy-gate stop. The orchestrator MUST NOT bypass `/scout` / `/impl` / `/ship` Skill invocations to "save tokens" or "fit within the context window".
+A Manual Bash Fallback is a last-resort orchestrator-level `Bash` call to recover from a subagent anomaly. Log every fallback to `autopilot-state.yaml` `manual_bash_fallbacks[]`; replay verbatim in `autopilot-log.md`. Per-step `invocation_method == manual-bash` is derived.
 
 **MUST NOT treat as Manual Bash Fallback**:
-- Generator / Evaluator / any subagent response truncation (timeout / token limit). These MUST trigger the configured retry gate (`ac_eval_fail`, `evaluator_dry_run_fail`, etc.) and re-spawn the subagent, NOT be covered by an orchestrator-run shadow execution.
-- Cases where a subagent was the intended executor but failed. Re-spawn the subagent with the failure context in its prompt.
-- Context window / context budget / context pressure as a rationale for orchestrator-level Bash that bypasses a Skill invocation. Context pressure is not an anomaly: the canonical responses are auto-compaction (PreCompact hook) and `unexpected_error.action: stop` (policy-gate stop). Recording `context budget` (or any equivalent — `context window`, `context pressure`, `context exhausted`, `context occupancy`, `token budget`) as a `manual_bash_fallbacks[].reason` is a contract violation flagged by `hooks/lib/forbidden-rationale-patterns.sh`.
+- Subagent response truncation/failure — re-spawn via the configured retry gate.
+- Context window / context budget / context pressure rationales — context pressure is not an anomaly; canonical responses are auto-compaction (`hooks/pre-compact-save.sh`) and `unexpected_error.action: stop`. Such rationales in `manual_bash_fallbacks[].reason` are rejected by `hooks/lib/forbidden-rationale-patterns.sh`.
 
-**MUST NOT use destructive operations as error shortcuts**:
-- Prohibited without explicit justification: `rm -rf`, `rm -f .git/index`, `git reset --hard`, `git clean -f`, `git checkout .`, `git branch -D` of an active branch.
-- If a tool's error output names a non-destructive flag (e.g. `use -f to force removal`, `use --allow-empty-message`), apply that flag first. Do not jump to destructive alternatives.
-- Before any destructive call, write the reasoning into `autopilot-state.yaml` `manual_bash_fallbacks[]` and prefer an interactive confirmation when the autopilot is in a resumable state.
+**MUST NOT use destructive operations as error shortcuts**: `rm -rf`, `rm -f .git/index`, `git reset --hard`, `git clean -f`, `git checkout .`, `git branch -D`.
 
-**MUST log every Manual Bash Fallback immediately**:
-Append to `autopilot-state.yaml` at the active parent dir:
-
-```yaml
-manual_bash_fallbacks:
-  - timestamp: "<ISO-8601 UTC>"
-    command: "<command verbatim>"
-    reason: "<why this fell outside the subagent contract>"
-    exit_code: <int>
-    destructive: <true|false>
-```
-
-On finalization (when writing `autopilot-log.md`), the `Manual Bash Fallbacks` section MUST replay this list verbatim. "No manual bash fallbacks" is valid ONLY when `manual_bash_fallbacks` is empty or absent. When the state file recorded fallbacks, the log MUST NOT emit an empty `Manual Bash Fallbacks: none` line — silent drops are a contract violation.
-
-**Runtime enforcement (`hooks/pre-bash-contract-guard.sh`)**: A `PreToolUse:Bash` hook (the `pre-bash-contract` guard) intercepts violation attempts inside an autopilot context and emits `decision: block` before the tool call fires. It rejects (1) appends to `manual_bash_fallbacks[]` whose `reason` matches any pattern in `hooks/lib/forbidden-rationale-patterns.sh` (`context_budget_fallback`), and (2) direct `git commit` invocations when no per-ticket `phases.ship.status: in_progress` is present (`unauthorized_ship_inline`, i.e. a `/ship` Skill bypass). The hook has no environment-variable escape hatch — recovery is via auto-compaction or `unexpected_error.action: stop`, not a bypass flag.
+Runtime enforcement: `hooks/pre-bash-contract-guard.sh` (`PreToolUse:Bash`) blocks forbidden-rationale appends and `/ship` bypasses. Full forbidden-rationale list, `manual_bash_fallbacks:` schema, and `hooks/lib/forbidden-rationale-patterns.sh` link in [references/manual-bash-fallback.md](references/manual-bash-fallback.md).
 
 ## Context-Pressure Response Paths
 
-Context window / context budget pressure during an `/autopilot` run has exactly **two** canonical responses. Inventing a third path — for example calling `AskUserQuestion` to escalate, fabricating an "inline-equivalent" Bash fallback, or skipping a mandatory Skill invocation to "save tokens" — is a contract violation. The non-interactive orchestrator contract documented above (`AskUserQuestion` is forbidden — and applies uniformly to every boundary inside the pipeline) is restated here: **NEVER** call `AskUserQuestion` as a context-pressure escalation path.
-
-**(a) Accept auto-compaction (canonical response when the harness fires PreCompact):**
-
-- The PreCompact hook (`hooks/pre-compact-save.sh`) writes a `boundary: session_compaction` entry to `autopilot-state.yaml` `runtime_metrics:` and saves resumable state. This is `pre-compact-save.sh` performing its designed job — auto compact is normal operation, not a failure mode.
-- After compaction the harness rehydrates the session and re-enters `/autopilot`. The resume path then prints `[RESUME] Skipping {logical_id}: already completed` for every ticket with `status: completed`, and continues from the first non-completed ticket.
-- The orchestrator MUST NOT pre-empt compaction by inventing token-saving shortcuts; the PreCompact + resume pair is the contracted recovery.
-
-**(b) Stop via `unexpected_error.action: stop` (canonical response when context pressure surfaces as a pipeline error):**
-
-- When a step fails because the model can no longer keep the full pipeline state in context, the gate `unexpected_error` evaluates to `action: stop` (the conservative / moderate / aggressive default). The orchestrator MUST emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop` and write `## Stop Reason` with `tag: policy_gate_stop` (see `## Stop Reason` below for the section format).
-- The user resumes by running `/autopilot {parent-slug}` against the preserved `autopilot-state.yaml`. `unexpected_error.action: stop` is the canonical response — it is NOT a degraded fallback, NOT a workaround, and is documented as such here so any reviewer can confirm the stop was contracted, not improvised.
-
-**Forbidden third paths:**
-
-- The orchestrator NEVER invokes `AskUserQuestion` to ask the user how to proceed under context pressure — see the `MUST NOT directive — Non-interactive orchestrator contract` paragraph above (the prohibition `applies uniformly to every boundary inside the pipeline` and is restated verbatim here for cross-reference).
-- The orchestrator MUST NOT log `context budget`, `context window`, `context pressure`, `context exhausted`, `context occupancy`, `token budget`, `running out of context`, or any equivalent rationale as a `manual_bash_fallbacks[].reason`. Such rationales are matched by `hooks/lib/forbidden-rationale-patterns.sh` and rejected by the PreToolUse:Bash and PostToolUse:Write guards.
-- The orchestrator MUST NOT bypass `/scout`, `/impl`, or `/ship` Skill invocations under the pretext of context conservation. The two paths above (auto-compaction and `unexpected_error.action: stop`) are exhaustive.
+Two canonical responses; a third (`AskUserQuestion` escalation, inline Bash fallback, skipping a Skill invocation) violates the contract. **(a) Accept auto-compaction**: `hooks/pre-compact-save.sh` writes `boundary: session_compaction`; on rehydrate, resume prints `[RESUME] Skipping {logical_id}: already completed` and continues. **(b) Stop via `unexpected_error.action: stop`**: gate `unexpected_error` emits `[AUTOPILOT-POLICY] gate=unexpected_error action=stop` and writes `## Stop Reason` with `tag: policy_gate_stop`; resume via `/autopilot {parent-slug}`. Forbidden third paths in [references/manual-bash-fallback.md](references/manual-bash-fallback.md).
 
 ## Stop Reason
 
-When an `autopilot-log.md` is written for a stopped or failed run, it MUST include a `## Stop Reason` section recording why the run terminated. Tag values and the discrimination heuristic are defined in [`references/stop-reason-taxonomy.md`](references/stop-reason-taxonomy.md) — see that file for the full enum and conditions. The same `stop_reason` namespace is also written by the Stop hook into `autopilot-state.yaml` `runtime_metrics:` entries (single source of truth across log and state).
-
-Section format:
+An `autopilot-log.md` for a stopped/failed run MUST include `## Stop Reason`. Tag values, heuristic, per-tag conditions in [references/stop-reason-taxonomy.md](references/stop-reason-taxonomy.md); `stop_reason` namespace also written by Stop hook into `autopilot-state.yaml` `runtime_metrics:` entries (SSoT across log + state). Section format:
 
 ```markdown
 ## Stop Reason
@@ -532,17 +210,12 @@ Section format:
 - **note**: <free-form, 1-2 lines>
 ```
 
-Per-tag conditions live in the taxonomy file and MUST NOT be redefined here.
-
 ## Error Handling
 
-- **Empty arguments**: "Usage: /autopilot <parent-slug>" and stop.
-- **No split-plan.md AND no brief**: print `ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and stop. Do NOT create or modify any file under `.simple-workflow/backlog/active/`. (AC #8)
-- **No split-plan.md but brief exists**: print `ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and stop. (AC #1: stdout does NOT contain a line matching `^/create-ticket`.)
-- **Legacy split-plan at `.simple-workflow/backlog/briefs/active/{parent-slug}/split-plan.md`**: ignored. `/autopilot` does NOT fall back to it. The usual "No split-plan.md" error fires and mentions the new path (the literal substrings `ERROR:` and `not found` both appear in stdout — Plan 4 Negative AC).
-- **split-plan.md has zero ticket entries**: print `ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).` and stop. (Edge case — literal `empty` is load-bearing.)
-- **Cyclic `depends_on` graph**: print `ERROR: circular dependency detected in split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <cycle members>` and stop BEFORE any pipeline work. Do NOT create `.simple-workflow/backlog/active/{parent-slug}/` subdirectories. The literal word `circular` (or `cycle`) MUST appear in stdout.
-- **Brief not confirmed** (brief exists but status is `draft`): instruct user to update status.
-- **Any pipeline step failure (per ticket)**: check `gates.unexpected_error.action`: `stop` (default) → log, mark ticket failed, partial report. Any other value → treat as `stop` (safety fallback); print `[AUTOPILOT-POLICY] gate=unexpected_error action=stop (fallback from unsupported action={original_action})`. Policy absent / field undefined → default `stop`. Always print `[AUTOPILOT-POLICY] gate=unexpected_error action={actual_action}` on invocation.
-- **Any pipeline step failure (per ticket, continued)**: log for that ticket, mark failed, next ticket. Dependents skipped.
-- **Artifact preservation**: On failure, artifacts (ticket, plan, eval-round, etc.) remain in the ticket dir — `.simple-workflow/backlog/done/{parent-slug}/{NNN}-{slug}/` if `/ship` Step 5 completed, else `.simple-workflow/backlog/active/{parent-slug}/{NNN}-{slug}/`. The `autopilot-state.yaml` records exact progress for `/autopilot {parent-slug}` resume.
+- **Empty arguments**: `Usage: /autopilot <parent-slug>` and stop.
+- **No split-plan / split-plan missing but brief exists**: see Phase 1 step 1 for the verbatim `ERROR:` literals (both include `not found`).
+- **Empty split-plan** (zero ticket entries): print exactly `ERROR: split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md is empty (zero ticket entries).` and exit non-zero. Literal `empty` is load-bearing.
+- **Cyclic `depends_on` graph**: print exactly `ERROR: circular dependency detected in split-plan.md at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md among tickets: <list cycle members>` and exit non-zero **before any ticket work begins**. Literal `circular` (or `cycle`) MUST appear in stdout.
+- **Brief not confirmed** (brief `status: draft`): see Phase 1 step 3 for exact message.
+- **Pipeline step failure**: check `gates.unexpected_error.action`. `stop` (default) → log, mark failed, partial report. Other value → treat as `stop`; print `[AUTOPILOT-POLICY] gate=unexpected_error action=stop (fallback from unsupported action={original_action})`. Policy absent → default `stop`. Always print `[AUTOPILOT-POLICY] gate=unexpected_error action={actual_action}`. Mark failed, next ticket; dependents skipped.
+- **Artifact preservation**: artifacts remain in the ticket dir — `done/...` if `/ship` Step 5 completed, else `active/...`. `autopilot-state.yaml` records progress for resume.
