@@ -1,10 +1,22 @@
 ---
 name: ship
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
-  Commit current changes, create a PR, and optionally squash-merge.
-  Combines commit + create-pr + merge into a single workflow.
-  Use when the user wants to ship completed work.
+  Ships completed work by committing staged changes, moving any
+  bound ticket to `.simple-workflow/backlog/done/`, delegating
+  knowledge-base extraction to `/tune` via the Skill tool,
+  pushing the branch, creating a GitHub PR, and optionally
+  squash-merging it. Use when (1) the user runs `/ship` directly
+  to commit-and-PR the current branch outside any ticket workflow,
+  (2) the user runs `/ship` on an active ticket so the ticket
+  directory moves from `.simple-workflow/backlog/active/` to
+  `.simple-workflow/backlog/done/`, the ticket's `phase-state.yaml`
+  advances `phases.ship` from `pending` to `completed`, and the
+  PR body carries the canonical `Audit Summary:` line plus every
+  `### Warning:` heading from the latest `audit-round-N.md`, or
+  (3) `/autopilot` chain-calls the ship phase of a ticket-driven
+  pipeline via the Skill tool. Triggers on "/ship", "/ship merge=true",
+  "/ship [target-branch]", "ship the changes", "commit and PR",
+  "create pull request", "squash merge", "complete ticket".
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -53,6 +65,8 @@ argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 
 Ship the current changes: commit, create PR, and optionally merge.
 User arguments: $ARGUMENTS
+
+Invocation policy: Do not auto-invoke. `disable-model-invocation: false` is intentional because `/ship` is chain-called by name from the /autopilot skill via the Skill tool during the ship phase of the split-per-ticket flow, and is also invoked directly by users (`/ship`, `/ship merge=true`, `/ship <target-branch>`). Only invoke when the user names it directly or when another skill explicitly chain-calls it.
 
 ## Mandatory Skill Invocations
 
@@ -127,7 +141,7 @@ Commits ahead of default branch:
 
 **Note**: `<default-branch>` denotes the repo default branch from `Default branch:` in the pre-computed context (resolves `git symbolic-ref refs/remotes/origin/HEAD`; falls back to `main` if unset). Use this value wherever `<default-branch>` appears — never hardcode `main`.
 
-## Audit Summary embedding
+## Observable Contract: Audit Summary embedding
 
 When a ticket was moved to `.simple-workflow/backlog/done/{ticket-dir}/` in Phase 1 step 5, `/ship` MUST embed a structured audit summary into BOTH the commit message body (Phase 1 step 3.e) AND the PR body (Phase 2 step 14) so reviewers without access to gitignored `.simple-workflow/` artifacts can see the audit verdict from GitHub alone. Reference helper: `tests/helpers/audit-summary.sh` mirrors the parsing rules below and is the canonical contract test fixture.
 
@@ -187,6 +201,17 @@ The literal strings below are verified by `tests/test-skill-contracts.sh` Catego
 - `audit-summary: missing Status line in audit-round-`
 - `audit-summary: count-mismatch (Warnings declared=<X>, headings=<Y>)`
 - `[shipped without /audit]`
+
+## Observable Contract: SW-CHECKPOINT emission
+
+Every `/ship` invocation MUST emit exactly one `## [SW-CHECKPOINT]` block as the FINAL section of its output, per `skills/create-ticket/references/sw-checkpoint-template.md`. The block carries four required fields:
+
+- `phase=ship` (literal — the underscore-form canonical name of this skill).
+- `ticket=<ticket-dir or "none">` — `.simple-workflow/backlog/done/{ticket-dir}` when a ticket was moved in step 5, `.simple-workflow/backlog/active/{ticket-dir}` when a ticket was detected but not moved (e.g. early-stop before step 5.b), or the bare string `none` for non-ticket flows.
+- `artifacts=[<paths>]` — non-empty list of repo-relative paths on success (e.g. `phase-state.yaml`, PR URL or commit SHA). Failure paths emit `artifacts: []` (empty inline list) instead.
+- `next_recommended=""` — empty string, because the ticket lifecycle terminates here; downstream tooling reads this as "no further command".
+
+Failure paths (no-changes, no-remote, push failure, gh-auth failure, merge conflict, etc.) still MUST emit the block, with `artifacts: []` and `next_recommended=""`. The block is emitted exactly once per invocation, at the very end of output. See `skills/create-ticket/references/sw-checkpoint-template.md` for the canonical block format and the list of skills that emit it.
 
 ## Phase 1: Commit
 
