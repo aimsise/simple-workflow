@@ -1,10 +1,19 @@
 ---
 name: scout
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
-  Use after creating a ticket or when starting work on a new feature.
-  Investigates the codebase and creates an implementation plan for the
-  specified topic or active ticket.
+  Investigates the codebase and produces an implementation plan by
+  delegating to `/investigate` (researcher subagent) and `/plan2doc`
+  (planner subagent), then emits a `## [SW-CHECKPOINT]` block at
+  end-of-skill. Use when (1) the user runs `/scout` directly on a topic
+  to research and plan it outside any ticket workflow, (2) the user runs
+  `/scout` on an active or product-backlog ticket so the resulting
+  `investigation.md` and `plan.md` land in
+  `.simple-workflow/backlog/active/{ticket-dir}/` and the ticket's
+  `phase-state.yaml` advances `phases.scout` from `pending` to
+  `completed`, or (3) `/autopilot` chain-calls the scout phase of a
+  ticket-driven pipeline via the Skill tool. Triggers on "/scout",
+  "/scout <topic>", "scout the codebase", "investigate and plan",
+  "research and plan", "kick off a ticket", "scout this feature".
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -27,6 +36,8 @@ argument-hint: "<topic or ticket to investigate and plan>"
 ---
 
 Investigate and plan: $ARGUMENTS
+
+Invocation policy: Do not auto-invoke. Only invoke when explicitly called by name by the user (e.g. `/scout <topic>` or `/scout` on an active ticket) or by another skill via the Skill tool. In practice, `/autopilot` Step 3b chain-calls `/scout` once per ticket as part of the per-ticket `scout` → `impl` → `ship` pipeline. `disable-model-invocation: false` is intentional because the `/autopilot` chain-call uses the Skill tool, which would not resolve if the flag were flipped to `true`; flipping it would break the chain-call surface for `/autopilot` while leaving direct user invocation (`/scout <topic>` or `/scout` on an active ticket) superficially intact.
 
 ## Mandatory Skill Invocations
 
@@ -69,6 +80,21 @@ additionally resets `overall_status: in-progress` and
 re-enter from a failed state without manual file editing.
 
 Reference: `skills/create-ticket/references/phase-state-schema.md`.
+
+## Observable Contract: SW-CHECKPOINT emission
+
+Every successful `/scout` invocation MUST emit exactly one `## [SW-CHECKPOINT]` block as the FINAL section of its response. The block is the contractual end-of-skill artifact and is consumed by downstream tooling (notably `/autopilot` Step 3b artifact verification and `scout-checkpoint-guard.sh`).
+
+The block carries four fields per `skills/create-ticket/references/sw-checkpoint-template.md`:
+
+- `phase=scout` (always).
+- `ticket=<ticket-dir>` — set to the repo-relative path `.simple-workflow/backlog/active/{ticket-dir}` when a ticket was resolved in Steps 1–2, otherwise the literal `none`.
+- `artifacts=[<list>]` — repo-relative paths to `investigation.md`, `plan.md`, and `phase-state.yaml` (when present) on success, or `artifacts: []` on failure.
+- `next_recommended=/impl <plan-path>` — set to `/impl .simple-workflow/backlog/active/{ticket-dir}/plan.md` on success, or the empty string on failure.
+
+Failure paths (investigate failure in Step 4, plan2doc failure after Step 7) MUST still emit the block with `artifacts: []` and an empty `next_recommended` (matching Step 10 prose). The block is the only signal `/autopilot` uses to decide whether to advance `current_phase` from `scout` to `impl`; suppressing it on either success or failure breaks the pipeline.
+
+See `skills/create-ticket/references/sw-checkpoint-template.md` for the canonical block format and the list of skills that emit it.
 
 ## Instructions
 
