@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.5] — 2026-05-13
+
+Hotfix on top of v6.6.4. The marketplace manifest shipped in v6.6.4
+used `"source": "."` for the plugin entry, which Claude Code rejects
+with `This plugin uses a source type your Claude Code version does not
+support` because `"."` is parsed as a source-type discriminator and
+matches none of the supported types (`github`, `url`, `git-subdir`,
+`npm`, or a relative-path string that begins with `./`).
+`claude plugin marketplace add aimsise/simple-workflow` succeeds — the
+manifest itself loads — but `claude plugin install
+simple-workflow@aimsise-simple-workflow` fails on the malformed source
+field. v6.6.5 rewrites `plugins[0].source` to the canonical GitHub
+source object (`{ "source": "github", "repo": "aimsise/simple-workflow" }`),
+matching the worked example in the official Claude Code marketplace
+schema documentation. The marketplace name (`aimsise-simple-workflow`)
+and the plugin name (`simple-workflow`) are unchanged, so the documented
+install command `claude plugin install simple-workflow@aimsise-simple-workflow`
+stays valid. No skill, sub-agent, hook, test, or runtime behavior
+changed; the `tests/test-skill-contracts.sh` (452/452 PASS) and
+`tests/test-path-consistency.sh` (139/139 PASS) suites remain green
+without modification.
+
+### Fixed
+
+- `.claude-plugin/marketplace.json` `plugins[0].source` rewritten from
+  the invalid string `"."` to a canonical GitHub source object
+  (`{ "source": "github", "repo": "aimsise/simple-workflow" }`). This
+  is the worked example shape from the Claude Code marketplace schema
+  docs and is what unblocks `claude plugin install
+  simple-workflow@aimsise-simple-workflow` on the first attempt.
+- Users who already registered the marketplace at v6.6.4 must refresh
+  their local marketplace cache to pick up the corrected manifest:
+  `claude plugin marketplace remove aimsise-simple-workflow` followed
+  by `claude plugin marketplace add aimsise/simple-workflow`. The
+  install command itself is unchanged.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 452/452 PASS, identical to
+  the v6.6.4 baseline (no `SKILL.md`, agent, or hook contract was
+  touched in this release).
+- `bash tests/test-path-consistency.sh` — 139/139 PASS, identical to
+  the v6.6.4 baseline.
+- End-to-end install rehearsal in a clean working directory served as
+  the reproducer for this hotfix: at v6.6.4, `claude plugin marketplace
+  add aimsise/simple-workflow` succeeded but `claude plugin install
+  simple-workflow@aimsise-simple-workflow` aborted with `This plugin
+  uses a source type your Claude Code version does not support`. The
+  same two-step flow against v6.6.5 (after `marketplace remove` +
+  `marketplace add` to refresh the cached manifest) is expected to
+  complete without error, to be re-verified post-merge from a fresh
+  checkout once the v6.6.5 annotated tag and matching GitHub Release
+  are published.
+
 ## [6.6.4] — 2026-05-13
 
 Patch release that makes the plugin installable from a clean Claude
