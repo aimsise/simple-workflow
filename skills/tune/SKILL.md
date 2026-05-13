@@ -1,9 +1,21 @@
 ---
 name: tune
 description: >-
-  Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill.
-  Analyze evaluation logs, extract reusable patterns, and maintain the
-  project knowledge base. Run after /ship or manually to tune agent behavior.
+  Analyzes evaluation logs (eval-round, quality-round, security-scan,
+  audit-round, autopilot-log) by spawning the tune-analyzer subagent and
+  maintains the project knowledge base under `.simple-workflow/kb/`
+  (entries.yaml, index.yaml, candidates.yaml) with confidence-based
+  three-tier promotion (Tier 1 >= 0.8 auto-promote, Tier 2 0.5-0.8
+  propose, Tier 3 < 0.5 accumulate). Use when (1) the user runs `/tune
+  TICKET-DIR` to mine one ticket's logs, (2) the user runs `/tune all`
+  to mine every ticket under `.simple-workflow/backlog/done/` and
+  `active/`, or (3) `/ship` Phase 1 step 6 chain-calls `/tune` via the
+  Skill tool after moving a ticket to `done/` so the next `/impl`
+  Generator receives updated `index.yaml` pattern hints. Caps candidates
+  at 30 with a 90-day TTL and entries at 50. Triggers on "/tune",
+  "tune the knowledge base", "extract patterns", "analyze evaluation
+  logs", "update the kb", "promote candidates", "knowledge base
+  extraction", "mine evaluation logs".
 disable-model-invocation: false
 allowed-tools:
   # Claude Code
@@ -83,6 +95,21 @@ candidates:
         observed_at: "2026-04-10"
 ```
 
+Invocation policy: Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill (e.g. `/ship` Phase 1 step 6). `disable-model-invocation: false` is intentional because this skill is chain-called from `/ship` by name via the Skill tool; flipping to `true` breaks the chain-call surface for `/ship` and any direct `/tune {ticket-dir}` / `/tune all` user invocation.
+
+## Mandatory Skill Invocations
+
+The following agent invocation is **contractual** — `/tune` MUST delegate to the `tune-analyzer` agent via the Agent tool. `/tune` itself extracts no patterns; its entire role is argument parsing, directory existence checks, log-path enumeration, candidate pruning, promotion judgment, and reading/writing the three knowledge-base YAML files. The `tune-analyzer` agent is the sole pattern-extraction author.
+
+| Invocation Target | When | Skip consequence |
+|---|---|---|
+| `tune-analyzer` agent (Agent tool) | Step 3 — always, after the evaluation log paths have been collected in Step 2 | No new candidates written to `.simple-workflow/kb/candidates.yaml`; Step 4..7 have nothing to prune or promote; downstream `/impl` Generator KB injection (`.simple-workflow/kb/index.yaml`) receives no fresh patterns. Detected by absence of `candidates.yaml` mtime change after a `/tune` run that found logs. |
+
+**Binding rules**:
+- `MUST invoke the tune-analyzer agent via the Agent tool` in Step 3 after the log paths are enumerated. The orchestrator MUST NOT extract patterns by reading the log files itself.
+- `NEVER bypass tune-analyzer` by writing directly to `.simple-workflow/kb/candidates.yaml` from `/tune` (orchestrator-side YAML writes are restricted to pruning in Step 5 and promotion bookkeeping in Step 7).
+- `Fail the /tune invocation immediately` when the tune-analyzer agent cannot be invoked at all. Print the failure reason and the resolved knowledge-base directory path. Do NOT touch any of the three KB YAML files.
+
 ## Instructions
 
 ### Step 0: Parse Arguments
@@ -115,13 +142,16 @@ Use Glob to find these files. If `autopilot-log.md` does not exist in the ticket
 
 ### Step 3: Spawn tune-analyzer Agent
 
-Invoke the `tune-analyzer` agent via the Agent tool:
+Invoke the `tune-analyzer` agent via the Agent tool. The agent owns the fork — the orchestrator does NOT read the evaluation log contents itself; only the file path list and the knowledge base directory are passed across the boundary, and the orchestrator resumes once the agent returns its 5-field envelope.
+
 - Provide the list of evaluation log file paths collected in Step 2
 - Provide the knowledge base path: `.simple-workflow/kb/`
 - Instruct it to write new candidate patterns to `.simple-workflow/kb/candidates.yaml`
 - Receive the agent's return value (patterns found/updated counts)
 
 If the agent returns **Status: failed**, print the error and stop.
+
+**Return contract**: The `tune-analyzer` agent MUST return a 5-field envelope per its `## Context Conservation Protocol` (`agents/tune-analyzer.md`), under 500 tokens: **Status**: `success | partial | failed`, **Output**: `[path to written candidates file]`, **Patterns Found**: `[count of new patterns extracted]`, **Patterns Updated**: `[count of existing patterns with increased evidence]`, **Next Steps**: `[recommended actions]`. The orchestrator parses these fields to drive Step 4 (read updated candidates), Step 5 (pruning), and Step 8 (summary line items).
 
 ### Step 4: Read Updated Candidates
 
