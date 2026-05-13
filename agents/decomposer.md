@@ -2,14 +2,9 @@
 name: decomposer
 description: "Decompose investigation findings into an ordered list of independently-deployable ticket skeletons with a dependency graph."
 tools:
-  # Claude Code
   - Read
   - Grep
   - Glob
-  # Copilot CLI
-  - view
-  - grep
-  - glob
 model: opus
 maxTurns: 20
 permissionMode: acceptEdits

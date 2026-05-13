@@ -14,7 +14,6 @@ description: >-
   "continue the autopilot run", "drive scout impl ship pipeline".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Skill
   - Read
   - Write
@@ -31,23 +30,6 @@ allowed-tools:
   - "Bash(mkdir:*)"
   - "Bash(date:*)"
   - "Bash(cp:*)"
-  # Copilot CLI
-  - skill
-  - view
-  - create
-  - edit
-  - glob
-  - grep
-  - "shell(git status:*)"
-  - "shell(git diff:*)"
-  - "shell(git log:*)"
-  - "shell(git branch:*)"
-  - "shell(gh:*)"
-  - "shell(mv:*)"
-  - "shell(ls:*)"
-  - "shell(mkdir:*)"
-  - "shell(date:*)"
-  - "shell(cp:*)"
 argument-hint: "<parent-slug>"
 ---
 

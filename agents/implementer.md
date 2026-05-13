@@ -2,20 +2,12 @@
 name: implementer
 description: "Implement code changes following a plan. Opus model for L/XL tickets, Sonnet for S/M."
 tools:
-  # Claude Code
   - Read
   - Write
   - Edit
   - Grep
   - Glob
   - "Bash(*)"
-  # Copilot CLI
-  - view
-  - create
-  - edit
-  - grep
-  - glob
-  - "shell(*)"
 model: opus
 maxTurns: 30
 permissionMode: acceptEdits

@@ -2,20 +2,12 @@
 name: test-writer
 description: "Design and implement test cases for specified code."
 tools:
-  # Claude Code
   - Read
   - Grep
   - Glob
   - Write
   - Edit
   - "Bash(*)"
-  # Copilot CLI
-  - view
-  - grep
-  - glob
-  - create
-  - edit
-  - "shell(*)"
 model: sonnet
 maxTurns: 25
 permissionMode: acceptEdits

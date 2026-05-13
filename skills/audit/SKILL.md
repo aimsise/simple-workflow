@@ -12,16 +12,10 @@ description: >-
   intentional because callers reference this skill by name.
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Agent
   - Read
   - Glob
   - Grep
-  # Copilot CLI
-  - task
-  - view
-  - glob
-  - grep
 argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>] [branch or commit range (optional)]"
 ---
 

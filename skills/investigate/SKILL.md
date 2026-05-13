@@ -15,20 +15,12 @@ agent: researcher
 model: sonnet
 argument-hint: "<topic or question to investigate>"
 allowed-tools:
-  # Claude Code
   - Agent
   - Read
   - Glob
   - Grep
   - "Bash(git:*)"
   - "Bash(ls:*)"
-  # Copilot CLI
-  - task
-  - view
-  - glob
-  - grep
-  - "shell(git:*)"
-  - "shell(ls:*)"
 ---
 
 Investigate the following topic: $ARGUMENTS

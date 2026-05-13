@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.7] — 2026-05-13
+
+Patch release that formalises simple-workflow as **Claude Code only**.
+Earlier versions documented GitHub Copilot CLI as a co-equal harness
+in the README and shipped dual `tools:` lists (Claude Code +
+Copilot CLI) in every sub-agent and skill frontmatter, but the
+plugin's hook layer (`pre-bash-safety`, `pre-write-safety`,
+`session-start`, `pre-compact-save`, `session-stop-log`,
+`autopilot-continue`, `pre-level1-guard`) was never wired up on the
+Copilot CLI side. The Generator-Evaluator firewall,
+context-conservation pre-compact save, and `/catchup` recovery flow
+have therefore never worked under Copilot CLI in practice. v6.6.7
+brings the documentation, prerequisites list, sub-agent frontmatter,
+and skill frontmatter in line with that runtime reality. The same
+release adds Quick Start documentation for the `--scope project` /
+`--scope user` / `--scope local` plugin install modes and the
+user-scope → project-scope migration recipe. No skill, sub-agent,
+hook, test, or runtime behavior changed; the
+`tests/test-skill-contracts.sh` (452/452 PASS) and
+`tests/test-path-consistency.sh` (139/139 PASS) suites remain green
+without modification.
+
+### Changed
+
+- README `## Prerequisites`, `## Quick Start`, and `## Limitations`
+  declare Claude Code as the sole supported harness. The Copilot CLI
+  mirrored command lines, the `> **Note on GitHub Copilot CLI.**`
+  caveat block, the `GitHub Copilot CLI` reference in the opening
+  one-liner and prerequisites, and the two Copilot-related bullets
+  under `## Limitations` (the dual-CLI design statement and the
+  hook-not-firing note) are removed.
+- All 10 sub-agents (`agents/*.md`) have their `tools:` frontmatter
+  trimmed to the Claude Code-only list. The `# Copilot CLI` comment
+  and the trailing Copilot CLI tool names (`view`, `create`, `edit`,
+  `grep`, `glob`, `shell(...)` variants) are removed; the
+  now-redundant `# Claude Code` comment is also dropped.
+- All 13 skills (`skills/*/SKILL.md`) have the same Copilot CLI block
+  removed from their `allowed-tools:` frontmatter.
+
+### Added
+
+- README `### Installation scope` subsection under `## Quick Start`,
+  documenting the four plugin install scopes recognised by Claude
+  Code (Managed / Project / User / Local), where each scope is
+  written on disk, the `claude plugin install ... --scope project`
+  invocation for repository-scoped install, and the
+  `uninstall --scope user` then `install --scope project` migration
+  recipe for users moving off the default user-scoped install.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 452/452 PASS, identical to
+  the v6.6.6 baseline. The contract tests do not assert on the
+  presence of the `# Claude Code` / `# Copilot CLI` comments or on
+  the Copilot CLI tool names, so removing them leaves the suite
+  green.
+- `bash tests/test-path-consistency.sh` — 139/139 PASS, identical to
+  the v6.6.6 baseline.
+- `git grep -in 'copilot' -- agents/ skills/ README.md` returns zero
+  matches.
+
+### Migration
+
+This is a documentation-and-frontmatter alignment release, not a
+runtime change. Users running simple-workflow under Claude Code see
+no behavioral difference. The plugin had never functioned correctly
+under GitHub Copilot CLI (hooks did not fire), so the
+`copilot plugin install …` instructions previously printed in the
+README never produced a working install; users who tried that path
+and ended up with a non-functional plugin should remove it from
+Copilot CLI and reinstall under Claude Code following the updated
+`## Quick Start` section.
+
 ## [6.6.6] — 2026-05-13
 
 Hotfix on top of v6.6.5. v6.6.5 rewrote `.claude-plugin/marketplace.json`

@@ -2,7 +2,6 @@
 name: ac-evaluator
 description: "AC compliance evaluator. Independently verifies acceptance criteria, test results, and functional correctness. Code quality is reviewed separately."
 tools:
-  # Claude Code
   - Read
   - Write
   - Grep
@@ -71,11 +70,6 @@ tools:
   - "Bash(wc:*)"
   - "Bash(head:*)"
   - "Bash(tail:*)"
-  # Copilot CLI
-  - view
-  - create
-  - grep
-  - glob
   # Git read-only
   - "shell(git diff:*)"
   - "shell(git status:*)"

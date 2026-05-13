@@ -18,18 +18,11 @@ description: >-
   extraction", "mine evaluation logs".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Agent
   - Read
   - Write
   - Glob
   - Grep
-  # Copilot CLI
-  - task
-  - view
-  - create
-  - glob
-  - grep
 argument-hint: "[ticket-dir name or 'all']"
 ---
 

@@ -14,7 +14,6 @@ description: >-
   "design the implementation".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Agent
   - Read
   - Glob
@@ -26,18 +25,6 @@ allowed-tools:
   - "Bash(ls:*)"
   - "Bash(mv:*)"
   - "Bash(mkdir:*)"
-  # Copilot CLI
-  - task
-  - view
-  - glob
-  - create
-  - edit
-  - "shell(git diff:*)"
-  - "shell(git status:*)"
-  - "shell(git log:*)"
-  - "shell(ls:*)"
-  - "shell(mv:*)"
-  - "shell(mkdir:*)"
 argument-hint: "<feature or change to plan>"
 ---
 

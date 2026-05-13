@@ -9,7 +9,6 @@ description: >-
   brief", "start a new feature brief", "feature scoping interview".
 disable-model-invocation: true
 allowed-tools:
-  # Claude Code
   - Agent
   - Skill
   - Read
@@ -25,22 +24,6 @@ allowed-tools:
   - "Bash(mv:*)"
   - "Bash(ls:*)"
   - "Bash(date:*)"
-  # Copilot CLI
-  - task
-  - skill
-  - view
-  - create
-  - glob
-  - grep
-  - ask_user
-  - "shell(git log:*)"
-  - "shell(git status:*)"
-  - "shell(git diff:*)"
-  - "shell(git branch:*)"
-  - "shell(mkdir:*)"
-  - "shell(mv:*)"
-  - "shell(ls:*)"
-  - "shell(date:*)"
 argument-hint: "<what-to-build> [mode=auto|manual]"
 ---
 
