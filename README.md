@@ -16,11 +16,21 @@ simple-workflow runs entirely against your local filesystem and your existing Gi
 
 ## Quick Start
 
+Claude Code resolves plugin names only against marketplaces that have already been registered, so installing `simple-workflow` is a two-step flow: register the repository as a marketplace, then install the plugin by name from it.
+
 ```bash
-# Install the plugin
-claude plugin install aimsise/simple-workflow   # Claude Code
-copilot plugin install aimsise/simple-workflow   # GitHub Copilot CLI
+# Step 1 — register aimsise/simple-workflow as a marketplace
+claude plugin marketplace add aimsise/simple-workflow      # Claude Code
+copilot plugin marketplace add aimsise/simple-workflow     # GitHub Copilot CLI
+
+# Step 2 — install the simple-workflow plugin from that marketplace
+claude plugin install simple-workflow@aimsise-simple-workflow      # Claude Code
+copilot plugin install simple-workflow@aimsise-simple-workflow     # GitHub Copilot CLI
 ```
+
+Inside an active Claude Code session, the equivalent slash commands are `/plugin marketplace add aimsise/simple-workflow` and `/plugin install simple-workflow@aimsise-simple-workflow`. The `aimsise-simple-workflow` suffix is the `name` declared in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) and is what disambiguates the plugin when more than one marketplace is registered.
+
+> **Note on GitHub Copilot CLI.** The `copilot plugin …` commands shown above mirror the Claude Code flow; the exact syntax can evolve with Copilot CLI's plugin subsystem, so consult `copilot plugin --help` if the command above is rejected.
 
 ## Three Ways to Run
 
