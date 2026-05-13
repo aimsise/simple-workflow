@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.6] — 2026-05-13
+
+Hotfix on top of v6.6.5. v6.6.5 rewrote `.claude-plugin/marketplace.json`
+`plugins[0].source` to the canonical `github` source object, but Claude
+Code's `claude plugin install` path attempts to clone `github`-typed
+sources over **SSH** (`git@github.com:owner/repo.git`) with no HTTPS
+fallback. Users without a GitHub-registered SSH key hit
+`Permission denied (publickey). fatal: Could not read from remote
+repository.` even though the prior `marketplace add` step succeeded
+(that path has an HTTPS fallback and logs `SSH not configured, cloning
+via HTTPS:`). The Claude Code marketplace schema documents no
+transport override (no `transport`, `https`, `CLAUDE_PLUGIN_GITHUB_TRANSPORT`,
+etc.) for the `github` source type, so the only documented way to pin
+HTTPS is to switch to the `url` source type and supply an explicit
+`https://...git` URL. v6.6.6 makes that switch, matching the pattern
+used by the [`obra/superpowers-marketplace`](https://github.com/obra/superpowers-marketplace/blob/main/.claude-plugin/marketplace.json)
+manifest, whose 10 plugin entries all use `source: url` with HTTPS
+URLs. The marketplace name (`aimsise-simple-workflow`) and the plugin
+name (`simple-workflow`) are unchanged, so the documented install
+command `claude plugin install simple-workflow@aimsise-simple-workflow`
+stays valid. No skill, sub-agent, hook, test, or runtime behavior
+changed; the `tests/test-skill-contracts.sh` (452/452 PASS) and
+`tests/test-path-consistency.sh` (139/139 PASS) suites remain green
+without modification.
+
+### Fixed
+
+- `.claude-plugin/marketplace.json` `plugins[0].source` rewritten from
+  `{ "source": "github", "repo": "aimsise/simple-workflow" }` to
+  `{ "source": "url", "url": "https://github.com/aimsise/simple-workflow.git" }`.
+  The `url` source type accepts an explicit `https://` URL, so Claude
+  Code can no longer dispatch into the SSH branch. `ref` is omitted to
+  follow the `obra/superpowers-marketplace` idiom of letting the
+  default branch (`main`) drive resolution; tag-pinned installs remain
+  achievable with `ref: "vX.Y.Z"` if needed in the future.
+- Users who already registered the marketplace at v6.6.4 or v6.6.5
+  must refresh their local cache to pick up the corrected manifest:
+  `claude plugin marketplace remove aimsise-simple-workflow` followed
+  by `claude plugin marketplace add aimsise/simple-workflow`. The
+  install command itself is unchanged.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 452/452 PASS, identical to
+  the v6.6.5 baseline (no `SKILL.md`, agent, or hook contract was
+  touched in this release).
+- `bash tests/test-path-consistency.sh` — 139/139 PASS, identical to
+  the v6.6.5 baseline.
+- End-to-end install rehearsal against v6.6.5 reproduced the SSH
+  failure: `marketplace add` succeeded via HTTPS fallback, but
+  `claude plugin install simple-workflow@aimsise-simple-workflow`
+  aborted with `git@github.com: Permission denied (publickey). fatal:
+  Could not read from remote repository.` against a host with no SSH
+  key registered to GitHub. With v6.6.6 published and the marketplace
+  re-added per the migration step above, the same two-step flow is
+  expected to clone over HTTPS and complete without error,
+  to be re-verified post-merge from a fresh checkout once the v6.6.6
+  annotated tag and matching GitHub Release are published.
+
 ## [6.6.5] — 2026-05-13
 
 Hotfix on top of v6.6.4. The marketplace manifest shipped in v6.6.4
