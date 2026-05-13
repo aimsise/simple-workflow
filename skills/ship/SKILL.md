@@ -19,7 +19,6 @@ description: >-
   "create pull request", "squash merge", "complete ticket".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Skill
   - AskUserQuestion
   - Read
@@ -40,26 +39,6 @@ allowed-tools:
   - "Bash(mkdir:*)"
   - "Bash(rmdir:*)"
   - "Bash(date:*)"
-  # Copilot CLI
-  - skill
-  - view
-  - create
-  - edit
-  - "shell(git add:*)"
-  - "shell(git commit:*)"
-  - "shell(git status:*)"
-  - "shell(git diff:*)"
-  - "shell(git log:*)"
-  - "shell(git push:*)"
-  - "shell(git checkout:*)"
-  - "shell(git pull:*)"
-  - "shell(git branch:*)"
-  - "shell(gh:*)"
-  - "shell(mv:*)"
-  - "shell(ls:*)"
-  - "shell(mkdir:*)"
-  - "shell(rmdir:*)"
-  - "shell(date:*)"
 argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 ---
 

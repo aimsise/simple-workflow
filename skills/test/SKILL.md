@@ -20,20 +20,12 @@ agent: test-writer
 model: sonnet
 argument-hint: "<file path or feature name to test>"
 allowed-tools:
-  # Claude Code
   - Agent
   - Read
   - Glob
   - Grep
   - "Bash(git:*)"
   - "Bash(ls:*)"
-  # Copilot CLI
-  - task
-  - view
-  - glob
-  - grep
-  - "shell(git:*)"
-  - "shell(ls:*)"
 ---
 
 Create and run tests for: $ARGUMENTS

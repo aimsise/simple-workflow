@@ -4,7 +4,6 @@ description: >-
   Do not auto-invoke. Only invoke when called by name. Implements the latest plan via Generator -> AC Evaluator -> Code Quality Reviewer loop. Use when (1) /scout or /plan2doc produced a plan and user calls `/impl`, (2) /autopilot delegates the per-ticket impl step, or (3) an explicit plan path is passed. Triggers on "/impl", "implement the plan", "generator-evaluator loop".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Agent
   - AskUserQuestion
   - Skill
@@ -19,21 +18,6 @@ allowed-tools:
   - "Bash(git stash:*)"
   - "Bash(date:*)"
   - "Bash(rm:*)"
-  # Copilot CLI
-  - task
-  - ask_user
-  - skill
-  - view
-  - create
-  - edit
-  - glob
-  - "shell(git diff:*)"
-  - "shell(git status:*)"
-  - "shell(git log:*)"
-  - "shell(git branch:*)"
-  - "shell(git stash:*)"
-  - "shell(date:*)"
-  - "shell(rm:*)"
 argument-hint: "[rounds=N] [plan file path or additional instructions]"
 ---
 

@@ -13,7 +13,6 @@ description: >-
   "extract method", "rename", "clean up".
 disable-model-invocation: true
 allowed-tools:
-  # Claude Code
   - Agent
   - Read
   - Glob
@@ -46,39 +45,6 @@ allowed-tools:
   - "Bash(dart test:*)"
   - "Bash(composer:*)"
   - "Bash(./vendor/bin/phpunit:*)"
-  # Copilot CLI
-  - task
-  - view
-  - glob
-  - grep
-  - create
-  - edit
-  - "shell(git:*)"
-  - "shell(npm:*)"
-  - "shell(npx:*)"
-  - "shell(yarn:*)"
-  - "shell(pnpm:*)"
-  - "shell(bun:*)"
-  - "shell(pytest:*)"
-  - "shell(cargo:*)"
-  - "shell(go :*)"
-  - "shell(make:*)"
-  - "shell(gradle:*)"
-  - "shell(./gradlew:*)"
-  - "shell(mvn:*)"
-  - "shell(./mvnw:*)"
-  - "shell(sbt:*)"
-  - "shell(dotnet test:*)"
-  - "shell(dotnet build:*)"
-  - "shell(bundle exec:*)"
-  - "shell(rake:*)"
-  - "shell(mix:*)"
-  - "shell(swift test:*)"
-  - "shell(swift build:*)"
-  - "shell(flutter test:*)"
-  - "shell(dart test:*)"
-  - "shell(composer:*)"
-  - "shell(./vendor/bin/phpunit:*)"
 argument-hint: "<refactoring target and goal> [ticket-dir=<dir-name>]"
 ---
 

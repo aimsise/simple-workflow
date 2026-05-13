@@ -16,7 +16,6 @@ description: >-
   "research and plan", "kick off a ticket", "scout this feature".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Skill
   - Read
   - Write
@@ -24,14 +23,6 @@ allowed-tools:
   - "Bash(date:*)"
   - "Bash(mv:*)"
   - "Bash(mkdir:*)"
-  # Copilot CLI
-  - skill
-  - view
-  - create
-  - edit
-  - "shell(date:*)"
-  - "shell(mv:*)"
-  - "shell(mkdir:*)"
 argument-hint: "<topic or ticket to investigate and plan>"
 ---
 

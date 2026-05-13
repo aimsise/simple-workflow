@@ -8,7 +8,6 @@ description: >-
   on "create a ticket", "/create-ticket", "draft a ticket".
 disable-model-invocation: false
 allowed-tools:
-  # Claude Code
   - Agent
   - Skill
   - Read
@@ -23,21 +22,6 @@ allowed-tools:
   - "Bash(mkdir:*)"
   - "Bash(date:*)"
   - "Bash(ls:*)"
-  # Copilot CLI
-  - task
-  - skill
-  - view
-  - glob
-  - grep
-  - create
-  - edit
-  - ask_user
-  - "shell(sha256sum:*)"
-  - "shell(shasum:*)"
-  - "shell(cp:*)"
-  - "shell(mkdir:*)"
-  - "shell(date:*)"
-  - "shell(ls:*)"
 argument-hint: "<ticket description> | brief=<path> | findings=<path>"
 ---
 

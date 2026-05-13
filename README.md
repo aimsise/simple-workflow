@@ -4,11 +4,11 @@
 [![Release](https://img.shields.io/github/v/release/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
 
 ## Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI or [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) installed and authenticated
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
 - [GitHub CLI](https://cli.github.com/) (`gh`) — required for `/ship`
 - `git` and `jq`
 
@@ -20,17 +20,30 @@ Claude Code resolves plugin names only against marketplaces that have already be
 
 ```bash
 # Step 1 — register aimsise/simple-workflow as a marketplace
-claude plugin marketplace add aimsise/simple-workflow      # Claude Code
-copilot plugin marketplace add aimsise/simple-workflow     # GitHub Copilot CLI
+claude plugin marketplace add aimsise/simple-workflow
 
 # Step 2 — install the simple-workflow plugin from that marketplace
-claude plugin install simple-workflow@aimsise-simple-workflow      # Claude Code
-copilot plugin install simple-workflow@aimsise-simple-workflow     # GitHub Copilot CLI
+claude plugin install simple-workflow@aimsise-simple-workflow
 ```
 
 Inside an active Claude Code session, the equivalent slash commands are `/plugin marketplace add aimsise/simple-workflow` and `/plugin install simple-workflow@aimsise-simple-workflow`. The `aimsise-simple-workflow` suffix is the `name` declared in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) and is what disambiguates the plugin when more than one marketplace is registered.
 
-> **Note on GitHub Copilot CLI.** The `copilot plugin …` commands shown above mirror the Claude Code flow; the exact syntax can evolve with Copilot CLI's plugin subsystem, so consult `copilot plugin --help` if the command above is rejected.
+### Installation scope
+
+`claude plugin install` writes to your **user scope** (`~/.claude/settings.json`) by default, making the plugin available across every project on your machine. To pin the plugin to a single repository so collaborators inherit it on clone, install at **project scope** instead:
+
+```bash
+claude plugin install simple-workflow@aimsise-simple-workflow --scope project
+```
+
+Project scope writes the marketplace and plugin entry to `<repo>/.claude/settings.json` — commit that file to share the configuration with your team. To migrate an existing user-scope install to project scope, uninstall first so the two entries do not coexist:
+
+```bash
+claude plugin uninstall simple-workflow@aimsise-simple-workflow --scope user
+claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
+```
+
+`--scope local` is also accepted; it writes to `<repo>/.claude/settings.local.json`, which is gitignored, so the plugin stays installed for you on this clone but does not propagate to collaborators. Slash-command forms (`/plugin install ... --scope project`, `/plugin uninstall ... --scope user`) work identically from within an active Claude Code session.
 
 ## Three Ways to Run
 
@@ -242,8 +255,7 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 
 ## Limitations
 
-- Designed for use with Claude Code CLI and GitHub Copilot CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
-- On GitHub Copilot CLI, session lifecycle hooks (`pre-compact-save`, `session-stop-log`) may not fire. Context recovery via `/catchup` after compaction works best on Claude Code.
+- Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
 - The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
