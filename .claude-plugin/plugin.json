@@ -1,6 +1,6 @@
 {
   "name": "simple-workflow",
-  "description": "Complete development lifecycle plugin with built-in ticket management, Generator-Evaluator quality pipeline, context conservation, unified phase-state.yaml ticket lifecycle, and [SW-CHECKPOINT] checkpoints for long-running sessions.",
+  "description": "The Claude Code plugin for an end-to-end AI development workflow — ticket management, multi-agent code review, security audit, and automated PR creation — built on a Harness for long-running AI agents with strict context management and cross-session learning.",
   "version": "6.6.7",
   "author": {
     "name": "aimsise",

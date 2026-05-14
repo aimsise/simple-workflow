@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for a complete development lifecycle with built-in ticket management. Conserves context by delegating to sub-agents, and guarantees quality through a Generator-Evaluator pipeline.
+The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for an **end-to-end AI development workflow** — structured interview, ticket management, codebase investigation, multi-agent implementation, security audit, code review, and automated PR creation — built on a **Harness for long-running AI agents** with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
 
 ## Prerequisites
 
@@ -130,7 +130,7 @@ Out-of-pipeline skills:
 
 simple-workflow stands on three pillars:
 
-- **Generator-Evaluator firewall**: code authors and code judges run in separate contexts with an asymmetric information firewall, so quality is enforced by structure rather than by prompt instructions
+- **Harness Engineering**: structural constraints — an asymmetric information firewall between code authors and code judges (the Generator-Evaluator pattern), bounded sub-agent returns, ticket-confined artifacts, and safe-clear `[SW-CHECKPOINT]` markers — enforce quality by architecture rather than by prompt instructions
 - **Context Conservation**: the context window is treated as a consumable resource — sub-agents return < 500-token summaries, artifacts live on disk, and state survives compaction
 - **Cross-session learning**: `/tune` distills evaluation logs into `.simple-workflow/kb/` patterns that future `/impl` runs inject into the Generator's prompt, so the system gets better at your project the more tickets it completes
 
