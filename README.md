@@ -57,7 +57,14 @@ Inside an active Claude Code session, type `/brief <idea>` and the plugin handle
 | Brief-assisted manual | `/brief <idea> mode=manual` | Structured brief and decision policy are produced; you drive each subsequent step |
 | Resume an interrupted run | `/autopilot <slug>` | Pick up where a previous automated run left off using state files under `.simple-workflow/backlog/` |
 
-For phase-by-phase workflows on an existing backlog, individual slash commands are available — run `/help` inside Claude Code to discover them, or browse `skills/` in this repository.
+### Execution chains
+
+What the plugin runs and what you need to type:
+
+- **Full automation** — You type `/brief <idea>` only. The plugin chains it as `/brief` → `/autopilot` → (per ticket: `/create-ticket` → `/scout` → `/impl` → `/ship`), ending with the PR opened.
+- **Brief-assisted manual** — You type `/brief <idea> mode=manual` to produce the brief, then drive each subsequent step yourself: `/create-ticket` → `/scout` → `/impl` → `/ship`.
+
+For phase-by-phase workflows on an existing backlog (skipping the brief), run `/help` inside Claude Code to discover the individual slash commands, or browse `skills/` in this repository.
 
 ## Why simple-workflow?
 
