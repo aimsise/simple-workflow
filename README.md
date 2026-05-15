@@ -266,8 +266,6 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 
 If `/autopilot` ends with a `partial` status well before reaching the context-window cap (e.g., under 80% utilization), the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. The plugin's resume design (`autopilot-state.yaml` + `phase-state.yaml`) lets you continue with `/autopilot {parent-slug}` in a fresh session.
 
-For root-cause analysis of one such failure mode, see `.docs/discovery/test_simple_workflow13/` in the repository.
-
 Mitigations available out-of-the-box:
 
 - The Stop hook detects "no tool call AND no state progress" sequences and releases the loop guard with an `[AUTOPILOT-STALL]` line so the user immediately sees why the run halted.
@@ -275,19 +273,10 @@ Mitigations available out-of-the-box:
 
 Future work (separately scheduled): per-ticket session split (one ticket = one session) for full context isolation.
 
-## Acknowledgements
-
-simple-workflow is heavily inspired by:
-
-- [Harness design for long-running agents](https://www.anthropic.com/engineering/harness-design-long-running-apps) — Anthropic's guide on designing harnesses for reliable, long-running AI agents
-- [obra/superpowers](https://github.com/obra/superpowers) — Patterns for maximizing Claude Code's capabilities through skills, agents, and hooks
-
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-[Apache License 2.0](LICENSE) (since v4.2.0). Versions up to and including v4.1.0 were distributed under the MIT License — see the [NOTICE](NOTICE) file and `CHANGELOG.md` `## [4.2.0]` entry for details.
-
-> Migrating from v4.x: v5.0.0 consolidated `.docs/`, `.backlog/`, and `.simple-wf-knowledge/` into a single `.simple-workflow/` directory — see the [v5.0.0 Migration Announcement](https://github.com/aimsise/simple-workflow/discussions/40) for the one-time manual move.
+[Apache License 2.0](LICENSE)
