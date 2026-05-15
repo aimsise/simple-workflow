@@ -17,6 +17,16 @@ The `hooks/lib/` directory contains shared helpers that are sourced by multiple 
 - `state-authority.sh` — registry-driven field-ownership enforcement (`is_hook_owned_field`, `state_field_change_blocked`).
 - `runtime-metrics.sh` — shared `append_runtime_metrics_entry` helper for writing `runtime_metrics:` entries to autopilot-state.yaml files.
 
+## Hooks
+
+### hooks.json: ordering-dependent hooks MUST be top-level entries
+
+Anthropic's hook ordering contract guarantees **strict sequential execution only between top-level entries** of any hook array. A `hooks: []` array nested inside a single top-level entry does NOT guarantee ordering between its inner hooks — they may execute in parallel within the same tick.
+
+**Rule**: if two hooks have an ordering dependency (one writes state that the next reads, one sets a sentinel the next checks, etc.), each MUST be its own **top-level entry** in the array. Never group ordering-dependent hooks inside a shared nested `hooks: []` array.
+
+This rule was distilled from a v6.7.0 dogfood incident in which a verify hook nested with `autopilot-continue.sh` inside one Stop entry ran for 59 ms with zero artifacts written — the symptom of a same-tick race. The fix in v6.7.1 (commit `12266241`) split the entries to top-level. The downstream research feature that surfaced the bug was later abandoned, but the structural rule generalises and stands on its own.
+
 ## Language
 
 The following MUST be written in English:
