@@ -64,6 +64,8 @@ What the plugin runs and what you need to type:
 - **Full automation** — You type `/brief <idea>` only. The plugin chains it as `/brief` → `/autopilot` → (per ticket: `/create-ticket` → `/scout` → `/impl` → `/ship`), ending with the PR opened.
 - **Brief-assisted manual** — You type `/brief <idea> mode=manual` to produce the brief, then drive each subsequent step yourself: `/create-ticket` → `/scout` → `/impl` → `/ship`.
 
+> **Caveat — full automation works best on focused, well-scoped ideas.** On overly broad or ambiguous input, the model can break output contracts, fabricate intermediate state, and continue past failures without surfacing them. Full automation has fewer human-in-the-loop checkpoints than the brief-assisted manual flow, so this kind of misbehaviour is easier to miss. For large or exploratory work, prefer `mode=manual` (you inspect artifacts at each step) or split the work into smaller, focused briefs.
+
 For phase-by-phase workflows on an existing backlog (skipping the brief), run `/help` inside Claude Code to discover the individual slash commands, or browse `skills/` in this repository.
 
 ## Why simple-workflow?
