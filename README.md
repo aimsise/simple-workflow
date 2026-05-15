@@ -59,16 +59,25 @@ Inside an active Claude Code session, type `/brief <idea>` and the plugin handle
 
 ### Execution chains
 
-Two flows, depending on mode:
+Three typical execution patterns:
 
 ```text
-# Full automation — type only the first line; the plugin chains the rest:
-/brief <idea>
-  → /autopilot → /create-ticket → /scout → /impl → /ship → PR
-
-# Brief-assisted manual — type each line yourself:
+# 1. Brief-assisted manual (type each command; repeat scout→impl→ship per ticket):
 /brief <idea> mode=manual
-/create-ticket → /scout → /impl → /ship → PR
+/create-ticket
+/scout
+/impl
+/ship   # → PR
+
+# 2. Brief manually, then hand off to autopilot for the per-ticket loop:
+/brief <idea> mode=manual
+/create-ticket
+/autopilot <slug>
+# autopilot then loops: /scout → /impl → /ship per ticket → PR
+
+# 3. Full automation (one command):
+/brief <idea> mode=auto
+# brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR
 ```
 
 > **Caveat — full automation works best on focused, well-scoped ideas.** On overly broad or ambiguous input, the model can break output contracts, fabricate intermediate state, and continue past failures without surfacing them. Full automation has fewer human-in-the-loop checkpoints than the brief-assisted manual flow, so this kind of misbehaviour is easier to miss. For large or exploratory work, prefer `mode=manual` (you inspect artifacts at each step) or split the work into smaller, focused briefs.
