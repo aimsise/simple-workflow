@@ -51,6 +51,8 @@ claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
 
 Inside an active Claude Code session, type `/brief <idea>` and the plugin handles the rest end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
 
+Full argument signature: `/brief <what-to-build> [mode=auto|manual]` (default `mode=auto`).
+
 | Mode | Command | Result |
 |------|---------|--------|
 | Full automation (default) | `/brief <idea>` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
