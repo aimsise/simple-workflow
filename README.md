@@ -4,7 +4,9 @@
 [![Release](https://img.shields.io/github/v/release/aimsise/simple-workflow)](https://github.com/aimsise/simple-workflow/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for an **end-to-end AI development workflow** — structured interview, ticket management, codebase investigation, multi-agent implementation, security audit, code review, and automated PR creation — built on a **Harness for long-running AI agents** with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
+The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for **end-to-end AI development workflows**. From idea to pull request: structured interview, codebase investigation, multi-agent implementation, security audit, code review, and PR creation, all automated.
+
+Built on a **Harness for long-running AI agents** with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
 
 ## Prerequisites
 
@@ -53,6 +55,7 @@ Inside an active Claude Code session, type `/brief <idea>` and the plugin handle
 |------|---------|--------|
 | Full automation (default) | `/brief <idea>` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
 | Brief-assisted manual | `/brief <idea> mode=manual` | Structured brief and decision policy are produced; you drive each subsequent step |
+| Resume an interrupted run | `/autopilot <slug>` | Pick up where a previous automated run left off using state files under `.simple-workflow/backlog/` |
 
 For phase-by-phase workflows on an existing backlog, individual slash commands are available — run `/help` inside Claude Code to discover them, or browse `skills/` in this repository.
 
@@ -68,40 +71,12 @@ These pillars exist because Claude Code is powerful, but its context window is f
 
 | Threat | What happens | Structural countermeasure |
 |--------|-------------|--------------------------|
-| **Loss** | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact state snapshots, recovery on restart, cross-session learning |
+| **Loss** | Session boundaries — compaction, exit — discard accumulated understanding | Automatic state snapshots, on-restart recovery, cross-session learning |
 | **Exhaustion** | The window fills up, degrading instruction-following and response quality | Bounded sub-agent returns (< 500 tokens), phase-aware context release |
-| **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall + ticket directory confinement (see [Harness Engineering](#harness-engineering)) |
+| **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall + ticket directory confinement (see [Harness Engineering](ARCHITECTURE.md#harness-engineering)) |
 | **Bloat** | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
 
-simple-workflow addresses each threat with architectural constraints that hold regardless of model behavior — not prompt-level instructions that the model might rationalize away. The four sections below describe each pillar: **Context Conservation Protocol** (Loss + Exhaustion), **Harness Engineering** (Contamination + Bloat), the **Knowledge Base** (Loss across sessions), and **Ticket Management** (Contamination across tickets).
-
-### Context Conservation Protocol
-
-Treats the context window as a consumable resource and systematically conserves it.
-
-- **Bounded sub-agent returns**: Each sub-agent launches with a fresh context, writes detailed artifacts to files, and returns only a structured summary (< 500 tokens). Without this bound, multi-round orchestration would accumulate unbounded output and degrade the orchestrator's decision quality
-- **Phase-aware context release**: A dedicated recovery skill auto-detects the current phase and recommends the next action. Completed phases live on disk — clear the context and move on
-- **Structured state preservation**: Before context compaction, per-ticket state is saved as YAML frontmatter so the recovery skill can resume interrupted work — including mid-implementation loops
-
-### Harness Engineering
-
-A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 9 rounds by default (configurable per invocation or per ticket via policy). The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
-
-Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
-
-### Knowledge Base (Cross-Session Learning)
-
-`.simple-workflow/kb/` is an automatically maintained knowledge base. After each completed ticket, evaluation logs are analyzed to extract actionable patterns (common failures, recurring feedback themes), which are persisted as structured entries; at implementation time, relevant entries are injected into the next implementation's prompt, so lessons learned from past tickets inform future ones.
-
-The more tickets you complete in a project, the more project-specific patterns accumulate, and the higher the probability that future implementations pass evaluation on the first round. In effect the system develops project-specific expertise over time — analogous to a human developer becoming more effective the longer they work on a codebase — without fine-tuning the underlying model.
-
-### Ticket Management (State Machine)
-
-`.simple-workflow/backlog/` is a state machine. Tickets transition between states via physical directory moves (`product_backlog/` → `active/` → `blocked/` → `done/`), making state visible, traceable, and greppable — no database required. Each ticket is a directory where every artifact accumulates, providing both an audit trail and contamination prevention: artifacts from one ticket never leak into another's context.
-
-Each ticket carries a `phase-state.yaml` declaring its full lifecycle state. Phase-terminating workflows close their output with a standardized `[SW-CHECKPOINT]` block, signalling that running `/clear` is safe.
-
-> **Manual transitions**: moving tickets between states (e.g. `active/` → `blocked/`) is done with a plain `mv`.
+simple-workflow addresses each threat with architectural constraints that hold regardless of model behavior — not prompt-level instructions that the model might rationalize away. For a deeper walkthrough of each pillar — Context Conservation Protocol, Harness Engineering, Knowledge Base, and Ticket Management state machine — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Setup & Configuration
 
@@ -131,6 +106,10 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 
 **Recommendation**: if a simple-workflow session has been idle for more than ~1 hour, exit and start a fresh session. Phase-terminating workflows emit a `[SW-CHECKPOINT]` block precisely so that `/clear` or session exit is safe, and the plugin reconstructs the in-progress phase from `phase-state.yaml` on the next session.
 
+### Resuming an interrupted automated run
+
+If an automated run ends with a `partial` status before reaching the context-window cap, the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. Run `/autopilot <slug>` in a fresh session to pick up where it left off — state files in `.simple-workflow/backlog/` provide the resume point.
+
 ## Limitations
 
 - Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
@@ -139,10 +118,6 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
 - Built-in test/lint detection covers JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator falls back to static code analysis only.
 - Some recovery paths require interactive mode; running in `claude -p` or CI may stop with an explanatory message rather than complete the recovery.
-
-### Long-session resume
-
-If an automated run ends with a `partial` status before reaching the context-window cap, the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. State files written to `.simple-workflow/backlog/` enable resumption in a fresh session — rerun the same starting command and the plugin picks up where it left off.
 
 ## Contributing
 
