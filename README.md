@@ -9,7 +9,7 @@ The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for an 
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
-- [GitHub CLI](https://cli.github.com/) (`gh`) — required for `/ship`
+- [GitHub CLI](https://cli.github.com/) (`gh`) — required for pull-request creation
 - `git` and `jq`
 
 simple-workflow runs entirely against your local filesystem and your existing GitHub remote — no external services, no database, no separate auth.
@@ -45,86 +45,16 @@ claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
 
 `--scope local` is also accepted; it writes to `<repo>/.claude/settings.local.json`, which is gitignored, so the plugin stays installed for you on this clone but does not propagate to collaborators. Slash-command forms (`/plugin install ... --scope project`, `/plugin uninstall ... --scope user`) work identically from within an active Claude Code session.
 
-## Three Ways to Run
+## Usage
 
-`/brief` is the single entry point for both fully automated and manual flows. The `mode=auto|manual` argument selects the behavior; `mode=auto` is the default when omitted.
+Inside an active Claude Code session, type `/brief <idea>` and the plugin handles the rest end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
 
-| Mode | Entry | Best for |
-|------|-------|----------|
-| Full automation | `/brief <idea>` (or `/brief <idea> mode=auto`) | Idea -> PR with no intervention |
-| Brief-assisted manual | `/brief <idea> mode=manual` | Structured kickoff, then drive each step |
-| Pure manual | `/investigate` -> `/create-ticket` -> `/scout` -> `/impl` -> `/ship` | Existing tickets, full control |
+| Mode | Command | Result |
+|------|---------|--------|
+| Full automation (default) | `/brief <idea>` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
+| Brief-assisted manual | `/brief <idea> mode=manual` | Structured brief and decision policy are produced; you drive each subsequent step |
 
-**Full automation.** `/brief` investigates the codebase, runs a structured interview, and generates a brief plus an `autopilot-policy.yaml` that encodes autonomous decision rules. It then chains into `/create-ticket` -> `/autopilot`, which executes the full pipeline (`create-ticket -> scout -> impl -> ship`) with zero intervention. Large scopes are auto-split into multiple tickets and executed in dependency order. An Artifact Presence Gate validates expected artifacts at every step, and a Skill Invocation Audit flags any step that fell back to manual bash dispatch as `completed-with-warnings`.
-
-**Brief-assisted manual.** `mode=manual` produces the same brief + `autopilot-policy.yaml` artifacts but **stops** there: no chained `/create-ticket`, no `/autopilot`. Use the brief as the structured starting point for the standard manual flow (`/create-ticket brief=... -> /scout -> /impl -> /ship`). Tickets created from a `mode=manual` brief carry no per-ticket `autopilot-policy.yaml`, so `/impl`'s FIFO auto-select picks them up correctly. The brief-level policy is preserved on disk under `.simple-workflow/backlog/briefs/active/{slug}/` as a rescue path — running `/autopilot {slug}` later opts the brief back into autopilot.
-
-**Pure manual.** Drive each phase yourself with `/investigate`, `/create-ticket`, `/scout`, `/impl`, and `/ship`. This is the right path when you already have tickets in `.simple-workflow/backlog/product_backlog/`, when you want to inspect intermediate artifacts at every step, or when you are exploring a new codebase and want full control over scope and direction. Workflow isolation is bidirectional: `/autopilot` only processes tickets it created from a brief and does not pick up existing product-backlog tickets, and manual `/impl` excludes autopilot-managed tickets (those containing `autopilot-policy.yaml`) and selects the lowest-numbered non-autopilot ticket first (FIFO).
-
-The autopilot-policy evolves over time — `/tune` extracts decision patterns from execution logs, and future `/brief` runs use these patterns to suggest more accurate defaults.
-
-## How it Works
-
-Canonical pipeline — one ticket from idea to PR:
-
-```
-[idea]
-  │
-  ▼
-/brief                                                      (entry point)
-  ├─ researcher        codebase investigation
-  ├─ planner           brief drafting
-  └─ decomposer        large-scope ticket split
-  │   produces: brief.md, autopilot-policy.yaml
-  ▼
-/create-ticket                  🔁 retry until 5 quality gates pass
-  ├─ researcher        Phase 1: scope investigation
-  ├─ planner           Phase 3: ticket drafting
-  ├─ decomposer        large-scope split
-  └─ ticket-evaluator  Phase 4: quality gate (loop driver)
-  │   produces: ticket.md
-  ▼
-/scout                          (chains two skills sequentially)
-  ├─ /investigate  →  researcher
-  └─ /plan2doc     →  planner
-  │   produces: investigation.md, plan.md
-  ▼
-/impl                           🔁 max 9 rounds (default; override via rounds=N); FAIL → implementer
-  ├─ implementer       Generator (writes code)
-  ├─ ac-evaluator      acceptance-criteria verifier (loop driver)
-  └─ /audit (chained):
-       ├─ code-reviewer       quality review
-       └─ security-scanner    security audit       (loop driver)
-  │   produces: eval-round-N.md, quality-round-N.md, security-scan-N.md
-  ▼
-/ship                           (no sub-agents)
-  │   commits, opens PR, moves ticket → done/, chains /tune
-  ▼
-[PR opened]
-  │
-  ▼  (post-completion, automatic)
-/tune
-  └─ tune-analyzer     pattern extraction → .simple-workflow/kb/
-                       injected into next /impl's implementer prompt
-```
-
-Reading guide:
-
-- `├─` / `└─`: sub-agents that the skill dispatches
-- `🔁`: an internal verification loop, with the loop driver named on the right
-- `/X (chained):`: the skill calls another skill (its sub-agents listed below it)
-- `produces:`: artifacts written to the ticket directory
-
-Out-of-pipeline skills:
-
-```
-/investigate  →  researcher                  (research-only, standalone)
-/plan2doc     →  planner                     (planning-only, given a ticket)
-/test         →  test-writer                 (test design + execution)
-/refactor     →  planner, code-reviewer      (refactoring with backup branch)
-/catchup      →  researcher                  (state recovery after /clear)
-/autopilot    →  drives the canonical pipeline end-to-end from a brief
-```
+For phase-by-phase workflows on an existing backlog, individual slash commands are available — run `/help` inside Claude Code to discover them, or browse `skills/` in this repository.
 
 ## Why simple-workflow?
 
@@ -132,13 +62,13 @@ simple-workflow stands on three pillars:
 
 - **Harness Engineering**: structural constraints — an asymmetric information firewall between code authors and code judges (the Generator-Evaluator pattern), bounded sub-agent returns, ticket-confined artifacts, and safe-clear `[SW-CHECKPOINT]` markers — enforce quality by architecture rather than by prompt instructions
 - **Context Conservation**: the context window is treated as a consumable resource — sub-agents return < 500-token summaries, artifacts live on disk, and state survives compaction
-- **Cross-session learning**: `/tune` distills evaluation logs into `.simple-workflow/kb/` patterns that future `/impl` runs inject into the Generator's prompt, so the system gets better at your project the more tickets it completes
+- **Cross-session learning**: evaluation logs are distilled into reusable patterns that future implementations inject into their prompts, so the system gets better at your project the more tickets it completes
 
 These pillars exist because Claude Code is powerful, but its context window is finite — and fragile. Long-running agent sessions face four structural threats:
 
 | Threat | What happens | Structural countermeasure |
 |--------|-------------|--------------------------|
-| **Loss** | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact hooks, `/catchup` recovery, `/tune` cross-session learning |
+| **Loss** | Session boundaries — compaction, exit — discard accumulated understanding | Pre-compact state snapshots, recovery on restart, cross-session learning |
 | **Exhaustion** | The window fills up, degrading instruction-following and response quality | Bounded sub-agent returns (< 500 tokens), phase-aware context release |
 | **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall + ticket directory confinement (see [Harness Engineering](#harness-engineering)) |
 | **Bloat** | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
@@ -150,84 +80,32 @@ simple-workflow addresses each threat with architectural constraints that hold r
 Treats the context window as a consumable resource and systematically conserves it.
 
 - **Bounded sub-agent returns**: Each sub-agent launches with a fresh context, writes detailed artifacts to files, and returns only a structured summary (< 500 tokens). Without this bound, multi-round orchestration would accumulate unbounded output and degrade the orchestrator's decision quality
-- **Phase-aware context release**: `/catchup` auto-detects your current phase (investigate -> plan -> implement -> test -> review -> commit) and recommends the next action. Completed phases live on disk — clear the context and move on
-- **Structured state preservation**: Before context compaction, a hook saves per-ticket state as YAML frontmatter. `/catchup` parses this to resume interrupted work — including mid-`/impl` loops
+- **Phase-aware context release**: A dedicated recovery skill auto-detects the current phase and recommends the next action. Completed phases live on disk — clear the context and move on
+- **Structured state preservation**: Before context compaction, per-ticket state is saved as YAML frontmatter so the recovery skill can resume interrupted work — including mid-implementation loops
 
 ### Harness Engineering
 
-A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 9 rounds by default (configurable per invocation via `/impl rounds=N` or per ticket via `autopilot-policy.yaml`). The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
+A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 9 rounds by default (configurable per invocation or per ticket via policy). The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
 
-Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. Orchestrator skills enforce sub-agent dispatch via the `Skill` tool with MUST/NEVER/Fail language, making proper context isolation a structural contract rather than a suggestion. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
+Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
 
 ### Knowledge Base (Cross-Session Learning)
 
-`.simple-workflow/kb/` is an automatically maintained knowledge base. `/tune` analyzes completed ticket evaluations (eval-round, audit-round files) via the `tune-analyzer` agent, extracts actionable patterns (common failures, recurring feedback themes), and persists them as structured entries; at implementation time, `/impl` injects relevant entries into the Generator's dispatch prompt, so lessons learned from past tickets inform future ones.
+`.simple-workflow/kb/` is an automatically maintained knowledge base. After each completed ticket, evaluation logs are analyzed to extract actionable patterns (common failures, recurring feedback themes), which are persisted as structured entries; at implementation time, relevant entries are injected into the next implementation's prompt, so lessons learned from past tickets inform future ones.
 
 The more tickets you complete in a project, the more project-specific patterns accumulate, and the higher the probability that future implementations pass evaluation on the first round. In effect the system develops project-specific expertise over time — analogous to a human developer becoming more effective the longer they work on a codebase — without fine-tuning the underlying model.
 
 ### Ticket Management (State Machine)
 
-`.simple-workflow/backlog/` is a state machine. Tickets transition between states via physical directory moves (`product_backlog/` -> `active/` -> `blocked/` -> `done/`), making state visible, traceable, and greppable — no database required. Each ticket is a directory where every artifact (`ticket.md`, `investigation.md`, `plan.md`, `eval-round-N.md`, `quality-round-N.md`) accumulates, providing both an audit trail and contamination prevention: artifacts from one ticket never leak into another's context.
+`.simple-workflow/backlog/` is a state machine. Tickets transition between states via physical directory moves (`product_backlog/` → `active/` → `blocked/` → `done/`), making state visible, traceable, and greppable — no database required. Each ticket is a directory where every artifact accumulates, providing both an audit trail and contamination prevention: artifacts from one ticket never leak into another's context.
 
-Every ticket carries a `phase-state.yaml` file declaring its full lifecycle state (`create_ticket -> scout -> impl -> ship -> done`). It is written by `/create-ticket`, updated by each phase-owner skill, never deleted, and read by the `SessionStart` hook and `/catchup` to recover active-ticket context in one step. The canonical schema and per-skill write-ownership rules — including how `/catchup` reconciles `phase-state.yaml` with `/autopilot`'s separate `autopilot-state.yaml` — live in [`skills/create-ticket/references/phase-state-schema.md`](skills/create-ticket/references/phase-state-schema.md). Phase-terminating skills close their output with a standardized `[SW-CHECKPOINT]` block, signalling that running `/clear` is safe.
+Each ticket carries a `phase-state.yaml` declaring its full lifecycle state. Phase-terminating workflows close their output with a standardized `[SW-CHECKPOINT]` block, signalling that running `/clear` is safe.
 
-> **Manual transitions**: moving tickets between states (e.g. `active/` -> `blocked/`) is done with a plain `mv` — see the schema reference for the canonical commands.
-
-## Building Blocks
-
-simple-workflow is composed of three component types: **Skills** (slash commands), **Sub-agents** (specialists with isolated contexts), and **Hooks** (automatic safety guardrails).
-
-**Skills** come in two flavors. *Orchestrators* coordinate sub-agents to drive a workflow (`/impl`, `/ship`, `/create-ticket`, `/brief`, `/autopilot`). *Delegators* hand off work to a single sub-agent (`/investigate`, `/plan2doc`, `/test`).
-
-**Sub-agents** run in isolated contexts with role-appropriate tool permissions. Generator agents (`implementer`, `test-writer`) get broad `Bash(*)` access; Evaluator agents (`ac-evaluator`, `code-reviewer`, `security-scanner`, `ticket-evaluator`) are restricted to read-only file utilities plus specific test/lint runners; Research/planning agents (`researcher`, `planner`) get read-only git and filesystem tools. This asymmetry is deliberate — the Generator-Evaluator separation relies on evaluators being unable to execute destructive commands even if prompted to do so.
-
-| Role | Agent | Model |
-|------|-------|-------|
-| Research | researcher | Sonnet |
-| Planning | planner | Opus / Sonnet |
-| Implementation | implementer | Opus / Sonnet |
-| Acceptance evaluation | ac-evaluator | Sonnet |
-| Quality review | code-reviewer | Sonnet |
-| Testing | test-writer | Sonnet |
-| Ticket evaluation | ticket-evaluator | Sonnet |
-| Security audit | security-scanner | Sonnet |
-| Pattern analysis | tune-analyzer | Sonnet |
-
-Models are auto-selected based on ticket size (S/M/L/XL): `planner` uses Sonnet for S and Opus for M/L/XL, `implementer` uses Sonnet for S/M and Opus for L/XL. Both agents accept a dynamic model parameter — orchestrator skills pass the appropriate model at invocation time.
-
-Inside `/impl`, the Generator-Evaluator loop runs up to 9 rounds by default (override per invocation with `/impl rounds=N`, with a soft cap warning above 24). Each round (1) the **implementer** writes code with a test-first approach, (2) **ac-evaluator** independently verifies acceptance criteria from `git diff` and test output, and (3) on AC pass, `/audit` runs `security-scanner` and `code-reviewer` in parallel and aggregates a `Status / Critical / Warnings / Suggestions` block. Round artifacts are persisted as `eval-round-{n}.md`, `quality-round-{n}.md`, and `security-scan-{n}.md` under the ticket directory, providing a complete evaluation history that `/tune` later mines for cross-session patterns.
-
-**Hooks** fire automatically on tool execution: `pre-bash-safety` (best-effort blocking of common destructive commands — *not* a security boundary), `pre-write-safety` / `pre-edit-safety` (block writes to `.env`, private keys, credentials), `session-start` (initialize session, auto-append `.gitignore` entries), `pre-compact-save` (snapshot state before compaction), `session-stop-log` (work log on session end), `autopilot-continue` (block premature `end_turn` during `/autopilot`), and `pre-level1-guard` (block expensive integration tests without `RUN_LEVEL1_TESTS=true`).
-
-## Skill Reference
-
-| Phase | Skill | Description |
-|-------|-------|-------------|
-| Discovery | `/investigate` | Deep-dive codebase exploration |
-| Discovery | `/catchup` | Recover context from compact-state / session-log, detect current phase, and recommend next action (including resuming an in-progress `/impl` loop) |
-| Discovery | `/brief` | Structured interview to generate brief + autopilot-policy. Investigates codebase and conducts Q&A to gather requirements |
-| Planning | `/scout` | Chain investigation + planning in one step |
-| Planning | `/plan2doc` | Create a detailed implementation plan (auto-selects model by ticket size) |
-| Tickets | `/create-ticket` | Create a structured ticket with quality evaluation |
-| Implementation | `/impl` | Implement via Generator-Evaluator pipeline |
-| Implementation | `/refactor` | Safe refactoring with backup branch |
-| Testing | `/test` | Design and run tests |
-| Quality | `/audit` | Multi-agent code quality + security audit (use `only_security_scan=true` for security-only) |
-| Quality | `/tune` | Analyze evaluation logs and maintain project knowledge base |
-| Delivery | `/ship` | Commit + PR in one step (optionally merge) |
-| Full Pipeline | `/autopilot` | Execute the full pipeline (create-ticket -> scout -> impl -> ship) from a brief document with zero human intervention. Auto-splits large scopes |
-
-### `/ship` summary
-
-`/ship` runs through up to three phases: **commit** (Conventional Commits formatted), **PR** (push + `gh pr create`), and an optional **squash-merge** with `merge=true` (deletes the branch and syncs local). If no prior `/audit` is detected, a review gate recommends running one first. Pre-computed context (branch name, diff stats, commit log) uses a resilience contract so `/ship` never fails on unexpected git state — missing remotes, empty diffs, or detached HEAD are all handled gracefully. After a successful commit, the ticket is moved to `.simple-workflow/backlog/done/` and `/tune` is invoked to extract reusable patterns from the ticket's evaluation logs into the project knowledge base.
-
-> **Interactive-mode caveats**: `/impl` requires interactive mode for L/XL Evaluator Dry Run failure recovery and `/audit` infrastructure failure paths — in `claude -p` or CI, these stop with an explanatory message rather than hang. `/create-ticket`'s Phase 2 Socratic Refinement is skipped in non-interactive mode, and Phase 4 quality FAIL escalation stops with the ticket saved on disk for manual editing.
+> **Manual transitions**: moving tickets between states (e.g. `active/` → `blocked/`) is done with a plain `mv`.
 
 ## Setup & Configuration
 
-On your first `/brief`, `/autopilot`, or other git-dependent skill, the `SessionStart` hook prepares the target project: `git init -b main` if no repo exists (falls back to plain `git init` on git <2.28), an initial commit if HEAD is missing, and an idempotent append of `.simple-workflow/` to `.gitignore` (committed as `chore: add simple-workflow artifacts to .gitignore`). Once `.simple-workflow/.setup-done` is written, simple-workflow will **never** touch your `.gitignore` again — manual deletions are permanent.
-
-Model selection is automatic based on ticket size — orchestrator skills (`/impl`, `/plan2doc`) pass the appropriate model to agents at invocation time. Hook scripts are registered in `hooks/hooks.json`; to customize, edit the JSON or override individual scripts while keeping the same interface (read stdin, exit 0 to allow / exit 2 to block).
+The first time the plugin runs in a project, the target repository is prepared automatically: `git init -b main` if no repo exists (falls back to plain `git init` on git <2.28), an initial commit if HEAD is missing, and an idempotent append of `.simple-workflow/` to `.gitignore` (committed as `chore: add simple-workflow artifacts to .gitignore`). Once `.simple-workflow/.setup-done` is written, simple-workflow will **never** touch your `.gitignore` again — manual deletions are permanent.
 
 ### Sharing selected paths under `.simple-workflow/`
 
@@ -249,27 +127,22 @@ Anything not explicitly un-ignored stays gitignored, so research notes, plans, e
 
 ### Long idle gaps: start a new session before resuming
 
-Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a session sits idle past that window — for example, an overnight pause between an `/impl` round and the closing `/tune` summary turn — the next turn re-warms the cache from scratch and can rewrite **hundreds of thousands of cache_creation tokens** in a single turn, which can account for a substantial share of the session's total cache_creation.
+Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a session sits idle past that window — for example, an overnight pause — the next turn re-warms the cache from scratch and can rewrite **hundreds of thousands of cache_creation tokens** in a single turn.
 
-**Recommendation**: if a simple-workflow session has been idle for more than ~1 hour, exit the session and start a fresh one before running `/tune` (or any other follow-up). Phase-terminating skills emit a `[SW-CHECKPOINT]` block precisely so that `/clear` or session exit is safe, and `/catchup` will reconstruct the in-progress phase from `phase-state.yaml` on the next session. This is a property of Claude Code's cache layer rather than a plugin bug, so it cannot be patched in plugin code.
+**Recommendation**: if a simple-workflow session has been idle for more than ~1 hour, exit and start a fresh session. Phase-terminating workflows emit a `[SW-CHECKPOINT]` block precisely so that `/clear` or session exit is safe, and the plugin reconstructs the in-progress phase from `phase-state.yaml` on the next session.
 
 ## Limitations
 
 - Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
-- The `/ship` skill requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
+- Pull-request creation requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
 - Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
-- AC Evaluator ships with built-in test/lint runners for JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator will rely on static code analysis only (reported as PASS-WITH-CAVEATS).
-- The `/autopilot` Stop hook releases end_turn only when **both** the state file is stuck AND the model has emitted N consecutive turns without invoking a real tool (`Skill`, `Agent`, `Bash`, `Edit`, `Write`, `NotebookEdit`). If this two-counter rule misfires for your workload, set `AUTOPILOT_LEGACY_LOOPGUARD=1` in the hook environment to revert to the previous single-counter behaviour (state-mtime gate alone). The kill switch is intended for immediate rollback, not as a default operating mode.
+- Built-in test/lint detection covers JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator falls back to static code analysis only.
+- Some recovery paths require interactive mode; running in `claude -p` or CI may stop with an explanatory message rather than complete the recovery.
 
-### Long-session symptoms
+### Long-session resume
 
-If `/autopilot` ends with a `partial` status well before reaching the context-window cap (e.g., under 80% utilization), the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. The plugin's resume design (`autopilot-state.yaml` + `phase-state.yaml`) lets you continue with `/autopilot {parent-slug}` in a fresh session.
-
-Mitigations available out-of-the-box:
-
-- The Stop hook detects "no tool call AND no state progress" sequences and releases the loop guard with an `[AUTOPILOT-STALL]` line so the user immediately sees why the run halted.
-- Per-Agent return value caps reduce orchestrator context bloat so the session stays under the auto-Compaction threshold longer.
+If an automated run ends with a `partial` status before reaching the context-window cap, the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. State files written to `.simple-workflow/backlog/` enable resumption in a fresh session — rerun the same starting command and the plugin picks up where it left off.
 
 ## Contributing
 
