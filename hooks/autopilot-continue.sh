@@ -119,6 +119,37 @@ if [ -z "$STATE_FILE" ] && [ -d .simple-workflow/backlog/briefs/done ]; then
   unset _f
 fi
 
+# --- Auto-compact sentinel: yield Stop tick so queued /compact can run ---
+# `hooks/post-ship-auto-compact.sh` touches <state_dir>/.auto-compact-pending
+# with a UNIX timestamp on every successful PTY injection of `/compact`.
+# Without this check, the continuation prompt below would re-arm the
+# conversation immediately and the queued `/compact` would sit unprocessed
+# forever (observed in test_simple_workflow19: two enqueues, zero
+# pre-compact-save snapshots). When the sentinel is fresh (<=120s old),
+# delete it and exit 0 — Claude Code's idle loop will then consume the
+# queued `/compact`. PreCompact fires → `pre-compact-save.sh` writes the
+# `boundary: session_compaction` snapshot → on the rehydrated session the
+# resume contract (`skills/autopilot/SKILL.md:180`) picks up via
+# autopilot-state.yaml. Stale sentinels (>120s) are deleted and ignored
+# so a never-arrived `/compact` cannot freeze the pipeline.
+if [ -n "$STATE_FILE" ]; then
+  SENTINEL_DIR="$(dirname "$STATE_FILE")"
+  SENTINEL_FILE="$SENTINEL_DIR/.auto-compact-pending"
+  if [ -f "$SENTINEL_FILE" ]; then
+    SENTINEL_TS=$(cat "$SENTINEL_FILE" 2>/dev/null || echo 0)
+    NOW_TS=$(date +%s)
+    SENTINEL_AGE=$((NOW_TS - SENTINEL_TS))
+    rm -f "$SENTINEL_FILE"
+    if [ "$SENTINEL_AGE" -ge 0 ] && [ "$SENTINEL_AGE" -le 120 ]; then
+      echo "[AUTO-COMPACT-YIELD] sentinel found (age=${SENTINEL_AGE}s); yielding Stop tick so queued /compact can drain. autopilot will resume after compaction via state file." >&2
+      _emit_session_end_metrics "auto_compact_yield" "null"
+      exit 0
+    else
+      echo "[AUTO-COMPACT-YIELD] stale sentinel (age=${SENTINEL_AGE}s, >120s); treating as orphaned and continuing autopilot normally." >&2
+    fi
+  fi
+fi
+
 # --- Loop guard: environment variable override (for tests / manual override) ---
 CONTINUE_COUNT="${_AUTOPILOT_CONTINUE_COUNT:-0}"
 if [ "$CONTINUE_COUNT" -ge 5 ] 2>/dev/null; then

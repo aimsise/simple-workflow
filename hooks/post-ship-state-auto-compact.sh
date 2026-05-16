@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# post-ship-state-auto-compact.sh — PostToolUse(Write|Edit) hook.
+#
+# **Safety-net auto-compact trigger** (v7 redesign — Option A). Fires when
+# the autopilot orchestrator writes `steps.ship: completed` into the brief-
+# level `autopilot-state.yaml`. This is the canonical "ship + tune both
+# done" marker — but it fires DURING the same turn as the autopilot
+# orchestrator continues to the next ticket's preamble, so it cannot
+# replace the primary ticket-boundary trigger (pre-next-scout-auto-compact.sh).
+# Its job is to catch the corner cases the primary trigger misses:
+#
+#   1. **Last-ticket transition**: when the just-shipped ticket was the
+#      FINAL one, no `Skill(simple-workflow:scout)` follows and the
+#      primary trigger never fires. Safety-net still kicks /compact so
+#      the autopilot completion summary lands on a fresh context.
+#   2. **Autopilot flow changes**: if a future autopilot redesign re-
+#      orders or replaces `/scout` as the next-ticket entry skill, the
+#      primary trigger goes dark but this state-write trigger still
+#      catches the boundary.
+#
+# Why this is a safety-net and not the primary trigger:
+# By the time the orchestrator writes `steps.ship: completed`, the model
+# is mid-turn and about to continue into the next ticket's preamble
+# (Bash check → state-update before → Skill(scout)). End-of-turn does
+# not happen here; that is what the PreToolUse(Skill:scout) primary
+# trigger handles cleanly. Firing /compact at the state-write moment
+# would race with the orchestrator's next-ticket preamble.
+#
+# **Coordination with the primary trigger** (pre-next-scout-auto-compact.sh):
+# When both triggers would fire for the same ticket boundary, the primary
+# fires FIRST (the state write happens before the next /scout invocation
+# by ~tens of seconds) and touches `.auto-compact-pending`. This hook
+# checks for that sentinel and short-circuits — only one /compact per
+# ticket boundary.
+#
+# Kill-switch (DEFAULT ON within autopilot context, shared with the
+# primary):
+#   SW_AUTO_COMPACT_ON_SHIP_MODE unset (in autopilot) -> on (default)
+#   SW_AUTO_COMPACT_ON_SHIP_MODE=on                   -> inject /compact
+#   SW_AUTO_COMPACT_ON_SHIP_MODE=metric-only          -> log only, no injection
+#   SW_AUTO_COMPACT_ON_SHIP_MODE=off                  -> disabled (opt-out)
+#
+# State-lie protection (test_simple_workflow23 T-001 ship #1 evidence):
+# In `test_simple_workflow23`, on T-001 ship #1 the model wrote
+# `ship: completed` to autopilot-state.yaml BEFORE actually running the
+# ship body (no git commit, no PR, no ticket move). To avoid firing
+# /compact on a bogus state, Gate 5 requires the just-shipped ticket's
+# directory to exist under `.simple-workflow/backlog/done/` — that move
+# only happens when the ship body genuinely ran.
+#
+# Failure modes (unsupported terminal, jq missing, injection error,
+# state-lie detected, dedup short-circuit) are silent no-ops; this hook
+# MUST never block Write/Edit regardless of internal failures. A hook
+# that fails its host tool would break the autopilot orchestrator's
+# state-update step entirely.
+
+set -euo pipefail
+
+# jq is required for input parse + final hookSpecificOutput emit.
+# Silent skip if missing — Write/Edit must never be blocked by this hook.
+command -v jq >/dev/null 2>&1 || exit 0
+
+INPUT=$(cat 2>/dev/null || echo '{}')
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/parse-state-file.sh"
+source "$SCRIPT_DIR/lib/inject-keys.sh"
+
+# Gate 1: file path match. The brief-level autopilot-state.yaml is the
+# canonical location of `tickets[].steps.ship`. Ticket-level
+# phase-state.yaml writes are handled by post-phase-checkpoint.sh and
+# are NOT a ticket-boundary signal.
+TOOL_FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null || echo "")
+case "$TOOL_FILE_PATH" in
+  */briefs/active/*/autopilot-state.yaml) ;;
+  */briefs/done/*/autopilot-state.yaml) ;;
+  */product_backlog/*/autopilot-state.yaml) ;;
+  *) exit 0 ;;
+esac
+
+# Gate 2: `ship: completed` payload check. For Edit the relevant field is
+# `tool_input.new_string`; for Write it is `tool_input.content`. Either
+# must contain the canonical marker. We accept any indent so a single
+# regex covers both the `tickets[].steps.ship: completed` (6-space) and
+# the legacy `steps.ship: completed` (4-space) forms.
+TOOL_PAYLOAD=$(echo "$INPUT" | jq -r '.tool_input.new_string // .tool_input.content // ""' 2>/dev/null || echo "")
+echo "$TOOL_PAYLOAD" | grep -qE '(^|[[:space:]])ship:[[:space:]]+completed([[:space:]]|$)' || exit 0
+
+# Gate 3: autopilot context (defence-in-depth; Gate 1 already implies it).
+is_autopilot_context || exit 0
+
+# Gate 4: kill-switch resolution. Default `on` inside autopilot.
+MODE="${SW_AUTO_COMPACT_ON_SHIP_MODE:-on}"
+case "$MODE" in
+  on|metric-only) ;;
+  off|*)          exit 0 ;;
+esac
+
+# Gate 5: state-lie protection (element-scoped — v7 CD-1 / CD-2 fix).
+# Walk EVERY `tickets[]` element whose `steps.ship == "completed"` in the
+# just-written payload and verify each one's `ticket_dir:` resolves to an
+# existing `.simple-workflow/backlog/done/` directory. If ANY element
+# fails, refuse to inject — the model is mid-state-lie.
+#
+# Why this is a list-walk and not a single-shot: the previous awk grepped
+# globally for the first `ship: completed` and returned the most recent
+# `ticket_dir:` seen so far, which silently passed Gate 5 when a multi-
+# ticket payload had a genuine done/-dir T-001 followed by a lying
+# active/-dir T-002 (CD-1). It also misfired when `steps:` appeared
+# textually before `ticket_dir:` within an element (CD-2), inheriting
+# the previous element's dir. The element-scoped helper
+# `parse_ticket_ship_dirs` (hooks/lib/parse-state-file.sh) pairs each
+# ship status with its OWN element's ticket_dir, so both bypasses are
+# closed at the parser layer.
+TMP_PAYLOAD_FILE=$(mktemp 2>/dev/null) || TMP_PAYLOAD_FILE=""
+if [ -n "$TMP_PAYLOAD_FILE" ]; then
+  printf '%s' "$TOOL_PAYLOAD" > "$TMP_PAYLOAD_FILE" 2>/dev/null || true
+
+  REPO_ROOT=""
+  if [ -n "$TOOL_FILE_PATH" ]; then
+    REPO_ROOT="${TOOL_FILE_PATH%%/.simple-workflow/*}"
+  fi
+  [ -n "$REPO_ROOT" ] || REPO_ROOT="$PWD"
+
+  LIE_DETECTED=0
+  # Process substitution (`< <(...)`) keeps the loop in the parent shell so
+  # the LIE_DETECTED assignment is visible after the loop.
+  while IFS= read -r TICKET_DIR; do
+    [ -n "$TICKET_DIR" ] || continue
+    case "$TICKET_DIR" in
+      /*) RESOLVED_TICKET_DIR="$TICKET_DIR" ;;
+      *)  RESOLVED_TICKET_DIR="$REPO_ROOT/$TICKET_DIR" ;;
+    esac
+    # The ticket_dir written into autopilot-state.yaml may point at either
+    # backlog/active/<slug>/<ticket>/ (mid-ship, before move) or
+    # backlog/done/<slug>/<ticket>/ (post-move). Only done/ form qualifies
+    # as genuine ship completion; rewrite active/ → done/ before checking
+    # so a still-in-active path with a real done/ counterpart passes.
+    case "$RESOLVED_TICKET_DIR" in
+      */backlog/done/*) ;;
+      */backlog/active/*)
+        RESOLVED_TICKET_DIR="${RESOLVED_TICKET_DIR//\/backlog\/active\//\/backlog\/done\/}"
+        ;;
+    esac
+    if [ ! -d "$RESOLVED_TICKET_DIR" ]; then
+      echo "[POST-SHIP-STATE-AUTO-COMPACT] state-lie protection: ticket dir not in done/ ($RESOLVED_TICKET_DIR). Skipping inject — model wrote ship: completed without actually completing ship body." >&2
+      LIE_DETECTED=1
+      break
+    fi
+  done < <(parse_ticket_ship_dirs "$TMP_PAYLOAD_FILE" 2>/dev/null)
+
+  rm -f "$TMP_PAYLOAD_FILE" 2>/dev/null || true
+  [ "$LIE_DETECTED" = "1" ] && exit 0
+fi
+
+# Gate 6: deduplicate with the primary trigger
+# (pre-next-scout-auto-compact.sh). If a fresh sentinel is already in
+# place for this boundary, the primary already injected /compact and we
+# must NOT fire a second one.
+STATE_FILE_PATH="$(find_any_autopilot_state_file 2>/dev/null || true)"
+if [ -n "$STATE_FILE_PATH" ]; then
+  EXISTING_SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
+  if [ -f "$EXISTING_SENTINEL" ]; then
+    EXISTING_TS=$(cat "$EXISTING_SENTINEL" 2>/dev/null || echo 0)
+    EXISTING_NOW=$(date +%s)
+    EXISTING_AGE=$((EXISTING_NOW - EXISTING_TS))
+    if [ "$EXISTING_AGE" -ge 0 ] && [ "$EXISTING_AGE" -le 120 ]; then
+      echo "[POST-SHIP-STATE-AUTO-COMPACT] dedup: fresh sentinel present (age=${EXISTING_AGE}s), primary trigger already injected. Skipping." >&2
+      exit 0
+    fi
+  fi
+fi
+
+# Gate 7: shared loop-guard marker — coordinate with the primary trigger
+# (pre-next-scout-auto-compact.sh) across the compact/resume cycle.
+#
+# Field evidence (test_simple_workflow24, session
+# `48c15d9e-cfa2-4148-9268-1cfdcf9c9cbb`): 1 ticket boundary fired
+# /compact TWICE because Gate 6 (sentinel dedup) does not survive the
+# compact/resume cycle — `hooks/autopilot-continue.sh` consumes
+# `.auto-compact-pending` when yielding the Stop tick, so by the time
+# the post-compact-resumed orchestrator invokes the next `/scout`, the
+# sentinel is gone and the primary trigger fires a second time. The
+# primary's own Gate 5 also cannot detect this because the
+# `.auto-compact-last-attempt` marker is only written by the primary
+# itself — when the safety-net fires first, the marker doesn't exist.
+#
+# This Gate 7 makes the safety-net write the SAME marker the primary
+# reads in its Gate 5: `{shipped_count}:{unix_timestamp}` at
+# `<state_dir>/.auto-compact-last-attempt`. The marker file is NOT
+# consumed by `autopilot-continue.sh` (only `.auto-compact-pending`
+# is), so it survives the compact/resume cycle and the primary's Gate
+# 5 then sees `shipped_count` unchanged within 300s and short-circuits.
+# Result: exactly one /compact per ticket boundary regardless of which
+# hook fires first.
+#
+# In addition, Gate 7 itself short-circuits when the safety-net is
+# invoked twice for the same boundary (e.g. the orchestrator splits the
+# `ship: completed` write across two consecutive Edit calls — the
+# second Edit's `new_string` still matches Gate 2 and would otherwise
+# fire a second time).
+if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
+  # Same `grep -c` shape as the primary's Gate 4 so both hooks compute
+  # the identical shipped_count for the same on-disk state.
+  G7_SHIPPED_COUNT=$(grep -cE '^[[:space:]]+ship:[[:space:]]+completed' "$STATE_FILE_PATH" 2>/dev/null || true)
+  G7_SHIPPED_COUNT="${G7_SHIPPED_COUNT:-0}"
+  G7_ATTEMPT_FILE="$(dirname "$STATE_FILE_PATH")/.auto-compact-last-attempt"
+  if [ -f "$G7_ATTEMPT_FILE" ]; then
+    G7_PREV_LINE=$(cat "$G7_ATTEMPT_FILE" 2>/dev/null || echo "")
+    G7_PREV_COUNT="${G7_PREV_LINE%%:*}"
+    G7_PREV_TS="${G7_PREV_LINE##*:}"
+    G7_NOW_TS=$(date +%s)
+    if [ -n "$G7_PREV_COUNT" ] && [ -n "$G7_PREV_TS" ] \
+       && [ "$G7_PREV_TS" -gt 0 ] 2>/dev/null \
+       && [ "$G7_PREV_COUNT" = "$G7_SHIPPED_COUNT" ]; then
+      G7_AGE=$((G7_NOW_TS - G7_PREV_TS))
+      if [ "$G7_AGE" -ge 0 ] && [ "$G7_AGE" -le 300 ]; then
+        echo "[POST-SHIP-STATE-AUTO-COMPACT] loop-guard: shipped_count=${G7_SHIPPED_COUNT} unchanged since previous attempt ${G7_AGE}s ago. Skipping inject (test_simple_workflow24 double-compact fix)." >&2
+        jq -n --arg cnt "$G7_SHIPPED_COUNT" --arg age "$G7_AGE" \
+          '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:("auto-compact-on-ship: loop suspected — shipped_count (" + $cnt + ") unchanged since previous compact " + $age + "s ago. Skipping inject (shared loop-guard marker).")}}'
+        exit 0
+      fi
+    fi
+  fi
+  # Marker write must happen even when we proceed to inject so the
+  # primary trigger can detect this boundary as already-handled on its
+  # post-compact-resume PreToolUse(scout) fire.
+  echo "${G7_SHIPPED_COUNT}:$(date +%s)" > "$G7_ATTEMPT_FILE" 2>/dev/null || true
+fi
+unset G7_SHIPPED_COUNT G7_ATTEMPT_FILE G7_PREV_LINE G7_PREV_COUNT G7_PREV_TS G7_NOW_TS G7_AGE
+
+# metric-only branch.
+if [ "$MODE" = "metric-only" ]; then
+  echo "[POST-SHIP-STATE-AUTO-COMPACT] metric-only: would inject /compact (safety-net path)" >&2
+  jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship: metric-only mode (state-write safety-net path, no injection)"}}'
+  exit 0
+fi
+
+# Inject /compact via dispatcher (best-effort, never block Edit/Write).
+if inject_keys '/compact' --enter 2>&1 | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT] /' >&2; then
+  if [ -n "$STATE_FILE_PATH" ]; then
+    SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
+    date +%s > "$SENTINEL" 2>/dev/null || true
+  fi
+  # Safety-net additionalContext. This fires INSIDE the autopilot
+  # orchestrator's same turn (state write → this hook → orchestrator
+  # continues to next-ticket preamble). To stop the orchestrator from
+  # immediately invoking the next scout, we ask the model to end the
+  # turn now. If the primary trigger (pre-next-scout-auto-compact.sh)
+  # already fired, Gate 6 above short-circuits this branch so the
+  # model only sees ONE such instruction per ticket boundary.
+  jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship (state-write safety-net): `/compact` has been queued. The just-shipped ticket'"'"'s `steps.ship = completed` was just written to autopilot-state.yaml — the full ticket loop (scout → impl → audit → ship → tune) is complete. To let the queued /compact drain, end this turn now without proceeding to the next ticket'"'"'s preamble. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh PTY-injects `/autopilot {parent-slug}` and the resume contract (skills/autopilot/SKILL.md:180) picks up from autopilot-state.yaml."}}'
+else
+  jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship: injection failed (unsupported terminal); user may run /compact manually."}}'
+fi
+exit 0

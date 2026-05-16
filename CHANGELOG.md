@@ -5,6 +5,319 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] — 2026-05-17
+
+Major release that fires `/compact` at the **ticket boundary** of every
+multi-ticket `/autopilot` run by default, so long-running pipelines no
+longer hit the conversation-context ceiling between tickets. Compact is
+injected via PTY keystroke from two new hooks that work together:
+`hooks/pre-next-scout-auto-compact.sh` (primary, PreToolUse on the next
+ticket's `Skill(simple-workflow:scout)`) catches the canonical boundary;
+`hooks/post-ship-state-auto-compact.sh` (safety net, PostToolUse on
+`Edit/Write` that writes `steps.ship: completed` to autopilot-state.yaml)
+catches the last-ticket case and any flow change that bypasses the next
+`/scout`. Both share `hooks/lib/inject-keys.sh` for terminal-aware
+injection and `.auto-compact-pending` for queue-drain coordination with
+`hooks/autopilot-continue.sh` (Stop yield) and `hooks/session-start.sh`
+(post-compaction `/autopilot {parent-slug}` resume kick). State-lie
+protection (safety net Gate 5) and a 300s loop-detection marker
+(primary Gate 5) close the failure modes observed in
+`test_simple_workflow22` (compact-loop) and `test_simple_workflow23`
+(model state-LIED at PostToolUse(Skill:ship) trigger time, then DEFIED
+the additionalContext on subsequent ships).
+
+Pre-merge skeptical review (five-axis: hook concurrency, model
+defection, PTY injection, test coverage, architecture) caught and
+fixed four critical pre-release defects: **CD-1/CD-2** — the safety
+net's Gate 5 awk parser exited at the first `ship: completed` and
+returned whatever `ticket_dir:` was last seen, silently bypassing
+state-lie protection on multi-ticket payloads and on shuffled
+within-element key orders (verified reproducer); now element-scoped
+via the new `parse_ticket_ship_dirs` helper in
+`hooks/lib/parse-state-file.sh`. **C3** — `tmux send-keys` and
+`screen -X stuff` had no target-pane/window argument, so a user pane
+switch between turn-start and hook fire would inject `/compact<Enter>`
+into vim / ssh / log-tail; now targeted via `-t "$TMUX_PANE"` and
+`-p "$WINDOW"` with graceful fallbacks. **C4** — `skills/autopilot/SKILL.md`
+step e named the `` `/compact` has been queued`` label with
+`` \`/compact\``` backslash escapes while the hooks emit the literal
+backtick form, so substring-match between SKILL.md and runtime
+additionalContext drifted; now byte-for-byte aligned and locked
+under CT-AC-27.
+
+### BREAKING CHANGES
+
+- **Auto-`/compact` now fires at the end of every ticket loop inside an
+  `/autopilot` pipeline by default** (strict boundary = right before the
+  next ticket's `/scout` is invoked, or as a safety net at the moment
+  the orchestrator writes `steps.ship: completed`). Existing
+  `/autopilot` users will see `/compact` injected into the controlling
+  PTY between tickets with no configuration change. Mid-pipeline
+  `/compact` is safe by design because autopilot's resume contract
+  (`autopilot-state.yaml` + `hooks/pre-compact-save.sh` snapshot +
+  `hooks/autopilot-continue.sh` + `hooks/session-start.sh` PTY-injected
+  `/autopilot {parent-slug}` after compaction) is documented at
+  `skills/autopilot/SKILL.md:180` as the canonical context-pressure
+  response. **To preserve the prior behaviour (no auto-`/compact`), set
+  `SW_AUTO_COMPACT_ON_SHIP_MODE=off` in your environment.** On
+  unsupported terminals (Apple Terminal, Windows, anything outside
+  tmux / GNU screen / kitty / WezTerm / iTerm2) both hooks are silent
+  no-ops; the underlying `/scout` and `Edit/Write` are never blocked.
+- **The v6 hook `hooks/post-ship-auto-compact.sh` is removed and
+  replaced.** It fired on `PostToolUse(Skill: simple-workflow:ship)` —
+  which Claude Code emits when the `/ship` skill is *invoked* (the
+  "Launching skill" tool_result lands ~50ms after the Skill tool call),
+  not when the skill body actually completes its work. Field evidence
+  from `test_simple_workflow23` (session
+  `e47e7151-1081-47f6-a484-fe99eb5624c1`, 3-ticket pipeline): on T-001
+  ship #1 the model state-LIED (wrote `ship: completed` to
+  autopilot-state.yaml before any git commit) and end_turned, so
+  `/compact` did fire but on bogus state; on T-002 (10:22:56) and T-003
+  (10:40:25) the model recognised the same trap and explicitly DEFIED
+  the additionalContext (text at 10:23:23: "T-001 と同じ問題: hook が
+  /ship body 実行**前**に発動。literal compliance だと state lie になり
+  ... /ship body を inline 実行してから..."), executing the full `/ship`
+  body inline without end_turning — so no auto-`/compact` happened
+  between tickets at all. Root cause: PostToolUse(Skill) is the wrong
+  event for "ship completed"; there is no "skill completed" hook in
+  Claude Code's model. The v7 redesign waits until the autopilot
+  orchestrator GENUINELY writes `steps.ship: completed` to disk
+  (safety net) or the next ticket's `/scout` is about to launch
+  (primary), both of which happen AFTER the entire ship body — including
+  the chained `/tune` Step 6 — has run.
+
+### Added
+
+- **`hooks/pre-next-scout-auto-compact.sh`** — new PreToolUse(Skill)
+  hook (primary trigger). Fires when the autopilot orchestrator invokes
+  `Skill(simple-workflow:scout)` AND at least one prior ticket has
+  `steps.ship: completed` in `autopilot-state.yaml` (i.e. this is the
+  start of a NON-FIRST ticket). At that point the previous ticket's
+  full pipeline (scout → impl → audit → ship → tune) has completed and
+  the model is about to start a fresh ticket — exactly the cadence the
+  user asked for ("one /compact at the end of each ticket loop"). On
+  inject success the hook writes `<state_dir>/.auto-compact-pending`
+  (UNIX timestamp) so `autopilot-continue.sh` can yield the next Stop
+  tick, and returns an `additionalContext` payload that asks the model
+  to end the turn WITHOUT invoking the next `/scout`. Gate 5
+  state-consistency check (`<state_dir>/.auto-compact-last-attempt`,
+  format `{shipped_count}:{unix_timestamp}`): if the shipped-ticket
+  count is unchanged from the previous attempt within 300s, the inject
+  is skipped to break any residual loop. Default ON within autopilot
+  (`SW_AUTO_COMPACT_ON_SHIP_MODE=off` to opt out). Alternative mode
+  `metric-only` emits additionalContext without injection.
+- **`hooks/post-ship-state-auto-compact.sh`** — new PostToolUse(Write/
+  Edit) hook (safety net). Fires when `tool_input.file_path` matches
+  `**/autopilot-state.yaml` AND `tool_input.new_string` /
+  `tool_input.content` contains `ship: completed`. Catches the
+  last-ticket case (no next `/scout` follows) and any future autopilot
+  flow change that bypasses `/scout` as the next-ticket entry point.
+  Gate 5 state-lie protection (**element-scoped — CD-1/CD-2 fix**):
+  enumerates every `tickets[]` element whose `steps.ship == "completed"`
+  in the just-written payload via the new `parse_ticket_ship_dirs`
+  helper, resolves each element's `ticket_dir:` against the repo root
+  (with the `backlog/active/` → `backlog/done/` rewrite for in-flight
+  paths), and refuses to inject when ANY element references a
+  directory that does not exist under `backlog/done/`. The previous
+  single-pass awk exited at the first `ship: completed` match and
+  returned whatever `ticket_dir:` was last seen anywhere upstream,
+  which silently passed Gate 5 when a multi-ticket payload had a
+  genuine done/-dir T-001 followed by a lying active/-dir T-002 (CD-1)
+  and on shuffled within-element key orders where `steps:` appeared
+  textually before `ticket_dir:` (CD-2 — the element inherited the
+  previous element's dir). Both bypasses are closed structurally at
+  the parser layer; CT-AC-24 and CT-AC-25 lock in the regression.
+  Gate 6 dedup: if a fresh `.auto-compact-pending` sentinel (<=120s)
+  is already present, the primary trigger already fired for this
+  boundary and the safety net short-circuits. Gate 7 cross-hook
+  loop-guard (test_24 fix): reads/writes the SAME
+  `<state_dir>/.auto-compact-last-attempt` marker the primary's
+  Gate 5 uses, so a /compact triggered by the safety-net is detected
+  by the primary on the post-compact-resumed `/scout` (and vice versa
+  for safety-net firing twice for split Edit calls). Without Gate 7
+  the user observes TWO `/compact` per ticket boundary because
+  `.auto-compact-pending` is consumed by `hooks/autopilot-continue.sh`
+  when yielding the Stop tick — the sentinel does NOT survive the
+  compact/resume cycle, so the marker-file is the only shared state
+  between the two hooks across the boundary (test_simple_workflow24
+  evidence: 5 `/compact` invocations over 3 tickets, expected 2 — see
+  Verification section).
+- **`hooks/lib/inject-keys.sh`** — shared library exporting
+  `inject_keys "<text>" [--enter|--no-enter]`, a terminal-aware
+  keystroke injector. Multiplexer-first detection
+  (tmux > screen > kitty > WezTerm > iTerm2). Apple Terminal is
+  deliberately not supported — the macOS Accessibility keystroke API
+  is system-wide and would focus-leak to other apps.
+  `INJECT_KEYS_DRY_RUN=1` for test fixtures. The tmux and screen
+  branches **target the calling pane/window explicitly** (C3 fix):
+  `tmux send-keys -t "$TMUX_PANE"` and `screen -S "$STY" -p "$WINDOW"`
+  so a user pane switch between turn-start and hook fire cannot inject
+  `/compact<Enter>` into the wrong pane (vim, ssh, log tail); graceful
+  untargeted fallback when those env vars are absent. DRY_RUN log now
+  exposes `target=…` so CT-AC-26 can audit the contract.
+- **`hooks/lib/parse-state-file.sh`** — adds `find_any_autopilot_state_file
+  [start_dir]` (slug-free state-file locator used by both new hooks) and
+  `parse_ticket_ship_dirs <file_path>` (element-scoped YAML parser used
+  by the safety net's Gate 5; three-tier yq → python3+PyYAML → POSIX
+  awk fallback matching the existing helpers' policy). The
+  element-scoped parser is the structural fix for CD-1 / CD-2 — it
+  pairs each `steps.ship` status with the ticket_dir of the SAME
+  `tickets[]` element regardless of within-element key order.
+
+### Changed
+
+- **`hooks/autopilot-continue.sh`** — Stop hook continues to consume
+  `<state_dir>/.auto-compact-pending` exactly as in v6.x (yield Stop
+  tick, delete sentinel, emit `[AUTO-COMPACT-YIELD]` + `session_end`
+  runtime metric with `stop_reason=auto_compact_yield`, stale sentinels
+  >120s deleted and ignored). No behavioural change — the sentinel
+  contract is shared verbatim between the v6 and v7 producers.
+- **`hooks/session-start.sh`** — post-compaction resume kick continues
+  to PTY-inject `/autopilot {parent-slug}` on `source=compact` events
+  when an autopilot run is in_progress AND
+  `SW_AUTO_COMPACT_ON_SHIP_MODE != off`. No behavioural change — the
+  resume kick is shared verbatim between v6 and v7.
+- **`skills/autopilot/SKILL.md`** — Step 3d (ship) post-condition is
+  simplified back to the standard `CHECKPOINT — RE-ANCHOR` (no
+  AUTO-COMPACT EXCEPTION inline). The exception block now lives at
+  step e (loop-tail) and names BOTH new hooks' additionalContext
+  labels: `auto-compact-on-ship (ticket-boundary):` from the primary
+  and `auto-compact-on-ship (state-write safety-net):` from the safety
+  net, immediately followed by the literal `` `/compact` has been queued ``
+  (C4 fix). Labels are written with the SAME byte sequence the hooks
+  emit at runtime so substring-match between SKILL.md and the
+  additionalContext is one-to-one; the previous
+  `` \`/compact\`` `` backslash-escape rendering risked the model
+  classifying the present payload as "label did not match" and
+  defaulting back to the strict "Do NOT end turn" rule. CT-AC-27
+  enforces byte-for-byte equality. When EITHER label is present, the
+  orchestrator end_turns immediately instead of iterating to the next
+  ticket; after compaction, the resume contract
+  (`autopilot-continue.sh` + `[RESUME] Skipping {logical_id}: already
+  completed`) picks the NEXT ticket up from `autopilot-state.yaml`
+  (the just-completed ticket is already `steps.ship = completed`, so
+  resume skips it). The v6.x two-step "State update first, end_turn
+  second" ordering is removed — by the time either new hook fires,
+  the orchestrator has already written `steps.ship: completed` to
+  disk (it is the safety-net's trigger condition, and the primary's
+  precondition).
+
+### Removed
+
+- **`hooks/post-ship-auto-compact.sh`** — replaced by the two-hook
+  v7 design above. See BREAKING CHANGES for the rationale and
+  `test_simple_workflow23` evidence.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` exits 0 with 479 / 479 PASS,
+  including the 27 assertions CT-AC-01..CT-AC-27 covering:
+  both hooks' presence + executability (CT-AC-01); `inject_keys` export
+  (CT-AC-02); hooks.json registration of both new hooks as independent
+  top-level entries AND absence of the removed v6 hook (CT-AC-03);
+  primary trigger functional fixtures — non-scout silent no-op,
+  non-autopilot context silent no-op, first-ticket scout silent no-op,
+  default-on dispatcher reach, opt-out silent no-op, metric-only
+  emission (CT-AC-04..09); safety-net trigger functional fixtures —
+  wrong file_path silent no-op, missing `ship: completed` silent no-op,
+  state-lie protection (done/ dir absent → skip), dedup against fresh
+  primary sentinel, valid state-write dispatcher reach (CT-AC-10..14);
+  5-backend dispatcher coverage + Apple Terminal exclusion (CT-AC-15);
+  both hook docstrings document kill-switch / PTY dependency / silent
+  no-op (CT-AC-16); CHANGELOG v7.0.0 shape + opt-out env migration
+  sentence (CT-AC-17); primary hook sentinel creation (CT-AC-18);
+  Stop-hook yield-and-delete contract (CT-AC-19); end_turn coordination
+  spanning both hooks' additionalContext + SKILL.md step e
+  AUTO-COMPACT EXCEPTION naming both hooks (CT-AC-20);
+  SessionStart:compact resume-kick three-path contract (CT-AC-21);
+  primary loop-detection three-path contract (CT-AC-22); cross-hook
+  loop-guard marker sharing (test_simple_workflow24 double-compact fix)
+  — safety-net writes `.auto-compact-last-attempt`, primary reads it
+  on the post-compact-resumed `/scout`, both skip duplicates within
+  300s (CT-AC-23); **CD-1 fix** — element-scoped state-lie protection
+  blocks a multi-ticket payload when ANY element references a missing
+  done/ dir (CT-AC-24); **CD-2 fix** — element-scoped parser pairs
+  `ship` / `ticket_dir` in any within-element key order, defeating the
+  awk-inheritance bypass (CT-AC-25); **C3 fix** — dispatcher targets
+  the calling pane/window (`tmux -t "$TMUX_PANE"` /
+  `screen -p "$WINDOW"`) and DRY_RUN log exposes `target=…` for audit
+  (CT-AC-26); **C4 fix** — SKILL.md AUTO-COMPACT EXCEPTION label
+  literals are byte-for-byte identical with hook additionalContext
+  (grep -F equality + legacy `` \`/compact\``` backslash-escape
+  regression guard) (CT-AC-27).
+- `bash tests/test-hooks-lib.sh` exits 0 with 132 / 132 PASS;
+  `find_any_autopilot_state_file` continues to behave correctly.
+- `bash tests/test-path-consistency.sh` exits 0 with 139 / 139 PASS;
+  no regression in the path-rewrite suite.
+- `INJECT_KEYS_DRY_RUN=1` fixtures (CT-AC-07, CT-AC-14, CT-AC-18,
+  CT-AC-22, CT-AC-23, CT-AC-26, CT-AC-27) confirm both hooks reach the
+  dispatcher inside a default-on autopilot context with appropriate
+  gating, the cross-hook marker prevents double-fires, the dispatcher
+  emits `target=…` so audits can confirm the pane/window targeting
+  (C3), and the SKILL.md AUTO-COMPACT EXCEPTION label literals
+  byte-match the runtime additionalContext (C4).
+- `test_simple_workflow24` dogfood (session
+  `48c15d9e-cfa2-4148-9268-1cfdcf9c9cbb`, 3-ticket Pomodoro pipeline,
+  with the v7 redesign in place BEFORE Gate 7 was added) recorded
+  FIVE `/compact` invocations over three ticket boundaries (expected
+  TWO — one between T-001/T-002 and one between T-002/T-003; the
+  trailing fifth at 15:11:22 was a user-typed manual compact after the
+  pipeline finished). Timing: T-001 ship at 14:40:37 → safety-net at
+  14:41:59 (state-write fired) → /compact #1 at 14:42:02 → resume +
+  T-002 scout at 14:43:11 → primary fired → /compact #2 at 14:43:15.
+  Identical pattern at T-002/T-003 boundary (14:55:19 → 14:56:16 +
+  14:57:05). Root cause: `.auto-compact-pending` sentinel is consumed
+  by `hooks/autopilot-continue.sh` when it yields the Stop tick, so
+  the primary's Gate 6 sentinel-dedup cannot fire on the
+  post-compact-resumed `/scout`. The primary's own Gate 5 marker
+  (`.auto-compact-last-attempt`) was only written by the primary, so
+  a safety-net-first boundary left the marker absent. Fix (Gate 7 in
+  `hooks/post-ship-state-auto-compact.sh`): the safety-net now writes
+  the same `.auto-compact-last-attempt` marker, format
+  `{shipped_count}:{unix_timestamp}`, AND reads it for its own
+  self-dedup (split Edit calls). The marker file is NOT consumed by
+  `autopilot-continue.sh`, so it survives the compact/resume cycle.
+  Post-fix: expected exactly two /compact per three-ticket boundary
+  pair, verified by CT-AC-23.
+- Field evidence motivating the v7 redesign — `test_simple_workflow23`
+  (session `e47e7151-1081-47f6-a484-fe99eb5624c1`, 3-ticket pipeline,
+  with the v6.x four-axis design including the test_22 two-step
+  ordering fix in place):
+  - T-001 ship #1 (10:03:33): model interpreted the v6 additionalContext
+    literally, wrote `ship: completed` to autopilot-state.yaml at
+    10:03:56 BEFORE any git commit (state-lie), end_turned, /compact
+    fired at 10:03:58 — but on bogus state. The compact-resume re-ran
+    `/ship` for T-001 at 10:05:52 (ship #2), which actually performed
+    the commit, move, tune, and final state update at 10:07:53.
+  - T-002 ship (10:22:56): model recognised the pattern from T-001 and
+    chose to DEFY the additionalContext. Assistant text at 10:23:23:
+    "T-001 と同じ問題: hook が /ship body 実行**前**に発動。literal
+    compliance だと state lie になり T-003 の commit が T-002+T-003 を
+    混合してしまいます。/ship body を inline 実行してから契約 STEP 1
+    (state update が genuine になる) → STEP 2 (end_turn) します。" The
+    model then executed git commit (cf714d1), ticket move,
+    `Skill(simple-workflow:tune)` chain-call (10:23:53), tune body
+    through 10:26:43, and the orchestrator's `ship: completed` state
+    write at 10:26:50 — but never end_turned. The sentinel written by
+    the v6 hook at 10:22:56 (ship invocation time) had already aged
+    past the 120s freshness window by 10:26:50, so `autopilot-continue.sh`
+    did NOT yield (assistant text at 10:26:57: "Stop hook が end_turn
+    を override して T-003 続行を指示。T-003 pipeline 開始します。"),
+    and T-003 started in the same turn at 10:27:03 with NO auto-compact
+    between T-002 and T-003.
+  - T-003 ship (10:40:25): same defiance pattern, no auto-compact
+    between T-003 and pipeline end. The user typed `/compact` manually
+    at 10:45:49 once the pipeline finished.
+  - Root cause: PostToolUse(Skill: simple-workflow:ship) fires when the
+    Skill tool is *invoked*, not when its body completes. The v7
+    redesign waits until the orchestrator GENUINELY writes
+    `steps.ship: completed` to disk (safety net) or the next ticket's
+    `/scout` is about to launch (primary). Both events happen AFTER
+    the full ship body — including the chained `/tune` Step 6 — has
+    run, eliminating both the state-lie window and the
+    inline-defiance escape hatch.
+
+
 ## [6.6.7] — 2026-05-13
 
 Patch release that formalises simple-workflow as **Claude Code only**.

@@ -4809,5 +4809,969 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category CT-AC: auto-compact-on-ship contract (v7 redesign — Option C)
+# Trigger architecture:
+#   - Primary (B): pre-next-scout-auto-compact.sh on PreToolUse(Skill:scout)
+#     fires when the autopilot orchestrator is about to invoke /scout for
+#     a NON-FIRST ticket. This is the strict "end of one ticket's loop"
+#     boundary.
+#   - Safety-net (A): post-ship-state-auto-compact.sh on PostToolUse(Edit|
+#     Write) when the brief-level autopilot-state.yaml gains
+#     `ship: completed`. Catches the last-ticket case and any flow change
+#     that bypasses the next /scout. Deduplicates against the primary via
+#     the .auto-compact-pending sentinel.
+# Tests CT-AC-01..09 cover the primary; CT-AC-10..14 cover the safety net;
+# CT-AC-15..22 cover shared infrastructure (dispatcher, docstring, sentinel,
+# end_turn coordination, SessionStart resume, loop guard, CHANGELOG).
+# =============================================================================
+echo "--- Cat AC: auto-compact-on-ship contract (v7 redesign) ---"
+
+AC_HOOK_PRIMARY="$REPO_DIR/hooks/pre-next-scout-auto-compact.sh"
+AC_HOOK_SAFETY="$REPO_DIR/hooks/post-ship-state-auto-compact.sh"
+AC_LIB="$REPO_DIR/hooks/lib/inject-keys.sh"
+AC_HOOKS_JSON="$REPO_DIR/hooks/hooks.json"
+
+# Shared tmux PATH stub for dispatcher DRY_RUN paths.
+AC_STUB_DIR=$(mktemp -d)
+cat > "$AC_STUB_DIR/tmux" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$AC_STUB_DIR/tmux"
+
+# Helper: brief-level autopilot-state.yaml with one prior ship: completed
+# AND one in_progress ticket. Used by the primary-trigger fixtures so
+# Gate 4 (`SHIPPED_COUNT >= 1`) passes.
+_ac_make_state_with_prior_ship() {
+  local dir="$1"
+  mkdir -p "$dir"
+  cat > "$dir/autopilot-state.yaml" <<'STATE'
+version: 1
+parent_slug: dummy
+tickets:
+  - logical_id: dummy-part-1
+    ticket_dir: .simple-workflow/backlog/done/dummy/001-first
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+  - logical_id: dummy-part-2
+    ticket_dir: .simple-workflow/backlog/active/dummy/002-second
+    status: in_progress
+    steps:
+      scout: pending
+      impl: pending
+      ship: pending
+STATE
+}
+
+# CT-AC-01: both hooks exist and are executable.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC01_MISSING=""
+[ -f "$AC_HOOK_PRIMARY" ] && [ -x "$AC_HOOK_PRIMARY" ] || AC01_MISSING="${AC01_MISSING} pre-next-scout-auto-compact"
+[ -f "$AC_HOOK_SAFETY" ] && [ -x "$AC_HOOK_SAFETY" ] || AC01_MISSING="${AC01_MISSING} post-ship-state-auto-compact"
+if [ -z "$AC01_MISSING" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-01: both auto-compact hooks exist and are executable"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-01: hook(s) missing or not executable:${AC01_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-02: hooks/lib/inject-keys.sh exports the inject_keys function.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$AC_LIB" ] && grep -qE '^export -f inject_keys' "$AC_LIB"; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-02: hooks/lib/inject-keys.sh exports inject_keys"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-02: hooks/lib/inject-keys.sh does not export inject_keys" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-03: hooks.json registers both new hooks. Primary lives under
+# PreToolUse:Skill as its own top-level entry; safety net lives under
+# PostToolUse:Edit and PostToolUse:Write as two own top-level entries.
+# CLAUDE.md `## Hooks` rule requires ordering-dependent or independent
+# hooks to be top-level (not nested with siblings).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if command -v jq >/dev/null 2>&1 && [ -f "$AC_HOOKS_JSON" ]; then
+  AC03_OK=1
+  AC03_MISSING=""
+  AC03_PRIMARY_COUNT=$(jq '[.hooks.PreToolUse[] | select(.matcher == "Skill") | select((.hooks // []) | map(.command // "") | any(test("pre-next-scout-auto-compact\\.sh"))) | select((.hooks // []) | length == 1)] | length' "$AC_HOOKS_JSON" 2>/dev/null || echo 0)
+  if [ "$AC03_PRIMARY_COUNT" != "1" ]; then
+    AC03_OK=0; AC03_MISSING="${AC03_MISSING} primary-not-isolated-top-level (count=${AC03_PRIMARY_COUNT})"
+  fi
+  AC03_SAFETY_EDIT=$(jq '[.hooks.PostToolUse[] | select(.matcher == "Edit") | select((.hooks // []) | map(.command // "") | any(test("post-ship-state-auto-compact\\.sh"))) | select((.hooks // []) | length == 1)] | length' "$AC_HOOKS_JSON" 2>/dev/null || echo 0)
+  AC03_SAFETY_WRITE=$(jq '[.hooks.PostToolUse[] | select(.matcher == "Write") | select((.hooks // []) | map(.command // "") | any(test("post-ship-state-auto-compact\\.sh"))) | select((.hooks // []) | length == 1)] | length' "$AC_HOOKS_JSON" 2>/dev/null || echo 0)
+  if [ "$AC03_SAFETY_EDIT" != "1" ] || [ "$AC03_SAFETY_WRITE" != "1" ]; then
+    AC03_OK=0; AC03_MISSING="${AC03_MISSING} safety-net-Edit=${AC03_SAFETY_EDIT}-Write=${AC03_SAFETY_WRITE}"
+  fi
+  # Obsolete v6 hook must NOT be registered anywhere.
+  if jq -e '.. | objects | .command? // empty | test("post-ship-auto-compact\\.sh$")' "$AC_HOOKS_JSON" >/dev/null 2>&1; then
+    AC03_OK=0; AC03_MISSING="${AC03_MISSING} obsolete-v6-hook-still-registered"
+  fi
+  if [ "$AC03_OK" = "1" ]; then
+    echo -e "  ${GREEN}PASS${NC} CT-AC-03: hooks.json registers both new hooks as independent top-level entries; v6 hook absent"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} CT-AC-03: registration incorrect:${AC03_MISSING}" >&2
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-03: jq missing or hooks.json missing" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# --- Primary trigger functional fixtures (CT-AC-04..09) -------------------
+
+# CT-AC-04: non-scout skill input -> no-op (Gate 1 short-circuits).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC04_TMP=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC04_TMP/.simple-workflow/backlog/briefs/active/dummy"
+AC04_OUT=$(cd "$AC04_TMP" && TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:impl"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
+if [ -z "$AC04_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-04: primary — non-scout skill is silent no-op"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-04: non-scout skill produced output: $AC04_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC04_TMP"
+
+# CT-AC-05: non-autopilot context -> no-op (Gate 2 short-circuits).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC05_TMP=$(mktemp -d)
+AC05_OUT=$(cd "$AC05_TMP" && TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:scout"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
+if [ -z "$AC05_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-05: primary — non-autopilot context is silent no-op"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-05: non-autopilot context produced output: $AC05_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC05_TMP"
+
+# CT-AC-06: first-ticket scout (no prior `ship: completed`) -> no-op
+# (Gate 4 ticket-boundary detection short-circuits). The first /scout
+# of a pipeline must NOT trigger /compact because there is no completed
+# context to compact.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC06_TMP=$(mktemp -d)
+mkdir -p "$AC06_TMP/.simple-workflow/backlog/briefs/active/dummy"
+cat > "$AC06_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" <<'AC06_STATE'
+version: 1
+parent_slug: dummy
+tickets:
+  - logical_id: dummy-part-1
+    ticket_dir: .simple-workflow/backlog/active/dummy/001-first
+    status: in_progress
+    steps:
+      scout: pending
+      impl: pending
+      ship: pending
+AC06_STATE
+AC06_OUT=$(cd "$AC06_TMP" && env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:scout"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
+if [ -z "$AC06_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-06: primary — first-ticket scout is silent no-op (no prior ship: completed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-06: first-ticket scout produced output: $AC06_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC06_TMP"
+
+# CT-AC-07: env unset + non-first scout + autopilot context -> dispatcher
+# reached (default-on path fires at the ticket boundary).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC07_TMP=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC07_TMP/.simple-workflow/backlog/briefs/active/dummy"
+AC07_OUT=$(cd "$AC07_TMP" && env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:scout"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
+if echo "$AC07_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-07: primary — env unset + non-first scout reaches dispatcher (default on)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-07: primary dispatcher not reached. Output: $AC07_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC07_TMP"
+
+# CT-AC-08: SW_AUTO_COMPACT_ON_SHIP_MODE=off -> no-op (opt-out path).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC08_TMP=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC08_TMP/.simple-workflow/backlog/briefs/active/dummy"
+AC08_OUT=$(cd "$AC08_TMP" && SW_AUTO_COMPACT_ON_SHIP_MODE=off TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:scout"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
+if [ -z "$AC08_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-08: primary — SW_AUTO_COMPACT_ON_SHIP_MODE=off opts out (silent no-op)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-08: opt-out path produced output: $AC08_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC08_TMP"
+
+# CT-AC-09: mode=metric-only -> additionalContext on stdout, no inject.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC09_TMP=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC09_TMP/.simple-workflow/backlog/briefs/active/dummy"
+AC09_STDOUT_FILE=$(mktemp)
+AC09_STDERR_FILE=$(mktemp)
+(cd "$AC09_TMP" && SW_AUTO_COMPACT_ON_SHIP_MODE=metric-only TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:scout"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"') >"$AC09_STDOUT_FILE" 2>"$AC09_STDERR_FILE" || true
+if grep -qE 'metric-only' "$AC09_STDOUT_FILE" && ! grep -qE '\[inject-keys\] DRY_RUN backend=' "$AC09_STDERR_FILE"; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-09: primary — metric-only emits additionalContext without invoking dispatcher"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-09: metric-only branch incorrect. stdout=$(cat "$AC09_STDOUT_FILE") stderr=$(cat "$AC09_STDERR_FILE")" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$AC09_STDOUT_FILE" "$AC09_STDERR_FILE"
+rm -rf "$AC09_TMP"
+
+# --- Safety-net trigger functional fixtures (CT-AC-10..14) ----------------
+
+# CT-AC-10: wrong file_path (not autopilot-state.yaml) -> no-op.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC10_TMP=$(mktemp -d)
+mkdir -p "$AC10_TMP/.simple-workflow/backlog/briefs/active/dummy"
+touch "$AC10_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC10_OUT=$(cd "$AC10_TMP" && TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"file_path":"/tmp/foo/phase-state.yaml","new_string":"      ship: completed"}}'"'"' | bash "'"$AC_HOOK_SAFETY"'"' 2>&1 || true)
+if [ -z "$AC10_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-10: safety-net — wrong file_path is silent no-op"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-10: wrong-path produced output: $AC10_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC10_TMP"
+
+# CT-AC-11: new_string lacks `ship: completed` -> no-op (Gate 2).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC11_TMP=$(mktemp -d)
+mkdir -p "$AC11_TMP/.simple-workflow/backlog/briefs/active/dummy"
+touch "$AC11_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC11_OUT=$(cd "$AC11_TMP" && TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"file_path":"'"$AC11_TMP"'/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml","new_string":"      ship: in_progress"}}'"'"' | bash "'"$AC_HOOK_SAFETY"'"' 2>&1 || true)
+if [ -z "$AC11_OUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-11: safety-net — new_string without ship: completed is silent no-op"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-11: lacking-marker produced output: $AC11_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC11_TMP"
+
+# CT-AC-12: state-lie protection — ticket_dir not under done/ -> no-op
+# (Gate 5). T-001 ship #1 failure mode from test_simple_workflow23.
+# Fixture uses real newlines via printf (matches the canonical multi-line
+# YAML payload an Edit/Write actually carries; the v7 element-scoped
+# parse_ticket_ship_dirs needs line structure to detect element boundaries).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC12_TMP=$(mktemp -d)
+mkdir -p "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC12_TMP/.simple-workflow/backlog/active/dummy/001-fakery"
+# done/ deliberately NOT created (parent dir for the rewritten done/ path
+# also absent, so the active→done rewriter must fail to find the dir).
+touch "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC12_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/active/dummy/001-fakery\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+AC12_INPUT=$(jq -n --arg fp "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC12_OUT=$(cd "$AC12_TMP" && INPUT="$AC12_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC12_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-12: safety-net — state-lie protection blocks inject when done/ dir absent"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-12: state-lie protection failed. Output: $AC12_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC12_TMP"
+
+# CT-AC-13: dedup — fresh sentinel present -> no-op (Gate 6). When the
+# primary already fired and wrote .auto-compact-pending, the safety-net
+# must short-circuit so the user only sees ONE /compact per boundary.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC13_TMP=$(mktemp -d)
+mkdir -p "$AC13_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC13_TMP/.simple-workflow/backlog/done/dummy/001-shipped"
+touch "$AC13_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+date +%s > "$AC13_TMP/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC13_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
+AC13_INPUT=$(jq -n --arg fp "$AC13_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC13_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC13_OUT=$(cd "$AC13_TMP" && INPUT="$AC13_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC13_OUT" | grep -qE 'dedup: fresh sentinel present' && ! echo "$AC13_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-13: safety-net — dedup against fresh primary sentinel"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-13: dedup failed. Output: $AC13_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC13_TMP"
+
+# CT-AC-14: env unset + valid state-write + done/ exists + no sentinel
+# -> dispatcher reached (safety-net fires for last-ticket / flow-change
+# cases the primary cannot catch).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC14_TMP=$(mktemp -d)
+mkdir -p "$AC14_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC14_TMP/.simple-workflow/backlog/done/dummy/001-shipped"
+touch "$AC14_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC14_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
+AC14_INPUT=$(jq -n --arg fp "$AC14_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC14_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC14_OUT=$(cd "$AC14_TMP" && INPUT="$AC14_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC14_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-14: safety-net — env unset + valid state-write + done/ dir reaches dispatcher"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-14: safety-net dispatcher not reached. Output: $AC14_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC14_TMP"
+
+rm -rf "$AC_STUB_DIR"
+
+# --- Shared infrastructure (CT-AC-15..22) ---------------------------------
+
+# CT-AC-15: dispatcher branches on all 5 supported backends (tmux, screen,
+# kitty, wezterm, iterm2) inside _inject_detect_backend, AND Apple Terminal
+# is deliberately NOT a dispatch target.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC15_OK=1
+AC15_REASON=""
+for backend in tmux screen kitty wezterm iterm2; do
+  if ! awk '/^_inject_detect_backend\(\)/,/^\}/' "$AC_LIB" | grep -qE "echo \"$backend\""; then
+    AC15_OK=0
+    AC15_REASON="missing branch: $backend"
+    break
+  fi
+done
+if [ "$AC15_OK" = "1" ]; then
+  if grep -qiE 'apple_terminal|system events' "$AC_LIB"; then
+    AC15_OK=0
+    AC15_REASON="Apple Terminal / System Events dispatch present"
+  fi
+fi
+if [ "$AC15_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-15: 5 backends branched in _inject_detect_backend; Apple Terminal absent"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-15: dispatcher backend check failed ($AC15_REASON)" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-16: both auto-compact hook docstrings document the kill-switch,
+# the undocumented PTY-injection dependency, and the silent no-op failure
+# mode. Each file's top-of-file comment block must name all three.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC16_OK=1
+AC16_MISSING=""
+for AC16_HOOK_PATH in "$AC_HOOK_PRIMARY" "$AC_HOOK_SAFETY"; do
+  AC16_HEADER=$(awk 'NR==1{next} /^[^#]/ && !/^[[:space:]]*$/ {exit} {print}' "$AC16_HOOK_PATH")
+  AC16_NAME=$(basename "$AC16_HOOK_PATH")
+  if ! echo "$AC16_HEADER" | grep -qiE 'kill.switch|SW_AUTO_COMPACT_ON_SHIP_MODE'; then
+    AC16_OK=0; AC16_MISSING="${AC16_MISSING} ${AC16_NAME}:kill-switch"
+  fi
+  # The safety-net hook inherits the PTY dependency narrative by reference
+  # to the primary; accept either explicit "PTY" or a reference to
+  # "inject-keys" / "PTY injection".
+  if ! echo "$AC16_HEADER" | grep -qiE 'PTY|inject_keys|injection'; then
+    AC16_OK=0; AC16_MISSING="${AC16_MISSING} ${AC16_NAME}:PTY"
+  fi
+  if ! echo "$AC16_HEADER" | grep -qiE 'silent no-op|silent.*no.op|never block'; then
+    AC16_OK=0; AC16_MISSING="${AC16_MISSING} ${AC16_NAME}:silent-no-op"
+  fi
+done
+if [ "$AC16_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-16: both hook docstrings document kill-switch, PTY dependency, silent no-op"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-16: hook docstring missing:${AC16_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-17: CHANGELOG.md has a v7.0.0 entry with the three required group
+# headers (### BREAKING CHANGES, ### Added, ### Verification) and the
+# BREAKING CHANGES paragraph names the SW_AUTO_COMPACT_ON_SHIP_MODE=off
+# kill-switch as the in-line migration sentence.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC_CHANGELOG="$REPO_DIR/CHANGELOG.md"
+AC17_OK=1
+AC17_MISSING=""
+if [ ! -f "$AC_CHANGELOG" ]; then
+  AC17_OK=0; AC17_MISSING="${AC17_MISSING} CHANGELOG.md-missing"
+else
+  if ! head -40 "$AC_CHANGELOG" | grep -qE '^## \[7\.0\.0\] — 20[0-9]{2}-[0-9]{2}-[0-9]{2}$'; then
+    AC17_OK=0; AC17_MISSING="${AC17_MISSING} 7.0.0-header"
+  fi
+  AC17_BLOCK=$(awk '/^## \[7\.0\.0\]/,/^## \[6\./{print}' "$AC_CHANGELOG")
+  if ! echo "$AC17_BLOCK" | grep -qE '^### BREAKING CHANGES'; then
+    AC17_OK=0; AC17_MISSING="${AC17_MISSING} BREAKING-CHANGES"
+  fi
+  if ! echo "$AC17_BLOCK" | grep -qE '^### Added'; then
+    AC17_OK=0; AC17_MISSING="${AC17_MISSING} Added"
+  fi
+  if ! echo "$AC17_BLOCK" | grep -qE '^### Verification'; then
+    AC17_OK=0; AC17_MISSING="${AC17_MISSING} Verification"
+  fi
+  AC17_BREAKING=$(echo "$AC17_BLOCK" | awk '/^### BREAKING CHANGES/,/^### Added/{print}')
+  if ! echo "$AC17_BREAKING" | grep -qE 'SW_AUTO_COMPACT_ON_SHIP_MODE=off'; then
+    AC17_OK=0; AC17_MISSING="${AC17_MISSING} opt-out-env-var"
+  fi
+fi
+if [ "$AC17_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-17: CHANGELOG [7.0.0] has BREAKING/Added/Verification + opt-out env migration sentence"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-17: CHANGELOG [7.0.0] missing:${AC17_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-18: primary hook creates the .auto-compact-pending sentinel inside
+# the brief state directory on injection success. Without this file the
+# Stop hook cannot tell the queued /compact apart from a normal end_turn.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC18_TMPDIR=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC18_TMPDIR/.simple-workflow/backlog/briefs/active/dummy"
+AC18_STUB_DIR=$(mktemp -d)
+cat > "$AC18_STUB_DIR/tmux" <<'AC18_STUB'
+#!/usr/bin/env bash
+exit 0
+AC18_STUB
+chmod +x "$AC18_STUB_DIR/tmux"
+(
+  cd "$AC18_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC18_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' >/dev/null 2>&1
+)
+AC18_SENTINEL="$AC18_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+if [ -f "$AC18_SENTINEL" ] && [ -s "$AC18_SENTINEL" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-18: primary hook creates .auto-compact-pending sentinel on injection success"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-18: sentinel not created at $AC18_SENTINEL" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC18_TMPDIR" "$AC18_STUB_DIR"
+
+# CT-AC-19: autopilot-continue.sh yields (exit 0, no decision:"block")
+# when a fresh sentinel is present, AND deletes the sentinel after
+# handling. This contract is shared between both new hooks.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC19_TMPDIR=$(mktemp -d)
+mkdir -p "$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy"
+touch "$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+date +%s > "$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC19_OUT=$(cd "$AC19_TMPDIR" && bash -c 'echo "{}" | bash "'"$REPO_DIR"'/hooks/autopilot-continue.sh"' 2>&1)
+AC19_SENTINEL_AFTER="$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC19_OK=1
+AC19_MISSING=""
+if ! echo "$AC19_OUT" | grep -qE '\[AUTO-COMPACT-YIELD\] sentinel found'; then
+  AC19_OK=0; AC19_MISSING="${AC19_MISSING} yield-log"
+fi
+if echo "$AC19_OUT" | grep -qE '"decision"[[:space:]]*:[[:space:]]*"block"'; then
+  AC19_OK=0; AC19_MISSING="${AC19_MISSING} unexpected-block-decision"
+fi
+if [ -f "$AC19_SENTINEL_AFTER" ]; then
+  AC19_OK=0; AC19_MISSING="${AC19_MISSING} sentinel-not-deleted"
+fi
+if [ "$AC19_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-19: autopilot-continue.sh yields on fresh sentinel and deletes it"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-19: yield contract violated:${AC19_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC19_TMPDIR"
+
+# CT-AC-20: end_turn coordination — both new hooks' additionalContext
+# must steer the model to end_turn, AND skills/autopilot/SKILL.md must
+# carry the matching AUTO-COMPACT EXCEPTION block at step e (loop-tail).
+# Without this triple-agreement, the model's default "Do NOT end turn"
+# instruction wins and /compact sits in the queue indefinitely.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC20_STUB_DIR=$(mktemp -d)
+cat > "$AC20_STUB_DIR/tmux" <<'AC20_STUB'
+#!/usr/bin/env bash
+exit 0
+AC20_STUB
+chmod +x "$AC20_STUB_DIR/tmux"
+AC20_OK=1
+AC20_MISSING=""
+
+# Axis 1a: primary additionalContext mentions end_turn + ticket boundary.
+AC20_TMP_PRIM=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC20_TMP_PRIM/.simple-workflow/backlog/briefs/active/dummy"
+AC20_PRIM_OUT=$(cd "$AC20_TMP_PRIM" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC20_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>/dev/null)
+AC20_PRIM_CTX=$(echo "$AC20_PRIM_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
+if ! echo "$AC20_PRIM_CTX" | grep -qiE 'end this turn|end the turn|end_turn'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} primary-additionalContext-end-turn"
+fi
+if ! echo "$AC20_PRIM_CTX" | grep -qiE 'ticket.boundary'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} primary-additionalContext-ticket-boundary-label"
+fi
+rm -rf "$AC20_TMP_PRIM"
+
+# Axis 1b: safety-net additionalContext mentions end_turn + state-write.
+AC20_TMP_SAFE=$(mktemp -d)
+mkdir -p "$AC20_TMP_SAFE/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC20_TMP_SAFE/.simple-workflow/backlog/done/dummy/001-shipped"
+touch "$AC20_TMP_SAFE/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC20_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
+AC20_INPUT=$(jq -n --arg fp "$AC20_TMP_SAFE/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC20_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC20_SAFE_OUT=$(cd "$AC20_TMP_SAFE" && INPUT="$AC20_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC20_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>/dev/null)
+AC20_SAFE_CTX=$(echo "$AC20_SAFE_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
+if ! echo "$AC20_SAFE_CTX" | grep -qiE 'end this turn|end the turn|end_turn'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} safety-additionalContext-end-turn"
+fi
+if ! echo "$AC20_SAFE_CTX" | grep -qiE 'state.write|safety.net'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} safety-additionalContext-safety-net-label"
+fi
+rm -rf "$AC20_TMP_SAFE"
+
+# Axis 2: SKILL.md step e (loop-tail) must carry AUTO-COMPACT EXCEPTION
+# that names BOTH new hooks and their additionalContext labels.
+AC20_LOOPTAIL_BLOCK=$(awk '/^   e\. \*\*Loop-tail CHECKPOINT/,/^4\. /' "$REPO_DIR/skills/autopilot/SKILL.md")
+if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qiE 'AUTO-COMPACT EXCEPTION'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-exception-block"
+fi
+if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qE 'pre-next-scout-auto-compact'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-names-primary-hook"
+fi
+if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qE 'post-ship-state-auto-compact'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-names-safety-net-hook"
+fi
+if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qiE 'end the turn|end your turn'; then
+  AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-end-turn-instruction"
+fi
+
+if [ "$AC20_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-20: end_turn coordination — primary/safety additionalContext + SKILL.md step e all agree"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-20: end_turn coordination broken:${AC20_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC20_STUB_DIR"
+
+# CT-AC-21: post-compact resume kick (session-start.sh on source=compact
+# must PTY-inject `/autopilot {parent_slug}` when a run is in_progress;
+# silent on source=startup; honors opt-out).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC21_STUB_DIR=$(mktemp -d)
+cat > "$AC21_STUB_DIR/tmux" <<'AC21_STUB'
+#!/usr/bin/env bash
+exit 0
+AC21_STUB
+chmod +x "$AC21_STUB_DIR/tmux"
+AC21_TMPDIR=$(mktemp -d)
+mkdir -p "$AC21_TMPDIR/.simple-workflow/backlog/briefs/active/my-slug"
+cat > "$AC21_TMPDIR/.simple-workflow/backlog/briefs/active/my-slug/autopilot-state.yaml" <<'AC21_YAML'
+version: 1
+parent_slug: my-slug
+tickets:
+  001:
+    status: in_progress
+AC21_YAML
+AC21_OUT_A=$(cd "$AC21_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC21_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"source\":\"compact\"}" | bash "'"$REPO_DIR"'/hooks/session-start.sh"' 2>&1 >/dev/null)
+AC21_OUT_B=$(cd "$AC21_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC21_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"source\":\"startup\"}" | bash "'"$REPO_DIR"'/hooks/session-start.sh"' 2>&1 >/dev/null)
+AC21_OUT_C=$(cd "$AC21_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_AUTO_COMPACT_ON_SHIP_MODE=off PATH="$AC21_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"source\":\"compact\"}" | bash "'"$REPO_DIR"'/hooks/session-start.sh"' 2>&1 >/dev/null)
+AC21_OK=1
+AC21_MISSING=""
+if ! echo "$AC21_OUT_A" | grep -qE '\[SESSION-START-RESUME\] \[inject-keys\] DRY_RUN backend=.+ text=/autopilot my-slug'; then
+  AC21_OK=0; AC21_MISSING="${AC21_MISSING} path-A-resume-missing"
+fi
+if echo "$AC21_OUT_B" | grep -qE '\[SESSION-START-RESUME\]'; then
+  AC21_OK=0; AC21_MISSING="${AC21_MISSING} path-B-startup-spurious-inject"
+fi
+if echo "$AC21_OUT_C" | grep -qE '\[SESSION-START-RESUME\]'; then
+  AC21_OK=0; AC21_MISSING="${AC21_MISSING} path-C-opt-out-leaked"
+fi
+if [ "$AC21_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-21: SessionStart:compact resume kick — inject on compact+in_progress; silent on startup; honors opt-out"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-21: post-compact resume contract violated:${AC21_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC21_TMPDIR" "$AC21_STUB_DIR"
+
+# CT-AC-22: state-consistency loop-detection (Gate 5 in
+# pre-next-scout-auto-compact.sh). When invoked twice with the same
+# shipped_count within 300s, the hook MUST skip the second inject. When
+# the count advances, the hook MUST inject again. The
+# `.auto-compact-last-attempt` marker has format `{shipped_count}:{ts}`.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC22_STUB_DIR=$(mktemp -d)
+cat > "$AC22_STUB_DIR/tmux" <<'AC22_STUB'
+#!/usr/bin/env bash
+exit 0
+AC22_STUB
+chmod +x "$AC22_STUB_DIR/tmux"
+AC22_TMPDIR=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC22_TMPDIR/.simple-workflow/backlog/briefs/active/dummy"
+AC22_MARKER="$AC22_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-last-attempt"
+AC22_OUT_A=$(cd "$AC22_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC22_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1)
+AC22_MARKER_A=$(cat "$AC22_MARKER" 2>/dev/null || echo "MISSING")
+# Run B: state unchanged → expect SKIP
+# Remove the .auto-compact-pending sentinel so it doesn't influence the
+# decision (loop-detection is independent of the dedup sentinel).
+rm -f "$AC22_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC22_OUT_B=$(cd "$AC22_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC22_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1)
+# Run C: advance state (one more ship: completed) → expect inject
+cat > "$AC22_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" <<'AC22_YAML2'
+version: 1
+parent_slug: dummy
+tickets:
+  - logical_id: dummy-part-1
+    ticket_dir: .simple-workflow/backlog/done/dummy/001-first
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+  - logical_id: dummy-part-2
+    ticket_dir: .simple-workflow/backlog/done/dummy/002-second
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+  - logical_id: dummy-part-3
+    ticket_dir: .simple-workflow/backlog/active/dummy/003-third
+    status: in_progress
+    steps:
+      scout: pending
+      impl: pending
+      ship: pending
+AC22_YAML2
+rm -f "$AC22_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC22_OUT_C=$(cd "$AC22_TMPDIR" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC22_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1)
+AC22_MARKER_C=$(cat "$AC22_MARKER" 2>/dev/null || echo "MISSING")
+AC22_OK=1
+AC22_MISSING=""
+if ! echo "$AC22_OUT_A" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+  AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-A-inject-missing"
+fi
+if [ "${AC22_MARKER_A%%:*}" != "1" ]; then
+  AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-A-marker-count-not-1(got=${AC22_MARKER_A%%:*})"
+fi
+if echo "$AC22_OUT_B" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+  AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-B-spurious-inject"
+fi
+if ! echo "$AC22_OUT_B" | grep -qiE 'loop suspected|skipping inject'; then
+  AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-B-loop-log-missing"
+fi
+if ! echo "$AC22_OUT_C" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+  AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-C-inject-missing-after-state-advance"
+fi
+if [ "${AC22_MARKER_C%%:*}" != "2" ]; then
+  AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-C-marker-count-not-2(got=${AC22_MARKER_C%%:*})"
+fi
+if [ "$AC22_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-22: state-consistency loop-detection — inject when count advances, skip when unchanged within 300s"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-22: loop-detection contract violated:${AC22_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC22_TMPDIR" "$AC22_STUB_DIR"
+
+# CT-AC-23: cross-hook loop-guard marker sharing (test_simple_workflow24
+# double-compact fix). The safety-net (post-ship-state-auto-compact.sh)
+# MUST write the same `.auto-compact-last-attempt` marker the primary
+# reads in its Gate 5, so that one /compact per ticket boundary is
+# enforced across the compact/resume cycle (the `.auto-compact-pending`
+# sentinel gets consumed by `autopilot-continue.sh` when yielding the
+# Stop tick, so a sentinel-only dedup is insufficient).
+#
+# Three-path contract:
+#   Run A: safety-net fires for a fresh boundary -> marker written
+#          with the new shipped_count, dispatcher reached.
+#   Run B: primary fires for the SAME boundary post-compact (marker
+#          already written by Run A, sentinel deleted by yield) ->
+#          Gate 5 trips on shipped_count unchanged, dispatcher NOT
+#          reached.
+#   Run C: safety-net fires twice for the same boundary (split Edit
+#          calls, both with `ship: completed` in new_string) -> Gate 7
+#          trips on shipped_count unchanged, second invocation skips.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC23_STUB_DIR=$(mktemp -d)
+cat > "$AC23_STUB_DIR/tmux" <<'AC23_STUB'
+#!/usr/bin/env bash
+exit 0
+AC23_STUB
+chmod +x "$AC23_STUB_DIR/tmux"
+AC23_TMPDIR=$(mktemp -d)
+mkdir -p "$AC23_TMPDIR/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC23_TMPDIR/.simple-workflow/backlog/done/dummy/001-first"
+# Post-T1-ship state file: one ticket has ship: completed.
+cat > "$AC23_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" <<'AC23_STATE'
+version: 1
+parent_slug: dummy
+tickets:
+  - logical_id: dummy-part-1
+    ticket_dir: .simple-workflow/backlog/done/dummy/001-first
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+  - logical_id: dummy-part-2
+    ticket_dir: .simple-workflow/backlog/active/dummy/002-second
+    status: in_progress
+    steps:
+      scout: pending
+      impl: pending
+      ship: pending
+AC23_STATE
+AC23_MARKER="$AC23_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-last-attempt"
+
+# Run A: safety-net fires for T-1 boundary.
+AC23_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-first\n    status: completed\n    steps:\n      ship: completed\n')
+AC23_INPUT=$(jq -n --arg fp "$AC23_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC23_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC23_OUT_A=$(cd "$AC23_TMPDIR" && INPUT="$AC23_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC23_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+AC23_MARKER_A=$(cat "$AC23_MARKER" 2>/dev/null || echo "MISSING")
+
+# Run B: primary fires for the same boundary post-compact-resume.
+# Simulate autopilot-continue.sh's sentinel consumption by deleting it
+# (it would have been deleted when yielding the Stop tick).
+rm -f "$AC23_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC23_OUT_B=$(cd "$AC23_TMPDIR" && TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC23_STUB_DIR:$PATH" bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
+
+# Run C: safety-net fires again for the same boundary (simulated split
+# Edit). Marker should still match shipped_count → skip.
+rm -f "$AC23_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
+AC23_OUT_C=$(cd "$AC23_TMPDIR" && INPUT="$AC23_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC23_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+
+AC23_OK=1
+AC23_MISSING=""
+# Run A: dispatcher reached AND marker count = 1 (one ship: completed).
+if ! echo "$AC23_OUT_A" | grep -qE '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+  AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-A-inject-missing"
+fi
+if [ "${AC23_MARKER_A%%:*}" != "1" ]; then
+  AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-A-marker-count-not-1(got=${AC23_MARKER_A%%:*})"
+fi
+# Run B: primary must skip (shared marker says count=1 already).
+if echo "$AC23_OUT_B" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+  AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-B-primary-spurious-inject-after-safety-net"
+fi
+if ! echo "$AC23_OUT_B" | grep -qiE 'loop suspected|skipping inject'; then
+  AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-B-loop-log-missing"
+fi
+# Run C: safety-net must skip on second consecutive fire.
+if echo "$AC23_OUT_C" | grep -qE '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+  AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-C-safety-net-spurious-inject-on-second-fire"
+fi
+if ! echo "$AC23_OUT_C" | grep -qiE 'loop-guard|loop suspected|skipping inject'; then
+  AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-C-loop-log-missing"
+fi
+if [ "$AC23_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-23: cross-hook loop-guard marker sharing — safety-net writes, primary reads, both skip duplicates within 300s"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-23: cross-hook dedup violated:${AC23_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC23_TMPDIR" "$AC23_STUB_DIR"
+
+# CT-AC-24: state-lie protection — element-scoped, multi-ticket payload
+# (CD-1 in the v7 review). The just-written payload contains TWO
+# tickets[] elements, both with `steps.ship: completed`: T-001 ships
+# genuinely (done/ dir exists), but T-002 is lying (active/ dir, no
+# done/ counterpart). The v6 awk would return T-001's dir at the first
+# `ship: completed` match and silently pass Gate 5, injecting on the
+# T-002 state-lie. v7's element-scoped parser
+# (`parse_ticket_ship_dirs` in `hooks/lib/parse-state-file.sh`) emits
+# both dirs, the safety net checks each, detects T-002's missing done/
+# counterpart, and refuses to inject.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC24_STUB_DIR=$(mktemp -d)
+cat > "$AC24_STUB_DIR/tmux" <<'AC24_STUB'
+#!/usr/bin/env bash
+exit 0
+AC24_STUB
+chmod +x "$AC24_STUB_DIR/tmux"
+AC24_TMP=$(mktemp -d)
+mkdir -p "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC24_TMP/.simple-workflow/backlog/done/dummy/001-real"
+# T-002's done/ counterpart deliberately NOT created.
+touch "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC24_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-real\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n  - logical_id: T-002\n    ticket_dir: .simple-workflow/backlog/active/dummy/002-fake\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+AC24_INPUT=$(jq -n --arg fp "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC24_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC24_OUT=$(cd "$AC24_TMP" && INPUT="$AC24_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC24_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC24_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC24_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-24: safety-net — element-scoped state-lie protection blocks multi-ticket payload when ANY element lies (CD-1 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-24: element-scoped state-lie protection bypassed. Output: $AC24_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC24_TMP" "$AC24_STUB_DIR"
+
+# CT-AC-25: state-lie protection — element-scoped, single-element payload
+# where `steps.ship: completed` appears textually BEFORE `ticket_dir:`
+# within the same tickets[] element (CD-2 in the v7 review). The v6 awk
+# would inherit the PREVIOUS element's ticket_dir (T-001 done/ dir) and
+# silently pass Gate 5, even though the just-shipped element's actual
+# dir was active/ (no done/ counterpart). v7's element-scoped parser
+# captures dir/ship in any order within an element and pairs them
+# correctly via element-boundary detection.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC25_STUB_DIR=$(mktemp -d)
+cat > "$AC25_STUB_DIR/tmux" <<'AC25_STUB'
+#!/usr/bin/env bash
+exit 0
+AC25_STUB
+chmod +x "$AC25_STUB_DIR/tmux"
+AC25_TMP=$(mktemp -d)
+mkdir -p "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC25_TMP/.simple-workflow/backlog/done/dummy/001-real"
+# T-002's done/ counterpart deliberately NOT created.
+touch "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+# Note the atypical key ordering within each element: ship: completed
+# appears BEFORE ticket_dir:. Both elements use the same ordering.
+AC25_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    steps:\n      ship: completed\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-real\n    status: completed\n  - logical_id: T-002\n    steps:\n      ship: completed\n    ticket_dir: .simple-workflow/backlog/active/dummy/002-fake\n    status: completed\n')
+AC25_INPUT=$(jq -n --arg fp "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC25_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC25_OUT=$(cd "$AC25_TMP" && INPUT="$AC25_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC25_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC25_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC25_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-25: safety-net — element-scoped parser pairs ship/ticket_dir in any order within element (CD-2 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-25: element-scoped parser fails on shuffled key order. Output: $AC25_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC25_TMP" "$AC25_STUB_DIR"
+
+# CT-AC-26: tmux/screen target pane (C3 fix). The dispatcher MUST target
+# the calling pane/window via `-t "$TMUX_PANE"` (tmux) or `-p "$WINDOW"`
+# (screen). Without that, `tmux send-keys` / `screen stuff` would inject
+# /compact<Enter> into whichever pane/window the user switched to between
+# turn-start and the hook firing — a real correctness issue, not just a
+# UX nit. Verifies (a) DRY_RUN log exposes the target value so downstream
+# tools can audit, (b) target falls back gracefully when $TMUX_PANE is
+# absent, and (c) source-level grep catches a regression that drops the
+# target from the real (non-DRY) branch.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC26_STUB_DIR=$(mktemp -d)
+cat > "$AC26_STUB_DIR/tmux" <<'AC26_STUB'
+#!/usr/bin/env bash
+exit 0
+AC26_STUB
+chmod +x "$AC26_STUB_DIR/tmux"
+AC26_OUT_TMUX=$(TMUX=fake-socket TMUX_PANE='%42' INJECT_KEYS_DRY_RUN=1 PATH="$AC26_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC26_OUT_NOPANE=$(env -u TMUX_PANE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC26_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC26_OK=1
+AC26_MISSING=""
+# Path A: TMUX_PANE set -> target value appears in DRY_RUN log.
+if ! echo "$AC26_OUT_TMUX" | grep -qE 'backend=tmux target=%42 text=/compact'; then
+  AC26_OK=0; AC26_MISSING="${AC26_MISSING} tmux-pane-missing-from-log"
+fi
+# Path B: TMUX_PANE absent -> log still emitted with empty target (no crash).
+if ! echo "$AC26_OUT_NOPANE" | grep -qE 'backend=tmux target= text=/compact'; then
+  AC26_OK=0; AC26_MISSING="${AC26_MISSING} tmux-no-pane-fallback-broken"
+fi
+# Path C: source contains the targeted invocation for both backends so a
+# refactor that strips the target is caught at test time.
+if ! grep -qE 'tmux send-keys -t "\$TMUX_PANE"' "$AC_LIB"; then
+  AC26_OK=0; AC26_MISSING="${AC26_MISSING} tmux-source-missing-target"
+fi
+if ! grep -qE 'screen -S "\$STY" -p "\$WINDOW"' "$AC_LIB"; then
+  AC26_OK=0; AC26_MISSING="${AC26_MISSING} screen-source-missing-target"
+fi
+if [ "$AC26_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-26: dispatcher targets calling pane/window (tmux -t \$TMUX_PANE / screen -p \$WINDOW); DRY_RUN log exposes target"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-26: target-pane contract:${AC26_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC26_STUB_DIR"
+
+# CT-AC-27: byte-for-byte alignment between hook additionalContext labels
+# and SKILL.md AUTO-COMPACT EXCEPTION (C4 fix). The previous CT-AC-20
+# verified the labels were named in SKILL.md by loose regex, which would
+# still pass if the SKILL.md used `\`/compact\`` escape notation while
+# the hooks emitted plain backticks — a substring-match mismatch that
+# could drive model defiance. CT-AC-27 enforces literal equality at the
+# byte level via grep -F and explicitly blocks the legacy backslash-
+# escaped form from re-entering SKILL.md.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC27_STUB_DIR=$(mktemp -d)
+cat > "$AC27_STUB_DIR/tmux" <<'AC27_STUB'
+#!/usr/bin/env bash
+exit 0
+AC27_STUB
+chmod +x "$AC27_STUB_DIR/tmux"
+
+# Primary additionalContext: trigger the dispatcher-reach path so the
+# success additionalContext is emitted (not the failure fallback).
+AC27_TMP_P=$(mktemp -d)
+_ac_make_state_with_prior_ship "$AC27_TMP_P/.simple-workflow/backlog/briefs/active/dummy"
+AC27_PRIM_OUT=$(cd "$AC27_TMP_P" && \
+  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC27_STUB_DIR:$PATH" \
+  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>/dev/null)
+AC27_PRIM_CTX=$(echo "$AC27_PRIM_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
+rm -rf "$AC27_TMP_P"
+
+# Safety-net additionalContext: same dispatcher-reach path.
+AC27_TMP_S=$(mktemp -d)
+mkdir -p "$AC27_TMP_S/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC27_TMP_S/.simple-workflow/backlog/done/dummy/001-shipped"
+touch "$AC27_TMP_S/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC27_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
+AC27_INPUT=$(jq -n --arg fp "$AC27_TMP_S/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC27_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC27_SAFE_OUT=$(cd "$AC27_TMP_S" && INPUT="$AC27_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 PATH="$AC27_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>/dev/null)
+AC27_SAFE_CTX=$(echo "$AC27_SAFE_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
+rm -rf "$AC27_TMP_S"
+
+AC_SKILLMD="$REPO_DIR/skills/autopilot/SKILL.md"
+# Literal substrings the model must substring-match. Both literals appear
+# in the hook output AND in SKILL.md — same bytes, no escape mismatch.
+AC27_PRIM_LABEL='auto-compact-on-ship (ticket-boundary):'
+AC27_SAFE_LABEL='auto-compact-on-ship (state-write safety-net):'
+AC27_COMPACT_LITERAL='`/compact` has been queued'
+
+AC27_OK=1
+AC27_MISSING=""
+# Both labels appear verbatim in the respective hook output.
+echo "$AC27_PRIM_CTX" | grep -qF "$AC27_PRIM_LABEL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-label-in-hook"; }
+echo "$AC27_SAFE_CTX" | grep -qF "$AC27_SAFE_LABEL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-label-in-hook"; }
+# Both hooks include the /compact-queued literal.
+echo "$AC27_PRIM_CTX" | grep -qF "$AC27_COMPACT_LITERAL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-compact-literal-in-hook"; }
+echo "$AC27_SAFE_CTX" | grep -qF "$AC27_COMPACT_LITERAL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-compact-literal-in-hook"; }
+# Same three literals appear in SKILL.md (byte-for-byte; grep -F).
+grep -qF "$AC27_PRIM_LABEL" "$AC_SKILLMD" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-label-in-skillmd"; }
+grep -qF "$AC27_SAFE_LABEL" "$AC_SKILLMD" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-label-in-skillmd"; }
+grep -qF "$AC27_COMPACT_LITERAL" "$AC_SKILLMD" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} compact-literal-in-skillmd"; }
+# Regression guard: the legacy escape form `\`/compact\`` MUST NOT come
+# back. The hook never emits backslash-bracketed backticks; SKILL.md
+# must not either.
+if grep -qF '\`/compact\`' "$AC_SKILLMD"; then
+  AC27_OK=0; AC27_MISSING="${AC27_MISSING} legacy-escape-form-present-in-skillmd"
+fi
+
+if [ "$AC27_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-27: SKILL.md AUTO-COMPACT EXCEPTION label literals are byte-for-byte identical with hook additionalContext (C4 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-27: label literal mismatch:${AC27_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC27_STUB_DIR"
+
+echo ""
+
 # --- Summary ---
 print_summary

@@ -6,6 +6,7 @@
 #   - hooks/pre-bash-contract-guard.sh (PreToolUse:Bash guard, PX-02a)
 #   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)
 #   - hooks/post-phase-checkpoint.sh (PostToolUse:Write/Edit observer, PX-05)
+#   - hooks/post-ship-auto-compact.sh (PostToolUse:Skill auto-/compact, v7)
 #   - tests/test-hooks-lib.sh (unit tests for these helpers)
 #
 # Public contract (do not change without updating the consumers above):
@@ -33,6 +34,28 @@
 #         2. .simple-workflow/backlog/product_backlog/<parent_slug>/autopilot-state.yaml
 #         3. .simple-workflow/backlog/briefs/done/<parent_slug>/autopilot-state.yaml
 #       Prints the absolute path of the first match to stdout, or exits 1.
+#
+#   find_any_autopilot_state_file [start_dir]
+#     - Slug-free counterpart to `find_state_file`. Returns the absolute
+#       path of an active `autopilot-state.yaml` under
+#       `.simple-workflow/backlog/briefs/active/` (preferred) or
+#       `.simple-workflow/backlog/product_backlog/` (fallback), picking the
+#       most-recently-modified candidate when several exist. Returns 1 if
+#       none are present. Used by hooks that need the state directory
+#       without knowing the parent slug (e.g. the auto-compact sentinel).
+#
+#   parse_ticket_ship_dirs <file_path>
+#     - Walks the `tickets:` list in an autopilot-state.yaml document (or any
+#       payload snippet that uses the canonical schema) and prints the
+#       `ticket_dir:` value of every element whose `steps.ship == "completed"`,
+#       one per line, in document order. Used by the post-ship-state auto-
+#       compact safety net to scope state-lie protection to the SPECIFIC
+#       tickets[] elements whose ship status was just flipped — not the
+#       single first match a global grep would yield (CD-1 / CD-2 in the
+#       v7 review). Callers pass a payload by writing it to a temp file
+#       (mktemp + printf > tmp) and passing that path here, so the helper
+#       can use the same three-tier file-based strategy as the other
+#       parsers in this lib.
 #
 #   find_phase_state_file [start_dir]
 #     - Depth-agnostic search for the first
@@ -281,6 +304,136 @@ find_state_file() {
 }
 
 # ---------------------------------------------------------------------------
+# Public function: find_any_autopilot_state_file
+# Usage: find_any_autopilot_state_file [start_dir]
+#
+# Returns the absolute path of an active autopilot-state.yaml without
+# requiring the caller to know the parent slug. Used by
+# `hooks/post-ship-auto-compact.sh` to place an auto-compact sentinel in
+# the brief directory, and as a generic counterpart to the slug-keyed
+# `find_state_file` helper. Search order matches `is_autopilot_context`:
+# briefs/active first (live runs), then product_backlog (split-plan-only).
+# Among multiple candidates the most-recently-modified file wins, matching
+# the disambiguation policy used by `find_phase_state_file` and the inline
+# scan in `hooks/autopilot-continue.sh`.
+# ---------------------------------------------------------------------------
+find_any_autopilot_state_file() {
+  local start_dir root
+  start_dir="${1:-$PWD}"
+  root="$(_psf_repo_root "$start_dir")"
+  [ -d "$root/.simple-workflow" ] || return 1
+
+  local match=""
+  for base in briefs/active product_backlog; do
+    local dir="$root/.simple-workflow/backlog/$base"
+    [ -d "$dir" ] || continue
+    while IFS= read -r _f; do
+      [ -f "$_f" ] || continue
+      if [ -z "$match" ] || [ "$_f" -nt "$match" ]; then
+        match="$_f"
+      fi
+    done < <(find "$dir" -type f -name 'autopilot-state.yaml' 2>/dev/null)
+    unset _f
+    if [ -n "$match" ]; then
+      local d b
+      d="$(cd "$(dirname "$match")" && pwd -P)"
+      b="$(basename "$match")"
+      printf '%s/%s\n' "$d" "$b"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Public function: parse_ticket_ship_dirs
+# Usage: parse_ticket_ship_dirs <file_path>
+#
+# Prints the `ticket_dir:` value of every `tickets[]` element whose
+# `steps.ship == "completed"`, one per line, in document order.
+#
+# Designed for the post-ship-state auto-compact safety net (CD-1 / CD-2 in
+# the v7 review): the previous awk implementation exited at the first
+# `ship: completed` match and returned the last `ticket_dir:` seen so far,
+# which silently passed Gate 5 when a multi-ticket payload had a genuine
+# done/-dir T-001 followed by a lying active/-dir T-002. This helper
+# pairs each ship status with the ticket_dir of the SAME `tickets[]`
+# element, so the safety net can refuse to inject when ANY element's
+# just-flipped ship status references a directory that is not yet
+# under backlog/done/.
+#
+# Element boundary detection (awk tier): each `^[[:space:]]*-[[:space:]]`
+# line starts a new element; any line that is non-indented and not a
+# top-level `-` (i.e. a sibling top-level key) closes the `tickets:`
+# section. Within an element, both `ticket_dir:` and `ship:` are captured
+# in any order, and the pair is emitted at element close (next `-` or
+# end-of-section / end-of-file).
+# ---------------------------------------------------------------------------
+parse_ticket_ship_dirs() {
+  local file="$1"
+  if [ -z "$file" ] || [ ! -f "$file" ]; then
+    return 1
+  fi
+
+  if _psf_have yq; then
+    yq -r '.tickets[] | select((.steps.ship // "") == "completed") | (.ticket_dir // "")' "$file" 2>/dev/null
+    return 0
+  fi
+
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$file" <<'PY' 2>/dev/null
+import sys
+import yaml
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+for entry in (doc.get("tickets") or []):
+    if not isinstance(entry, dict):
+        continue
+    steps = entry.get("steps") or {}
+    if (steps.get("ship") if isinstance(steps, dict) else None) != "completed":
+        continue
+    val = entry.get("ticket_dir", "")
+    print(val if val is not None else "")
+PY
+    return 0
+  fi
+
+  # awk fallback: stateful walk over the tickets list. POSIX awk only.
+  # `ticket_dir:` is anchored at exactly 4 spaces (sibling-of-element key),
+  # `ship:` at exactly 6 spaces (nested under `steps:`). The single-quote
+  # in `gsub(/^'\''|'\''$/, "", val)` is escaped via bash string concat —
+  # same idiom as parse_ticket_statuses above.
+  awk '
+    function emit() {
+      if (in_item && pending_ship == "completed" && pending_dir != "") {
+        print pending_dir
+      }
+      pending_dir = ""
+      pending_ship = ""
+    }
+    BEGIN { in_tickets = 0; in_item = 0; pending_dir = ""; pending_ship = "" }
+    /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
+    in_tickets && /^[^[:space:]-]/ { emit(); in_tickets = 0; in_item = 0; next }
+    in_tickets && /^[[:space:]]*-[[:space:]]/ { emit(); in_item = 1; next }
+    in_tickets && in_item && /^    ticket_dir:[[:space:]]+/ {
+      val = $0
+      sub(/^    ticket_dir:[[:space:]]+/, "", val)
+      gsub(/^"|"$/, "", val)
+      gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      pending_dir = val
+      next
+    }
+    in_tickets && in_item && /^      ship:[[:space:]]+completed[[:space:]]*$/ {
+      pending_ship = "completed"
+      next
+    }
+    END { emit() }
+  ' "$file"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Public function: find_phase_state_file
 # Usage: find_phase_state_file [start_dir]
 #
@@ -401,4 +554,4 @@ PY
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_phase_state_file parse_impl_next_action 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action 2>/dev/null || true
