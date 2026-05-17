@@ -65,6 +65,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/parse-state-file.sh"
 source "$SCRIPT_DIR/lib/inject-keys.sh"
 
+# H4 fix: atomic marker write. The naive `printf > "$marker"` is open-
+# truncate-write — non-atomic — and two concurrent hook invocations
+# operating on the same marker can read pre-write, both decide to
+# proceed, then write half-formed lines that the next reader parses
+# incorrectly (a torn `{shipped_count}:{ts}` would defeat Gate 5's
+# loop-detection). `mktemp + mv -f` in the same directory is atomic
+# on every POSIX filesystem; fall back to the naive form only when
+# mktemp fails (e.g. read-only fs), which keeps the hook from blocking
+# /scout.
+_write_marker_atomic() {
+  local marker="$1" content="$2"
+  local tmp
+  tmp=$(mktemp "${marker}.XXXXXX" 2>/dev/null) || tmp=""
+  if [ -n "$tmp" ]; then
+    if printf '%s\n' "$content" > "$tmp" 2>/dev/null; then
+      mv -f "$tmp" "$marker" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    else
+      rm -f "$tmp" 2>/dev/null
+    fi
+  else
+    printf '%s\n' "$content" > "$marker" 2>/dev/null || true
+  fi
+}
+
 # Gate 1: skill name match (cheap, no I/O beyond jq).
 SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // ""' 2>/dev/null || echo "")
 [ "$SKILL_NAME" = "simple-workflow:scout" ] || exit 0
@@ -136,12 +160,12 @@ if [ -f "$LOOP_GATE_ATTEMPT_FILE" ]; then
     fi
   fi
 fi
-echo "${SHIPPED_COUNT}:$(date +%s)" > "$LOOP_GATE_ATTEMPT_FILE" 2>/dev/null || true
+_write_marker_atomic "$LOOP_GATE_ATTEMPT_FILE" "${SHIPPED_COUNT}:$(date +%s)"
 
 # Inject /compact via dispatcher (best-effort, never block /scout).
 if inject_keys '/compact' --enter 2>&1 | sed 's/^/[PRE-NEXT-SCOUT-AUTO-COMPACT] /' >&2; then
   SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
-  date +%s > "$SENTINEL" 2>/dev/null || true
+  _write_marker_atomic "$SENTINEL" "$(date +%s)"
   # additionalContext: tell the model to end the turn NOW so Claude Code's
   # input loop consumes the queued `/compact`. The autopilot orchestrator
   # is about to invoke `/scout` for the next ticket; we want it to defer

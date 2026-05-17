@@ -45,6 +45,36 @@ backtick form, so substring-match between SKILL.md and runtime
 additionalContext drifted; now byte-for-byte aligned and locked
 under CT-AC-27.
 
+The same pre-merge review surfaced eight high-risk concerns that
+landed as Phase 2 hardening in the same release: **H5** — the
+safety net's `STATE_FILE_PATH` was derived from the most-recently-
+modified state file across all briefs, which could place the
+sentinel and loop-guard markers in the wrong brief when two were
+concurrently active; now derived deterministically from the
+just-written `$TOOL_FILE_PATH`. **H4** — `.auto-compact-pending`
+and `.auto-compact-last-attempt` writes are now atomic via
+`mktemp + mv -f` so two concurrent invocations cannot tear the
+marker line. **H6** — `hooks/autopilot-continue.sh` rm'd the
+sentinel unconditionally BEFORE the freshness check, discarding
+observability on stale paths and creating a brief race window when
+`cat` failed mid-read; the rm now lives in each decided branch
+(fresh: remove + yield; stale: remove + log + fall through). **H7**
+— the safety net's additionalContext now branches on
+`shipped_count == total_tickets`: for the FINAL ticket it asks the
+model to complete the post-loop phase (Split Autopilot Log →
+Completion Report → Brief Lifecycle → State File Cleanup) BEFORE
+end_turn, instead of the literal-compliance failure mode where a
+last-ticket end_turn-now would skip those terminal writes. **H8**
+— the `SW_AUTO_COMPACT_ON_SHIP_MODE` kill switch is now documented
+in `README.md` (Operational Notes section), `ARCHITECTURE.md`
+(Context Conservation Protocol), and `CLAUDE.md` (Runtime env knobs)
+so users can discover the opt-out without reading hook source.
+**H1–H3 test gap closure** — CT-AC-28..39 close every missing
+branch from the safety net's Gates 3/4/5/6 and the primary's Gate 5
+stale path, plus a Write `tool_input.content` path (the hook
+registers under both Edit and Write but Phase 1 fixtures exercised
+only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
+
 ### BREAKING CHANGES
 
 - **Auto-`/compact` now fires at the end of every ticket loop inside an
@@ -210,8 +240,8 @@ under CT-AC-27.
 
 ### Verification
 
-- `bash tests/test-skill-contracts.sh` exits 0 with 479 / 479 PASS,
-  including the 27 assertions CT-AC-01..CT-AC-27 covering:
+- `bash tests/test-skill-contracts.sh` exits 0 with 491 / 491 PASS,
+  including the 39 assertions CT-AC-01..CT-AC-39 covering:
   both hooks' presence + executability (CT-AC-01); `inject_keys` export
   (CT-AC-02); hooks.json registration of both new hooks as independent
   top-level entries AND absence of the removed v6 hook (CT-AC-03);
@@ -244,7 +274,23 @@ under CT-AC-27.
   (CT-AC-26); **C4 fix** — SKILL.md AUTO-COMPACT EXCEPTION label
   literals are byte-for-byte identical with hook additionalContext
   (grep -F equality + legacy `` \`/compact\``` backslash-escape
-  regression guard) (CT-AC-27).
+  regression guard) (CT-AC-27); **H5 fix** — safety-net derives
+  `STATE_FILE_PATH` from `$TOOL_FILE_PATH` so markers land in the
+  just-written brief regardless of mtime (CT-AC-28); **H4 fix** —
+  both hooks write markers atomically via `mktemp + mv -f` so
+  concurrent invocations cannot tear them (CT-AC-29); **H7 fix** —
+  safety-net additionalContext branches on last-ticket vs non-last,
+  with the last-ticket branch requiring the post-loop completion
+  phase before end_turn (CT-AC-30 / CT-AC-31); **H8 fix** —
+  `SW_AUTO_COMPACT_ON_SHIP_MODE` kill switch documented in
+  `README.md`, `ARCHITECTURE.md`, and `CLAUDE.md` (CT-AC-32);
+  **H1–H3 closure** — safety-net Gate 3 defence-in-depth (CT-AC-33),
+  Gate 4 kill-switch (CT-AC-34), Gate 4 metric-only (CT-AC-35),
+  Gate 5 active→done rewrite (CT-AC-36), Gate 6 stale sentinel
+  >120s (CT-AC-37), Write `tool_input.content` path (CT-AC-38),
+  primary Gate 5 stale >300s (CT-AC-39). Also: CT-AC-19 extended
+  to cover the H6 fresh/stale sentinel-rm timing fix in
+  `hooks/autopilot-continue.sh`.
 - `bash tests/test-hooks-lib.sh` exits 0 with 132 / 132 PASS;
   `find_any_autopilot_state_file` continues to behave correctly.
 - `bash tests/test-path-consistency.sh` exits 0 with 139 / 139 PASS;

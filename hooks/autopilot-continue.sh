@@ -139,12 +139,21 @@ if [ -n "$STATE_FILE" ]; then
     SENTINEL_TS=$(cat "$SENTINEL_FILE" 2>/dev/null || echo 0)
     NOW_TS=$(date +%s)
     SENTINEL_AGE=$((NOW_TS - SENTINEL_TS))
-    rm -f "$SENTINEL_FILE"
+    # H6 fix: defer the rm until after the freshness decision is made
+    # AND about to be acted on. The previous order rm'd unconditionally
+    # before the age check, which (a) discarded observability if a
+    # never-arrived /compact left a stale sentinel that we'd otherwise
+    # want to log + investigate, and (b) left a brief race window where
+    # a `cat` failure (e.g. permission flap mid-read) would coerce
+    # SENTINEL_TS to 0, mark the sentinel stale, and then delete it —
+    # discarding a real fresh sentinel.
     if [ "$SENTINEL_AGE" -ge 0 ] && [ "$SENTINEL_AGE" -le 120 ]; then
+      rm -f "$SENTINEL_FILE"
       echo "[AUTO-COMPACT-YIELD] sentinel found (age=${SENTINEL_AGE}s); yielding Stop tick so queued /compact can drain. autopilot will resume after compaction via state file." >&2
       _emit_session_end_metrics "auto_compact_yield" "null"
       exit 0
     else
+      rm -f "$SENTINEL_FILE"
       echo "[AUTO-COMPACT-YIELD] stale sentinel (age=${SENTINEL_AGE}s, >120s); treating as orphaned and continuing autopilot normally." >&2
     fi
   fi

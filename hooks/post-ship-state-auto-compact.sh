@@ -65,6 +65,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/parse-state-file.sh"
 source "$SCRIPT_DIR/lib/inject-keys.sh"
 
+# H4 fix: atomic marker write (duplicated from the primary hook to keep
+# both standalone). See the primary's docstring for rationale; the two
+# definitions MUST be kept in lock-step until a shared lib helper is
+# introduced.
+_write_marker_atomic() {
+  local marker="$1" content="$2"
+  local tmp
+  tmp=$(mktemp "${marker}.XXXXXX" 2>/dev/null) || tmp=""
+  if [ -n "$tmp" ]; then
+    if printf '%s\n' "$content" > "$tmp" 2>/dev/null; then
+      mv -f "$tmp" "$marker" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    else
+      rm -f "$tmp" 2>/dev/null
+    fi
+  else
+    printf '%s\n' "$content" > "$marker" 2>/dev/null || true
+  fi
+}
+
 # Gate 1: file path match. The brief-level autopilot-state.yaml is the
 # canonical location of `tickets[].steps.ship`. Ticket-level
 # phase-state.yaml writes are handled by post-phase-checkpoint.sh and
@@ -152,11 +171,29 @@ if [ -n "$TMP_PAYLOAD_FILE" ]; then
   [ "$LIE_DETECTED" = "1" ] && exit 0
 fi
 
+# State file path (H5 fix): derive deterministically from $TOOL_FILE_PATH
+# rather than the most-recently-modified heuristic
+# `find_any_autopilot_state_file` would return. Gate 1 already guaranteed
+# `$TOOL_FILE_PATH` matches `*/autopilot-state.yaml`, so it is the exact
+# file the orchestrator just wrote — using it ensures the sentinel and
+# loop-guard markers land in the SAME brief directory as the write, even
+# when multiple briefs are concurrently active under
+# `.simple-workflow/backlog/briefs/active/`. The most-recently-modified
+# heuristic could otherwise pick a different brief whose autopilot-state.yaml
+# happened to have a newer mtime (e.g. due to a stale touch), causing
+# dedup against the wrong brief's `.auto-compact-pending` and writing
+# Gate 7's marker in the wrong dir. Fallback to the slug-free finder is
+# kept for defence in depth (Gate 1 broadening hypothesis).
+if [ -n "$TOOL_FILE_PATH" ] && [ -f "$TOOL_FILE_PATH" ]; then
+  STATE_FILE_PATH="$TOOL_FILE_PATH"
+else
+  STATE_FILE_PATH="$(find_any_autopilot_state_file 2>/dev/null || true)"
+fi
+
 # Gate 6: deduplicate with the primary trigger
 # (pre-next-scout-auto-compact.sh). If a fresh sentinel is already in
 # place for this boundary, the primary already injected /compact and we
 # must NOT fire a second one.
-STATE_FILE_PATH="$(find_any_autopilot_state_file 2>/dev/null || true)"
 if [ -n "$STATE_FILE_PATH" ]; then
   EXISTING_SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
   if [ -f "$EXISTING_SENTINEL" ]; then
@@ -224,9 +261,25 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
   # Marker write must happen even when we proceed to inject so the
   # primary trigger can detect this boundary as already-handled on its
   # post-compact-resume PreToolUse(scout) fire.
-  echo "${G7_SHIPPED_COUNT}:$(date +%s)" > "$G7_ATTEMPT_FILE" 2>/dev/null || true
+  _write_marker_atomic "$G7_ATTEMPT_FILE" "${G7_SHIPPED_COUNT}:$(date +%s)"
+  # H7 fix: last-ticket detection. shipped_count == total_tickets means
+  # this just-flipped `ship: completed` was for the FINAL ticket; the
+  # orchestrator must run the post-loop completion phase (Split Autopilot
+  # Log -> Completion Report -> Brief Lifecycle -> State File Cleanup)
+  # BEFORE end_turn, otherwise those writes are skipped. For non-last
+  # tickets the next-ticket preamble follows, so end_turn-now is correct.
+  # The primary trigger never fires on the last ticket (no next /scout),
+  # so this branch is safety-net-only.
+  G7_TOTAL_TICKETS=$(parse_ticket_statuses "$STATE_FILE_PATH" 2>/dev/null | wc -l | tr -d ' ')
+  G7_TOTAL_TICKETS="${G7_TOTAL_TICKETS:-0}"
+  IS_LAST_TICKET=0
+  if [ "$G7_SHIPPED_COUNT" -ge 1 ] 2>/dev/null \
+     && [ "$G7_TOTAL_TICKETS" -ge 1 ] 2>/dev/null \
+     && [ "$G7_SHIPPED_COUNT" = "$G7_TOTAL_TICKETS" ]; then
+    IS_LAST_TICKET=1
+  fi
 fi
-unset G7_SHIPPED_COUNT G7_ATTEMPT_FILE G7_PREV_LINE G7_PREV_COUNT G7_PREV_TS G7_NOW_TS G7_AGE
+unset G7_SHIPPED_COUNT G7_ATTEMPT_FILE G7_PREV_LINE G7_PREV_COUNT G7_PREV_TS G7_NOW_TS G7_AGE G7_TOTAL_TICKETS
 
 # metric-only branch.
 if [ "$MODE" = "metric-only" ]; then
@@ -239,7 +292,7 @@ fi
 if inject_keys '/compact' --enter 2>&1 | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT] /' >&2; then
   if [ -n "$STATE_FILE_PATH" ]; then
     SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
-    date +%s > "$SENTINEL" 2>/dev/null || true
+    _write_marker_atomic "$SENTINEL" "$(date +%s)"
   fi
   # Safety-net additionalContext. This fires INSIDE the autopilot
   # orchestrator's same turn (state write → this hook → orchestrator
@@ -248,7 +301,18 @@ if inject_keys '/compact' --enter 2>&1 | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT]
   # turn now. If the primary trigger (pre-next-scout-auto-compact.sh)
   # already fired, Gate 6 above short-circuits this branch so the
   # model only sees ONE such instruction per ticket boundary.
-  jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship (state-write safety-net): `/compact` has been queued. The just-shipped ticket'"'"'s `steps.ship = completed` was just written to autopilot-state.yaml — the full ticket loop (scout → impl → audit → ship → tune) is complete. To let the queued /compact drain, end this turn now without proceeding to the next ticket'"'"'s preamble. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh PTY-injects `/autopilot {parent-slug}` and the resume contract (skills/autopilot/SKILL.md:180) picks up from autopilot-state.yaml."}}'
+  #
+  # H7 fix: branch on last-ticket. The label
+  # `auto-compact-on-ship (state-write safety-net):` is constant across
+  # both branches (CT-AC-27 byte-equality + CT-AC-20 substring contract).
+  # The body diverges so a literally-compliant model knows whether to
+  # end_turn immediately (non-last) or first complete the post-loop
+  # phase (last).
+  if [ "${IS_LAST_TICKET:-0}" = "1" ]; then
+    jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship (state-write safety-net): `/compact` has been queued. The just-shipped ticket'"'"'s `steps.ship = completed` was the FINAL ticket of this pipeline — no more tickets remain. Complete the post-loop phase FIRST (Split Autopilot Log → Completion Report → Brief Lifecycle → State File Cleanup → final `## [SW-CHECKPOINT]` per `skills/autopilot/SKILL.md` step e), THEN end the turn. Do NOT skip the post-loop writes — they finalize the brief, the runtime_metrics, and the [SW-CHECKPOINT] handoff. After end_turn the queued /compact drains; `hooks/session-start.sh` re-injects `/autopilot {parent-slug}` but the resume contract finds all tickets terminal and exits cleanly."}}'
+  else
+    jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship (state-write safety-net): `/compact` has been queued. The just-shipped ticket'"'"'s `steps.ship = completed` was just written to autopilot-state.yaml — the full ticket loop (scout → impl → audit → ship → tune) is complete. To let the queued /compact drain, end this turn now without proceeding to the next ticket'"'"'s preamble. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh PTY-injects `/autopilot {parent-slug}` and the resume contract (skills/autopilot/SKILL.md:180) picks up from autopilot-state.yaml."}}'
+  fi
 else
   jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship: injection failed (unsupported terminal); user may run /compact manually."}}'
 fi
