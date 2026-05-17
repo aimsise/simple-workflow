@@ -64,6 +64,9 @@ INPUT=$(cat 2>/dev/null || echo '{}')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/parse-state-file.sh"
 source "$SCRIPT_DIR/lib/inject-keys.sh"
+# M4 fix: source runtime-metrics so the inject-success branch can record
+# an `auto_compact_inject` boundary for forensic audit trail.
+source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 
 # H4 fix: atomic marker write (duplicated from the primary hook to keep
 # both standalone). See the primary's docstring for rationale; the two
@@ -238,7 +241,7 @@ fi
 if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
   # Same `grep -c` shape as the primary's Gate 4 so both hooks compute
   # the identical shipped_count for the same on-disk state.
-  G7_SHIPPED_COUNT=$(grep -cE '^[[:space:]]+ship:[[:space:]]+completed' "$STATE_FILE_PATH" 2>/dev/null || true)
+  G7_SHIPPED_COUNT=$(grep -cE '^      ship:[[:space:]]+completed[[:space:]]*$' "$STATE_FILE_PATH" 2>/dev/null || true)
   G7_SHIPPED_COUNT="${G7_SHIPPED_COUNT:-0}"
   G7_ATTEMPT_FILE="$(dirname "$STATE_FILE_PATH")/.auto-compact-last-attempt"
   if [ -f "$G7_ATTEMPT_FILE" ]; then
@@ -278,6 +281,10 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
      && [ "$G7_SHIPPED_COUNT" = "$G7_TOTAL_TICKETS" ]; then
     IS_LAST_TICKET=1
   fi
+  # M4: preserve the shipped count for the audit-trail metrics write
+  # below. The G7_* vars get unset on the next line; copy into a more
+  # specific name so the inject branch can reference it.
+  SHIPPED_COUNT_FOR_AUDIT="$G7_SHIPPED_COUNT"
 fi
 unset G7_SHIPPED_COUNT G7_ATTEMPT_FILE G7_PREV_LINE G7_PREV_COUNT G7_PREV_TS G7_NOW_TS G7_AGE G7_TOTAL_TICKETS
 
@@ -289,10 +296,34 @@ if [ "$MODE" = "metric-only" ]; then
 fi
 
 # Inject /compact via dispatcher (best-effort, never block Edit/Write).
-if inject_keys '/compact' --enter 2>&1 | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT] /' >&2; then
+# H9: capture inject_keys stderr so the failure path can render a
+# disambiguating hint instead of the misleading "unsupported terminal"
+# blanket message.
+INJECT_TMP=$(mktemp 2>/dev/null) || INJECT_TMP=""
+INJECT_RC=0
+INJECT_LOG=""
+if [ -n "$INJECT_TMP" ]; then
+  # `|| INJECT_RC=$?` keeps set -e from tripping when the dispatcher
+  # returns non-zero; the failure-path branch below needs to observe
+  # rc != 0, not abort the hook.
+  inject_keys '/compact' --enter 2>"$INJECT_TMP" || INJECT_RC=$?
+  INJECT_LOG=$(cat "$INJECT_TMP" 2>/dev/null || echo "")
+  rm -f "$INJECT_TMP" 2>/dev/null
+  printf '%s\n' "$INJECT_LOG" | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT] /' >&2
+else
+  inject_keys '/compact' --enter 2>&1 | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT] /' >&2 || true
+  INJECT_RC=${PIPESTATUS[0]}
+fi
+
+if [ "$INJECT_RC" = "0" ]; then
   if [ -n "$STATE_FILE_PATH" ]; then
     SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
     _write_marker_atomic "$SENTINEL" "$(date +%s)"
+    # M4: audit trail — one runtime_metrics entry per successful inject
+    # so the user can correlate /compact fires with state transitions.
+    _AC_ISO_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+    append_runtime_metrics_entry "$STATE_FILE_PATH" "auto_compact_inject" "safety_net" "$_AC_ISO_TS" "null" "null" "null" "${SHIPPED_COUNT_FOR_AUDIT:-null}" 2>/dev/null || true
+    unset _AC_ISO_TS
   fi
   # Safety-net additionalContext. This fires INSIDE the autopilot
   # orchestrator's same turn (state write → this hook → orchestrator
@@ -314,6 +345,7 @@ if inject_keys '/compact' --enter 2>&1 | sed 's/^/[POST-SHIP-STATE-AUTO-COMPACT]
     jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship (state-write safety-net): `/compact` has been queued. The just-shipped ticket'"'"'s `steps.ship = completed` was just written to autopilot-state.yaml — the full ticket loop (scout → impl → audit → ship → tune) is complete. To let the queued /compact drain, end this turn now without proceeding to the next ticket'"'"'s preamble. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh PTY-injects `/autopilot {parent-slug}` and the resume contract (skills/autopilot/SKILL.md:180) picks up from autopilot-state.yaml."}}'
   fi
 else
-  jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship: injection failed (unsupported terminal); user may run /compact manually."}}'
+  INJECT_HINT=$(inject_keys_failure_hint "$INJECT_LOG")
+  jq -n --arg hint "$INJECT_HINT" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:("auto-compact-on-ship: injection failed — " + $hint + ". User may run /compact manually.")}}'
 fi
 exit 0

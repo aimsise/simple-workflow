@@ -64,6 +64,10 @@ INPUT=$(cat 2>/dev/null || echo '{}')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/parse-state-file.sh"
 source "$SCRIPT_DIR/lib/inject-keys.sh"
+# M4 fix: source runtime-metrics so the inject-success branch can record
+# an `auto_compact_inject` boundary in autopilot-state.yaml — provides
+# the user a forensic audit trail of when /compact actually fired.
+source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 
 # H4 fix: atomic marker write. The naive `printf > "$marker"` is open-
 # truncate-write — non-atomic — and two concurrent hook invocations
@@ -122,7 +126,7 @@ if [ -z "$STATE_FILE_PATH" ] || [ ! -f "$STATE_FILE_PATH" ]; then
 fi
 # `grep -c` returns 1 on zero matches; guard with `|| true` under set -e
 # and never chain `|| echo 0` (would double-emit "0\n0").
-SHIPPED_COUNT=$(grep -cE '^[[:space:]]+ship:[[:space:]]+completed' "$STATE_FILE_PATH" 2>/dev/null || true)
+SHIPPED_COUNT=$(grep -cE '^      ship:[[:space:]]+completed[[:space:]]*$' "$STATE_FILE_PATH" 2>/dev/null || true)
 SHIPPED_COUNT="${SHIPPED_COUNT:-0}"
 if ! [ "$SHIPPED_COUNT" -ge 1 ] 2>/dev/null; then
   # First-ticket scout — do nothing.
@@ -163,9 +167,38 @@ fi
 _write_marker_atomic "$LOOP_GATE_ATTEMPT_FILE" "${SHIPPED_COUNT}:$(date +%s)"
 
 # Inject /compact via dispatcher (best-effort, never block /scout).
-if inject_keys '/compact' --enter 2>&1 | sed 's/^/[PRE-NEXT-SCOUT-AUTO-COMPACT] /' >&2; then
+# H9: capture inject_keys stderr so the failure path can render a
+# disambiguating hint instead of the misleading "unsupported terminal"
+# blanket message.
+INJECT_TMP=$(mktemp 2>/dev/null) || INJECT_TMP=""
+INJECT_RC=0
+INJECT_LOG=""
+if [ -n "$INJECT_TMP" ]; then
+  # `|| INJECT_RC=$?` keeps set -e from tripping when the dispatcher
+  # returns non-zero (no backend / backend failed); the failure-path
+  # branch below needs to observe rc != 0, not abort the hook.
+  inject_keys '/compact' --enter 2>"$INJECT_TMP" || INJECT_RC=$?
+  INJECT_LOG=$(cat "$INJECT_TMP" 2>/dev/null || echo "")
+  rm -f "$INJECT_TMP" 2>/dev/null
+  printf '%s\n' "$INJECT_LOG" | sed 's/^/[PRE-NEXT-SCOUT-AUTO-COMPACT] /' >&2
+else
+  # mktemp fallback path — pipe through sed so we still get the log line
+  # in hook stderr, accept that INJECT_LOG stays empty so the hint helper
+  # falls back to the unknown-cause branch.
+  inject_keys '/compact' --enter 2>&1 | sed 's/^/[PRE-NEXT-SCOUT-AUTO-COMPACT] /' >&2 || true
+  INJECT_RC=${PIPESTATUS[0]}
+fi
+
+if [ "$INJECT_RC" = "0" ]; then
   SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
   _write_marker_atomic "$SENTINEL" "$(date +%s)"
+  # M4: audit trail. Record one runtime_metrics entry per successful
+  # injection so the user can correlate /compact fires with state
+  # transitions (e.g. forensics after an unexpected context loss).
+  # Uses the shared append helper from hooks/lib/runtime-metrics.sh.
+  _AC_ISO_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+  append_runtime_metrics_entry "$STATE_FILE_PATH" "auto_compact_inject" "primary" "$_AC_ISO_TS" "null" "null" "null" "$SHIPPED_COUNT" 2>/dev/null || true
+  unset _AC_ISO_TS
   # additionalContext: tell the model to end the turn NOW so Claude Code's
   # input loop consumes the queued `/compact`. The autopilot orchestrator
   # is about to invoke `/scout` for the next ticket; we want it to defer
@@ -181,6 +214,7 @@ if inject_keys '/compact' --enter 2>&1 | sed 's/^/[PRE-NEXT-SCOUT-AUTO-COMPACT] 
   # needs to honour.
   jq -n '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:"auto-compact-on-ship (ticket-boundary): `/compact` has been queued. The previous ticket'"'"'s full pipeline (scout → impl → audit → ship → tune) has completed and its `steps.ship = completed` is already in autopilot-state.yaml. To let the queued /compact drain, end this turn now WITHOUT invoking the next /scout. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh will PTY-inject `/autopilot {parent-slug}` on the rehydrated session and the resume contract (skills/autopilot/SKILL.md:180) will re-issue this same /scout from a fresh context."}}'
 else
-  jq -n '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:"auto-compact-on-ship: injection failed (unsupported terminal); /scout will proceed without compaction. User may run /compact manually."}}'
+  INJECT_HINT=$(inject_keys_failure_hint "$INJECT_LOG")
+  jq -n --arg hint "$INJECT_HINT" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:("auto-compact-on-ship: injection failed — " + $hint + ". /scout will proceed without compaction. User may run /compact manually.")}}'
 fi
 exit 0

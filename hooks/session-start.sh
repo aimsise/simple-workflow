@@ -268,9 +268,20 @@ if [ "$_sw_session_source" = "compact" ] \
       if grep -qE '^[[:space:]]+status:[[:space:]]+(in_progress|pending)' "$_sw_resume_state" 2>/dev/null; then
         _sw_resume_slug=$(grep -E '^parent_slug:' "$_sw_resume_state" 2>/dev/null \
           | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
-        if [ -n "$_sw_resume_slug" ]; then
+        # H10 fix: validate slug shape before interpolating it into a
+        # controlling-terminal keystroke. A slug with embedded newlines,
+        # shell metachars (`;`, `$()`, backticks), or terminal control
+        # sequences would become live keystrokes once `inject_keys`
+        # hands them to tmux/screen send-keys. Canonical slugs are
+        # kebab/snake-case ASCII; reject anything outside [A-Za-z0-9._-].
+        if [ -n "$_sw_resume_slug" ] \
+           && printf '%s' "$_sw_resume_slug" | grep -qE '^[A-Za-z0-9._-]+$'; then
           inject_keys "/autopilot $_sw_resume_slug" --enter 2>&1 \
             | sed 's/^/[SESSION-START-RESUME] /' >&2 || true
+        elif [ -n "$_sw_resume_slug" ]; then
+          # Log to stderr so the user can see why the auto-resume was
+          # skipped; never fail the SessionStart hook.
+          echo "[SESSION-START-RESUME] slug failed validation against [A-Za-z0-9._-]+ pattern; skipping auto-resume injection (slug=$_sw_resume_slug)" >&2
         fi
       fi
     fi

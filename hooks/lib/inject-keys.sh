@@ -59,11 +59,16 @@ inject_keys() {
     return 1
   }
 
-  # M3: DRY_RUN short-circuit for testing. Include target pane / window in
-  # the log so CT-AC-26 can assert the dispatcher would target the calling
-  # pane (tmux $TMUX_PANE) / window (screen $WINDOW) rather than whichever
-  # pane the user happens to be active in at injection time.
-  if [ "${INJECT_KEYS_DRY_RUN:-0}" = "1" ]; then
+  # M3 + H11: DRY_RUN short-circuit for testing. Include target pane /
+  # window in the log so CT-AC-26 can assert the dispatcher would target
+  # the calling pane (tmux $TMUX_PANE) / window (screen $WINDOW) rather
+  # than whichever pane the user happens to be active in at injection
+  # time. H11 fix: DRY_RUN requires `SW_TEST_HARNESS=1` to also be set —
+  # if a user accidentally exports `INJECT_KEYS_DRY_RUN=1` in their shell
+  # profile (e.g. after copy-pasting from a debug session), the
+  # auto-compact would silently no-op forever. With the guard, the
+  # leaked env var alone is harmless: real injection proceeds.
+  if [ "${INJECT_KEYS_DRY_RUN:-0}" = "1" ] && [ "${SW_TEST_HARNESS:-0}" = "1" ]; then
     echo "[inject-keys] DRY_RUN backend=$backend target=${TMUX_PANE:-${WINDOW:-}} text=${text} enter=${enter}" >&2
     return 0
   fi
@@ -171,4 +176,47 @@ OSA
   fi
 }
 
-export -f inject_keys 2>/dev/null || true
+# H9 fix: produce a human-readable hint from inject_keys's stderr so
+# downstream hooks can render an additionalContext that disambiguates
+# "no backend detected" (terminal needs tmux/screen/...) from "backend
+# detected but command failed" (kitty allow_remote_control off, iTerm2
+# Automation permission denied, WezTerm flag unsupported, etc.).
+# Returns the hint on stdout — never empty when log is non-empty —
+# and always exits 0 so it cannot break the calling hook.
+inject_keys_failure_hint() {
+  local log="$1"
+  if printf '%s' "$log" | grep -qE 'no backend'; then
+    printf '%s\n' 'no supported terminal multiplexer detected — install tmux or GNU screen, or run Claude Code under kitty / WezTerm / iTerm2'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'backend=kitty.*failed'; then
+    printf '%s\n' 'kitty backend failed — ensure `allow_remote_control yes` (or `socket-only`) is set in your kitty.conf and reload'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'backend=iterm2.*failed'; then
+    printf '%s\n' 'iTerm2 backend failed — macOS Automation permission for osascript is likely required (System Settings → Privacy & Security → Automation → Terminal/Claude Code → iTerm)'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'backend=wezterm.*failed'; then
+    printf '%s\n' 'WezTerm backend failed — ensure `wezterm cli send-text --no-paste` is supported (update WezTerm if the flag was rejected)'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'backend=screen.*failed'; then
+    printf '%s\n' 'GNU screen backend failed — verify $STY is set and the session window accepts the `stuff` command'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'backend=tmux.*failed'; then
+    printf '%s\n' 'tmux backend failed — verify $TMUX is set and tmux send-keys has access to the target pane'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'backend=([a-z0-9]+).*failed'; then
+    local backend
+    backend=$(printf '%s' "$log" | sed -nE 's/.*backend=([a-z0-9]+).*failed.*/\1/p' | head -1)
+    printf '%s\n' "${backend:-unknown} backend command failed (check terminal config)"
+    return 0
+  fi
+  printf '%s\n' 'injection backend failure of unknown cause (see stderr [inject-keys] line in hook logs)'
+  return 0
+}
+
+export -f inject_keys inject_keys_failure_hint 2>/dev/null || true

@@ -45,6 +45,36 @@ backtick form, so substring-match between SKILL.md and runtime
 additionalContext drifted; now byte-for-byte aligned and locked
 under CT-AC-27.
 
+Phase 3 defensive / observability improvements (H9-H12, M4, M7)
+land in the same release to avoid an immediate v7.0.1 follow-up:
+**H9** — `inject_keys` failure path now produces a disambiguating
+hint (backend identity + specific remediation) instead of the
+single "unsupported terminal" blanket message that masked kitty's
+`allow_remote_control no` default, iTerm2's macOS Automation TCC
+prompt, and WezTerm's `--no-paste` flag-rejection cases. **H10**
+— `hooks/session-start.sh` validates `parent_slug` against
+`[A-Za-z0-9._-]+` before interpolating it into the `/autopilot
+<slug>` keystroke, so a maliciously crafted slug with shell
+metachars cannot inject live keystrokes into the controlling
+terminal. **H11** — `INJECT_KEYS_DRY_RUN=1` alone no longer
+short-circuits the dispatcher; `SW_TEST_HARNESS=1` must also be
+set, so a leaked profile-level `INJECT_KEYS_DRY_RUN=1` cannot
+silently disable every auto-compact. **H12** — CT-AC-43 replaces
+CT-AC-23's manual `rm -f` sentinel-simulation with a real
+`hooks/autopilot-continue.sh` invocation, proving the full
+safety-net → Stop-hook yield → primary post-resume short-circuit
+contract end-to-end. **M4** — both hooks record one
+`runtime_metrics` entry per successful injection
+(`boundary: auto_compact_inject; stop_reason: primary | safety_net`)
+so users can correlate `/compact` fires with state transitions
+for forensics. **M7** — both hooks tighten the `shipped_count`
+grep anchor from `^[[:space:]]+ship: completed` (matches
+anywhere) to `^      ship: completed$` (canonical 6-space yq
+indent + end-of-line) so a stray `ship: completed` literal in a
+`runtime_metrics` note, free-form commentary, or future field
+addition cannot inflate `shipped_count` and skew Gate 5
+loop-detection.
+
 The same pre-merge review surfaced eight high-risk concerns that
 landed as Phase 2 hardening in the same release: **H5** — the
 safety net's `STATE_FILE_PATH` was derived from the most-recently-
@@ -240,8 +270,8 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
 
 ### Verification
 
-- `bash tests/test-skill-contracts.sh` exits 0 with 491 / 491 PASS,
-  including the 39 assertions CT-AC-01..CT-AC-39 covering:
+- `bash tests/test-skill-contracts.sh` exits 0 with 497 / 497 PASS,
+  including the 45 assertions CT-AC-01..CT-AC-45 covering:
   both hooks' presence + executability (CT-AC-01); `inject_keys` export
   (CT-AC-02); hooks.json registration of both new hooks as independent
   top-level entries AND absence of the removed v6 hook (CT-AC-03);
@@ -290,7 +320,30 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
   >120s (CT-AC-37), Write `tool_input.content` path (CT-AC-38),
   primary Gate 5 stale >300s (CT-AC-39). Also: CT-AC-19 extended
   to cover the H6 fresh/stale sentinel-rm timing fix in
-  `hooks/autopilot-continue.sh`.
+  `hooks/autopilot-continue.sh`. **H9 fix** —
+  `inject_keys_failure_hint` disambiguates 5 distinct failure
+  causes (no backend, kitty `allow_remote_control`, iTerm2
+  Automation TCC, WezTerm flag, unknown backend) and the hook
+  additionalContext propagates the hint (CT-AC-40). **H10 fix**
+  — `hooks/session-start.sh` validates `parent_slug` against
+  `[A-Za-z0-9._-]+` before inject; malicious slugs (e.g.
+  containing `;`, newlines) are skipped and logged (CT-AC-41).
+  **H11 fix** — `INJECT_KEYS_DRY_RUN=1` requires co-presence of
+  `SW_TEST_HARNESS=1` to short-circuit; a leaked profile env var
+  alone is now harmless (CT-AC-42). **H12 fix** — full
+  cross-hook integration test exercises the safety-net →
+  real `autopilot-continue.sh` Stop yield → primary post-resume
+  short-circuit contract (CT-AC-43). **M4 fix** — both hooks
+  record a `runtime_metrics` entry
+  (`boundary: auto_compact_inject`,
+  `stop_reason: primary | safety_net`) on successful inject so
+  the user can correlate `/compact` fires with state transitions
+  during forensics (CT-AC-44). **M7 fix** — `shipped_count` grep
+  anchor tightened from `^[[:space:]]+ship: completed` to
+  `^      ship: completed$` (canonical 6-space yq indent +
+  end-of-line) so a stray `ship: completed` literal in a
+  `runtime_metrics` note or free-form commentary cannot inflate
+  the count (CT-AC-45).
 - `bash tests/test-hooks-lib.sh` exits 0 with 132 / 132 PASS;
   `find_any_autopilot_state_file` continues to behave correctly.
 - `bash tests/test-path-consistency.sh` exits 0 with 139 / 139 PASS;
