@@ -5201,17 +5201,21 @@ else
     AC17_OK=0; AC17_MISSING="${AC17_MISSING} 7.0.0-header"
   fi
   AC17_BLOCK=$(awk '/^## \[7\.0\.0\]/,/^## \[6\./{print}' "$AC_CHANGELOG")
-  if ! echo "$AC17_BLOCK" | grep -qE '^### BREAKING CHANGES'; then
+  # NB: use here-strings rather than `echo "$X" | grep -q` to avoid the
+  # `set -euo pipefail` SIGPIPE footgun where grep -q exits on first match
+  # and the upstream echo writes to a closed pipe (write error: Broken
+  # pipe), tripping pipefail and inverting the conditional.
+  if ! grep -qE '^### BREAKING CHANGES' <<< "$AC17_BLOCK"; then
     AC17_OK=0; AC17_MISSING="${AC17_MISSING} BREAKING-CHANGES"
   fi
-  if ! echo "$AC17_BLOCK" | grep -qE '^### Added'; then
+  if ! grep -qE '^### Added' <<< "$AC17_BLOCK"; then
     AC17_OK=0; AC17_MISSING="${AC17_MISSING} Added"
   fi
-  if ! echo "$AC17_BLOCK" | grep -qE '^### Verification'; then
+  if ! grep -qE '^### Verification' <<< "$AC17_BLOCK"; then
     AC17_OK=0; AC17_MISSING="${AC17_MISSING} Verification"
   fi
-  AC17_BREAKING=$(echo "$AC17_BLOCK" | awk '/^### BREAKING CHANGES/,/^### Added/{print}')
-  if ! echo "$AC17_BREAKING" | grep -qE 'SW_AUTO_COMPACT_ON_SHIP_MODE=off'; then
+  AC17_BREAKING=$(awk '/^### BREAKING CHANGES/,/^### Added/{print}' <<< "$AC17_BLOCK")
+  if ! grep -qE 'SW_AUTO_COMPACT_ON_SHIP_MODE=off' <<< "$AC17_BREAKING"; then
     AC17_OK=0; AC17_MISSING="${AC17_MISSING} opt-out-env-var"
   fi
 fi
