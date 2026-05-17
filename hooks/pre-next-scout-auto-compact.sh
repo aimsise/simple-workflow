@@ -69,30 +69,6 @@ source "$SCRIPT_DIR/lib/inject-keys.sh"
 # the user a forensic audit trail of when /compact actually fired.
 source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 
-# H4 fix: atomic marker write. The naive `printf > "$marker"` is open-
-# truncate-write — non-atomic — and two concurrent hook invocations
-# operating on the same marker can read pre-write, both decide to
-# proceed, then write half-formed lines that the next reader parses
-# incorrectly (a torn `{shipped_count}:{ts}` would defeat Gate 5's
-# loop-detection). `mktemp + mv -f` in the same directory is atomic
-# on every POSIX filesystem; fall back to the naive form only when
-# mktemp fails (e.g. read-only fs), which keeps the hook from blocking
-# /scout.
-_write_marker_atomic() {
-  local marker="$1" content="$2"
-  local tmp
-  tmp=$(mktemp "${marker}.XXXXXX" 2>/dev/null) || tmp=""
-  if [ -n "$tmp" ]; then
-    if printf '%s\n' "$content" > "$tmp" 2>/dev/null; then
-      mv -f "$tmp" "$marker" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-    else
-      rm -f "$tmp" 2>/dev/null
-    fi
-  else
-    printf '%s\n' "$content" > "$marker" 2>/dev/null || true
-  fi
-}
-
 # Gate 1: skill name match (cheap, no I/O beyond jq).
 SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // ""' 2>/dev/null || echo "")
 [ "$SKILL_NAME" = "simple-workflow:scout" ] || exit 0
@@ -114,19 +90,20 @@ esac
 # ticket of a pipeline the previous-ship marker is absent by definition,
 # so we MUST NOT fire (there is no context to compact).
 #
-# Detection uses a simple grep over the brief-level state file. The
-# `steps:` block lives at 4-space indent inside each `tickets[]` element,
-# and the canonical autopilot orchestrator writes `      ship: completed`
-# (6-space indent) when it advances the just-shipped ticket. Counting
-# those lines tells us how many tickets have already shipped; anything
-# >= 1 means this `/scout` is for ticket 2+.
+# Detection: count tickets where ship has reached completed status via
+# `parse_ticket_ship_dirs` (yq → python3+PyYAML → POSIX awk; tolerates
+# both the canonical-flat `steps.ship: completed` and the nested
+# `steps.ship.status: completed` forms — see WI-3 / parse-state-file.sh
+# docstring). Pre-WI-3 this hook used a literal grep anchor that ONLY
+# matched the flat form, so when the autopilot orchestrator wrote the
+# nested form (test_simple_workflow27 evidence) the counter stayed at 0
+# and the hook silently exited even though tickets had genuinely
+# shipped.
 STATE_FILE_PATH="$(find_any_autopilot_state_file 2>/dev/null || true)"
 if [ -z "$STATE_FILE_PATH" ] || [ ! -f "$STATE_FILE_PATH" ]; then
   exit 0
 fi
-# `grep -c` returns 1 on zero matches; guard with `|| true` under set -e
-# and never chain `|| echo 0` (would double-emit "0\n0").
-SHIPPED_COUNT=$(grep -cE '^      ship:[[:space:]]+completed[[:space:]]*$' "$STATE_FILE_PATH" 2>/dev/null || true)
+SHIPPED_COUNT=$(parse_ticket_ship_dirs "$STATE_FILE_PATH" 2>/dev/null | grep -c . || true)
 SHIPPED_COUNT="${SHIPPED_COUNT:-0}"
 if ! [ "$SHIPPED_COUNT" -ge 1 ] 2>/dev/null; then
   # First-ticket scout — do nothing.
@@ -164,7 +141,7 @@ if [ -f "$LOOP_GATE_ATTEMPT_FILE" ]; then
     fi
   fi
 fi
-_write_marker_atomic "$LOOP_GATE_ATTEMPT_FILE" "${SHIPPED_COUNT}:$(date +%s)"
+echo "${SHIPPED_COUNT}:$(date +%s)" > "$LOOP_GATE_ATTEMPT_FILE" 2>/dev/null || true
 
 # Inject /compact via dispatcher (best-effort, never block /scout).
 # H9: capture inject_keys stderr so the failure path can render a
@@ -191,7 +168,7 @@ fi
 
 if [ "$INJECT_RC" = "0" ]; then
   SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
-  _write_marker_atomic "$SENTINEL" "$(date +%s)"
+  date +%s > "$SENTINEL" 2>/dev/null || true
   # M4: audit trail. Record one runtime_metrics entry per successful
   # injection so the user can correlate /compact fires with state
   # transitions (e.g. forensics after an unexpected context loss).

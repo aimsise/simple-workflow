@@ -68,25 +68,6 @@ source "$SCRIPT_DIR/lib/inject-keys.sh"
 # an `auto_compact_inject` boundary for forensic audit trail.
 source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 
-# H4 fix: atomic marker write (duplicated from the primary hook to keep
-# both standalone). See the primary's docstring for rationale; the two
-# definitions MUST be kept in lock-step until a shared lib helper is
-# introduced.
-_write_marker_atomic() {
-  local marker="$1" content="$2"
-  local tmp
-  tmp=$(mktemp "${marker}.XXXXXX" 2>/dev/null) || tmp=""
-  if [ -n "$tmp" ]; then
-    if printf '%s\n' "$content" > "$tmp" 2>/dev/null; then
-      mv -f "$tmp" "$marker" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-    else
-      rm -f "$tmp" 2>/dev/null
-    fi
-  else
-    printf '%s\n' "$content" > "$marker" 2>/dev/null || true
-  fi
-}
-
 # Gate 1: file path match. The brief-level autopilot-state.yaml is the
 # canonical location of `tickets[].steps.ship`. Ticket-level
 # phase-state.yaml writes are handled by post-phase-checkpoint.sh and
@@ -100,12 +81,36 @@ case "$TOOL_FILE_PATH" in
 esac
 
 # Gate 2: `ship: completed` payload check. For Edit the relevant field is
-# `tool_input.new_string`; for Write it is `tool_input.content`. Either
-# must contain the canonical marker. We accept any indent so a single
-# regex covers both the `tickets[].steps.ship: completed` (6-space) and
-# the legacy `steps.ship: completed` (4-space) forms.
+# `tool_input.new_string`; for Write it is `tool_input.content`. The
+# canonical schema (state-file.md) writes `      ship: completed` (flat,
+# 6-space yq indent), but field evidence (test_simple_workflow27) shows
+# autopilot also produces the nested form
+# `      ship:\n        status: completed\n        invocation_method: skill`
+# when the model merges the two parallel maps (`steps:` + `invocation_method:`)
+# into a single nested map per step. WI-3 makes the gate accept BOTH
+# shapes so a model schema slip cannot silently disable auto-compact;
+# the SKILL layer enforces the canonical flat form for fresh writes.
+# Authoritative ticket-level detection still happens at Gate 5 (yq-parsed
+# via parse_ticket_ship_dirs, also schema-tolerant).
 TOOL_PAYLOAD=$(echo "$INPUT" | jq -r '.tool_input.new_string // .tool_input.content // ""' 2>/dev/null || echo "")
-echo "$TOOL_PAYLOAD" | grep -qE '(^|[[:space:]])ship:[[:space:]]+completed([[:space:]]|$)' || exit 0
+_detect_ship_completed_in_payload() {
+  local payload="$1"
+  # Flat form: same line "ship: completed"
+  if printf '%s' "$payload" | grep -qE '(^|[[:space:]])ship:[[:space:]]+completed([[:space:]]|$)'; then
+    return 0
+  fi
+  # Nested form: a line ending in `ship:` followed within 4 lines by
+  # `status: completed` (POSIX awk; no PCRE / multi-line regex needed).
+  printf '%s' "$payload" | awk '
+    /^[[:space:]]*ship:[[:space:]]*$/ { in_ship = 1; ship_line = NR; next }
+    in_ship && (NR - ship_line) <= 4 && /^[[:space:]]+status:[[:space:]]+completed[[:space:]]*$/ {
+      found = 1; exit
+    }
+    in_ship && (NR - ship_line) > 4 { in_ship = 0 }
+    END { exit !found }
+  '
+}
+_detect_ship_completed_in_payload "$TOOL_PAYLOAD" || exit 0
 
 # Gate 3: autopilot context (defence-in-depth; Gate 1 already implies it).
 is_autopilot_context || exit 0
@@ -239,9 +244,14 @@ fi
 # second Edit's `new_string` still matches Gate 2 and would otherwise
 # fire a second time).
 if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
-  # Same `grep -c` shape as the primary's Gate 4 so both hooks compute
-  # the identical shipped_count for the same on-disk state.
-  G7_SHIPPED_COUNT=$(grep -cE '^      ship:[[:space:]]+completed[[:space:]]*$' "$STATE_FILE_PATH" 2>/dev/null || true)
+  # WI-3 schema-tolerance: count BOTH `ship: completed` (flat) and
+  # `ship:\n  status: completed` (nested) — see parse_ticket_ship_dirs
+  # docstring. parse_ticket_ship_dirs walks the canonical structure via
+  # yq → python3+PyYAML → POSIX awk, so a model schema slip cannot
+  # silently produce shipped_count=0 (which would defeat both Gate 7
+  # loop-detection and the primary's mirror Gate 4). The line count of
+  # its output is the shipped ticket count.
+  G7_SHIPPED_COUNT=$(parse_ticket_ship_dirs "$STATE_FILE_PATH" 2>/dev/null | grep -c . || true)
   G7_SHIPPED_COUNT="${G7_SHIPPED_COUNT:-0}"
   G7_ATTEMPT_FILE="$(dirname "$STATE_FILE_PATH")/.auto-compact-last-attempt"
   if [ -f "$G7_ATTEMPT_FILE" ]; then
@@ -264,7 +274,7 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
   # Marker write must happen even when we proceed to inject so the
   # primary trigger can detect this boundary as already-handled on its
   # post-compact-resume PreToolUse(scout) fire.
-  _write_marker_atomic "$G7_ATTEMPT_FILE" "${G7_SHIPPED_COUNT}:$(date +%s)"
+  echo "${G7_SHIPPED_COUNT}:$(date +%s)" > "$G7_ATTEMPT_FILE" 2>/dev/null || true
   # H7 fix: last-ticket detection. shipped_count == total_tickets means
   # this just-flipped `ship: completed` was for the FINAL ticket; the
   # orchestrator must run the post-loop completion phase (Split Autopilot
@@ -318,7 +328,7 @@ fi
 if [ "$INJECT_RC" = "0" ]; then
   if [ -n "$STATE_FILE_PATH" ]; then
     SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
-    _write_marker_atomic "$SENTINEL" "$(date +%s)"
+    date +%s > "$SENTINEL" 2>/dev/null || true
     # M4: audit trail — one runtime_metrics entry per successful inject
     # so the user can correlate /compact fires with state transitions.
     _AC_ISO_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)

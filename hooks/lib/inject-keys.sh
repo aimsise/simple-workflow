@@ -5,11 +5,18 @@
 #   inject_keys "<text>" [--enter|--no-enter]
 #
 # Detection priority (multiplexer-first):
-#   1. tmux              ($TMUX set)
-#   2. GNU screen        ($STY set)
-#   3. kitty             (kitty + remote control enabled)
-#   4. WezTerm           ($TERM_PROGRAM=WezTerm)
-#   5. iTerm2 (macOS)    ($TERM_PROGRAM=iTerm.app)
+#   1. tmux              ($TMUX set; target via $TMUX_PANE)
+#   2. GNU screen        ($STY set; target via $WINDOW)
+#   3. kitty             (kitty + remote control enabled; target via $KITTY_WINDOW_ID)
+#   4. WezTerm           ($TERM_PROGRAM=WezTerm; target via $WEZTERM_PANE)
+#   5. iTerm2 (macOS)    ($TERM_PROGRAM=iTerm.app; target via $ITERM_SESSION_ID UUID)
+#
+# Every backend targets the ORIGINATING surface (pane / window / session)
+# rather than whichever the user is focused on at injection time. This
+# prevents `/compact<Enter>` from being typed into the wrong window when
+# the user switches focus between turn-start and hook fire. See the C3
+# fix (tmux/screen, v7.0.0) and the WI-1 fix (iTerm2 + kitty + WezTerm
+# explicit pane-id) for the audit trail.
 #
 # Apple Terminal is deliberately NOT supported (S3 fix). The macOS
 # Accessibility keystroke API is system-wide and would focus-leak
@@ -59,17 +66,27 @@ inject_keys() {
     return 1
   }
 
-  # M3 + H11: DRY_RUN short-circuit for testing. Include target pane /
-  # window in the log so CT-AC-26 can assert the dispatcher would target
-  # the calling pane (tmux $TMUX_PANE) / window (screen $WINDOW) rather
-  # than whichever pane the user happens to be active in at injection
+  # M3 + H11 + WI-1: DRY_RUN short-circuit for testing. Include the
+  # per-backend target identifier in the log so callers can assert the
+  # dispatcher would target the originating pane / window / session
+  # rather than whichever surface the user happens to focus at injection
   # time. H11 fix: DRY_RUN requires `SW_TEST_HARNESS=1` to also be set —
   # if a user accidentally exports `INJECT_KEYS_DRY_RUN=1` in their shell
   # profile (e.g. after copy-pasting from a debug session), the
   # auto-compact would silently no-op forever. With the guard, the
   # leaked env var alone is harmless: real injection proceeds.
+  # WI-1 fix: pick the per-backend env var so iTerm/kitty/wezterm/etc.
+  # each surface their own targeting identifier (CT-AC-26/46/47/48).
   if [ "${INJECT_KEYS_DRY_RUN:-0}" = "1" ] && [ "${SW_TEST_HARNESS:-0}" = "1" ]; then
-    echo "[inject-keys] DRY_RUN backend=$backend target=${TMUX_PANE:-${WINDOW:-}} text=${text} enter=${enter}" >&2
+    local target=""
+    case "$backend" in
+      tmux)    target="${TMUX_PANE:-}" ;;
+      screen)  target="${WINDOW:-}" ;;
+      kitty)   target="${KITTY_WINDOW_ID:-}" ;;
+      wezterm) target="${WEZTERM_PANE:-}" ;;
+      iterm2)  target="${ITERM_SESSION_ID:-}" ;;
+    esac
+    echo "[inject-keys] DRY_RUN backend=$backend target=$target text=${text} enter=${enter}" >&2
     return 0
   fi
 
@@ -127,20 +144,50 @@ inject_keys() {
       # NOTE: kitty must have `allow_remote_control yes` in kitty.conf.
       # Without it, `kitty @ send-text` fails with rc != 0 and we
       # surface that via the post-case rc check.
-      if [ "$enter" = "--enter" ]; then
-        kitty @ send-text "${text}"$'\n'
+      # WI-1 fix: target the originating kitty window via
+      # `--match id:$KITTY_WINDOW_ID`. Without that, `kitty @ send-text`
+      # defaults to the currently focused window — same focus-leak
+      # failure mode that the tmux/screen C3 fix addresses. Fall back
+      # to untargeted call when $KITTY_WINDOW_ID is unset (kitty <0.40
+      # or process not launched as a kitty child).
+      if [ -n "${KITTY_WINDOW_ID:-}" ]; then
+        if [ "$enter" = "--enter" ]; then
+          kitty @ send-text --match "id:$KITTY_WINDOW_ID" "${text}"$'\n'
+        else
+          kitty @ send-text --match "id:$KITTY_WINDOW_ID" "$text"
+        fi
       else
-        kitty @ send-text "$text"
+        if [ "$enter" = "--enter" ]; then
+          kitty @ send-text "${text}"$'\n'
+        else
+          kitty @ send-text "$text"
+        fi
       fi
       rc=$?
       ;;
 
     wezterm)
-      wezterm cli send-text --no-paste "$text"
-      rc=$?
-      if [ "$rc" = "0" ] && [ "$enter" = "--enter" ]; then
-        wezterm cli send-text --no-paste $'\r'
+      # WI-1 fix: target the originating pane via `--pane-id
+      # $WEZTERM_PANE` explicitly. The WezTerm CLI does infer the
+      # caller's pane from $WEZTERM_PANE when --pane-id is omitted, but
+      # the explicit flag is defense-in-depth: it removes the dependency
+      # on CLI implementation detail and keeps DRY_RUN log + source-grep
+      # contracts consistent with the other backends. Falls back to the
+      # implicit form if $WEZTERM_PANE is unset.
+      if [ -n "${WEZTERM_PANE:-}" ]; then
+        wezterm cli send-text --no-paste --pane-id "$WEZTERM_PANE" "$text"
         rc=$?
+        if [ "$rc" = "0" ] && [ "$enter" = "--enter" ]; then
+          wezterm cli send-text --no-paste --pane-id "$WEZTERM_PANE" $'\r'
+          rc=$?
+        fi
+      else
+        wezterm cli send-text --no-paste "$text"
+        rc=$?
+        if [ "$rc" = "0" ] && [ "$enter" = "--enter" ]; then
+          wezterm cli send-text --no-paste $'\r'
+          rc=$?
+        fi
       fi
       ;;
 
@@ -150,16 +197,98 @@ inject_keys() {
       # AppleScript source. This eliminates shell-quote risk on
       # arbitrary text (current caller passes a fixed `/compact` but
       # the library may be reused elsewhere).
-      if [ "$enter" = "--enter" ]; then
-        TEXT_FOR_AS="$text" osascript <<'OSA'
+      #
+      # WI-1 fix: target the originating iTerm session by
+      # $ITERM_SESSION_ID rather than `current session of current
+      # window`. iTerm sets ITERM_SESSION_ID in each shell session
+      # (format `w<W>t<T>p<P>:<UUID>`); the UUID portion matches the
+      # AppleScript `id` of a session. Without this fix, the
+      # AppleScript resolves at osascript runtime to whichever iTerm
+      # window the user has focused, so a tab/pane switch between
+      # turn-start and hook fire (e.g. user clicks a different pane
+      # in the same iTerm window) would inject `/compact<Enter>`
+      # into the wrong session — the iTerm2 analog of the
+      # tmux/screen C3 focus-leak. When ITERM_SESSION_ID is absent
+      # (very old iTerm or detached Claude Code), fall back to the
+      # pre-WI-1 untargeted path so degraded execution still
+      # attempts injection.
+      local _ik_iterm_uuid=""
+      if [ -n "${ITERM_SESSION_ID:-}" ]; then
+        _ik_iterm_uuid="${ITERM_SESSION_ID##*:}"
+      fi
+      # WI-2 fix: iTerm2's AppleScript does NOT expose a `windows`
+      # collection — `count of windows` returns 0 even when iTerm has
+      # active terminal windows. Only `current window` is reachable.
+      # Iterate that window's tabs and sessions to locate the
+      # originating session by UUID. This covers:
+      #   - same iTerm window, different tab → found
+      #   - same iTerm window, different pane → found
+      #   - focus moved to a non-iTerm app (Chrome, VS Code, etc.) →
+      #     iTerm's current window is unchanged, found
+      #   - focus moved to a different iTerm WINDOW → current window
+      #     updates to that one, UUID not found, hard-fail with hint
+      # Multi-iTerm-window cases are unsolvable via AppleScript alone
+      # (no enumeration API); recommend tmux for that workflow.
+      if [ -n "$_ik_iterm_uuid" ]; then
+        if [ "$enter" = "--enter" ]; then
+          TEXT_FOR_AS="$text" ITERM_TARGET_UUID="$_ik_iterm_uuid" osascript <<'OSA'
+set t to system attribute "TEXT_FOR_AS"
+set targetUUID to system attribute "ITERM_TARGET_UUID"
+set didInject to false
+tell application "iTerm"
+  repeat with tt in tabs of current window
+    repeat with s in sessions of tt
+      try
+        if id of s is targetUUID then
+          tell s to write text t
+          set didInject to true
+          exit repeat
+        end if
+      end try
+    end repeat
+    if didInject then exit repeat
+  end repeat
+  if not didInject then
+    error "iTerm session " & targetUUID & " not in current iTerm window (focus the originating iTerm window or switch to tmux)"
+  end if
+end tell
+OSA
+        else
+          TEXT_FOR_AS="$text" ITERM_TARGET_UUID="$_ik_iterm_uuid" osascript <<'OSA'
+set t to system attribute "TEXT_FOR_AS"
+set targetUUID to system attribute "ITERM_TARGET_UUID"
+set didInject to false
+tell application "iTerm"
+  repeat with tt in tabs of current window
+    repeat with s in sessions of tt
+      try
+        if id of s is targetUUID then
+          tell s to write text t newline NO
+          set didInject to true
+          exit repeat
+        end if
+      end try
+    end repeat
+    if didInject then exit repeat
+  end repeat
+  if not didInject then
+    error "iTerm session " & targetUUID & " not in current iTerm window (focus the originating iTerm window or switch to tmux)"
+  end if
+end tell
+OSA
+        fi
+      else
+        if [ "$enter" = "--enter" ]; then
+          TEXT_FOR_AS="$text" osascript <<'OSA'
 set t to system attribute "TEXT_FOR_AS"
 tell application "iTerm" to tell current session of current window to write text t
 OSA
-      else
-        TEXT_FOR_AS="$text" osascript <<'OSA'
+        else
+          TEXT_FOR_AS="$text" osascript <<'OSA'
 set t to system attribute "TEXT_FOR_AS"
 tell application "iTerm" to tell current session of current window to write text t newline NO
 OSA
+        fi
       fi
       rc=$?
       ;;
@@ -191,6 +320,10 @@ inject_keys_failure_hint() {
   fi
   if printf '%s' "$log" | grep -qE 'backend=kitty.*failed'; then
     printf '%s\n' 'kitty backend failed — ensure `allow_remote_control yes` (or `socket-only`) is set in your kitty.conf and reload'
+    return 0
+  fi
+  if printf '%s' "$log" | grep -qE 'iTerm session .* not in current iTerm window'; then
+    printf '%s\n' 'iTerm2 backend failed — the originating iTerm session is not in the currently active iTerm window (iTerm AppleScript can only reach the `current window`; if you have multiple iTerm windows, refocus the Claude Code window before the next ticket boundary, or use tmux for reliable multi-window injection)'
     return 0
   fi
   if printf '%s' "$log" | grep -qE 'backend=iterm2.*failed'; then

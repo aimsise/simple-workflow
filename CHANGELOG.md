@@ -45,18 +45,138 @@ backtick form, so substring-match between SKILL.md and runtime
 additionalContext drifted; now byte-for-byte aligned and locked
 under CT-AC-27.
 
-Phase 3 defensive / observability improvements (H9-H12, M4, M7)
+A field-reported window-focus reproducer surfaced one more
+critical defect that the C3 fix only partially closed: **WI-1**
+— `hooks/lib/inject-keys.sh` shipped C3 protections only for
+tmux and screen. The other three backends had the same
+focus-leak class: iTerm2's AppleScript used `tell current session
+of current window`, which resolves at osascript runtime to the
+currently focused iTerm window — so the user's reproducer
+(`brief mode=auto` in iTerm window A, focus iTerm window B, hook
+fires) caused `/compact<Enter>` to be typed into window B's
+shell. kitty's `kitty @ send-text` defaults to the focused kitty
+window with the same outcome. WezTerm's CLI happens to infer the
+caller's pane from `$WEZTERM_PANE` implicitly, but the explicit
+flag was missing. All three are now fixed: iTerm2 targets the
+originating session by `$ITERM_SESSION_ID` UUID via an
+AppleScript session-id lookup (refuses to fall back to the
+focused window — that would defeat the fix); kitty targets the
+originating window via `--match id:$KITTY_WINDOW_ID`; WezTerm
+explicitly passes `--pane-id $WEZTERM_PANE`. Each backend falls
+back to its pre-WI-1 untargeted call when the relevant env var
+is absent, so degraded execution still attempts injection rather
+than silently no-op. CT-AC-46/47/48 lock in the source + DRY_RUN
+contracts.
+
+A `test_simple_workflow26` dogfood run revealed a follow-on
+defect in the WI-1 iTerm2 implementation: **WI-2** — the
+AppleScript iterated `repeat with w in windows`, but
+**iTerm2's AppleScript does not populate the standard
+`windows` collection**. Live probes (`count of windows`,
+`every window`, `name of every window`) all return 0 even
+when iTerm has active terminal windows; only `current window`
+is reachable. The WI-1 iteration was therefore always empty,
+producing `iTerm session <UUID> not found in any window` for
+every inject attempt regardless of whether the user had
+switched focus. (CT-AC-48 still passed because the test
+stubbed `osascript`, so the broken live AppleScript was never
+exercised.) The fix narrows the iteration to `tabs of current
+window`, which fixes the practical cases (different tab in
+same iTerm window, different pane in same iTerm window, focus
+moved to a non-iTerm app) at the cost of admitting that
+**different iTerm WINDOWS are unsolvable via AppleScript**:
+iTerm2 simply does not expose an enumeration API for them.
+For multi-iTerm-window workflows the failure message now
+recommends tmux, and the docstring captures the limitation
+explicitly. Live verification: the originally-failing UUID
+`80E38DE0-…` from the field session is found by the new
+iteration on the same machine + iTerm version.
+
+A second `test_simple_workflow27` dogfood run surfaced a much
+deeper defect that affected every earlier "working" run by sheer
+luck: **WI-3** — the v7 auto-compact hooks gated on the literal
+substring `ship: completed` (Gate 2 payload regex, shipped_count
+grep anchor, `parse_ticket_ship_dirs` yq predicate
+`.steps.ship == "completed"`). The canonical state-file.md schema
+DOES write `steps.ship: completed` as a flat string value, but
+the autopilot orchestrator in test_simple_workflow27 wrote the
+NESTED form `steps.ship: {status: completed, invocation_method:
+skill}` — fusing the canonical sibling map
+`invocation_method.{step}` into the per-step map. Every gate in
+both hooks therefore missed every ship: completed write, the
+shipped_count stayed at 0 for the entire 53-minute / 3-ticket
+pipeline, and zero `/compact` were injected. Earlier dogfood runs
+(`test_simple_workflow24` / `26`) happened to choose the flat
+form and so appeared to work. The fix has two layers: (a)
+**hook robustness** — Gate 2 now accepts the nested form via a
+small POSIX-awk state machine alongside the flat-form regex, and
+both hooks compute shipped_count via `parse_ticket_ship_dirs`
+(yq → python3+PyYAML → POSIX awk; tolerates both shapes plus
+`tickets:` as either list or map); (b) **SKILL enforcement** —
+`autopilot/SKILL.md` step 3d post-condition now says **MUST emit
+the canonical FLAT schema** with an explicit anti-pattern block,
+and `references/state-file.md` adds a "Schema invariants" section
+showing the canonical and forbidden forms side-by-side. CT-AC-45
+is rewritten to verify the YAML-aware helper (not the
+now-superseded M7 strict grep anchor) and CT-AC-49 reproduces the
+exact test_simple_workflow27 T-001 ship-completed payload to
+prove the safety-net reaches the dispatcher under the nested
+schema.
+
+A third `test_simple_workflow28` dogfood run (parent_slug
+`pomodoro-timer-web-app`, brief mode=auto, full pipeline 3/3
+shipped 2026-05-17 13:01Z→14:05Z) revealed a follow-on schema slip
+that WI-3 did not cover: **WI-4** — the autopilot orchestrator
+wrote `tickets:` as a MAP keyed by `logical_id`
+(`pomodoro-timer-web-app-part-1: { ... }`) instead of the
+canonical LIST (`- logical_id: pomodoro-timer-web-app-part-1`)
+that `references/state-file.md` documents. `parse_ticket_ship_dirs`
+already tolerated both shapes after WI-3 (`yq .tickets | .[]`
+iterates either; Python tier branches on `isinstance(dict|list)`;
+awk recognises both openers), so auto-compact worked correctly on
+test28. However TWO other hook surfaces remained LIST-only and
+**silently bypassed** when given the MAP form:
+**(a) `parse_ticket_statuses`** in `hooks/lib/parse-state-file.sh`,
+used by `hooks/autopilot-continue.sh` to count ticket statuses for
+Stop-hook loop-guard runtime_metrics; **(b) `parse_proposed_tickets`**
+in `hooks/pre-state-transition.sh`, the PreToolUse:Write/Edit guard
+that blocks `unauthorized_skip_with_active_siblings` and
+`unauthorized_skip_with_forbidden_rationale`. Either bypass is a
+security-relevant regression because a MAP-form state file could
+mark a ticket `skipped` with a forbidden rationale while siblings
+are `in_progress` and the guard would let the write through. The
+fix has two layers, mirroring WI-3: **(a) hook robustness** —
+`parse_ticket_statuses` is extended across all three tiers (yq
+predicate switches to `.tickets | .[] | .status // ""`; Python
+tier branches on `isinstance(tickets, dict|list)`; awk fallback
+recognises the `^  <key>:` map-form opener alongside the existing
+`^[[:space:]]*-` dash opener). `parse_proposed_tickets` gets the
+same treatment in both its Python tier and the pure-shell
+`_pst_shell_parse` fallback, and the hook script is restructured
+to allow safe sourcing (function definitions hoisted above a
+`BASH_SOURCE != $0` sourcing guard) so the new contract test can
+call `parse_proposed_tickets` directly. **(b) SKILL enforcement** —
+`autopilot/SKILL.md` State file initialization step now carries an
+inline sentence stating `tickets:` MUST be emitted as a YAML list,
+and `references/state-file.md` adds a "Schema invariants —
+`tickets:` is a YAML list" sub-section parallel to the WI-3
+`steps.ship` block, showing the canonical list form and the
+MAP anti-pattern side-by-side with the
+`pomodoro-timer-web-app-part-1:` literal as the field reproducer.
+The two new contract tests **CT-AC-50** (parse_ticket_statuses
+MAP/LIST parity across all three tiers via stubbed PATH) and
+**CT-AC-51** (pre-state-transition MAP-form invariant guard
+reproduces the silent-bypass regression on a MAP-form Edit payload)
+lock the fix.
+
+Phase 3 defensive / observability improvements (H9, H11-H12, M4, M7)
 land in the same release to avoid an immediate v7.0.1 follow-up:
 **H9** — `inject_keys` failure path now produces a disambiguating
 hint (backend identity + specific remediation) instead of the
 single "unsupported terminal" blanket message that masked kitty's
 `allow_remote_control no` default, iTerm2's macOS Automation TCC
-prompt, and WezTerm's `--no-paste` flag-rejection cases. **H10**
-— `hooks/session-start.sh` validates `parent_slug` against
-`[A-Za-z0-9._-]+` before interpolating it into the `/autopilot
-<slug>` keystroke, so a maliciously crafted slug with shell
-metachars cannot inject live keystrokes into the controlling
-terminal. **H11** — `INJECT_KEYS_DRY_RUN=1` alone no longer
+prompt, and WezTerm's `--no-paste` flag-rejection cases.
+**H11** — `INJECT_KEYS_DRY_RUN=1` alone no longer
 short-circuits the dispatcher; `SW_TEST_HARNESS=1` must also be
 set, so a leaked profile-level `INJECT_KEYS_DRY_RUN=1` cannot
 silently disable every auto-compact. **H12** — CT-AC-43 replaces
@@ -73,22 +193,30 @@ anywhere) to `^      ship: completed$` (canonical 6-space yq
 indent + end-of-line) so a stray `ship: completed` literal in a
 `runtime_metrics` note, free-form commentary, or future field
 addition cannot inflate `shipped_count` and skew Gate 5
-loop-detection.
+loop-detection. (Two findings from the original review — **H4**
+atomic marker write and **H10** slug sanitization — were
+intentionally NOT applied: H4's race window only opens if two
+hook invocations of the same kind run concurrently, which the
+Claude Code event model does not produce; H10 protects against a
+slug source that is autopilot-internal, so a tampering attacker
+already has greater capability via direct `autopilot-state.yaml`
+writes. Both were judged over-engineering for the actual threat
+profile, and dropping them keeps the hook surface smaller and
+avoids the lock-step duplication that H4 introduced.)
 
 The same pre-merge review surfaced eight high-risk concerns that
-landed as Phase 2 hardening in the same release: **H5** — the
-safety net's `STATE_FILE_PATH` was derived from the most-recently-
-modified state file across all briefs, which could place the
-sentinel and loop-guard markers in the wrong brief when two were
-concurrently active; now derived deterministically from the
-just-written `$TOOL_FILE_PATH`. **H4** — `.auto-compact-pending`
-and `.auto-compact-last-attempt` writes are now atomic via
-`mktemp + mv -f` so two concurrent invocations cannot tear the
-marker line. **H6** — `hooks/autopilot-continue.sh` rm'd the
-sentinel unconditionally BEFORE the freshness check, discarding
-observability on stale paths and creating a brief race window when
-`cat` failed mid-read; the rm now lives in each decided branch
-(fresh: remove + yield; stale: remove + log + fall through). **H7**
+landed as Phase 2 hardening in the same release (H4 was
+intentionally dropped — see the over-engineering note above):
+**H5** — the safety net's `STATE_FILE_PATH` was derived from the
+most-recently-modified state file across all briefs, which could
+place the sentinel and loop-guard markers in the wrong brief when
+two were concurrently active; now derived deterministically from
+the just-written `$TOOL_FILE_PATH`. **H6** — `hooks/autopilot-continue.sh`
+rm'd the sentinel unconditionally BEFORE the freshness check,
+discarding observability on stale paths and creating a brief race
+window when `cat` failed mid-read; the rm now lives in each
+decided branch (fresh: remove + yield; stale: remove + log + fall
+through). **H7**
 — the safety net's additionalContext now branches on
 `shipped_count == total_tickets`: for the FINAL ticket it asks the
 model to complete the post-loop phase (Split Autopilot Log →
@@ -99,11 +227,11 @@ last-ticket end_turn-now would skip those terminal writes. **H8**
 in `README.md` (Operational Notes section), `ARCHITECTURE.md`
 (Context Conservation Protocol), and `CLAUDE.md` (Runtime env knobs)
 so users can discover the opt-out without reading hook source.
-**H1–H3 test gap closure** — CT-AC-28..39 close every missing
-branch from the safety net's Gates 3/4/5/6 and the primary's Gate 5
-stale path, plus a Write `tool_input.content` path (the hook
+**H1–H3 test gap closure** — CT-AC-28, CT-AC-30..39 close every
+missing branch from the safety net's Gates 3/4/5/6 and the primary's
+Gate 5 stale path, plus a Write `tool_input.content` path (the hook
 registers under both Edit and Write but Phase 1 fixtures exercised
-only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
+only Edit). 11 new contract assertions land in `tests/test-skill-contracts.sh`.
 
 ### BREAKING CHANGES
 
@@ -208,13 +336,24 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
   (tmux > screen > kitty > WezTerm > iTerm2). Apple Terminal is
   deliberately not supported — the macOS Accessibility keystroke API
   is system-wide and would focus-leak to other apps.
-  `INJECT_KEYS_DRY_RUN=1` for test fixtures. The tmux and screen
-  branches **target the calling pane/window explicitly** (C3 fix):
-  `tmux send-keys -t "$TMUX_PANE"` and `screen -S "$STY" -p "$WINDOW"`
-  so a user pane switch between turn-start and hook fire cannot inject
-  `/compact<Enter>` into the wrong pane (vim, ssh, log tail); graceful
-  untargeted fallback when those env vars are absent. DRY_RUN log now
-  exposes `target=…` so CT-AC-26 can audit the contract.
+  `INJECT_KEYS_DRY_RUN=1` for test fixtures. **Every backend targets
+  the ORIGINATING surface** (pane / window / session) rather than
+  whichever the user is focused on at injection time, closing the
+  focus-leak failure mode for all five supported terminals: tmux
+  via `-t "$TMUX_PANE"` (C3), screen via `-S "$STY" -p "$WINDOW"`
+  (C3), kitty via `--match id:$KITTY_WINDOW_ID` (WI-1), WezTerm via
+  `--pane-id "$WEZTERM_PANE"` (WI-1, defense-in-depth even though
+  the CLI infers it implicitly), iTerm2 via an AppleScript
+  session-id lookup keyed on the UUID portion of
+  `$ITERM_SESSION_ID` (WI-1). The iTerm2 path explicitly raises an
+  AppleScript `error "iTerm session ... not found in any window"`
+  rather than falling back to `current session of current window`
+  — silently routing to the focused window would defeat the whole
+  fix. Each backend falls back to its pre-targeting untargeted
+  call only when the relevant env var is absent (degraded
+  execution still attempts injection). DRY_RUN log is
+  backend-aware: `target=` shows the value of the per-backend
+  identifier so CT-AC-26 / CT-AC-46..48 can audit the contract.
 - **`hooks/lib/parse-state-file.sh`** — adds `find_any_autopilot_state_file
   [start_dir]` (slug-free state-file locator used by both new hooks) and
   `parse_ticket_ship_dirs <file_path>` (element-scoped YAML parser used
@@ -270,8 +409,10 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
 
 ### Verification
 
-- `bash tests/test-skill-contracts.sh` exits 0 with 497 / 497 PASS,
-  including the 45 assertions CT-AC-01..CT-AC-45 covering:
+- `bash tests/test-skill-contracts.sh` exits 0 with 499 / 499 PASS,
+  including the 47 assertions CT-AC-01..28, CT-AC-30..40,
+  CT-AC-42..49 (CT-AC-29 and CT-AC-41 retired with H4 and H10 —
+  see the over-engineering note above) covering:
   both hooks' presence + executability (CT-AC-01); `inject_keys` export
   (CT-AC-02); hooks.json registration of both new hooks as independent
   top-level entries AND absence of the removed v6 hook (CT-AC-03);
@@ -306,9 +447,7 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
   (grep -F equality + legacy `` \`/compact\``` backslash-escape
   regression guard) (CT-AC-27); **H5 fix** — safety-net derives
   `STATE_FILE_PATH` from `$TOOL_FILE_PATH` so markers land in the
-  just-written brief regardless of mtime (CT-AC-28); **H4 fix** —
-  both hooks write markers atomically via `mktemp + mv -f` so
-  concurrent invocations cannot tear them (CT-AC-29); **H7 fix** —
+  just-written brief regardless of mtime (CT-AC-28); **H7 fix** —
   safety-net additionalContext branches on last-ticket vs non-last,
   with the last-ticket branch requiring the post-loop completion
   phase before end_turn (CT-AC-30 / CT-AC-31); **H8 fix** —
@@ -324,10 +463,7 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
   `inject_keys_failure_hint` disambiguates 5 distinct failure
   causes (no backend, kitty `allow_remote_control`, iTerm2
   Automation TCC, WezTerm flag, unknown backend) and the hook
-  additionalContext propagates the hint (CT-AC-40). **H10 fix**
-  — `hooks/session-start.sh` validates `parent_slug` against
-  `[A-Za-z0-9._-]+` before inject; malicious slugs (e.g.
-  containing `;`, newlines) are skipped and logged (CT-AC-41).
+  additionalContext propagates the hint (CT-AC-40).
   **H11 fix** — `INJECT_KEYS_DRY_RUN=1` requires co-presence of
   `SW_TEST_HARNESS=1` to short-circuit; a leaked profile env var
   alone is now harmless (CT-AC-42). **H12 fix** — full
@@ -343,7 +479,60 @@ only Edit). 12 new contract assertions land in `tests/test-skill-contracts.sh`.
   `^      ship: completed$` (canonical 6-space yq indent +
   end-of-line) so a stray `ship: completed` literal in a
   `runtime_metrics` note or free-form commentary cannot inflate
-  the count (CT-AC-45).
+  the count (CT-AC-45). **WI-1 + WI-2 fix** — every backend in
+  `hooks/lib/inject-keys.sh` targets the originating surface
+  rather than the focused one: kitty via `--match
+  id:$KITTY_WINDOW_ID` (CT-AC-46), WezTerm via `--pane-id
+  $WEZTERM_PANE` (CT-AC-47), iTerm2 via an AppleScript
+  session-id lookup keyed on the UUID portion of
+  `$ITERM_SESSION_ID`, scoped to `tabs of current window`
+  because iTerm2's AppleScript `windows` collection is empty
+  (live-verified `count of windows = 0` on iTerm 3.6.8). The
+  iTerm path raises a hard error referring users to tmux for
+  multi-iTerm-window workflows rather than silently re-routing
+  to the focused window (CT-AC-48 — assertions cover the
+  `current window` iteration, the absence of the broken
+  `repeat with w in windows`, and the failure-hint copy).
+  Field reproducer for WI-1: `brief mode=auto` in iTerm window
+  A, focus iTerm window B, the legacy `current session of
+  current window` AppleScript injected `/compact<Enter>` into
+  window B's shell. Field reproducer for WI-2
+  (`test_simple_workflow26`, session
+  `7d8e45d3-8730-4dd1-87d0-48e804e1d8d4`): every iTerm2 inject
+  failed with `iTerm session
+  80E38DE0-327D-4958-854C-21B104413CF4 not found in any
+  window` even though that UUID was live in the user's current
+  iTerm window — root cause was the broken `windows`
+  iteration in WI-1, fixed in WI-2. Closes the focus-leak
+  failure mode for all five supported terminals within their
+  respective AppleScript / CLI limits (tmux + screen were
+  C3-fixed at Phase 1; kitty + WezTerm + iTerm2 close at WI-1;
+  WI-2 corrects the iTerm2 iteration mistake). **WI-3 fix** —
+  both hooks now tolerate BOTH the canonical flat
+  `steps.ship: completed` schema and the nested
+  `steps.ship: {status: completed, invocation_method: skill}`
+  schema observed in `test_simple_workflow27` (session
+  `d3748705-f477-44e9-8c88-229b78b7a29a`). Safety-net Gate 2
+  payload regex accepts both shapes; shipped_count in both
+  hooks routes through `parse_ticket_ship_dirs` (yq → python3
+  → POSIX awk), which also handles `tickets:` as either list
+  or map. The `autopilot/SKILL.md` step 3d post-condition is
+  hardened to **MUST emit the canonical FLAT schema** with an
+  explicit anti-pattern block, and `state-file.md` adds a
+  "Schema invariants" section. The pre-WI-3 hooks silently
+  exited at Gate 2 / shipped_count = 0 for every nested-schema
+  write, producing zero `/compact` over the entire
+  test_simple_workflow27 53-minute pipeline despite the v7
+  plugin being correctly loaded via `--plugin-dir
+  ../simple-workflow`. CT-AC-45 is rewritten to verify
+  `parse_ticket_ship_dirs` behaviour against a fixture with a
+  `runtime_metrics` note containing the literal substring
+  `ship: completed` (a YAML-aware parser ignores it; a naive
+  grep anchor would not), and CT-AC-49 reproduces the exact
+  test_simple_workflow27 T-001 ship-completed payload to prove
+  the safety-net reaches the dispatcher under the nested
+  schema. M7's strict-grep-anchor approach is superseded by
+  the YAML-aware helper.
 - `bash tests/test-hooks-lib.sh` exits 0 with 132 / 132 PASS;
   `find_any_autopilot_state_file` continues to behave correctly.
 - `bash tests/test-path-consistency.sh` exits 0 with 139 / 139 PASS;

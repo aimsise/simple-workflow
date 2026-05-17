@@ -70,47 +70,15 @@ source "$REPO_HOOKS_DIR/lib/forbidden-rationale-patterns.sh"  # hooks/lib/forbid
 # shellcheck source=lib/parse-state-file.sh
 source "$REPO_HOOKS_DIR/lib/parse-state-file.sh"  # hooks/lib/parse-state-file.sh
 
-# Read and parse the harness payload. `jq -r` returns an empty string when
-# the field is absent.
-INPUT=$(cat)
-TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
-FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
-
-# Pull the candidate content depending on tool. Write provides .content;
-# Edit provides .new_string. We only inspect what the model is about to
-# write -- the existing file on disk is read separately for sibling state.
-CONTENT=""
-if [ "$TOOL_NAME" = "Write" ]; then
-  CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null || true)
-elif [ "$TOOL_NAME" = "Edit" ]; then
-  CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null || true)
-fi
-
-# Out-of-scope target -> silent no-op.
-if [ -z "$FILE_PATH" ]; then
-  exit 0
-fi
-BASENAME=$(basename "$FILE_PATH")
-if [ "$BASENAME" != "autopilot-state.yaml" ] && [ "$BASENAME" != "phase-state.yaml" ]; then
-  exit 0
-fi
-
-# Empty content -> nothing to evaluate.
-if [ -z "$CONTENT" ]; then
-  exit 0
-fi
-
-# Switch to the harness-provided cwd so is_autopilot_context walks the
-# correct tree. Fall back to the existing PWD when the field is missing.
-if [ -n "$CWD" ] && [ -d "$CWD" ]; then
-  cd "$CWD" || true
-fi
-
-# Outside an autopilot context the hook is a no-op (NAC #1).
-if ! is_autopilot_context; then
-  exit 0
-fi
+# ===========================================================================
+# Function definitions
+#
+# All helpers are defined before the main body so a `source` of this file
+# (e.g. from tests/test-skill-contracts.sh CT-AC-51 or the WI-4 verify-
+# blocks for parse_proposed_tickets) can use them without driving the
+# full hook pipeline. The sourcing-detection guard below the function
+# definitions short-circuits the main body when this script is sourced.
+# ===========================================================================
 
 # Emit a `decision: block` JSON object on stdout. The harness reads this
 # and rejects the Write/Edit invocation; the textual reason is surfaced to
@@ -128,12 +96,24 @@ emit_block() {
 # YAML structural parser. The hook needs three signals per ticket:
 # `status`, `override_skip`, `skip_reason`. Implementation strategy: prefer
 # Python + PyYAML (rich + reliable), fall back to a pure-shell line parser
-# that uses the indentation of each ticket's `-` marker as the column
-# anchor for "this field belongs to this ticket".
+# that uses the indentation of each ticket's `-` marker (list form) or
+# bare `<key>:` marker (WI-4 map form) as the column anchor for "this
+# field belongs to this ticket".
 #
 # Output format (one line per ticket in the proposed CONTENT):
 #   <status>|<override_skip>|<skip_reason>
 # Empty fields are emitted as the literal string `(none)`.
+#
+# WI-4 schema-tolerance: `tickets:` may be EITHER a YAML list
+# (`- logical_id: ...`) OR a YAML map (`pomodoro-timer-part-1: { ... }`).
+# Both shapes are tolerated at the hook layer so a model schema slip in
+# the autopilot orchestrator does not silently bypass the
+# `unauthorized_skip_with_active_siblings` /
+# `unauthorized_skip_with_forbidden_rationale` guards. Canonical schema
+# remains the list form; map tolerance is a safety net only — SKILL
+# prose enforces the canonical schema for fresh writes. Field evidence:
+# `test_simple_workflow28` produced the map form and broke the LIST-only
+# Python `isinstance(tickets, list)` and shell `^[[:space:]]*-` opener.
 # ---------------------------------------------------------------------------
 _pst_have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -150,9 +130,16 @@ except ImportError:
     sys.exit(2)
 data = yaml.safe_load(sys.stdin.read()) or {}
 tickets = data.get("tickets") if isinstance(data, dict) else None
-if not isinstance(tickets, list):
+# WI-4: accept both list form (canonical) and map form (tolerated).
+# Map form iterates values in insertion order, matching the orchestrator
+# write order; list form iterates as-is. Mirrors parse_ticket_ship_dirs.
+if isinstance(tickets, dict):
+    entries = list(tickets.values())
+elif isinstance(tickets, list):
+    entries = tickets
+else:
     sys.exit(0)
-for entry in tickets:
+for entry in entries:
     if not isinstance(entry, dict):
         continue
     status = entry.get("status", "")
@@ -180,12 +167,18 @@ for entry in tickets:
   fi
 
   # Pure-shell fallback. Walks the content line-by-line. A ticket item
-  # begins with `<spaces>-<space>...`; subsequent lines whose indentation
-  # is strictly greater than the dash's indent belong to that ticket.
+  # begins with `<spaces>-<space>...` (list form, canonical) or
+  # `^  <key>:[[:space:]]*$` (map form, WI-4 tolerance); subsequent lines
+  # whose indentation is strictly greater than the opener's column belong
+  # to that ticket.
   printf '%s' "$content" | _pst_shell_parse
 }
 
-# Pure-shell helper used when PyYAML is unavailable.
+# Pure-shell helper used when PyYAML is unavailable. WI-4 added the
+# map-form opener branch alongside the original dash-form opener; both
+# pin `dash_indent` (the column anchor used for "field belongs to this
+# ticket" containment) to the opener's leading-space count so the field
+# parser below works identically for both shapes.
 _pst_shell_parse() {
   local in_tickets=0
   local have_item=0
@@ -233,7 +226,7 @@ _pst_shell_parse() {
       continue
     fi
 
-    # Dash-prefixed item start.
+    # Dash-prefixed item start (list form, canonical).
     if printf '%s' "$line" | grep -qE '^[[:space:]]*-[[:space:]]'; then
       flush_item
       dash_indent=$indent
@@ -244,6 +237,21 @@ _pst_shell_parse() {
       if printf '%s' "$rest" | grep -qE '^status:[[:space:]]'; then
         status=$(printf '%s' "$rest" | sed -E 's/^status:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
       fi
+      continue
+    fi
+
+    # WI-4: map-form item opener — `^  <key>:[[:space:]]*$` (a bare
+    # 2-space-indented key under `tickets:` with no inline value). Treat
+    # it like a dash: flush the previous item, set dash_indent to the
+    # KEY's own column (so 4-space-indented sibling status: lines clear
+    # the `indent > dash_indent` check), have_item=1. The key line
+    # carries no inline status / override / reason — those land on the
+    # 4-space-indented sibling lines below, which the existing field
+    # parser handles unchanged.
+    if [ "$indent" -eq 2 ] && printf '%s' "$line" | grep -qE '^  [A-Za-z0-9._-]+:[[:space:]]*$'; then
+      flush_item
+      dash_indent=$indent
+      have_item=1
       continue
     fi
 
@@ -282,6 +290,74 @@ _pst_shell_parse() {
   done
   flush_item
 }
+
+# Top-level (non-ticket) override_skip detector. Used to detect malformed
+# override placement: `override_skip: true` at column 0 (or in a comment
+# line) MUST NOT count toward Rule 1 acceptance.
+#
+# Returns 0 (true) when a malformed top-level / comment override is found.
+has_top_level_override_true() {
+  if printf '%s' "$1" | grep -qE '^override_skip:[[:space:]]*true[[:space:]]*$'; then
+    return 0
+  fi
+  if printf '%s' "$1" | grep -qE '^[[:space:]]*#.*override_skip[[:space:]]*:[[:space:]]*true'; then
+    return 0
+  fi
+  return 1
+}
+
+# ===========================================================================
+# Sourcing guard. When this script is sourced (e.g. by a unit test that
+# wants to invoke parse_proposed_tickets in isolation), skip the main
+# body so an empty stdin / unset FILE_PATH does not propagate `exit 0`
+# back into the sourcing shell. The function definitions above remain
+# available to the caller.
+# ===========================================================================
+if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+  return 0 2>/dev/null || true
+fi
+
+# Read and parse the harness payload. `jq -r` returns an empty string when
+# the field is absent.
+INPUT=$(cat)
+TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
+FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
+CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
+
+# Pull the candidate content depending on tool. Write provides .content;
+# Edit provides .new_string. We only inspect what the model is about to
+# write -- the existing file on disk is read separately for sibling state.
+CONTENT=""
+if [ "$TOOL_NAME" = "Write" ]; then
+  CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null || true)
+elif [ "$TOOL_NAME" = "Edit" ]; then
+  CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null || true)
+fi
+
+# Out-of-scope target -> silent no-op.
+if [ -z "$FILE_PATH" ]; then
+  exit 0
+fi
+BASENAME=$(basename "$FILE_PATH")
+if [ "$BASENAME" != "autopilot-state.yaml" ] && [ "$BASENAME" != "phase-state.yaml" ]; then
+  exit 0
+fi
+
+# Empty content -> nothing to evaluate.
+if [ -z "$CONTENT" ]; then
+  exit 0
+fi
+
+# Switch to the harness-provided cwd so is_autopilot_context walks the
+# correct tree. Fall back to the existing PWD when the field is missing.
+if [ -n "$CWD" ] && [ -d "$CWD" ]; then
+  cd "$CWD" || true
+fi
+
+# Outside an autopilot context the hook is a no-op (NAC #1).
+if ! is_autopilot_context; then
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Detect whether the proposed CONTENT introduces a `status: skipped`
@@ -412,28 +488,12 @@ if [ "$remaining_plain" -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Top-level (non-ticket) override_skip detector. This is used to detect
-# malformed override placement: `override_skip: true` at column 0 (or in
-# a comment line) MUST NOT count toward Rule 1 acceptance.
-#
-# Returns 0 (true) when a malformed top-level / comment override is found.
-# ---------------------------------------------------------------------------
-has_top_level_override_true() {
-  if printf '%s' "$1" | grep -qE '^override_skip:[[:space:]]*true[[:space:]]*$'; then
-    return 0
-  fi
-  if printf '%s' "$1" | grep -qE '^[[:space:]]*#.*override_skip[[:space:]]*:[[:space:]]*true'; then
-    return 0
-  fi
-  return 1
-}
-
-# ---------------------------------------------------------------------------
 # Structural override placement check (AC #6 case (e), NAC #3): if the
 # proposal carries no in-ticket override but DOES carry a top-level (or
 # commented) `override_skip: true`, the write is rejected so authors
 # cannot fake a structural override by sprinkling the token at the wrong
-# indentation.
+# indentation. (`has_top_level_override_true` is defined above the
+# sourcing guard alongside the other helpers.)
 # ---------------------------------------------------------------------------
 if [ "$HAS_OVERRIDE_AT_TICKET" != "true" ]; then
   if has_top_level_override_true "$CONTENT"; then

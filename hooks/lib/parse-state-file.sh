@@ -26,6 +26,15 @@
 #   parse_ticket_statuses <state_yaml_path>
 #     - Prints every `tickets[].status` value, one per line, in document
 #       order. Exit 0 even when the list is empty.
+#     - WI-4 schema-tolerance: accepts BOTH the canonical list form
+#       (`tickets: - logical_id: ...`) and the map form
+#       (`pomodoro-timer-part-1: { status: ... }`) that the autopilot
+#       orchestrator silently produced in test_simple_workflow28. yq's
+#       `.[]` iterates either; python3 tier branches on
+#       `isinstance(tickets, dict|list)`; the awk fallback recognises
+#       both the `^  -` dash-form and `^  <key>:` map-form item
+#       openers. Mirrors the WI-3 pattern used by
+#       `parse_ticket_ship_dirs`.
 #
 #   find_state_file <parent_slug>
 #     - Locates the autopilot-state.yaml for <parent_slug> using the
@@ -218,6 +227,13 @@ PY
 # ---------------------------------------------------------------------------
 # Public function: parse_ticket_statuses
 # Usage: parse_ticket_statuses <state_yaml_path>
+#
+# WI-4 schema-tolerance: accepts BOTH canonical list form
+# (`tickets: - logical_id: …`) and map form
+# (`pomodoro-timer-part-1: { status: … }`) — field evidence
+# `test_simple_workflow28`. Mirrors `parse_ticket_ship_dirs` (WI-3).
+# Tier 1 / tier 2 also fall through to the next tier on non-zero exit
+# so PATH stubs in tests can force a specific tier deterministically.
 # ---------------------------------------------------------------------------
 parse_ticket_statuses() {
   local file="$1"
@@ -226,39 +242,59 @@ parse_ticket_statuses() {
   fi
 
   if _psf_have yq; then
-    yq -r '.tickets[].status // ""' "$file" 2>/dev/null
-    return 0
+    local _yq_out
+    if _yq_out="$(yq -r '.tickets | .[] | .status // ""' "$file" 2>/dev/null)"; then
+      [ -n "$_yq_out" ] && printf '%s\n' "$_yq_out"
+      return 0
+    fi
+    # yq present but exited non-zero -> fall through to python tier.
   fi
 
   # Tier 2: python3 + PyYAML. Same gating rationale as parse_phase_status:
   # without the up-front `import yaml` probe a stock macOS without PyYAML
   # would short-circuit here on ImportError and skip the awk tier.
   if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
-    python3 - "$file" <<'PY' 2>/dev/null
+    if python3 - "$file" <<'PY' 2>/dev/null
 import sys
 import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
-for entry in (doc.get("tickets") or []):
+tickets = doc.get("tickets")
+if isinstance(tickets, dict):
+    entries = list(tickets.values())
+elif isinstance(tickets, list):
+    entries = tickets
+else:
+    entries = []
+for entry in entries:
     val = entry.get("status", "") if isinstance(entry, dict) else ""
     print(val if val is not None else "")
 PY
-    return 0
+    then
+      return 0
+    fi
+    # python tier failed -> fall through to awk.
   fi
 
-  # awk fallback: walk the `tickets:` list looking for `status:` values
-  # inside each `- ` element. POSIX awk only — uses `sub()` strip-by-prefix
+  # awk fallback: walk the `tickets:` block looking for `status:` values
+  # inside each element. POSIX awk only — uses `sub()` strip-by-prefix
   # instead of the gawk-specific 3-arg `match(s, re, arr)` so macOS's
-  # stock BSD awk handles this tier. `status:` is anchored at exactly 4
-  # spaces (canonical yq output for `tickets[].status`: the `- key:` line
-  # sits at 2-space indent, sibling keys at 4-space). Inline-flow
-  # `{status: pending}` maps are not produced by autopilot writers, so
-  # the line-oriented parser is sufficient for the canonical schema.
+  # stock BSD awk handles this tier.
+  #
+  # Two element-opener shapes are recognised (WI-4):
+  #   - list form: `^[[:space:]]*-[[:space:]]` (e.g. `  - logical_id: …`)
+  #   - map form: `^  <key>:[[:space:]]*$` (e.g. `  pomodoro-timer-part-1:`)
+  # In both shapes the sibling `status:` line sits at 4-space indent and
+  # is captured the same way. Inline-flow `{status: pending}` maps are not
+  # produced by autopilot writers, so a line-oriented parser is sufficient.
   awk '
     BEGIN { in_tickets = 0; in_item = 0 }
     /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
     in_tickets && /^[^[:space:]-]/ { in_tickets = 0; in_item = 0 }
+    # list form: dash-prefixed element start.
     in_tickets && /^[[:space:]]*-[[:space:]]/ { in_item = 1 }
+    # map form: bare 2-space-indented key under tickets: opens a new element.
+    in_tickets && /^  [A-Za-z0-9._-]+:[[:space:]]*$/ { in_item = 1 }
     in_tickets && in_item && /^    status:[[:space:]]*/ {
       val = $0
       sub(/^    status:[[:space:]]*/, "", val)
@@ -375,8 +411,24 @@ parse_ticket_ship_dirs() {
     return 1
   fi
 
+  # WI-3 schema-tolerance: accept BOTH canonical-flat
+  # (`steps.ship: completed`) and nested (`steps.ship.status: completed`)
+  # forms. The autopilot SKILL canonical schema is flat (state-file.md
+  # §"`autopilot-state.yaml` schema"), but real autopilot runs have
+  # produced the nested form (test_simple_workflow27 evidence). Tolerate
+  # both at the hook layer so a model schema slip does not silently
+  # disable auto-compact; the SKILL layer enforces canonical for fresh
+  # writes. Also tolerate `tickets:` as both list (`- logical_id: …`)
+  # and map (`pomodoro-timer-part-1:`) — yq's `.[]` iterates either.
   if _psf_have yq; then
-    yq -r '.tickets[] | select((.steps.ship // "") == "completed") | (.ticket_dir // "")' "$file" 2>/dev/null
+    yq -r '
+      .tickets | .[] |
+      select(
+        (.steps.ship // "") == "completed"
+        or (.steps.ship.status // "") == "completed"
+      ) |
+      (.ticket_dir // "")
+    ' "$file" 2>/dev/null
     return 0
   fi
 
@@ -386,11 +438,26 @@ import sys
 import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
-for entry in (doc.get("tickets") or []):
+tickets = doc.get("tickets")
+if isinstance(tickets, dict):
+    entries = list(tickets.values())
+elif isinstance(tickets, list):
+    entries = tickets
+else:
+    entries = []
+for entry in entries:
     if not isinstance(entry, dict):
         continue
     steps = entry.get("steps") or {}
-    if (steps.get("ship") if isinstance(steps, dict) else None) != "completed":
+    if not isinstance(steps, dict):
+        continue
+    ship = steps.get("ship")
+    ship_done = False
+    if ship == "completed":
+        ship_done = True
+    elif isinstance(ship, dict) and ship.get("status") == "completed":
+        ship_done = True
+    if not ship_done:
         continue
     val = entry.get("ticket_dir", "")
     print(val if val is not None else "")
@@ -398,11 +465,12 @@ PY
     return 0
   fi
 
-  # awk fallback: stateful walk over the tickets list. POSIX awk only.
-  # `ticket_dir:` is anchored at exactly 4 spaces (sibling-of-element key),
-  # `ship:` at exactly 6 spaces (nested under `steps:`). The single-quote
-  # in `gsub(/^'\''|'\''$/, "", val)` is escaped via bash string concat —
-  # same idiom as parse_ticket_statuses above.
+  # awk fallback: stateful walk. POSIX awk only. Handles both
+  # `tickets:` list form (`- logical_id: ...`) and map form
+  # (`pomodoro-timer-part-1:`), and both `ship: completed` (flat) and
+  # `ship:\n  status: completed` (nested) ship-status shapes. The
+  # single-quote in `gsub(/^'\''|'\''$/, "", val)` is escaped via bash
+  # string concat — same idiom as parse_ticket_statuses above.
   awk '
     function emit() {
       if (in_item && pending_ship == "completed" && pending_dir != "") {
@@ -410,24 +478,45 @@ PY
       }
       pending_dir = ""
       pending_ship = ""
+      in_nested_ship = 0
     }
-    BEGIN { in_tickets = 0; in_item = 0; pending_dir = ""; pending_ship = "" }
+    BEGIN {
+      in_tickets = 0; in_item = 0; pending_dir = ""; pending_ship = ""
+      in_nested_ship = 0; nested_ship_line = 0
+    }
     /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
     in_tickets && /^[^[:space:]-]/ { emit(); in_tickets = 0; in_item = 0; next }
+    # List form: `  - logical_id: ...` (or `  - ticket_dir: ...`) — new element.
     in_tickets && /^[[:space:]]*-[[:space:]]/ { emit(); in_item = 1; next }
-    in_tickets && in_item && /^    ticket_dir:[[:space:]]+/ {
+    # Map form: top-level (2-space-indent) key under tickets: opens new element.
+    in_tickets && /^  [A-Za-z0-9._-]+:[[:space:]]*$/ { emit(); in_item = 1; next }
+    in_tickets && in_item && /^[[:space:]]+ticket_dir:[[:space:]]+/ {
       val = $0
-      sub(/^    ticket_dir:[[:space:]]+/, "", val)
+      sub(/^[[:space:]]+ticket_dir:[[:space:]]+/, "", val)
       gsub(/^"|"$/, "", val)
       gsub(/^'\''|'\''$/, "", val)
       sub(/[[:space:]]+#.*$/, "", val)
       pending_dir = val
       next
     }
-    in_tickets && in_item && /^      ship:[[:space:]]+completed[[:space:]]*$/ {
+    # Flat: `      ship: completed`
+    in_tickets && in_item && /^[[:space:]]+ship:[[:space:]]+completed[[:space:]]*$/ {
       pending_ship = "completed"
+      in_nested_ship = 0
       next
     }
+    # Nested opener: `      ship:` (no value on same line) starts nested block.
+    in_tickets && in_item && /^[[:space:]]+ship:[[:space:]]*$/ {
+      in_nested_ship = 1; nested_ship_line = NR
+      next
+    }
+    # Inside nested ship: look for `status: completed` within 4 lines.
+    in_nested_ship && /^[[:space:]]+status:[[:space:]]+completed[[:space:]]*$/ {
+      pending_ship = "completed"
+      in_nested_ship = 0
+      next
+    }
+    in_nested_ship && (NR - nested_ship_line) > 4 { in_nested_ship = 0 }
     END { emit() }
   ' "$file"
   return 0

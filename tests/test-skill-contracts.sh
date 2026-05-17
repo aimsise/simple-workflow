@@ -5870,73 +5870,6 @@ else
 fi
 rm -rf "$AC28_TMP" "$AC28_STUB_DIR"
 
-# CT-AC-29: atomic marker write via mktemp + mv -f (H4 fix). Both
-# auto-compact hooks must use the atomic write helper so two concurrent
-# invocations on the same boundary cannot tear the
-# `.auto-compact-last-attempt` or `.auto-compact-pending` files. Verifies
-# (a) both hooks define and use a `_write_marker_atomic` helper that
-# routes writes through `mktemp` + `mv -f`, and (b) after a real
-# back-to-back invocation against the same state file the marker
-# contains a single, well-formed `{count}:{ts}` line with no torn
-# bytes (no embedded NUL, no empty line, no doubled `:`).
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-AC29_OK=1
-AC29_MISSING=""
-# Source-level: both hooks define _write_marker_atomic and call mktemp
-# + mv -f inside that helper.
-for AC29_HOOK in "$AC_HOOK_PRIMARY" "$AC_HOOK_SAFETY"; do
-  AC29_HOOK_NAME=$(basename "$AC29_HOOK")
-  if ! grep -qE '^_write_marker_atomic\(\)' "$AC29_HOOK"; then
-    AC29_OK=0; AC29_MISSING="${AC29_MISSING} ${AC29_HOOK_NAME}:helper-missing"
-    continue
-  fi
-  # Helper body must contain both mktemp and mv -f.
-  AC29_BODY=$(awk '/^_write_marker_atomic\(\)/,/^\}/' "$AC29_HOOK")
-  echo "$AC29_BODY" | grep -qE 'mktemp[[:space:]]+"\$\{?marker\}?\.XXXXXX"' \
-    || { AC29_OK=0; AC29_MISSING="${AC29_MISSING} ${AC29_HOOK_NAME}:mktemp-missing"; }
-  echo "$AC29_BODY" | grep -qE 'mv -f[[:space:]]+"\$tmp"[[:space:]]+"\$marker"' \
-    || { AC29_OK=0; AC29_MISSING="${AC29_MISSING} ${AC29_HOOK_NAME}:mv-f-missing"; }
-  # Verify the helper is actually CALLED — not just defined.
-  if ! grep -qE '_write_marker_atomic[[:space:]]+"\$' "$AC29_HOOK"; then
-    AC29_OK=0; AC29_MISSING="${AC29_MISSING} ${AC29_HOOK_NAME}:helper-not-called"
-  fi
-done
-# Functional: marker file format is well-formed after a real invocation
-# (single line, matches {int}:{int10}). Catches a regression where the
-# helper writes garbage to the marker.
-AC29_STUB_DIR=$(mktemp -d)
-cat > "$AC29_STUB_DIR/tmux" <<'AC29_STUB'
-#!/usr/bin/env bash
-exit 0
-AC29_STUB
-chmod +x "$AC29_STUB_DIR/tmux"
-AC29_TMP=$(mktemp -d)
-_ac_make_state_with_prior_ship "$AC29_TMP/.simple-workflow/backlog/briefs/active/dummy"
-cd "$AC29_TMP" && TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC29_STUB_DIR:$PATH" \
-  bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' >/dev/null 2>&1
-cd - >/dev/null
-AC29_MARKER_FILE="$AC29_TMP/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-last-attempt"
-if [ -f "$AC29_MARKER_FILE" ]; then
-  AC29_MARKER_LINES=$(wc -l < "$AC29_MARKER_FILE" | tr -d ' ')
-  AC29_MARKER_CONTENT=$(head -1 "$AC29_MARKER_FILE")
-  if [ "$AC29_MARKER_LINES" != "1" ]; then
-    AC29_OK=0; AC29_MISSING="${AC29_MISSING} marker-not-single-line(lines=${AC29_MARKER_LINES})"
-  fi
-  if ! echo "$AC29_MARKER_CONTENT" | grep -qE '^[0-9]+:[0-9]{10,}$'; then
-    AC29_OK=0; AC29_MISSING="${AC29_MISSING} marker-malformed(content=${AC29_MARKER_CONTENT})"
-  fi
-else
-  AC29_OK=0; AC29_MISSING="${AC29_MISSING} marker-not-created"
-fi
-rm -rf "$AC29_TMP" "$AC29_STUB_DIR"
-if [ "$AC29_OK" = "1" ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-AC-29: both hooks use atomic marker write (mktemp + mv -f); marker file is single, well-formed line after invocation (H4 fix)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} CT-AC-29: atomic marker write broken:${AC29_MISSING}" >&2
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
 # CT-AC-30: safety-net last-ticket branch (H7 fix). When the just-flipped
 # ship: completed brings shipped_count == total_tickets, the additionalContext
 # MUST include the literal "FINAL ticket of this pipeline" and instruct
@@ -6374,70 +6307,6 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# CT-AC-41: session-start.sh validates parent_slug before injecting
-# `/autopilot $slug` into the controlling terminal (H10 fix). A slug
-# with embedded newlines or shell metachars would otherwise become live
-# keystrokes via `inject_keys` -> tmux/screen send-keys. Verify (a) a
-# benign slug still injects, (b) a slug containing forbidden characters
-# is skipped with a logged reason and NO inject_keys call.
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-AC41_STUB_DIR=$(mktemp -d)
-cat > "$AC41_STUB_DIR/tmux" <<'AC41_STUB'
-#!/usr/bin/env bash
-exit 0
-AC41_STUB
-chmod +x "$AC41_STUB_DIR/tmux"
-
-# Path A: benign slug — injection proceeds.
-AC41_TMPDIR_A=$(mktemp -d)
-mkdir -p "$AC41_TMPDIR_A/.simple-workflow/backlog/briefs/active/my-slug"
-cat > "$AC41_TMPDIR_A/.simple-workflow/backlog/briefs/active/my-slug/autopilot-state.yaml" <<'AC41_YAML_A'
-version: 1
-parent_slug: my-slug
-tickets:
-  001:
-    status: in_progress
-AC41_YAML_A
-AC41_OUT_A=$(cd "$AC41_TMPDIR_A" && \
-  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC41_STUB_DIR:$PATH" \
-  bash -c 'echo "{\"source\":\"compact\"}" | bash "'"$REPO_DIR"'/hooks/session-start.sh"' 2>&1 >/dev/null)
-
-# Path B: malicious slug — semicolon + backticks + newline. Must be skipped.
-AC41_TMPDIR_B=$(mktemp -d)
-mkdir -p "$AC41_TMPDIR_B/.simple-workflow/backlog/briefs/active/evil"
-cat > "$AC41_TMPDIR_B/.simple-workflow/backlog/briefs/active/evil/autopilot-state.yaml" <<'AC41_YAML_B'
-version: 1
-parent_slug: evil;rm -rf
-tickets:
-  001:
-    status: in_progress
-AC41_YAML_B
-AC41_OUT_B=$(cd "$AC41_TMPDIR_B" && \
-  TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC41_STUB_DIR:$PATH" \
-  bash -c 'echo "{\"source\":\"compact\"}" | bash "'"$REPO_DIR"'/hooks/session-start.sh"' 2>&1 >/dev/null)
-
-AC41_OK=1
-AC41_MISSING=""
-# Path A must inject the benign slug.
-if ! echo "$AC41_OUT_A" | grep -qE '\[SESSION-START-RESUME\] \[inject-keys\] DRY_RUN backend=.+ text=/autopilot my-slug'; then
-  AC41_OK=0; AC41_MISSING="${AC41_MISSING} benign-slug-not-injected"
-fi
-# Path B must NOT inject (no DRY_RUN line); must log validation failure.
-if echo "$AC41_OUT_B" | grep -qE '\[SESSION-START-RESUME\] \[inject-keys\] DRY_RUN backend='; then
-  AC41_OK=0; AC41_MISSING="${AC41_MISSING} malicious-slug-was-injected"
-fi
-if ! echo "$AC41_OUT_B" | grep -qE 'slug failed validation'; then
-  AC41_OK=0; AC41_MISSING="${AC41_MISSING} validation-failure-not-logged"
-fi
-rm -rf "$AC41_TMPDIR_A" "$AC41_TMPDIR_B" "$AC41_STUB_DIR"
-if [ "$AC41_OK" = "1" ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-AC-41: session-start.sh validates parent_slug against [A-Za-z0-9._-]+ before inject; malicious slug skipped + logged (H10 fix)"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} CT-AC-41: slug sanitization broken:${AC41_MISSING}" >&2
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-fi
-
 # CT-AC-42: INJECT_KEYS_DRY_RUN requires SW_TEST_HARNESS=1 to short-
 # circuit (H11 fix). Without the co-presence guard, a user who exports
 # INJECT_KEYS_DRY_RUN=1 in their shell profile (e.g. after copy-pasting
@@ -6646,29 +6515,24 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# CT-AC-45: shipped_count grep anchor is strict enough to avoid false
-# positives from non-tickets[] occurrences of "ship: completed" in the
-# state file (M7 fix). The previous `^[[:space:]]+ship:[[:space:]]+completed`
-# anchor would match the literal substring `ship: completed` at any
-# indent level — e.g. inside `runtime_metrics:` entries with a note
-# field carrying that literal, inside a Markdown code block, or inside
-# a free-form description. The strict anchor `^      ship: completed$`
-# (exactly 6 spaces, end-of-line) restricts matches to the canonical
-# yq output indent for `tickets[].steps.ship`.
+# CT-AC-45: shipped_count uses YAML-aware parsing via parse_ticket_ship_dirs
+# (WI-3 supersedes the original M7 strict-anchor approach). M7 attempted
+# to harden a literal grep anchor (`^      ship: completed$`) to reject
+# false positives like `runtime_metrics:` notes containing the literal
+# substring. WI-3 takes a stronger guarantee: parse the state file as
+# YAML (yq → python3+PyYAML → POSIX awk) so comments, free-form notes,
+# and out-of-place text are structurally ignored. The helper also
+# tolerates both canonical-flat (`steps.ship: completed`) and nested
+# (`steps.ship.status: completed`) schemas, eliminating the
+# test_simple_workflow27 failure mode where the grep anchor missed
+# entire pipelines that wrote the nested form.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-AC45_STUB_DIR=$(mktemp -d)
-cat > "$AC45_STUB_DIR/tmux" <<'AC45_STUB'
-#!/usr/bin/env bash
-exit 0
-AC45_STUB
-chmod +x "$AC45_STUB_DIR/tmux"
 AC45_TMP=$(mktemp -d)
 mkdir -p "$AC45_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC45_TMP/.simple-workflow/backlog/done/dummy/001-real"
 # State file with ONE shipped ticket AND a runtime_metrics entry that
-# contains the literal substring "ship: completed" in a note. The
-# strict anchor must NOT count the note line — shipped_count must
-# equal 1, not 2.
+# CONTAINS the literal substring "ship: completed" in a note. A naive
+# grep anchor would over-count to 2; the YAML-aware parser returns 1.
 cat > "$AC45_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" <<'AC45_STATE'
 version: 1
 parent_slug: dummy
@@ -6684,41 +6548,515 @@ runtime_metrics:
   - boundary: session_end
     stop_reason: normal_completion
     timestamp: 2026-05-17T03:00:00Z
-# legacy history note (free-form, 6-space indented to trip the loose
-# anchor but not the strict end-of-line anchor):
-      ship: completed (legacy commentary from a prior session)
+    note: "ship: completed via /autopilot resume after compact"
 AC45_STATE
-# Validate that the strict anchor counts only canonical tickets[] entries.
-# Strict: 6-space prefix + literal `ship: completed` + end-of-line. The
-# `ship: completed (legacy commentary...)` line has trailing text so the
-# `$` anchor fails — strict count stays at 1. Loose anchor matches
-# anywhere, so it sees both lines and returns 2 — exposing the
-# regression risk the strict anchor closes.
-AC45_STRICT_COUNT=$(grep -cE '^      ship:[[:space:]]+completed[[:space:]]*$' "$AC45_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" 2>/dev/null || true)
-AC45_LOOSE_COUNT=$(grep -cE '^[[:space:]]+ship:[[:space:]]+completed' "$AC45_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" 2>/dev/null || true)
+# parse_ticket_ship_dirs (via the hook lib) must return exactly 1 line:
+# the canonical ticket_dir. The `note:` field with the literal substring
+# is structurally a string field, not a tickets[] entry, so it's ignored.
+AC_LIB_PATH="$REPO_DIR/hooks/lib/parse-state-file.sh"
+AC45_SHIPPED=$(bash -c "source '$AC_LIB_PATH' && parse_ticket_ship_dirs '$AC45_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml'" | grep -c . || true)
 AC45_OK=1
 AC45_MISSING=""
-if [ "$AC45_STRICT_COUNT" != "1" ]; then
-  AC45_OK=0; AC45_MISSING="${AC45_MISSING} strict-count-wrong(got=${AC45_STRICT_COUNT}-expected=1)"
+if [ "$AC45_SHIPPED" != "1" ]; then
+  AC45_OK=0; AC45_MISSING="${AC45_MISSING} shipped-count-wrong(got=${AC45_SHIPPED}-expected=1)"
 fi
-# Sanity: loose anchor would have over-counted (this is the regression
-# the strict anchor prevents). If both equal 1 the test is uninformative.
-if [ "$AC45_LOOSE_COUNT" = "1" ]; then
-  AC45_OK=0; AC45_MISSING="${AC45_MISSING} fixture-does-not-expose-loose-anchor-weakness"
+# Source-level: both hooks count shipped tickets via the helper. The
+# raw-grep-anchor regression check is omitted — the helper-presence
+# assertion below is sufficient: if a hook regresses by re-introducing
+# the literal grep anchor, the helper invocation would be removed and
+# this check would fail.
+if ! grep -qF 'parse_ticket_ship_dirs' "$AC_HOOK_PRIMARY"; then
+  AC45_OK=0; AC45_MISSING="${AC45_MISSING} primary-missing-helper-call"
 fi
-# Source-level: both hooks use the strict anchor.
-if ! grep -qF "'^      ship:[[:space:]]+completed[[:space:]]*\$'" "$AC_HOOK_PRIMARY"; then
-  AC45_OK=0; AC45_MISSING="${AC45_MISSING} primary-loose-anchor-present"
+if ! grep -qF 'parse_ticket_ship_dirs' "$AC_HOOK_SAFETY"; then
+  AC45_OK=0; AC45_MISSING="${AC45_MISSING} safety-missing-helper-call"
 fi
-if ! grep -qF "'^      ship:[[:space:]]+completed[[:space:]]*\$'" "$AC_HOOK_SAFETY"; then
-  AC45_OK=0; AC45_MISSING="${AC45_MISSING} safety-loose-anchor-present"
-fi
-rm -rf "$AC45_TMP" "$AC45_STUB_DIR"
+rm -rf "$AC45_TMP"
 if [ "$AC45_OK" = "1" ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-AC-45: shipped_count grep anchor is strict (6-space prefix + end-of-line); rejects runtime_metrics note false positives (M7 fix)"
+  echo -e "  ${GREEN}PASS${NC} CT-AC-45: shipped_count is computed via parse_ticket_ship_dirs (yq → python3 → awk), so runtime_metrics notes and free-form text are structurally ignored; both flat and nested ship-status schemas are counted correctly (WI-3 supersedes M7)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} CT-AC-45: anchor hardening broken:${AC45_MISSING}" >&2
+  echo -e "  ${RED}FAIL${NC} CT-AC-45: YAML-aware shipped_count broken:${AC45_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-46: kitty backend targets the originating window via
+# `--match id:$KITTY_WINDOW_ID` (WI-1 fix). Without that flag,
+# `kitty @ send-text` defaults to the currently focused kitty window —
+# same focus-leak failure mode the tmux/screen C3 fix addresses.
+# Verifies (a) DRY_RUN log exposes target=<KITTY_WINDOW_ID>,
+# (b) target is empty in fallback (no $KITTY_WINDOW_ID), (c) source
+# uses --match in the non-DRY branch.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC46_STUB_DIR=$(mktemp -d)
+cat > "$AC46_STUB_DIR/kitty" <<'AC46_STUB'
+#!/usr/bin/env bash
+exit 0
+AC46_STUB
+chmod +x "$AC46_STUB_DIR/kitty"
+AC46_OUT_KITTY=$(env -u TMUX -u STY KITTY_PID=12345 KITTY_WINDOW_ID=99 TERM=xterm-kitty INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC46_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC46_OUT_NOWIN=$(env -u TMUX -u STY -u KITTY_WINDOW_ID KITTY_PID=12345 TERM=xterm-kitty INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC46_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC46_OK=1
+AC46_MISSING=""
+if ! echo "$AC46_OUT_KITTY" | grep -qE 'backend=kitty target=99 text=/compact'; then
+  AC46_OK=0; AC46_MISSING="${AC46_MISSING} kitty-window-id-missing-from-log"
+fi
+if ! echo "$AC46_OUT_NOWIN" | grep -qE 'backend=kitty target= text=/compact'; then
+  AC46_OK=0; AC46_MISSING="${AC46_MISSING} kitty-no-window-fallback-broken"
+fi
+if ! grep -qE 'kitty @ send-text --match "id:\$KITTY_WINDOW_ID"' "$AC_LIB"; then
+  AC46_OK=0; AC46_MISSING="${AC46_MISSING} kitty-source-missing-target"
+fi
+rm -rf "$AC46_STUB_DIR"
+if [ "$AC46_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-46: kitty backend targets originating window (--match id:\$KITTY_WINDOW_ID); DRY_RUN log exposes target (WI-1 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-46: kitty targeting contract:${AC46_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-47: wezterm backend targets the originating pane via
+# `--pane-id $WEZTERM_PANE` (WI-1 fix). WezTerm's CLI does infer the
+# caller's pane from $WEZTERM_PANE when --pane-id is omitted, but the
+# explicit flag is defense-in-depth: it removes the dependency on CLI
+# implementation detail and keeps the DRY_RUN log + source-grep
+# contracts consistent with the other backends.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC47_STUB_DIR=$(mktemp -d)
+cat > "$AC47_STUB_DIR/wezterm" <<'AC47_STUB'
+#!/usr/bin/env bash
+exit 0
+AC47_STUB
+chmod +x "$AC47_STUB_DIR/wezterm"
+AC47_OUT_WEZTERM=$(env -u TMUX -u STY TERM_PROGRAM=WezTerm WEZTERM_PANE=7 INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC47_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC47_OUT_NOPANE=$(env -u TMUX -u STY -u WEZTERM_PANE TERM_PROGRAM=WezTerm INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC47_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC47_OK=1
+AC47_MISSING=""
+if ! echo "$AC47_OUT_WEZTERM" | grep -qE 'backend=wezterm target=7 text=/compact'; then
+  AC47_OK=0; AC47_MISSING="${AC47_MISSING} wezterm-pane-missing-from-log"
+fi
+if ! echo "$AC47_OUT_NOPANE" | grep -qE 'backend=wezterm target= text=/compact'; then
+  AC47_OK=0; AC47_MISSING="${AC47_MISSING} wezterm-no-pane-fallback-broken"
+fi
+if ! grep -qE 'wezterm cli send-text --no-paste --pane-id "\$WEZTERM_PANE"' "$AC_LIB"; then
+  AC47_OK=0; AC47_MISSING="${AC47_MISSING} wezterm-source-missing-target"
+fi
+rm -rf "$AC47_STUB_DIR"
+if [ "$AC47_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-47: wezterm backend targets originating pane (--pane-id \$WEZTERM_PANE); DRY_RUN log exposes target (WI-1 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-47: wezterm targeting contract:${AC47_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-48: iTerm2 backend targets the originating session by
+# $ITERM_SESSION_ID UUID via AppleScript session-id lookup (WI-1 fix).
+# The legacy `tell current session of current window to write text`
+# resolves at osascript runtime to whichever iTerm window the user has
+# focused — so a window switch between turn-start and hook fire
+# (reproducer: brief mode=auto in window A, focus window B, hook fires)
+# would inject /compact<Enter> into the wrong session. Verifies
+# (a) DRY_RUN log exposes target=<full ITERM_SESSION_ID>,
+# (b) target empty when env var absent (graceful fallback),
+# (c) source uses ITERM_TARGET_UUID env var + session-id iteration
+# pattern + a "session not found" error path in the AppleScript.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC48_STUB_DIR=$(mktemp -d)
+cat > "$AC48_STUB_DIR/osascript" <<'AC48_STUB'
+#!/usr/bin/env bash
+exit 0
+AC48_STUB
+chmod +x "$AC48_STUB_DIR/osascript"
+AC48_OUT_ITERM=$(env -u TMUX -u STY TERM_PROGRAM=iTerm.app ITERM_SESSION_ID='w0t1p0:AFB4CDF0-7514-4BDD-81C4-8F78F2305A34' INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC48_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC48_OUT_NOSID=$(env -u TMUX -u STY -u ITERM_SESSION_ID TERM_PROGRAM=iTerm.app INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC48_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+AC48_OK=1
+AC48_MISSING=""
+if ! echo "$AC48_OUT_ITERM" | grep -qE 'backend=iterm2 target=w0t1p0:AFB4CDF0-7514-4BDD-81C4-8F78F2305A34 text=/compact'; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-session-id-missing-from-log"
+fi
+if ! echo "$AC48_OUT_NOSID" | grep -qE 'backend=iterm2 target= text=/compact'; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-no-session-id-fallback-broken"
+fi
+# Source: AppleScript reads ITERM_TARGET_UUID via system attribute.
+if ! grep -qF 'set targetUUID to system attribute "ITERM_TARGET_UUID"' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-missing-targetUUID-attribute"
+fi
+# Source: session iteration with id-match predicate.
+if ! grep -qF 'if id of s is targetUUID then' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-missing-session-id-match"
+fi
+# Source: shell extracts UUID portion from ITERM_SESSION_ID.
+if ! grep -qF '_ik_iterm_uuid="${ITERM_SESSION_ID##*:}"' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-missing-uuid-extract"
+fi
+# Source: error path when session not found (refuses to fall back to
+# focused window — that would defeat the whole fix). The WI-2 fix
+# narrows the iteration to `current window` only (iTerm2's `windows`
+# collection is empty in AppleScript), so the error message now says
+# "not in current iTerm window" instead of "not found in any window".
+if ! grep -qF '"iTerm session " & targetUUID & " not in current iTerm window' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-missing-not-found-error"
+fi
+# Source: failure-hint maps the not-in-current-window error to a
+# multi-iTerm-window-aware message recommending tmux for that workflow.
+if ! grep -qF 'iTerm session .* not in current iTerm window' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-missing-failure-hint"
+fi
+# Source: iteration uses `tabs of current window` rather than
+# `repeat with w in windows` (WI-2 — the latter is empty in iTerm2's
+# AppleScript and was the root cause of the test_simple_workflow26
+# field failure).
+if grep -qF 'repeat with w in windows' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-still-uses-broken-windows-iteration"
+fi
+if ! grep -qF 'repeat with tt in tabs of current window' "$AC_LIB"; then
+  AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-source-missing-current-window-iteration"
+fi
+rm -rf "$AC48_STUB_DIR"
+if [ "$AC48_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-48: iTerm2 backend targets originating session by \$ITERM_SESSION_ID UUID via AppleScript session-id lookup scoped to \`current window\` (iTerm2's \`windows\` collection is empty in AppleScript); DRY_RUN log exposes target; multi-iTerm-window case hard-fails with hint (WI-1 + WI-2 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-48: iTerm2 targeting contract:${AC48_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-49: WI-3 schema-tolerance end-to-end. Field reproducer
+# (test_simple_workflow27, session
+# d3748705-f477-44e9-8c88-229b78b7a29a): the autopilot orchestrator
+# wrote the NESTED ship/status shape
+# (`steps:\n  ship:\n    status: completed\n    invocation_method: skill`)
+# instead of the canonical flat shape (`steps:\n  ship: completed`),
+# and the v7 hooks silently exited at Gate 2 / shipped_count = 0
+# because the literal grep anchors only matched the flat form. WI-3
+# makes Gate 2 (safety-net payload regex) AND shipped_count (both
+# hooks) accept BOTH shapes via parse_ticket_ship_dirs (yq-based)
+# and a dual-form payload detector. This test reproduces the
+# test_simple_workflow27 T-001 ship-completed payload and asserts
+# the safety-net actually reaches the dispatcher (DRY_RUN log) and
+# emits the canonical additionalContext.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC49_STUB_DIR=$(mktemp -d)
+cat > "$AC49_STUB_DIR/tmux" <<'AC49_STUB'
+#!/usr/bin/env bash
+exit 0
+AC49_STUB
+chmod +x "$AC49_STUB_DIR/tmux"
+AC49_TMP=$(mktemp -d)
+mkdir -p "$AC49_TMP/.simple-workflow/backlog/briefs/active/pomodoro-timer"
+mkdir -p "$AC49_TMP/.simple-workflow/backlog/done/pomodoro-timer/001-stage-1"
+# State file mirrors the nested shape observed in test_simple_workflow27.
+cat > "$AC49_TMP/.simple-workflow/backlog/briefs/active/pomodoro-timer/autopilot-state.yaml" <<'AC49_STATE'
+version: 1
+parent_slug: pomodoro-timer
+total_tickets: 1
+tickets:
+  pomodoro-timer-part-1:
+    ticket_dir: .simple-workflow/backlog/done/pomodoro-timer/001-stage-1
+    status: completed
+    depends_on: []
+    steps:
+      scout:
+        status: completed
+        invocation_method: skill
+      impl:
+        status: completed
+        invocation_method: skill
+      ship:
+        status: completed
+        invocation_method: skill
+    pr_url: null
+    commit_sha: 37f752d
+AC49_STATE
+# Payload is the EXACT new_string the orchestrator would Edit in.
+AC49_PAYLOAD='  pomodoro-timer-part-1:
+    ticket_dir: .simple-workflow/backlog/done/pomodoro-timer/001-stage-1
+    status: completed
+    depends_on: []
+    steps:
+      scout:
+        status: completed
+        invocation_method: skill
+      impl:
+        status: completed
+        invocation_method: skill
+      ship:
+        status: completed
+        invocation_method: skill
+    pr_url: null
+    commit_sha: 37f752d'
+jq -n -c --arg fp "$AC49_TMP/.simple-workflow/backlog/briefs/active/pomodoro-timer/autopilot-state.yaml" --arg ns "$AC49_PAYLOAD" \
+  '{tool_input:{file_path:$fp,new_string:$ns}}' > "$AC49_TMP/hook-input.json"
+
+AC49_OUT=$(cd "$AC49_TMP" && \
+  TMUX=fake-socket TMUX_PANE=%88 INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC49_STUB_DIR:$PATH" \
+  bash "$AC_HOOK_SAFETY" < "$AC49_TMP/hook-input.json" 2>&1)
+
+AC49_OK=1
+AC49_MISSING=""
+# Must reach DRY_RUN dispatcher (proves Gate 2 + Gate 5 + Gate 7 all passed
+# with the nested schema).
+if ! echo "$AC49_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend=tmux target=%88 text=/compact'; then
+  AC49_OK=0; AC49_MISSING="${AC49_MISSING} dispatcher-not-reached(payload-rejected-by-Gate2-or-Gate7-zero-count)"
+fi
+# Must emit the canonical safety-net additionalContext label.
+if ! echo "$AC49_OUT" | grep -qF 'auto-compact-on-ship (state-write safety-net):'; then
+  AC49_OK=0; AC49_MISSING="${AC49_MISSING} additionalContext-missing"
+fi
+# This test fixture has shipped_count == total_tickets == 1, so the
+# last-ticket sub-variant must fire.
+if ! echo "$AC49_OUT" | grep -qF 'FINAL ticket of this pipeline'; then
+  AC49_OK=0; AC49_MISSING="${AC49_MISSING} last-ticket-branch-not-fired(shipped_count-may-be-0)"
+fi
+rm -rf "$AC49_TMP" "$AC49_STUB_DIR"
+if [ "$AC49_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-49: safety-net accepts the nested ship/status schema observed in test_simple_workflow27 — Gate 2 payload check and shipped_count both go through parse_ticket_ship_dirs (yq) and correctly fire the dispatcher (WI-3 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-49: WI-3 schema-tolerance broken:${AC49_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# =============================================================================
+# CT-AC-50 / CT-AC-51 — WI-4 schema-tolerance extension (LIST/MAP for
+# `tickets:`). Field reproducer: `test_simple_workflow28` (parent_slug
+# `pomodoro-timer-web-app`, full pipeline 3/3 shipped 2026-05-17
+# 13:01Z→14:05Z) — the autopilot orchestrator wrote `tickets:` as a
+# MAP keyed by `logical_id` (`pomodoro-timer-web-app-part-1: { ... }`)
+# instead of the canonical LIST. WI-3 already fixed
+# `parse_ticket_ship_dirs` (so auto-compact worked on test28), but two
+# OTHER hook surfaces — `parse_ticket_statuses` (Stop-hook loop-guard
+# counters) and `parse_proposed_tickets` (PreToolUse:Write/Edit
+# skip-transition guard) — silently bypassed on the MAP form because
+# their Python tier required `isinstance(tickets, list)` and their
+# awk / shell fallbacks required the dash-prefix item opener. The
+# bypass on `parse_proposed_tickets` is security-relevant: a MAP-form
+# state file could mark a ticket `skipped` with a forbidden rationale
+# while siblings were `in_progress` and the guard would let the write
+# through.
+# =============================================================================
+echo "--- Cat AC: WI-4 tickets LIST/MAP schema-tolerance (parse_ticket_statuses + parse_proposed_tickets) ---"
+
+# CT-AC-50: parse_ticket_statuses MAP/LIST parity across all three tiers
+# (yq → python3+PyYAML → POSIX awk). Mirrors WI-3's `parse_ticket_ship_dirs`
+# tier-by-tier coverage. Each tier is forced by stubbing the higher tiers
+# via a per-tier PATH override that points yq / python3 to a wrapper
+# script that exits non-zero (so `_psf_have yq` still returns true but
+# the yq invocation falls through, and `python3 -c 'import yaml'` fails).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC50_OK=1
+AC50_MISSING=""
+
+# Shared MAP-form and LIST-form fixtures (same logical tickets, different
+# YAML shape). Both must yield identical status sequences.
+AC50_MAP_FIXTURE=$(mktemp)
+cat >"$AC50_MAP_FIXTURE" <<'AC50_YAML'
+version: 1
+parent_slug: pomodoro-timer-web-app
+tickets:
+  pomodoro-timer-web-app-part-1:
+    status: completed
+  pomodoro-timer-web-app-part-2:
+    status: in_progress
+  pomodoro-timer-web-app-part-3:
+    status: pending
+AC50_YAML
+AC50_LIST_FIXTURE=$(mktemp)
+cat >"$AC50_LIST_FIXTURE" <<'AC50_YAML'
+version: 1
+parent_slug: pomodoro-timer-web-app
+tickets:
+  - logical_id: pomodoro-timer-web-app-part-1
+    status: completed
+  - logical_id: pomodoro-timer-web-app-part-2
+    status: in_progress
+  - logical_id: pomodoro-timer-web-app-part-3
+    status: pending
+AC50_YAML
+AC50_EXPECTED="completed,in_progress,pending,"
+
+# Tier 1 (yq): no stubs — exercise the real yq binary on both shapes.
+AC50_YQ_MAP=$(bash -c "
+  source '$REPO_DIR/hooks/lib/parse-state-file.sh'
+  parse_ticket_statuses '$AC50_MAP_FIXTURE' | tr '\n' ','
+")
+AC50_YQ_LIST=$(bash -c "
+  source '$REPO_DIR/hooks/lib/parse-state-file.sh'
+  parse_ticket_statuses '$AC50_LIST_FIXTURE' | tr '\n' ','
+")
+if [ "$AC50_YQ_MAP" != "$AC50_EXPECTED" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} yq-map(got=$AC50_YQ_MAP)"
+fi
+if [ "$AC50_YQ_LIST" != "$AC50_EXPECTED" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} yq-list(got=$AC50_YQ_LIST)"
+fi
+
+# Tier 2 (python3 + PyYAML): stub yq to exit non-zero so the function
+# falls through.
+AC50_STUB_PY=$(mktemp -d)
+cat >"$AC50_STUB_PY/yq" <<'AC50_STUB'
+#!/usr/bin/env bash
+exit 1
+AC50_STUB
+chmod +x "$AC50_STUB_PY/yq"
+AC50_PY_MAP=$(bash -c "
+  source '$REPO_DIR/hooks/lib/parse-state-file.sh'
+  PATH='$AC50_STUB_PY':\$PATH parse_ticket_statuses '$AC50_MAP_FIXTURE' | tr '\n' ','
+")
+AC50_PY_LIST=$(bash -c "
+  source '$REPO_DIR/hooks/lib/parse-state-file.sh'
+  PATH='$AC50_STUB_PY':\$PATH parse_ticket_statuses '$AC50_LIST_FIXTURE' | tr '\n' ','
+")
+if [ "$AC50_PY_MAP" != "$AC50_EXPECTED" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} py-map(got=$AC50_PY_MAP)"
+fi
+if [ "$AC50_PY_LIST" != "$AC50_EXPECTED" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} py-list(got=$AC50_PY_LIST)"
+fi
+
+# Tier 3 (POSIX awk): stub yq AND python3 to exit non-zero so the function
+# falls through past both tier 1 and tier 2.
+AC50_STUB_AWK=$(mktemp -d)
+cat >"$AC50_STUB_AWK/yq" <<'AC50_STUB'
+#!/usr/bin/env bash
+exit 1
+AC50_STUB
+cat >"$AC50_STUB_AWK/python3" <<'AC50_STUB'
+#!/usr/bin/env bash
+exit 1
+AC50_STUB
+chmod +x "$AC50_STUB_AWK/yq" "$AC50_STUB_AWK/python3"
+AC50_AWK_MAP=$(bash -c "
+  source '$REPO_DIR/hooks/lib/parse-state-file.sh'
+  PATH='$AC50_STUB_AWK':\$PATH parse_ticket_statuses '$AC50_MAP_FIXTURE' | tr '\n' ','
+")
+AC50_AWK_LIST=$(bash -c "
+  source '$REPO_DIR/hooks/lib/parse-state-file.sh'
+  PATH='$AC50_STUB_AWK':\$PATH parse_ticket_statuses '$AC50_LIST_FIXTURE' | tr '\n' ','
+")
+if [ "$AC50_AWK_MAP" != "$AC50_EXPECTED" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} awk-map(got=$AC50_AWK_MAP)"
+fi
+if [ "$AC50_AWK_LIST" != "$AC50_EXPECTED" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} awk-list(got=$AC50_AWK_LIST)"
+fi
+
+# Parity check: MAP and LIST results must be byte-identical at every tier.
+if [ "$AC50_YQ_MAP" != "$AC50_YQ_LIST" ] || [ "$AC50_PY_MAP" != "$AC50_PY_LIST" ] || [ "$AC50_AWK_MAP" != "$AC50_AWK_LIST" ]; then
+  AC50_OK=0; AC50_MISSING="${AC50_MISSING} parity-mismatch"
+fi
+
+rm -rf "$AC50_MAP_FIXTURE" "$AC50_LIST_FIXTURE" "$AC50_STUB_PY" "$AC50_STUB_AWK"
+if [ "$AC50_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-50: parse_ticket_statuses MAP/LIST parity across all three tiers (yq, python3+PyYAML, POSIX awk) — same 'completed,in_progress,pending,' sequence for both shapes (WI-4 fix; mirrors WI-3 parse_ticket_ship_dirs)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-50: parse_ticket_statuses MAP form silently bypasses one or more tiers:${AC50_MISSING}" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-51: pre-state-transition MAP-form invariant guard. Reproduces the
+# silent-bypass regression: a MAP-form `autopilot-state.yaml` Edit payload
+# that flips `part-2: {status: skipped, skip_reason: <forbidden token>}`
+# while `part-1: {status: in_progress}` MUST be blocked by
+# `hooks/pre-state-transition.sh` with the same diagnostic the LIST-form
+# payload would trigger (`unauthorized_skip_with_active_siblings` or
+# `unauthorized_skip_with_forbidden_rationale`). Before WI-4 the Python
+# tier short-circuited on `not isinstance(tickets, list)` and the
+# shell fallback's dash-prefix opener never matched, so the hook
+# silently allowed the write through.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC51_OK=1
+AC51_MISSING=""
+
+# Build a minimal autopilot tree under a tempdir so the hook's
+# `is_autopilot_context` returns true.
+AC51_TMP=$(mktemp -d)
+AC51_SLUG="pomodoro-timer-web-app"
+mkdir -p "$AC51_TMP/.simple-workflow/backlog/briefs/active/$AC51_SLUG"
+AC51_STATE="$AC51_TMP/.simple-workflow/backlog/briefs/active/$AC51_SLUG/autopilot-state.yaml"
+# On-disk state: part-1 in_progress (active sibling), part-2 pending.
+cat >"$AC51_STATE" <<AC51_DISK
+version: 1
+parent_slug: ${AC51_SLUG}
+execution_mode: split
+total_tickets: 2
+tickets:
+  ${AC51_SLUG}-part-1:
+    status: in_progress
+  ${AC51_SLUG}-part-2:
+    status: pending
+AC51_DISK
+
+# Proposed Edit payload: MAP-form, part-2 flips to skipped with a
+# forbidden rationale (context budget) and NO override_skip. The hook
+# MUST emit `decision: block` with either Rule 1 or Rule 2's tag —
+# either is acceptable because both close the regression (Rule 1 fires
+# when active siblings are detected; Rule 2 fires on the forbidden
+# rationale token regardless of override). The pre-WI-4 hook silently
+# returned exit 0 with empty stdout on this payload.
+AC51_PROPOSED="version: 1
+parent_slug: ${AC51_SLUG}
+execution_mode: split
+total_tickets: 2
+tickets:
+  ${AC51_SLUG}-part-1:
+    status: in_progress
+  ${AC51_SLUG}-part-2:
+    status: skipped
+    skip_reason: context budget exhausted, falling back to skip
+"
+
+# Drive the hook with an Edit payload (the harness-shaped JSON the
+# PreToolUse:Edit slot receives at runtime).
+AC51_PAYLOAD=$(jq -n \
+  --arg fp "$AC51_STATE" \
+  --arg ns "$AC51_PROPOSED" \
+  --arg cwd "$AC51_TMP" \
+  '{tool_name:"Edit", tool_input:{file_path:$fp, old_string:"", new_string:$ns}, cwd:$cwd, session_id:"test-AC51", transcript_path:""}')
+
+AC51_STDOUT=$(printf '%s' "$AC51_PAYLOAD" | bash "$REPO_DIR/hooks/pre-state-transition.sh" 2>/dev/null || true)
+
+if ! echo "$AC51_STDOUT" | grep -q '"decision":"block"'; then
+  AC51_OK=0; AC51_MISSING="${AC51_MISSING} no-block-decision(stdout=$AC51_STDOUT)"
+fi
+if ! echo "$AC51_STDOUT" | grep -qE 'unauthorized_skip_with_active_siblings|unauthorized_skip_with_forbidden_rationale'; then
+  AC51_OK=0; AC51_MISSING="${AC51_MISSING} missing-diagnostic-tag"
+fi
+
+# Sanity: the equivalent LIST-form payload MUST also block, so the MAP /
+# LIST behaviour is provably parallel rather than vacuous.
+AC51_LIST_PROPOSED="version: 1
+parent_slug: ${AC51_SLUG}
+execution_mode: split
+total_tickets: 2
+tickets:
+  - logical_id: ${AC51_SLUG}-part-1
+    status: in_progress
+  - logical_id: ${AC51_SLUG}-part-2
+    status: skipped
+    skip_reason: context budget exhausted, falling back to skip
+"
+AC51_LIST_PAYLOAD=$(jq -n \
+  --arg fp "$AC51_STATE" \
+  --arg ns "$AC51_LIST_PROPOSED" \
+  --arg cwd "$AC51_TMP" \
+  '{tool_name:"Edit", tool_input:{file_path:$fp, old_string:"", new_string:$ns}, cwd:$cwd, session_id:"test-AC51", transcript_path:""}')
+AC51_LIST_STDOUT=$(printf '%s' "$AC51_LIST_PAYLOAD" | bash "$REPO_DIR/hooks/pre-state-transition.sh" 2>/dev/null || true)
+if ! echo "$AC51_LIST_STDOUT" | grep -q '"decision":"block"'; then
+  AC51_OK=0; AC51_MISSING="${AC51_MISSING} list-form-also-not-blocking(parallel-broken)"
+fi
+
+rm -rf "$AC51_TMP"
+if [ "$AC51_OK" = "1" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-51: pre-state-transition MAP-form skip-guard fires identically to LIST form (unauthorized_skip_* diagnostic emitted on MAP-form Edit payload); closes the silent-bypass regression observed against test_simple_workflow28-style schema slips (WI-4 fix)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-51: pre-state-transition silently bypasses on MAP-form payload:${AC51_MISSING}" >&2
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
