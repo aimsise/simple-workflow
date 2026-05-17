@@ -137,6 +137,14 @@ Claude Code's ephemeral prompt-cache entries have a roughly 1-hour TTL. If a ses
 
 If an automated run ends with a `partial` status before reaching the context-window cap, the model likely self-aborted before Claude Code's auto-Compaction had a chance to fire. Run `/autopilot <slug>` in a fresh session to pick up where it left off — state files in `.simple-workflow/backlog/` provide the resume point.
 
+### Auto-`/compact` between autopilot tickets
+
+Long-running `/autopilot` pipelines automatically run `/compact` at the **ticket boundary** so the conversation context does not fill up between tickets. `/compact` is injected via terminal-multiplexer keystroke from `hooks/pre-next-scout-auto-compact.sh` (primary) and `hooks/post-ship-state-auto-compact.sh` (safety net). After compaction `hooks/session-start.sh` re-injects `/autopilot <slug>` and the resume contract picks up the next ticket from `autopilot-state.yaml`.
+
+- **Default**: ON inside an autopilot run, OFF outside.
+- **Kill switch**: set `SW_AUTO_COMPACT_ON_SHIP_MODE=off` in your environment to disable (preserves the pre-v7 behaviour). `SW_AUTO_COMPACT_ON_SHIP_MODE=metric-only` logs the intent without injecting.
+- **Supported terminals**: tmux, GNU screen, kitty (with `allow_remote_control yes`), WezTerm, iTerm2. Apple Terminal and Windows terminals are silent no-ops — the underlying `/scout` / `Edit` / `Write` are never blocked.
+
 ## Limitations
 
 - Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.

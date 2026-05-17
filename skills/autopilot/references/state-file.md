@@ -53,6 +53,117 @@ key — ticket creation is no longer an `/autopilot` step (Plan 4). Existing
 state files from pre-Plan-4 runs that still carry a `create-ticket` key are
 tolerated on resume but not written fresh.
 
+### Schema invariants — `steps` is a FLAT map of string values
+
+**MUST**: `steps.{scout,impl,ship}` is a STRING value (`pending` /
+`in_progress` / `completed` / `failed` / `skipped`), NOT a nested map.
+`invocation_method.{scout,impl,ship}` lives in a separate sibling map,
+also string-valued.
+
+Canonical (write THIS):
+
+```yaml
+tickets:
+  - logical_id: pomodoro-timer-part-1
+    ticket_dir: .simple-workflow/backlog/done/pomodoro-timer/001-foo/
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed       # ← string value, single line
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+```
+
+Anti-pattern (do NOT write):
+
+```yaml
+tickets:
+  - logical_id: pomodoro-timer-part-1
+    steps:
+      ship:                 # ← NOT a nested map
+        status: completed
+        invocation_method: skill   # ← belongs in the sibling map, not here
+```
+
+**Why**: the auto-compact hooks
+(`hooks/pre-next-scout-auto-compact.sh` + `hooks/post-ship-state-auto-compact.sh`)
+gate on `steps.ship == "completed"`. The hook helper
+`parse_ticket_ship_dirs` tolerates the nested form for resilience
+(WI-3), but the canonical flat form is the source of truth for
+schema-conforming readers (yq query `.tickets[].steps.ship`) and is
+what the autopilot orchestrator MUST emit on every write. Field
+evidence: `test_simple_workflow27` emitted the nested form and silently
+broke auto-compact for an entire pipeline before WI-3 was added.
+
+### Schema invariants — `tickets:` is a YAML list (NOT a map)
+
+**MUST**: `tickets:` is a YAML LIST whose elements are dash-prefixed
+mappings (`- logical_id: ...`). It is NOT a YAML map keyed by
+`logical_id`. The `ticket_mapping:` block at the top of the file is
+the only canonical `logical_id`-keyed lookup; `tickets:` itself MUST
+remain a positional list so topological ordering, append-only progress
+tracking, and the per-element idioms in `hooks/lib/parse-state-file.sh`
+(`parse_ticket_statuses`, `parse_ticket_ship_dirs`) and
+`hooks/pre-state-transition.sh` (`parse_proposed_tickets`) all read
+the same shape.
+
+Canonical (write THIS):
+
+```yaml
+tickets:
+  - logical_id: pomodoro-timer-part-1
+    ticket_dir: .simple-workflow/backlog/done/pomodoro-timer/001-foo/
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+  - logical_id: pomodoro-timer-part-2
+    ticket_dir: .simple-workflow/backlog/active/pomodoro-timer/002-bar/
+    status: in_progress
+    steps:
+      scout: completed
+      impl: pending
+      ship: pending
+```
+
+Anti-pattern (do NOT write — `tickets:` keyed by `logical_id` as a
+MAP):
+
+```yaml
+tickets:
+  pomodoro-timer-part-1:
+    ticket_dir: .simple-workflow/backlog/done/pomodoro-timer/001-foo/
+    status: completed
+    steps:
+      ship: completed
+  pomodoro-timer-part-2:
+    ticket_dir: .simple-workflow/backlog/active/pomodoro-timer/002-bar/
+    status: in_progress
+    steps:
+      ship: pending
+```
+
+**Why**: three hook surfaces consume `tickets:` — `parse_ticket_statuses`
+(Stop-hook loop-guard counters), `parse_ticket_ship_dirs` (auto-compact
+ship-detection), and `parse_proposed_tickets` (PreToolUse:Write/Edit
+skip-transition guard). All three are now WI-3 / WI-4 schema-tolerant
+(they accept the map form so a model slip cannot silently disable the
+guard), but the canonical schema remains the list form. SKILL prose is
+the enforcement; hook tolerance is the safety net. The
+`unauthorized_skip_with_active_siblings` /
+`unauthorized_skip_with_forbidden_rationale` guards specifically must
+not be bypassable just by serialising `tickets:` as a map — that
+combination would let a model mark one ticket `skipped` with a
+forbidden rationale while siblings are still `in_progress` without the
+write being blocked. Field evidence: `test_simple_workflow28` produced
+the map form (`pomodoro-timer-web-app-part-1: {...}`) and broke the
+pre-WI-4 LIST-only parsers in both `parse_ticket_statuses` and
+`parse_proposed_tickets` silently.
+
 ## `autopilot-state.yaml` location precedence
 
 `/autopilot` chooses **one** location based on what is already on disk.

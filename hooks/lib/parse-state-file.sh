@@ -6,6 +6,7 @@
 #   - hooks/pre-bash-contract-guard.sh (PreToolUse:Bash guard, PX-02a)
 #   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)
 #   - hooks/post-phase-checkpoint.sh (PostToolUse:Write/Edit observer, PX-05)
+#   - hooks/post-ship-auto-compact.sh (PostToolUse:Skill auto-/compact, v7)
 #   - tests/test-hooks-lib.sh (unit tests for these helpers)
 #
 # Public contract (do not change without updating the consumers above):
@@ -25,6 +26,15 @@
 #   parse_ticket_statuses <state_yaml_path>
 #     - Prints every `tickets[].status` value, one per line, in document
 #       order. Exit 0 even when the list is empty.
+#     - WI-4 schema-tolerance: accepts BOTH the canonical list form
+#       (`tickets: - logical_id: ...`) and the map form
+#       (`pomodoro-timer-part-1: { status: ... }`) that the autopilot
+#       orchestrator silently produced in test_simple_workflow28. yq's
+#       `.[]` iterates either; python3 tier branches on
+#       `isinstance(tickets, dict|list)`; the awk fallback recognises
+#       both the `^  -` dash-form and `^  <key>:` map-form item
+#       openers. Mirrors the WI-3 pattern used by
+#       `parse_ticket_ship_dirs`.
 #
 #   find_state_file <parent_slug>
 #     - Locates the autopilot-state.yaml for <parent_slug> using the
@@ -33,6 +43,28 @@
 #         2. .simple-workflow/backlog/product_backlog/<parent_slug>/autopilot-state.yaml
 #         3. .simple-workflow/backlog/briefs/done/<parent_slug>/autopilot-state.yaml
 #       Prints the absolute path of the first match to stdout, or exits 1.
+#
+#   find_any_autopilot_state_file [start_dir]
+#     - Slug-free counterpart to `find_state_file`. Returns the absolute
+#       path of an active `autopilot-state.yaml` under
+#       `.simple-workflow/backlog/briefs/active/` (preferred) or
+#       `.simple-workflow/backlog/product_backlog/` (fallback), picking the
+#       most-recently-modified candidate when several exist. Returns 1 if
+#       none are present. Used by hooks that need the state directory
+#       without knowing the parent slug (e.g. the auto-compact sentinel).
+#
+#   parse_ticket_ship_dirs <file_path>
+#     - Walks the `tickets:` list in an autopilot-state.yaml document (or any
+#       payload snippet that uses the canonical schema) and prints the
+#       `ticket_dir:` value of every element whose `steps.ship == "completed"`,
+#       one per line, in document order. Used by the post-ship-state auto-
+#       compact safety net to scope state-lie protection to the SPECIFIC
+#       tickets[] elements whose ship status was just flipped — not the
+#       single first match a global grep would yield (CD-1 / CD-2 in the
+#       v7 review). Callers pass a payload by writing it to a temp file
+#       (mktemp + printf > tmp) and passing that path here, so the helper
+#       can use the same three-tier file-based strategy as the other
+#       parsers in this lib.
 #
 #   find_phase_state_file [start_dir]
 #     - Depth-agnostic search for the first
@@ -195,6 +227,13 @@ PY
 # ---------------------------------------------------------------------------
 # Public function: parse_ticket_statuses
 # Usage: parse_ticket_statuses <state_yaml_path>
+#
+# WI-4 schema-tolerance: accepts BOTH canonical list form
+# (`tickets: - logical_id: …`) and map form
+# (`pomodoro-timer-part-1: { status: … }`) — field evidence
+# `test_simple_workflow28`. Mirrors `parse_ticket_ship_dirs` (WI-3).
+# Tier 1 / tier 2 also fall through to the next tier on non-zero exit
+# so PATH stubs in tests can force a specific tier deterministically.
 # ---------------------------------------------------------------------------
 parse_ticket_statuses() {
   local file="$1"
@@ -203,39 +242,59 @@ parse_ticket_statuses() {
   fi
 
   if _psf_have yq; then
-    yq -r '.tickets[].status // ""' "$file" 2>/dev/null
-    return 0
+    local _yq_out
+    if _yq_out="$(yq -r '.tickets | .[] | .status // ""' "$file" 2>/dev/null)"; then
+      [ -n "$_yq_out" ] && printf '%s\n' "$_yq_out"
+      return 0
+    fi
+    # yq present but exited non-zero -> fall through to python tier.
   fi
 
   # Tier 2: python3 + PyYAML. Same gating rationale as parse_phase_status:
   # without the up-front `import yaml` probe a stock macOS without PyYAML
   # would short-circuit here on ImportError and skip the awk tier.
   if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
-    python3 - "$file" <<'PY' 2>/dev/null
+    if python3 - "$file" <<'PY' 2>/dev/null
 import sys
 import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
-for entry in (doc.get("tickets") or []):
+tickets = doc.get("tickets")
+if isinstance(tickets, dict):
+    entries = list(tickets.values())
+elif isinstance(tickets, list):
+    entries = tickets
+else:
+    entries = []
+for entry in entries:
     val = entry.get("status", "") if isinstance(entry, dict) else ""
     print(val if val is not None else "")
 PY
-    return 0
+    then
+      return 0
+    fi
+    # python tier failed -> fall through to awk.
   fi
 
-  # awk fallback: walk the `tickets:` list looking for `status:` values
-  # inside each `- ` element. POSIX awk only — uses `sub()` strip-by-prefix
+  # awk fallback: walk the `tickets:` block looking for `status:` values
+  # inside each element. POSIX awk only — uses `sub()` strip-by-prefix
   # instead of the gawk-specific 3-arg `match(s, re, arr)` so macOS's
-  # stock BSD awk handles this tier. `status:` is anchored at exactly 4
-  # spaces (canonical yq output for `tickets[].status`: the `- key:` line
-  # sits at 2-space indent, sibling keys at 4-space). Inline-flow
-  # `{status: pending}` maps are not produced by autopilot writers, so
-  # the line-oriented parser is sufficient for the canonical schema.
+  # stock BSD awk handles this tier.
+  #
+  # Two element-opener shapes are recognised (WI-4):
+  #   - list form: `^[[:space:]]*-[[:space:]]` (e.g. `  - logical_id: …`)
+  #   - map form: `^  <key>:[[:space:]]*$` (e.g. `  pomodoro-timer-part-1:`)
+  # In both shapes the sibling `status:` line sits at 4-space indent and
+  # is captured the same way. Inline-flow `{status: pending}` maps are not
+  # produced by autopilot writers, so a line-oriented parser is sufficient.
   awk '
     BEGIN { in_tickets = 0; in_item = 0 }
     /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
     in_tickets && /^[^[:space:]-]/ { in_tickets = 0; in_item = 0 }
+    # list form: dash-prefixed element start.
     in_tickets && /^[[:space:]]*-[[:space:]]/ { in_item = 1 }
+    # map form: bare 2-space-indented key under tickets: opens a new element.
+    in_tickets && /^  [A-Za-z0-9._-]+:[[:space:]]*$/ { in_item = 1 }
     in_tickets && in_item && /^    status:[[:space:]]*/ {
       val = $0
       sub(/^    status:[[:space:]]*/, "", val)
@@ -278,6 +337,189 @@ find_state_file() {
     fi
   done
   return 1
+}
+
+# ---------------------------------------------------------------------------
+# Public function: find_any_autopilot_state_file
+# Usage: find_any_autopilot_state_file [start_dir]
+#
+# Returns the absolute path of an active autopilot-state.yaml without
+# requiring the caller to know the parent slug. Used by
+# `hooks/post-ship-auto-compact.sh` to place an auto-compact sentinel in
+# the brief directory, and as a generic counterpart to the slug-keyed
+# `find_state_file` helper. Search order matches `is_autopilot_context`:
+# briefs/active first (live runs), then product_backlog (split-plan-only).
+# Among multiple candidates the most-recently-modified file wins, matching
+# the disambiguation policy used by `find_phase_state_file` and the inline
+# scan in `hooks/autopilot-continue.sh`.
+# ---------------------------------------------------------------------------
+find_any_autopilot_state_file() {
+  local start_dir root
+  start_dir="${1:-$PWD}"
+  root="$(_psf_repo_root "$start_dir")"
+  [ -d "$root/.simple-workflow" ] || return 1
+
+  local match=""
+  for base in briefs/active product_backlog; do
+    local dir="$root/.simple-workflow/backlog/$base"
+    [ -d "$dir" ] || continue
+    while IFS= read -r _f; do
+      [ -f "$_f" ] || continue
+      if [ -z "$match" ] || [ "$_f" -nt "$match" ]; then
+        match="$_f"
+      fi
+    done < <(find "$dir" -type f -name 'autopilot-state.yaml' 2>/dev/null)
+    unset _f
+    if [ -n "$match" ]; then
+      local d b
+      d="$(cd "$(dirname "$match")" && pwd -P)"
+      b="$(basename "$match")"
+      printf '%s/%s\n' "$d" "$b"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Public function: parse_ticket_ship_dirs
+# Usage: parse_ticket_ship_dirs <file_path>
+#
+# Prints the `ticket_dir:` value of every `tickets[]` element whose
+# `steps.ship == "completed"`, one per line, in document order.
+#
+# Designed for the post-ship-state auto-compact safety net (CD-1 / CD-2 in
+# the v7 review): the previous awk implementation exited at the first
+# `ship: completed` match and returned the last `ticket_dir:` seen so far,
+# which silently passed Gate 5 when a multi-ticket payload had a genuine
+# done/-dir T-001 followed by a lying active/-dir T-002. This helper
+# pairs each ship status with the ticket_dir of the SAME `tickets[]`
+# element, so the safety net can refuse to inject when ANY element's
+# just-flipped ship status references a directory that is not yet
+# under backlog/done/.
+#
+# Element boundary detection (awk tier): each `^[[:space:]]*-[[:space:]]`
+# line starts a new element; any line that is non-indented and not a
+# top-level `-` (i.e. a sibling top-level key) closes the `tickets:`
+# section. Within an element, both `ticket_dir:` and `ship:` are captured
+# in any order, and the pair is emitted at element close (next `-` or
+# end-of-section / end-of-file).
+# ---------------------------------------------------------------------------
+parse_ticket_ship_dirs() {
+  local file="$1"
+  if [ -z "$file" ] || [ ! -f "$file" ]; then
+    return 1
+  fi
+
+  # WI-3 schema-tolerance: accept BOTH canonical-flat
+  # (`steps.ship: completed`) and nested (`steps.ship.status: completed`)
+  # forms. The autopilot SKILL canonical schema is flat (state-file.md
+  # §"`autopilot-state.yaml` schema"), but real autopilot runs have
+  # produced the nested form (test_simple_workflow27 evidence). Tolerate
+  # both at the hook layer so a model schema slip does not silently
+  # disable auto-compact; the SKILL layer enforces canonical for fresh
+  # writes. Also tolerate `tickets:` as both list (`- logical_id: …`)
+  # and map (`pomodoro-timer-part-1:`) — yq's `.[]` iterates either.
+  if _psf_have yq; then
+    yq -r '
+      .tickets | .[] |
+      select(
+        (.steps.ship // "") == "completed"
+        or (.steps.ship.status // "") == "completed"
+      ) |
+      (.ticket_dir // "")
+    ' "$file" 2>/dev/null
+    return 0
+  fi
+
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$file" <<'PY' 2>/dev/null
+import sys
+import yaml
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+tickets = doc.get("tickets")
+if isinstance(tickets, dict):
+    entries = list(tickets.values())
+elif isinstance(tickets, list):
+    entries = tickets
+else:
+    entries = []
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    steps = entry.get("steps") or {}
+    if not isinstance(steps, dict):
+        continue
+    ship = steps.get("ship")
+    ship_done = False
+    if ship == "completed":
+        ship_done = True
+    elif isinstance(ship, dict) and ship.get("status") == "completed":
+        ship_done = True
+    if not ship_done:
+        continue
+    val = entry.get("ticket_dir", "")
+    print(val if val is not None else "")
+PY
+    return 0
+  fi
+
+  # awk fallback: stateful walk. POSIX awk only. Handles both
+  # `tickets:` list form (`- logical_id: ...`) and map form
+  # (`pomodoro-timer-part-1:`), and both `ship: completed` (flat) and
+  # `ship:\n  status: completed` (nested) ship-status shapes. The
+  # single-quote in `gsub(/^'\''|'\''$/, "", val)` is escaped via bash
+  # string concat — same idiom as parse_ticket_statuses above.
+  awk '
+    function emit() {
+      if (in_item && pending_ship == "completed" && pending_dir != "") {
+        print pending_dir
+      }
+      pending_dir = ""
+      pending_ship = ""
+      in_nested_ship = 0
+    }
+    BEGIN {
+      in_tickets = 0; in_item = 0; pending_dir = ""; pending_ship = ""
+      in_nested_ship = 0; nested_ship_line = 0
+    }
+    /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
+    in_tickets && /^[^[:space:]-]/ { emit(); in_tickets = 0; in_item = 0; next }
+    # List form: `  - logical_id: ...` (or `  - ticket_dir: ...`) — new element.
+    in_tickets && /^[[:space:]]*-[[:space:]]/ { emit(); in_item = 1; next }
+    # Map form: top-level (2-space-indent) key under tickets: opens new element.
+    in_tickets && /^  [A-Za-z0-9._-]+:[[:space:]]*$/ { emit(); in_item = 1; next }
+    in_tickets && in_item && /^[[:space:]]+ticket_dir:[[:space:]]+/ {
+      val = $0
+      sub(/^[[:space:]]+ticket_dir:[[:space:]]+/, "", val)
+      gsub(/^"|"$/, "", val)
+      gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      pending_dir = val
+      next
+    }
+    # Flat: `      ship: completed`
+    in_tickets && in_item && /^[[:space:]]+ship:[[:space:]]+completed[[:space:]]*$/ {
+      pending_ship = "completed"
+      in_nested_ship = 0
+      next
+    }
+    # Nested opener: `      ship:` (no value on same line) starts nested block.
+    in_tickets && in_item && /^[[:space:]]+ship:[[:space:]]*$/ {
+      in_nested_ship = 1; nested_ship_line = NR
+      next
+    }
+    # Inside nested ship: look for `status: completed` within 4 lines.
+    in_nested_ship && /^[[:space:]]+status:[[:space:]]+completed[[:space:]]*$/ {
+      pending_ship = "completed"
+      in_nested_ship = 0
+      next
+    }
+    in_nested_ship && (NR - nested_ship_line) > 4 { in_nested_ship = 0 }
+    END { emit() }
+  ' "$file"
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -401,4 +643,4 @@ PY
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_phase_state_file parse_impl_next_action 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action 2>/dev/null || true

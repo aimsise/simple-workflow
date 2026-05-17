@@ -9,6 +9,7 @@ Treats the context window as a consumable resource and systematically conserves 
 - **Bounded sub-agent returns**: Each sub-agent launches with a fresh context, writes detailed artifacts to files, and returns only a structured summary (< 500 tokens). Without this bound, multi-round orchestration would accumulate unbounded output and degrade the orchestrator's decision quality.
 - **Phase-aware context release**: A dedicated recovery skill auto-detects the current phase and recommends the next action. Completed phases live on disk — clear the context and move on.
 - **Structured state preservation**: Before context compaction, per-ticket state is saved as YAML frontmatter so the recovery skill can resume interrupted work — including mid-implementation loops.
+- **Proactive auto-`/compact` at ticket boundaries**: long-running `/autopilot` pipelines fire `/compact` automatically at each ticket boundary (default ON inside autopilot) so the conversation does not exhaust its window between tickets. Two hooks coordinate the injection — `hooks/pre-next-scout-auto-compact.sh` (primary) and `hooks/post-ship-state-auto-compact.sh` (safety net) — both routed through `hooks/lib/inject-keys.sh` (tmux / GNU screen / kitty / WezTerm / iTerm2 backends). After compaction `hooks/session-start.sh` re-injects `/autopilot <slug>` and the resume contract picks up. Opt out with `SW_AUTO_COMPACT_ON_SHIP_MODE=off`; `metric-only` logs intent without injecting; Apple Terminal / Windows / no-multiplexer environments are silent no-ops.
 
 ## Harness Engineering
 

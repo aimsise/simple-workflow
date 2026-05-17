@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cat > /dev/null  # consume stdin
+# Capture stdin so we can inspect the SessionStart subtype (startup /
+# resume / compact). The hook used to discard stdin entirely.
+SESSION_START_INPUT=$(cat 2>/dev/null || echo '{}')
 
 # --- Cleanup old session logs (30+ days) ---
 # Rationale: only ephemeral state (compact-state, session-log) is aged out.
@@ -227,3 +229,53 @@ unset _sw_ticket_lines
 
 # Output as additionalContext JSON
 jq -n --arg ctx "$CONTEXT" '{"additionalContext": $ctx}'
+
+# --- Axis 3: auto-compact-on-ship post-compaction resume kick ---
+# When SessionStart fires with source=compact AND we are inside an
+# in-progress /autopilot run, Claude Code's input loop has nothing to
+# resume the pipeline with: the auto-recap displayed after compaction is
+# a UI element, not an assistant turn, so Stop hooks never fire and the
+# autopilot-continue.sh continuation prompt never reaches the model.
+# Field evidence (test_simple_workflow21, session
+# `a90156d4-17bf-4ff7-a790-7b51002dc439`): after a clean
+# sentinel-coordinated /compact the conversation idled for 19 minutes
+# until the user typed manually. To close the loop, PTY-inject
+# `/autopilot {parent_slug}` so the input loop processes a normal
+# user-prompt-shaped command after the recap, which triggers an
+# assistant turn that hits the autopilot resume contract
+# (`skills/autopilot/SKILL.md:180` + autopilot-state.yaml). Gated on
+# `SW_AUTO_COMPACT_ON_SHIP_MODE != off` so users who opted out of
+# auto-compact also opt out of auto-resume. Silent no-op when:
+# autopilot not in progress, no parent_slug discoverable, jq/inject-keys
+# unavailable, or backend missing — the user can always type
+# `/autopilot {slug}` manually.
+_sw_session_source=$(printf '%s' "$SESSION_START_INPUT" | jq -r '.source // ""' 2>/dev/null || echo "")
+if [ "$_sw_session_source" = "compact" ] \
+   && [ "${SW_AUTO_COMPACT_ON_SHIP_MODE:-on}" != "off" ] \
+   && command -v jq >/dev/null 2>&1; then
+  _sw_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=lib/parse-state-file.sh
+  source "$_sw_self_dir/lib/parse-state-file.sh"
+  # shellcheck source=lib/inject-keys.sh
+  source "$_sw_self_dir/lib/inject-keys.sh"
+  if is_autopilot_context; then
+    _sw_resume_state=$(find_any_autopilot_state_file 2>/dev/null || true)
+    if [ -n "$_sw_resume_state" ] && [ -f "$_sw_resume_state" ]; then
+      # Only resume if the pipeline genuinely has unfinished work.
+      # Matches the canonical `status:` fields written by /autopilot;
+      # avoids re-kicking a completed/failed run that was manually
+      # /compacted.
+      if grep -qE '^[[:space:]]+status:[[:space:]]+(in_progress|pending)' "$_sw_resume_state" 2>/dev/null; then
+        _sw_resume_slug=$(grep -E '^parent_slug:' "$_sw_resume_state" 2>/dev/null \
+          | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+        if [ -n "$_sw_resume_slug" ]; then
+          inject_keys "/autopilot $_sw_resume_slug" --enter 2>&1 \
+            | sed 's/^/[SESSION-START-RESUME] /' >&2 || true
+        fi
+      fi
+    fi
+    unset _sw_resume_state _sw_resume_slug
+  fi
+  unset _sw_self_dir
+fi
+unset _sw_session_source

@@ -26,6 +26,10 @@
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-edit-safety.sh" },
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-state-transition.sh" }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-next-scout-auto-compact.sh" }]
       }
     ],
     "PreCompact": [
@@ -43,8 +47,16 @@
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-phase-checkpoint.sh" }]
       },
       {
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-ship-state-auto-compact.sh" }]
+      },
+      {
         "matcher": "Edit",
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-phase-checkpoint.sh" }]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-ship-state-auto-compact.sh" }]
       }
     ],
     "Stop": [
