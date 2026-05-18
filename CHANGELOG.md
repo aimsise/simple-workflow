@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.1] — 2026-05-18
+
+Docs-only patch. The v7.0.0 release introduced the auto-`/compact`
+ticket boundary but did not document what the host terminal needs to
+expose for keystroke injection to actually fire. README now lays out
+the support matrix, the iTerm2 multi-window limitation
+(AppleScript's `windows` collection is empty, so only `current
+window` is reachable — multi-iTerm-window cases hard-fail with a
+diagnostic), and the explicit non-support for Apple Terminal, Warp,
+Ghostty, and Windows terminals. The recommendation is unchanged: run
+`claude` inside tmux for any unattended autopilot run.
+
+### Changed
+
+- `README.md` — replaced the single "Supported terminals" bullet in
+  the **Auto-`/compact` between autopilot tickets** section with a
+  new `#### Terminal requirements for keystroke injection`
+  sub-section. The sub-section documents (1) the five supported
+  backends and their extra setup (kitty `allow_remote_control yes`,
+  iTerm2 macOS Automation permission), (2) the iTerm2
+  single-iTerm-window limitation, (3) the explicit non-support set
+  (Apple Terminal — deliberately excluded for focus-leak risk; Warp,
+  Ghostty, Windows — no pane-targeted send-text CLI exists), and
+  (4) the tmux recommendation for unattended runs. No behaviour
+  change — `hooks/lib/inject-keys.sh` is unchanged.
+
+### Fixed
+
+- `tests/test-skill-contracts.sh` CT-AC-17 — dropped the `head -40`
+  window when locating the `## [7.0.0]` header; it now greps the
+  full file. The original window assumed v7.0.0 stayed the topmost
+  CHANGELOG entry forever and broke as soon as v7.0.1 pushed the
+  header past line 40, blocking pre-flight for every subsequent
+  patch. Test intent (verify the v7.0.0 entry exists with the right
+  format + group headers + opt-out env-var sentence) is preserved.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` — 501 / 501 pass (unchanged
+  baseline; docs-only patch does not exercise the contract suite).
+- `bash tests/test-path-consistency.sh` — 139 / 139 pass (unchanged
+  baseline).
+
 ## [7.0.0] — 2026-05-17
 
 Major release that fires `/compact` at the **ticket boundary** of every
