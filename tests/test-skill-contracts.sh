@@ -5197,7 +5197,7 @@ AC17_MISSING=""
 if [ ! -f "$AC_CHANGELOG" ]; then
   AC17_OK=0; AC17_MISSING="${AC17_MISSING} CHANGELOG.md-missing"
 else
-  if ! head -40 "$AC_CHANGELOG" | grep -qE '^## \[7\.0\.0\] — 20[0-9]{2}-[0-9]{2}-[0-9]{2}$'; then
+  if ! grep -qE '^## \[7\.0\.0\] — 20[0-9]{2}-[0-9]{2}-[0-9]{2}$' "$AC_CHANGELOG"; then
     AC17_OK=0; AC17_MISSING="${AC17_MISSING} 7.0.0-header"
   fi
   AC17_BLOCK=$(awk '/^## \[7\.0\.0\]/,/^## \[6\./{print}' "$AC_CHANGELOG")

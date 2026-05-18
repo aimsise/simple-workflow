@@ -143,7 +143,21 @@ Long-running `/autopilot` pipelines automatically run `/compact` at the **ticket
 
 - **Default**: ON inside an autopilot run, OFF outside.
 - **Kill switch**: set `SW_AUTO_COMPACT_ON_SHIP_MODE=off` in your environment to disable (preserves the pre-v7 behaviour). `SW_AUTO_COMPACT_ON_SHIP_MODE=metric-only` logs the intent without injecting.
-- **Supported terminals**: tmux, GNU screen, kitty (with `allow_remote_control yes`), WezTerm, iTerm2. Apple Terminal and Windows terminals are silent no-ops — the underlying `/scout` / `Edit` / `Write` are never blocked.
+
+#### Terminal requirements for keystroke injection
+
+`hooks/lib/inject-keys.sh` types `/compact` and the post-compact `/autopilot <slug>` back into the **originating** terminal surface — not whichever surface the user happens to focus when the hook fires. Support depends on what remote-control interface the host terminal exposes:
+
+| Terminal | Supported | Notes |
+|---|---|---|
+| **tmux**, **GNU screen**, **WezTerm** | Yes | No extra setup |
+| **kitty** | Yes | Requires `allow_remote_control yes` in `kitty.conf` |
+| **iTerm2** | Single iTerm window only | Needs macOS Automation permission (`osascript` → iTerm). Multiple iTerm windows are unsolvable via AppleScript — refocus the originating window before each ticket boundary, or use tmux |
+| Apple Terminal, Warp, Ghostty, Windows | No | Focus-leak risk (Apple Terminal) or no pane-targeted send-text CLI (others) |
+
+**Recommendation: run `claude` inside tmux for any unattended autopilot run.** It is the only supported backend whose injection is provably correct under arbitrary focus changes during a multi-hour run, and it requires no OS configuration.
+
+When injection cannot fire, the hook surfaces a one-line diagnostic via `inject_keys_failure_hint` as `additionalContext` in the next turn, and the autopilot continues — `/compact` is best-effort and never blocks `/scout` / `Edit` / `Write`.
 
 ## Limitations
 
