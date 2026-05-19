@@ -3,6 +3,7 @@ set -euo pipefail
 # Capture stdin so we can inspect the SessionStart subtype (startup /
 # resume / compact). The hook used to discard stdin entirely.
 SESSION_START_INPUT=$(cat 2>/dev/null || echo '{}')
+_sw_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 # --- Cleanup old session logs (30+ days) ---
 # Rationale: only ephemeral state (compact-state, session-log) is aged out.
@@ -11,11 +12,11 @@ SESSION_START_INPUT=$(cat 2>/dev/null || echo '{}')
 # quality-round-*.md, security-scan-*.md) and reviews/ are permanent
 # records of ticket-level decisions and are NEVER auto-deleted — they
 # stay forever inside their ticket directory (active/ or done/).
-if [ -d ".simple-workflow/docs/compact-state" ]; then
-  find .simple-workflow/docs/compact-state -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
+if [ -d "$_sw_repo_root/.simple-workflow/docs/compact-state" ]; then
+  find "$_sw_repo_root/.simple-workflow/docs/compact-state" -name "compact-state-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
-if [ -d ".simple-workflow/docs/session-log" ]; then
-  find .simple-workflow/docs/session-log -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
+if [ -d "$_sw_repo_root/.simple-workflow/docs/session-log" ]; then
+  find "$_sw_repo_root/.simple-workflow/docs/session-log" -name "session-log-*.md" -mtime +30 -delete 2>/dev/null || true
 fi
 
 # --- v4.1.0 gitignore setup block ---
@@ -24,7 +25,7 @@ fi
 # the gitignore if HEAD exists), then writes a setup flag to prevent any
 # future modification of .gitignore by this hook. Respecting the user's
 # decision to delete entries later is the reason for the flag.
-if [ ! -f .simple-workflow/.setup-done ]; then
+if [ ! -f "$_sw_repo_root/.simple-workflow/.setup-done" ]; then
 
   # 1. Ensure a git repo exists
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
@@ -106,8 +107,8 @@ if [ ! -f .simple-workflow/.setup-done ]; then
   fi
 
   if [ "$_sw_setup_ok" = "1" ]; then
-    mkdir -p .simple-workflow 2>/dev/null || true
-    touch .simple-workflow/.setup-done 2>/dev/null || true
+    mkdir -p "$_sw_repo_root/.simple-workflow" 2>/dev/null || true
+    touch "$_sw_repo_root/.simple-workflow/.setup-done" 2>/dev/null || true
   else
     printf '[simple-wf-setup] WARNING: .gitignore was modified but the setup commit did not finalize. Configure `git config user.email` / `user.name` (or resolve a pre-commit hook failure) and re-open the session to retry. The setup flag will NOT be written until the commit succeeds.\n' >&2
   fi
@@ -153,7 +154,6 @@ _sw_extract_scalar() {
 # `find` with no -maxdepth produces depth-agnostic matches. We sort -u on
 # resolved paths to guarantee a single entry per phase-state.yaml even if
 # multiple search roots match the same file (AC 10 idempotent rendering).
-_sw_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 _sw_state_files=()
 for _sw_scan_root in \
   "${_sw_repo_root}/.simple-workflow/backlog/active" \

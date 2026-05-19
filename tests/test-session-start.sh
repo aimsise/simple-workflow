@@ -485,6 +485,169 @@ HOOK_EOF
   fi
 }
 
+# ---------- T-02: cwd-independence regression cases ----------
+# T-02 fix (test_simple_workflow29): when hooks/session-start.sh fires under a
+# cwd of `.simple-workflow/<subdir>/` (e.g. `.simple-workflow/kb/` left by
+# /tune), the opening cleanup + gitignore-setup block used bare relative
+# paths. The bare paths resolved against the calling cwd, MATERIALIZING a
+# nested `<repo>/.simple-workflow/<subdir>/.simple-workflow/` directory that
+# was then misidentified as the autopilot root by `_psf_repo_root` downstream
+# (the symptom T-01 closed at the lib layer). T-02 closes the symptom at
+# the source by anchoring every cleanup/setup path to `$_sw_repo_root`.
+#
+# AC-5 requires at least one TESTS_TOTAL increment to land. The new C8-C10
+# cases below use a dedicated counter alongside the existing PASS_COUNT /
+# FAIL_COUNT plumbing so the file's summary aggregates both reporting styles.
+TESTS_TOTAL=0
+
+# Build a fresh git repo with one commit and a configured identity, mirroring
+# the shape of `setup_test_repo` in tests/test-helper.sh but isolated inside
+# the existing SANDBOX so the EXIT trap above already cleans it up.
+t02_make_repo() {
+  local name="$1"
+  local dir="$CASE_ROOT/$name"
+  mkdir -p "$dir"
+  (
+    cd "$dir"
+    git init -q -b main 2>/dev/null || git init -q
+    git config --local user.email "test@example.invalid"
+    git config --local user.name "simple-workflow test"
+    echo 'initial' > README.md
+    git add README.md
+    git commit -q -m "initial"
+  )
+  printf '%s' "$dir"
+}
+
+# Run the hook from an explicit subdir, capturing the LAST_* result globals
+# (mirrors `run_hook` in tests/test-helper.sh — same stdin/JSON convention).
+t02_run_hook_in() {
+  local cwd="$1"
+  local stdout_file stderr_file
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  set +e
+  printf '{}' | (cd "$cwd" && bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  T02_EXIT_CODE=$?
+  set -e
+  T02_STDOUT=$(cat "$stdout_file")
+  T02_STDERR=$(cat "$stderr_file")
+  rm -f "$stdout_file" "$stderr_file"
+}
+
+# ---------- C8: nested cwd does not materialize nested .simple-workflow/ (AC-3) ----------
+case_c8() {
+  echo "=== C8: cwd=<repo>/.simple-workflow/kb/ -> no nested .simple-workflow/ created (AC-3) ==="
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local dir
+  dir="$(t02_make_repo c8)"
+
+  # Seed the autopilot brief + minimal autopilot-state.yaml — matches the
+  # field-evidence scenario from test_simple_workflow29 where the hook fired
+  # mid-autopilot run.
+  mkdir -p "$dir/.simple-workflow/backlog/briefs/active/foo"
+  cat > "$dir/.simple-workflow/backlog/briefs/active/foo/autopilot-state.yaml" <<EOF
+parent_slug: foo
+tickets:
+  - logical_id: T-001
+    status: pending
+EOF
+
+  # Tune-skill-style leftover subdir under the autopilot root.
+  mkdir -p "$dir/.simple-workflow/kb"
+
+  # Force the gitignore-setup branch to run by ensuring the flag is absent.
+  rm -f "$dir/.simple-workflow/.setup-done"
+
+  t02_run_hook_in "$dir/.simple-workflow/kb"
+
+  local name="hook exits 0 when invoked from .simple-workflow/kb/"
+  if [ "$T02_EXIT_CODE" -eq 0 ]; then
+    report_pass "$name"
+  else
+    report_fail "$name" "exit=$T02_EXIT_CODE stderr=$T02_STDERR"
+  fi
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  name="no nested .simple-workflow/ materialized under .simple-workflow/kb/"
+  if [ ! -d "$dir/.simple-workflow/kb/.simple-workflow" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name" "found: $dir/.simple-workflow/kb/.simple-workflow/"
+  fi
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  name=".setup-done flag created in the real repo root (not the subdir)"
+  if [ -f "$dir/.simple-workflow/.setup-done" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name" "expected: $dir/.simple-workflow/.setup-done"
+  fi
+}
+
+# ---------- C9: real-root cleanup still ages out old logs (AC-4) ----------
+# The hook's two `find ... -mtime +30 -delete` invocations must keep operating
+# on the same files when the search root is now anchored to $_sw_repo_root.
+case_c9() {
+  echo "=== C9: compact-state / session-log cleanup still works in real root (AC-4) ==="
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local dir
+  dir="$(t02_make_repo c9)"
+
+  mkdir -p "$dir/.simple-workflow/docs/session-log"
+  local old_log="$dir/.simple-workflow/docs/session-log/session-log-OLD.md"
+  : > "$old_log"
+  # Backdate to 60 days ago via `touch -t YYYYMMDDhhmm` (portable across
+  # macOS BSD touch and GNU coreutils). Use Python for the timestamp math so
+  # the test stays self-contained without depending on `date -d` (GNU-only).
+  local stamp
+  stamp=$(python3 -c 'import datetime; print((datetime.datetime.now() - datetime.timedelta(days=60)).strftime("%Y%m%d%H%M"))')
+  touch -t "$stamp" "$old_log"
+
+  # Sanity: precondition holds — the file is old enough for -mtime +30 to fire.
+  if [ ! -f "$old_log" ]; then
+    report_fail "C9 setup: $old_log was not created" "test environment broken"
+    return
+  fi
+
+  t02_run_hook_in "$dir"
+
+  local name="session-log-OLD.md was deleted by the 30-day cleanup"
+  if [ ! -f "$old_log" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name" "expected $old_log to be removed by find -mtime +30"
+  fi
+}
+
+# ---------- C10: real-root invocation still emits Branch: context (Negative AC-1) ----------
+case_c10() {
+  echo "=== C10: real-root invocation still emits Branch: additionalContext (Negative AC-1) ==="
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  local dir
+  dir="$(t02_make_repo c10)"
+
+  t02_run_hook_in "$dir"
+
+  local ctx
+  ctx=$(printf '%s' "$T02_STDOUT" | jq -r '.additionalContext // ""' 2>/dev/null || echo "")
+
+  local name="additionalContext is non-empty"
+  if [ -n "$ctx" ]; then
+    report_pass "$name"
+  else
+    report_fail "$name" "stdout=$T02_STDOUT"
+  fi
+
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  name="additionalContext contains 'Branch:' substring"
+  if printf '%s' "$ctx" | grep -qF "Branch:"; then
+    report_pass "$name"
+  else
+    report_fail "$name" "ctx=$ctx"
+  fi
+}
+
 # ---------- Run all cases ----------
 
 case_c1
@@ -500,6 +663,12 @@ echo
 case_c6
 echo
 case_c7
+echo
+case_c8
+echo
+case_c9
+echo
+case_c10
 
 echo
 echo "=================================="
