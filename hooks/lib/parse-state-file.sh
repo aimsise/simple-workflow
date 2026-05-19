@@ -99,8 +99,8 @@ _psf_have() {
 }
 
 # _psf_repo_root [start_dir] -> prints the nearest ancestor that contains
-# `.simple-workflow/` (the canonical anchor). Falls back to start_dir when
-# no anchor is found.
+# `.simple-workflow/backlog/` (the canonical anchor). Falls back to
+# start_dir when no anchor is found.
 #
 # F-RR: Intentionally diverges from `_sa_repo_root` in state-authority.sh:
 #   - No `.git` fallback (this lib only matters inside an autopilot context,
@@ -110,11 +110,22 @@ _psf_have() {
 #     resolving symlinks would break those comparisons).
 # Reconciliation into a shared helper is deferred — see the matching note
 # in state-authority.sh.
+#
+# Stricter anchor (T-01 / test_simple_workflow29): the candidate must also
+# contain `.simple-workflow/backlog/` so a nested decoy
+# `.simple-workflow/<subdir>/.simple-workflow/` accidentally created by a
+# cwd-relative write (e.g. a tune-skill artifact under
+# `.simple-workflow/kb/` writing to `.simple-workflow/docs/session-log/`
+# while cwd is `.simple-workflow/kb/`) cannot be mistaken for the real
+# autopilot root. The post-compact SessionStart resume injection silently
+# no-op'd in the field when `_psf_repo_root` accepted any `.simple-workflow/`
+# child as the root and returned the decoy. The F-RR note above stays
+# intact: still walks via `dirname` only, no symlink canonicalisation.
 _psf_repo_root() {
   local dir
   dir="${1:-$PWD}"
   while [ "$dir" != "/" ] && [ -n "$dir" ]; do
-    if [ -d "$dir/.simple-workflow" ]; then
+    if [ -d "$dir/.simple-workflow" ] && [ -d "$dir/.simple-workflow/backlog" ]; then
       printf '%s\n' "$dir"
       return 0
     fi

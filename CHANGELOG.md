@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.2] — 2026-05-19
+
+Fix the auto-`/compact` resume path that silently no-op'd when a hook
+fired with a cwd under `.simple-workflow/<subdir>/` (e.g. a `/tune`
+skill body that left cwd at `.simple-workflow/kb/`). Field evidence
+`test_simple_workflow29` (session
+`8f7dff21-c491-4fc2-ada0-20f2bb814fd4`): after a clean post-ship
+`/compact`, `SessionStart(source=compact)` Axis 3 resume injection
+silently skipped because cwd-relative writes from prior hooks had
+materialised a decoy nested `.simple-workflow/kb/.simple-workflow/`,
+which `_psf_repo_root` accepted as a valid autopilot root. The
+pipeline then idled in user-input-wait state until the user typed
+manually. Two-layer defence: T-01 tightens the `_psf_repo_root`
+anchor so the symptom cannot recur, T-02/T-03 prevent the upstream
+hooks from writing the nested directory in the first place.
+
+### Fixed
+
+- `hooks/lib/parse-state-file.sh` `_psf_repo_root` (T-01) — anchor
+  condition tightened from `[ -d "$dir/.simple-workflow" ]` to
+  `[ -d "$dir/.simple-workflow" ] && [ -d "$dir/.simple-workflow/backlog" ]`.
+  A nested decoy `.simple-workflow/<subdir>/.simple-workflow/`
+  created by a cwd-relative write can no longer be mistaken for the
+  autopilot root. Zero false-negative risk: `backlog/` is created at
+  the very first `/brief` step and is present throughout the
+  lifetime of any autopilot context. The companion
+  `_sa_repo_root` in `hooks/lib/state-authority.sh` is intentionally
+  untouched (separate contract; F-RR docstring already documents the
+  divergence).
+- `hooks/session-start.sh` opening setup block (T-02) — every bare
+  `.simple-workflow/...` literal at lines 14-115 (compact-state
+  cleanup, session-log cleanup, `.setup-done` existence check,
+  `mkdir`/`touch` that materialises the flag) now resolves against
+  the absolute `$_sw_repo_root` prefix. `_sw_repo_root` is resolved
+  once at the top of the file via `git rev-parse --show-toplevel ||
+  pwd` (net-zero line count — the redundant resolution that previously
+  lived at line 156 is removed). The Axis 3 resume injection block
+  (lines 233-281) is byte-identical to the prior version.
+- `hooks/session-stop-log.sh` `LOG_DIR` (T-03) — `LOG_DIR` now
+  resolves to `"$_sw_repo_root/.simple-workflow/docs/session-log"`.
+  `_sw_repo_root` is resolved at the top of the file via the
+  shared `_psf_repo_root` helper (sourced from
+  `hooks/lib/parse-state-file.sh`). When invoked from a cwd of
+  `.simple-workflow/<subdir>/` the Stop hook write now lands in the
+  real `.simple-workflow/docs/session-log/`, not in a nested
+  `.simple-workflow/<subdir>/.simple-workflow/docs/session-log/`.
+
+### Verification
+
+- `bash tests/test-hooks-lib.sh` — 138 / 138 pass (baseline 132;
+  +6 new tests under the `--- _psf_repo_root strict anchor (T-01) ---`
+  section: positive walk-up, decoy skip, `is_autopilot_context`
+  regression under nested cwd, `find_any_autopilot_state_file`
+  regression under nested cwd, empty-`.simple-workflow/` skip).
+- `bash tests/test-session-start.sh` — 36 / 36 pass (baseline 30;
+  +6 new assertions across cases C8/C9/C10: nested-cwd no-op for
+  setup block, 30-day session-log cleanup under absolute path,
+  `additionalContext` `Branch:` substring still emitted).
+- `bash tests/test-session-stop-log.sh` — 12 / 12 pass (baseline
+  10; +2 new assertions in Test 11: nested-cwd produces no decoy,
+  log file lands in the real root).
+- `bash tests/test-skill-contracts.sh` — 501 / 501 pass (unchanged
+  baseline; this patch does not touch the contract surface).
+- `bash tests/test-path-consistency.sh` — 139 / 139 pass (unchanged
+  baseline).
+- `bash tests/run-all.sh` — ALL TEST SUITES PASSED.
+
 ## [7.0.1] — 2026-05-18
 
 Docs-only patch. The v7.0.0 release introduced the auto-`/compact`

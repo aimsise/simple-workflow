@@ -314,6 +314,116 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# --- _psf_repo_root strict anchor (T-01) ---
+#
+# Field evidence (`test_simple_workflow29`, session
+# 8f7dff21-c491-4fc2-ada0-20f2bb814fd4): after a successful auto-compact
+# at a ticket boundary, the post-compact SessionStart(source=compact)
+# resume injection silently no-op'd because `is_autopilot_context`
+# returned false. Root cause: prior hooks ran from a cwd of
+# `.simple-workflow/kb/` (a tune-skill artifact) and wrote via relative
+# paths like `.simple-workflow/docs/session-log/`, leaving behind a nested
+# `.simple-workflow/kb/.simple-workflow/` directory. The pre-fix
+# `_psf_repo_root` accepted ANY directory with a `.simple-workflow/` child
+# as the repo root, so it returned `.simple-workflow/kb/` itself — making
+# `find_any_autopilot_state_file` look in
+# `.simple-workflow/kb/.simple-workflow/backlog/briefs/active`, which does
+# not exist.
+#
+# The T-01 fix tightens the anchor: a candidate must contain BOTH
+# `.simple-workflow/` AND `.simple-workflow/backlog/` to qualify. The
+# tests below pin the new behaviour so a future regression cannot revert
+# the loose anchor without failing CI.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- _psf_repo_root strict anchor (T-01) ---"
+
+# Build the T-01 fixture tree. Use a private tempdir so the existing
+# PSF_TMP trap does not have to be extended.
+T01_TMP="$(mktemp -d)"
+# shellcheck disable=SC2064
+trap "rm -rf '$PSF_TMP' '$NEG_TMP' '$T01_TMP'" EXIT
+
+# Real autopilot root with a live state file.
+mkdir -p "$T01_TMP/repo/.simple-workflow/backlog/briefs/active/foo"
+touch "$T01_TMP/repo/.simple-workflow/backlog/briefs/active/foo/autopilot-state.yaml"
+
+# Empty nested subdir used by AC-2 (positive walk-up).
+mkdir -p "$T01_TMP/repo/some/nested/dir"
+
+# Decoy nested `.simple-workflow/` from the field incident — has NO
+# `backlog/` subdirectory but does have `docs/session-log/` (mirrors the
+# tune-skill artifact path).
+mkdir -p "$T01_TMP/repo/.simple-workflow/kb/.simple-workflow/docs/session-log"
+touch "$T01_TMP/repo/.simple-workflow/kb/.simple-workflow/docs/session-log/x.md"
+
+# AC-6 fixture: a stray `.simple-workflow/` without `backlog/`, with an
+# empty `child/` subdir so we can invoke `_psf_repo_root` from a
+# descendant — that way the start-dir fallback path `$1` is not equal to
+# `$T01_TMP/scratch` (the directory under test).
+mkdir -p "$T01_TMP/scratch/.simple-workflow"
+mkdir -p "$T01_TMP/scratch/child"
+
+# AC-2: positive — normal root preserved. Walk up from an empty nested
+# dir and stop at the canonical root.
+# Wrap in set +e / set -e: even on success the function returns 0, but
+# the same idiom is used below for AC-6 (which intentionally returns
+# non-zero) so keep the guards uniform across the section.
+set +e
+out="$( _psf_repo_root "$T01_TMP/repo/some/nested/dir" )"
+set -e
+assert_eq "T-01 AC-2: _psf_repo_root walks up to canonical root" "$T01_TMP/repo" "$out"
+
+# AC-3: negative — nested `.simple-workflow/` without `backlog/` is
+# skipped; the walk continues up to the real autopilot root.
+set +e
+out="$( _psf_repo_root "$T01_TMP/repo/.simple-workflow/kb" )"
+set -e
+assert_eq "T-01 AC-3: _psf_repo_root skips nested decoy .simple-workflow/" "$T01_TMP/repo" "$out"
+
+# AC-4: is_autopilot_context regression under nested cwd. The strict
+# anchor must let the function walk past the decoy to the real root,
+# where the find -mindepth/-maxdepth probe succeeds.
+set +e
+( cd "$T01_TMP/repo/.simple-workflow/kb" && is_autopilot_context )
+exit_code=$?
+set -e
+assert_exit_zero "T-01 AC-4: is_autopilot_context returns 0 under nested decoy cwd" "$exit_code"
+
+# AC-5: find_any_autopilot_state_file regression under nested cwd. The
+# returned path must resolve to the real autopilot-state.yaml.
+set +e
+t01_ac5_out="$( cd "$T01_TMP/repo/.simple-workflow/kb" && find_any_autopilot_state_file )"
+t01_ac5_exit=$?
+set -e
+assert_exit_zero "T-01 AC-5: find_any_autopilot_state_file exits 0 under nested decoy cwd" "$t01_ac5_exit"
+t01_ac5_resolved="$(realpath -e "$t01_ac5_out" 2>/dev/null || true)"
+t01_ac5_expected="$(realpath -e "$T01_TMP/repo/.simple-workflow/backlog/briefs/active/foo/autopilot-state.yaml" 2>/dev/null || true)"
+assert_eq "T-01 AC-5: find_any_autopilot_state_file resolves to real autopilot-state.yaml" \
+  "$t01_ac5_expected" "$t01_ac5_resolved"
+
+# AC-6: no false-positive on empty `.simple-workflow/`. Start from
+# `$T01_TMP/scratch/child` (an empty subdir). The function must NOT
+# return `$T01_TMP/scratch` because `$T01_TMP/scratch/.simple-workflow/`
+# has no `backlog/`. The fallback prints `$1` (the start dir) which is
+# `$T01_TMP/scratch/child`, NOT `$T01_TMP/scratch`. Wrap in set +e /
+# set -e because the function returns 1 on the fallback path (no anchor
+# found anywhere on the walk) and would otherwise abort the script.
+set +e
+out="$( _psf_repo_root "$T01_TMP/scratch/child" )"
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$out" != "$T01_TMP/scratch" ]; then
+  echo -e "  ${GREEN}PASS${NC} T-01 AC-6: _psf_repo_root does not promote empty .simple-workflow/"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} T-01 AC-6: _psf_repo_root falsely returned \$T01_TMP/scratch ($out)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # Section 2-bis: tier-3 BSD awk regression for parse_phase_status /
 # parse_ticket_statuses. These functions previously used the gawk-only
 # 3-arg `match($0, regex, m)` form in their awk fallback, which silently
