@@ -23,6 +23,10 @@ Audit current code changes. Args: $ARGUMENTS
 
 Invocation policy: Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill (e.g. `/impl` Step 17, `/ship` review-gate). `disable-model-invocation: false` is intentional because this skill is chain-called from other skills by name.
 
+## Pre-computed Context
+
+Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Mandatory Skill Invocations
 
 The following agent invocations are **contractual** — `/audit` MUST delegate to each of these via the Agent tool (in parallel when both are requested). `/audit` itself performs no review work; its entire role is to spawn the review agents, aggregate their counts, and return a structured result block. Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
@@ -310,3 +314,11 @@ fail-open fallback log are documented in [references/audit-coverage.md](referenc
   "/audit: all spawned agents failed. code-reviewer: <error>. security-scanner: <error>."
 - **Invalid only_security_scan value** (e.g., `only_security_scan=yes`): Print warning and treat as `false` (default behavior).
 - **Shell execution disabled** (`disableSkillShellExecution: true` policy-replaces the `!`...`` context blocks at the top of this skill): the `Current branch:`, `Active tickets:`, `Staged changes:`, `Unstaged changes:`, and `Changed files:` blocks render as policy-replacement placeholders instead of live command output. In that fallback mode, invoke the equivalent commands explicitly via the Bash tool (`git branch --show-current`, `git diff --cached --stat`, `git diff --stat`, `git diff --cached --name-only`, and `ls -d .simple-workflow/backlog/active/*/`), then continue Step 1 using those Bash-tool results as if they were the pre-computed context.
+
+## Subagent Skill-Access Handoff
+
+When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
+
+- Do NOT hand skill references to `ac-evaluator`, `security-scanner`, or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.

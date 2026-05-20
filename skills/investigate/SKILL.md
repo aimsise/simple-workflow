@@ -28,6 +28,10 @@ Investigate the following topic: $ARGUMENTS
 Current repo state:
 !`git status --short | head -20`
 
+## Pre-computed Context
+
+Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Instructions
 
 1. Parse `$ARGUMENTS` for `(ticket-dir: <path>)` to determine the output destination so downstream `/scout` and `/plan2doc` find the artifact at its canonical path:
@@ -40,3 +44,11 @@ Current repo state:
 5. Write ALL detailed findings to the determined output path (either `{ticket-dir}/investigation.md` or `.simple-workflow/docs/research/{topic}.md`). Tell the researcher agent the exact output file path so the artifact lands where cross-references expect it.
    - **Return value cap**: The spawned researcher's return value MUST stay under 500 tokens per the Context Conservation Protocol in `agents/researcher.md`. Full investigation content is written to the determined output path; the orchestrator reads it on demand.
 6. Return a brief executive summary with the output file path so the caller can decide whether to read the full artifact.
+
+## Subagent Skill-Access Handoff
+
+When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
+
+- Do NOT hand skill references to `ac-evaluator`, `security-scanner`, or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.

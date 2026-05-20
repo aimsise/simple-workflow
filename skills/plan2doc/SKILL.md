@@ -38,6 +38,10 @@ Existing research (if any):
 
 Invocation policy: Do not auto-invoke. Only invoke when explicitly called by name by the user or by another skill (e.g. `/scout` Step 7). `disable-model-invocation: false` is intentional because this skill is chain-called from `/scout` by name via the Skill tool; flipping to `true` breaks the chain-call surface for `/scout` and any direct `/plan2doc <feature>` user invocation.
 
+## Pre-computed Context
+
+Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Mandatory Skill Invocations
 
 The following agent invocation is **contractual** — `/plan2doc` MUST delegate to the `planner` agent via the Agent tool. `/plan2doc` itself writes no plan content; its entire role is to detect Size, resolve the output destination, and spawn the `planner` agent with the appropriate model (sonnet for S, opus for M/L/XL). Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
@@ -128,3 +132,11 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
 - **Missing .simple-workflow/backlog/ directories**: Create `.simple-workflow/backlog/active/{ticket-dir}/` automatically when `ticket-dir` is specified.
 - **ticket.md exists but has no `| Size |` row**: Treat as unknown Size and default to `M` (→ opus).
 - **planner agent failure**: Report the error and the resolved output path so the user can retry.
+
+## Subagent Skill-Access Handoff
+
+When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
+
+- Do NOT hand skill references to `ac-evaluator`, `security-scanner`, or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.
