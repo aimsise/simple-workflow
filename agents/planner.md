@@ -11,6 +11,7 @@ tools:
   - "Bash(git diff:*)"
   - "Bash(git status:*)"
   - "Bash(git branch:*)"
+  - Skill
 model: opus
 maxTurns: 30
 permissionMode: acceptEdits
@@ -45,3 +46,9 @@ This self-audit applies on the 1st-draft emit and on every retry re-emit.
 **Summary**: [200 words or less overview]
 **Steps**: [numbered implementation steps, one line each, max 10]
 **Next Steps**: [recommended actions]
+
+## External Tool Integration Policy
+
+- **Use available utility skills.** When an appropriate utility skill is available for your current task — named in the prompt that spawned you, or otherwise known to you (e.g. a browser-automation skill for UI / E2E checks, a documentation skill for API lookups) — invoke it via the **Skill tool** when it materially advances the work. The Skill tool is available to you by default. Do not call skills speculatively; only when they help the task at hand.
+- **Never invoke pipeline skills.** You MUST NOT call any of `/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`. These are orchestrators owned by the parent thread; recursing into them from a subagent contaminates pipeline state and is a contract violation detectable by the skill invocation audit.
+- **Degrade gracefully.** If no relevant skill is available, fall back to your in-house capabilities (Read / Grep / Glob / Bash / in-context reasoning) and do NOT fail your task over a missing optional tool.

@@ -40,6 +40,8 @@ Done tickets:
 Knowledge base status:
 !`ls .simple-workflow/kb/*.yaml 2>/dev/null || echo "KB not initialized"`
 
+Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## YAML Schema Reference
 
 ### entries.yaml
@@ -216,3 +218,11 @@ Print a summary:
 - **YAML parse error**: If any YAML file is malformed, print the error and stop. Do not overwrite malformed files without user confirmation.
 - **KB directory missing files**: Re-create only the missing files with defaults (Step 1).
 - **Promotion write failure**: Report which file failed to write. The knowledge base may be in an inconsistent state; advise the user to check `.simple-workflow/kb/` manually.
+
+## Subagent Skill-Access Handoff
+
+When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
+
+- Do NOT hand skill references to `ac-evaluator`, `security-scanner`, or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.

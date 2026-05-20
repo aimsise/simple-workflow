@@ -50,6 +50,10 @@ argument-hint: "<refactoring target and goal> [ticket-dir=<dir-name>]"
 
 Plan and execute refactoring: $ARGUMENTS
 
+## Pre-computed Context
+
+Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Argument Parsing
 
 Parse `$ARGUMENTS` for the following:
@@ -134,3 +138,11 @@ Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is inten
 - **Backup branch failure** (Phase 2 Step 3b): If `git branch backup/pre-refactor-$(date +%Y%m%d-%H%M%S)` fails (e.g. duplicate timestamp under rapid re-runs, working-tree conflict), print the error and stop before Phase 3. Do not proceed with destructive implementation without a successful safety branch.
 - **code-reviewer agent failure** (Phase 3 Step 6): Handled inline by Phase 3 Step 7 — `AskUserQuestion` prompts the user with `stop` / `continue without review`. In non-interactive environments (`claude -p` / CI), the default is `stop`. Never silently treat the failure as "no issues found".
 - **Loop exit at max iterations** (Phase 3 Step 7): If iteration 3 is reached with remaining Critical or Warning findings, exit the loop and report the remaining findings in Phase 4 Final Report. Do not silently retry beyond the 3-iteration ceiling.
+
+## Subagent Skill-Access Handoff
+
+When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
+
+- Do NOT hand skill references to `ac-evaluator`, `security-scanner`, or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.

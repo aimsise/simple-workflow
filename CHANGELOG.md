@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.3] — 2026-05-21
+
+Let the research-and-build subagents use the user's installed Skills.
+Previously every subagent `tools:` allowlist omitted `Skill`, so an agent
+could never invoke a user utility skill (e.g. a UI/UX or browser-automation
+skill) even when the task plainly called for one. This release grants
+`Skill` to the seven generator/investigator subagents and threads skill
+discovery from the spawning skills into the Agent prompt, so a relevant
+skill is used automatically when present and silently ignored when absent.
+The three verdict/security subagents (`ac-evaluator`, `security-scanner`,
+`ticket-evaluator`) stay hermetic by design. No behaviour change for users
+who have no extra Skills installed.
+
+### Added
+
+- `Skill` tool granted to the 7 generator/investigator subagents
+  (`researcher`, `planner`, `implementer`, `test-writer`, `code-reviewer`,
+  `decomposer`, `tune-analyzer`). The 3 hermetic subagents (`ac-evaluator`,
+  `security-scanner`, `ticket-evaluator`) intentionally omit it so their
+  verdicts and security audits stay deterministic.
+- "External Tool Integration Policy" block in each of the 7 Skill-enabled
+  agent bodies: prefer a relevant utility skill when it materially helps,
+  never recurse into the 13 pipeline skills, and degrade gracefully when
+  none is available.
+- "Subagent Skill-Access Handoff" block plus an `Available user skills:`
+  pre-computed-context probe in the 9 skills that spawn those subagents
+  (`/investigate`, `/plan2doc`, `/impl`, `/test`, `/audit`,
+  `/create-ticket`, `/refactor`, `/brief`, `/tune`). The spawner enumerates
+  installed skills at load time and passes any relevant one into the Agent
+  prompt; the 3 hermetic subagents are explicitly excluded from the handoff.
+
+### Verification
+
+- `tests/test-path-consistency.sh` 139/139, `tests/test-skill-contracts.sh`
+  572/572, `tests/run-all.sh` exit 0.
+- Dogfood (`/brief mode=auto` in a sibling test repo, 2026-05-21): 4 subagent
+  invocations of an installed `ui-ux-pro-max` skill (researcher ×2, planner,
+  implementer), with the full probe → handoff → use chain confirmed in the
+  JSONL transcripts; the main thread never invoked the skill directly; the 3
+  hermetic subagents made zero skill calls; no permission denials.
+
 ## [7.0.2] — 2026-05-19
 
 Fix the auto-`/compact` resume path that silently no-op'd when a hook

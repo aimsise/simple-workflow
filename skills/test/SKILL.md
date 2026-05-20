@@ -36,6 +36,10 @@ Current changes:
 Existing test directories:
 !`ls -d tests/ test/ __tests__/ spec/ 2>/dev/null || echo "(no top-level test directory found)"`
 
+## Pre-computed Context
+
+Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Instructions
 
 1. Parse `$ARGUMENTS` to identify the file path(s) or feature name to be tested. The spawned test-writer subagent owns the fork — the orchestrator does NOT run direct Read/Grep/Edit loops at this level; delegation happens via `context: fork` + `agent: test-writer` declared in the frontmatter.
@@ -51,3 +55,11 @@ Existing test directories:
 - **Empty arguments**: If `$ARGUMENTS` is empty, print `Usage: /test <file path or feature name to test>` and stop without spawning the subagent.
 - **test-writer agent failure** (no return value, or `**Status**: failed`): Report the failure reason and any files modified up to the failure point. Do not silently swallow the error.
 - **Persistent test failures after fix loop**: When the test-writer returns `**Status**: partial` with remaining failures, surface the test command output and the list of still-failing tests to the user. Do not mark the task as success.
+
+## Subagent Skill-Access Handoff
+
+When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
+
+- Do NOT hand skill references to `ac-evaluator`, `security-scanner`, or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.
