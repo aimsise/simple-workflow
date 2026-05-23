@@ -7066,5 +7066,86 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category AL: ac-evaluator skill-access capability (runtime / browser verification)
+# Rationale: ac-evaluator was made skill-capable so it can gather live runtime
+#   evidence (render the built artifact, capture console errors / contrast /
+#   screenshots via a browser-automation utility skill) for runtime & visual
+#   ACs, instead of signing those off by static code inspection. This category
+#   is a drift-guard: a future "simplification" PR that strips `- Skill` from
+#   the agent, drops the External Tool Integration Policy section, or re-adds
+#   ac-evaluator to the hermetic exclusion list would otherwise pass silently.
+#   The evidence-only firewall (no authoring/modifying code; no pipeline-skill
+#   recursion) is asserted alongside the capability so it cannot be widened into
+#   a Generator/Evaluator firewall breach without tripping a test.
+# =============================================================================
+echo "--- Cat AL: ac-evaluator skill-access capability ---"
+
+ACEV_SKILL_MD="$REPO_DIR/agents/ac-evaluator.md"
+
+# CT-AL-1: ac-evaluator frontmatter tools: list includes a standalone `- Skill` entry.
+al1_result="false"
+if [ -f "$ACEV_SKILL_MD" ]; then
+  al1_result=$(awk '
+    BEGIN { fences=0; in_fm=0; found=0 }
+    /^---[[:space:]]*$/ { fences++; if (fences==1) { in_fm=1; next } if (fences==2) { in_fm=0 } }
+    in_fm && /^[[:space:]]*-[[:space:]]+Skill[[:space:]]*$/ { found=1 }
+    END { print (found ? "true" : "false") }
+  ' "$ACEV_SKILL_MD")
+fi
+assert_true \
+  "CT-AL-1: agents/ac-evaluator.md frontmatter tools includes a standalone '- Skill' entry" \
+  "$al1_result"
+
+# CT-AL-2: ac-evaluator has the `## External Tool Integration Policy` section.
+al2_result="false"
+if [ -f "$ACEV_SKILL_MD" ] && grep -qE '^## External Tool Integration Policy[[:space:]]*$' "$ACEV_SKILL_MD"; then
+  al2_result="true"
+fi
+assert_true \
+  "CT-AL-2: agents/ac-evaluator.md has a '## External Tool Integration Policy' section" \
+  "$al2_result"
+
+# CT-AL-3: that section preserves the evidence-only firewall — both the
+# "MUST NOT ... author/generate/modify the implementation" guard AND the
+# "Never invoke pipeline skills" bullet must appear under the heading.
+al3_result="false"
+if [ -f "$ACEV_SKILL_MD" ]; then
+  al3_result=$(awk '
+    BEGIN { in_sec=0; guard=0; pipeline=0 }
+    /^## External Tool Integration Policy[[:space:]]*$/ { in_sec=1; next }
+    in_sec && /^## / { in_sec=0 }
+    in_sec {
+      ls=tolower($0)
+      if (ls ~ /must not/ && ls ~ /author|generate|modify/) guard=1
+      if (ls ~ /never invoke pipeline skills/) pipeline=1
+    }
+    END { print ((guard && pipeline) ? "true" : "false") }
+  ' "$ACEV_SKILL_MD")
+fi
+assert_true \
+  "CT-AL-3: ac-evaluator External Tool Integration Policy keeps the evidence-only firewall (no authoring/modifying + no pipeline-skill recursion)" \
+  "$al3_result"
+
+# CT-AL-4: no skill's Subagent Skill-Access Handoff still excludes ac-evaluator
+# from receiving skill references (caller side now hands it browser-automation
+# utilities for runtime/visual AC verification).
+al4_hits=$( { grep -rlF 'hand skill references to `ac-evaluator`' "$REPO_DIR/skills" 2>/dev/null || true; } | wc -l | tr -d ' ')
+assert_true \
+  "CT-AL-4: no skill excludes ac-evaluator in its handoff line (found $al4_hits still excluding; expected 0)" \
+  "$([ "$al4_hits" = "0" ] && echo true || echo false)"
+
+# CT-AL-5: skills/impl/SKILL.md (the sole caller) carries the positive
+# browser-automation handoff bullet for ac-evaluator.
+al5_result="false"
+if grep -qF 'For `ac-evaluator`, hand off a browser-automation' "$REPO_DIR/skills/impl/SKILL.md"; then
+  al5_result="true"
+fi
+assert_true \
+  "CT-AL-5: skills/impl/SKILL.md hands ac-evaluator a browser-automation utility for runtime/visual ACs" \
+  "$al5_result"
+
+echo ""
+
 # --- Summary ---
 print_summary

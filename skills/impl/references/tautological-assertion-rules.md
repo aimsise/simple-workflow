@@ -112,7 +112,7 @@ singleton accessor).
 ## Limitations
 
 The first-stage implementation is **grep-based** and runs through the
-ac-evaluator's available tools (`Read`, `Grep`, `Glob`). It catches the
+ac-evaluator's text-inspection tools (`Read`, `Grep`, `Glob`). It catches the
 common forms above by literal pattern matching. It deliberately does not
 attempt the following, which would require AST analysis or program
 reasoning that no `Read` / `Grep` / `Glob` workflow can deliver:

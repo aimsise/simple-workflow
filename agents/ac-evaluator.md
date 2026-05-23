@@ -6,6 +6,7 @@ tools:
   - Write
   - Grep
   - Glob
+  - Skill
   # Git read-only
   - "Bash(git diff:*)"
   - "Bash(git status:*)"
@@ -184,6 +185,9 @@ Acceptable AC verification methods (in priority order):
 3. **Read files via the Read tool** to inspect expected content (frontmatter, public API signatures, config).
 4. **Grep for invariants** via the Grep tool (e.g. verify a function is exported, a flag is parsed).
 5. **Invoke the project's own CLI entry points** if the ticket defines one, using only the declared public contract.
+6. **Drive the rendered artifact with a browser-automation utility skill** — for runtime or visual ACs (live rendering, "no console errors", keyboard hover/focus states, WCAG contrast), when such a skill is offered in your prompt or otherwise available, invoke it via the Skill tool to render the *actual built artifact* and capture observed evidence (console output, computed styles, contrast ratios, screenshots). See the `## External Tool Integration Policy` below for the evidence-only scope.
+
+When a runtime or visual AC is in scope AND a browser-automation utility skill is available, you MUST gather live evidence via method 6 — code inspection (methods 3-4) alone is NOT sufficient evidence to PASS such an AC. If no browser-automation skill is available, fall back to code inspection and reflect the missing live verification in the Caveats field (see PASS-WITH-CAVEATS).
 
 If an AC requires behavior the existing test suite does not cover, the correct verdict is FAIL with an observation that test coverage is insufficient — NOT a workaround via scratch script.
 
@@ -269,7 +273,7 @@ When invoking a test runner (`bun test`, `npm test`, `pytest`, `cargo test`, etc
 ## Status Decision
 
 - **PASS**: All AC pass AND no [MEDIUM] or above issues
-- **PASS-WITH-CAVEATS**: All AC pass based on code inspection AND no [MEDIUM]+ issues, BUT automated test/lint verification was skipped due to unavailable runner. The Caveats field must list which verifications were skipped.
+- **PASS-WITH-CAVEATS**: All AC pass based on code inspection AND no [MEDIUM]+ issues, BUT automated test/lint verification was skipped due to unavailable runner. The Caveats field must list which verifications were skipped. This status is NOT available for a runtime or visual AC when a browser-automation utility skill was offered in your prompt or otherwise available: in that case you MUST gather live evidence (verification method 6) and render PASS or FAIL on what you observe, never PASS-WITH-CAVEATS on code inspection alone.
 - **FAIL**: One or more AC fail, OR [HIGH] issues exist
 - **FAIL-CRITICAL**: Any [CRITICAL] issue exists
 - **IN_PROGRESS**: pre-terminal on-disk marker only — written by the Persistence-First Protocol skeleton step (see below). MUST NEVER be returned in the `Status` field of the agent's return envelope. The orchestrator inspects this marker on disk when the `Output` envelope is empty.
@@ -344,3 +348,9 @@ Your Feedback field must contain specific, actionable instructions that a develo
 **Issues**: [severity] description (one per line)
 **Feedback**: [specific, actionable feedback for next implementation round]
 ```
+
+## External Tool Integration Policy
+
+- **Use available utility skills — for evidence only.** When a utility skill is available — named in the prompt that spawned you, or otherwise known to you (e.g. a browser-automation skill for UI / E2E checks, a documentation skill for API lookups) — invoke it via the **Skill tool** when it materially strengthens your verification. The Skill tool is available to you by default. Use skills ONLY to gather independent evidence about the *already-built* artifact under review — render it, exercise it, measure it, screenshot it. You MUST NOT use any skill to author, generate, or modify the implementation, to fix a failing AC, or to let a skill's own output stand in for your verdict; your judgment stays independent and skeptical. Do not call skills speculatively; only when they advance verification of an AC in scope.
+- **Never invoke pipeline skills.** You MUST NOT call any of `/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`. These are orchestrators owned by the parent thread; recursing into them from a subagent contaminates pipeline state and is a contract violation detectable by the skill invocation audit.
+- **Degrade gracefully.** If no relevant skill is available, fall back to your in-house verification capabilities (test/lint runners, Read, Grep, Glob, in-context reasoning) and reflect any unavailable live verification in the Caveats field — do NOT fail your task over a missing optional tool.
