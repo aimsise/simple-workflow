@@ -9,13 +9,7 @@ The plugin assumes the following CLIs are available on `PATH`:
 - `jq` — JSON parsing inside hooks and shell helpers.
 - `yq` (mikefarah/yq v4) — YAML mutation used by hooks that append to `autopilot-state.yaml` (e.g. `runtime_metrics:`). Hooks degrade gracefully to a `python3 + PyYAML` fallback, then to a pure-shell append, when `yq` is missing.
 
-The `hooks/lib/` directory contains shared helpers that are sourced by multiple hooks. Each helper is a standalone Bash file with no top-level side effects, exported functions only, and a three-tier fallback strategy (yq → python3+PyYAML → pure-shell) where applicable. The five current libraries are:
-
-- `forbidden-rationale-patterns.sh` — array of ERE patterns that classify forbidden stop-reason rationales.
-- `parse-state-file.sh` — YAML parse and autopilot-context detection helpers (`is_autopilot_context`, `parse_phase_status`, `parse_ticket_statuses`, `find_state_file`).
-- `jsonl-tail-audit.sh` — JSONL transcript tail reader for tool-use detection.
-- `state-authority.sh` — registry-driven field-ownership enforcement (`is_hook_owned_field`, `state_field_change_blocked`).
-- `runtime-metrics.sh` — shared `append_runtime_metrics_entry` helper for writing `runtime_metrics:` entries to autopilot-state.yaml files.
+`hooks/lib/*.sh` holds shared helpers sourced by multiple hooks. Each helper MUST be a standalone Bash file with no top-level side effects, exported functions only, and (where it manipulates YAML) a three-tier fallback strategy (`yq` → `python3 + PyYAML` → pure-shell). Enumerate the current set via `ls hooks/lib/`; per-helper purpose lives in each file's leading comment block.
 
 ## Hooks
 
@@ -35,12 +29,9 @@ This rule was distilled from a v6.7.0 dogfood incident in which a verify hook ne
 
 ## Language
 
-The following MUST be written in English:
+**IMPORTANT**: every tracked file (anything not matched by `.gitignore`) AND every Git / GitHub artifact (commit messages, branch names, tag names and annotations, PR titles and bodies, PR review comments, Issue titles and bodies, Issue comments, Discussions posts, GitHub Release notes) MUST be written in English. Translate before writing if the conversation is in another language.
 
-- **Git / GitHub artifacts**: commit messages, branch names, tag names and annotations, PR titles and bodies, PR review comments, Issue titles and bodies, Issue comments, Discussions posts, GitHub Release notes.
-- **Every tracked file** (anything not matched by `.gitignore`): documentation, code, code comments, skill / agent prompts, hooks, tests, CHANGELOG, this file, and any other committed artifact.
-
-Conversations with the user may be in any language — translate before writing to any of the above. Non-English content is allowed only in gitignored paths: `.simple-workflow/`, `.docs/`, `CLAUDE.local.md`, `.claude/settings.local.json`, `.claude/worktrees/`, `.env*`.
+Non-English content is allowed only in gitignored paths: `.simple-workflow/`, `.docs/`, `CLAUDE.local.md`, `.claude/settings.local.json`, `.claude/worktrees/`, `.env*`.
 
 ## Releases
 
@@ -103,7 +94,7 @@ For any intentional omission, record a one-line rationale in the commit message 
 
 ## PII
 
-Never write personally identifying machine paths into tracked files. Specifically, an **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout, and is rejected by the `pre-write-safety.sh` and `pre-edit-safety.sh` hooks.
+**IMPORTANT**: never write personally identifying machine paths into tracked files. An **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout and is rejected by `pre-write-safety.sh` / `pre-edit-safety.sh`.
 
 - Use the `<repo>` placeholder for repository-relative documentation paths (e.g. `<repo>/.simple-workflow/backlog/active/...`).
 - Use `~`, `$HOME`, or relative paths inside code and shell snippets where a literal home prefix would otherwise appear.
