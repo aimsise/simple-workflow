@@ -127,6 +127,33 @@ When the two axes point to different sizes (e.g., file count suggests S but AC c
 
 A minimum-AC-count floor of 2 ACs per ticket applies regardless of size.
 
+## Gate 6: Capability Mapping
+
+**Scope**: ticket-wide.
+
+**Definition**: when a ticket contains one or more **runtime/visual** ACs, each such AC MUST be bound to an upstream-detected capability (utility skill, MCP server, test runner, etc.) that the downstream verifier (`/impl` → `ac-evaluator`) can pick up from the ticket itself, so that live evidence — not static code inspection — drives the PASS/FAIL verdict.
+
+An AC is **runtime/visual** when its PASS/FAIL hinges on at least one of the following observation points (non-exhaustive minimum list):
+
+- Live rendering of the artifact (the AC names a UI surface, page, screenshot, or pixel-level outcome that only materialises when the built code runs).
+- Console-error count or any other browser-runtime log invariant.
+- Keyboard focus or hover state (the AC names focus order, focus ring visibility, hover style, or any interactive state).
+- WCAG contrast or any accessibility ratio measured against a rendered DOM.
+- Network I/O (the AC asserts a request/response shape, a status code, or a wire-level payload).
+- FS-state-dependent behaviour (the AC asserts a file is written/read/created/deleted, or that the program reacts to a specific on-disk state).
+
+If none of these apply, the AC is **static** (file-grep / counter / exit-code verifiable) and no binding is required.
+
+**Binding rule** (per-AC): each runtime/visual AC MUST appear in the `Bound AC(s)` column of at least one row of the ticket's `### Capabilities` section, OR the AC MUST be rewritten as a static AC (e.g. assert a build-artifact byte sequence with `grep` rather than a rendered pixel). A runtime/visual AC with no binding and no static rewrite is a Gate 6 FAIL.
+
+**Capability shape** (per row): each `### Capabilities` row carries `Name | Type | Purpose | Used by | Bound AC(s)`. `Type` is one of `skill`, `agent`, `MCP server`, `test runner`, or a similarly recognisable label. `Used by` names the consumer phase / agent (e.g. `ac-evaluator`, `/impl`, main-thread orchestrator). `Bound AC(s)` lists the AC identifiers the capability is responsible for; an empty value is allowed only for demonstrative rows that bind no AC.
+
+**Subagent / main-thread asymmetry**: an MCP server may be recorded for a runtime AC only when the bound consumer runs on the **main thread** (orchestrator phases such as `/create-ticket` or `/plan2doc`). Forked subagents are not guaranteed to inherit MCP tool access under the current Claude Code platform limits; a runtime AC consumed by `ac-evaluator` or `implementer` MUST bind a Skill (or a static rewrite), not an MCP server alone.
+
+A `#### Capability Gaps` subsection MAY follow the table to record runtime/visual ACs that could not be bound and the reason. A non-empty Gaps list does NOT automatically PASS Gate 6 — every entry MUST also flow into the AC list as a static rewrite OR be acknowledged by the planner's rationale.
+
+**Evaluator note**: Gate 6 activates only after `skills/create-ticket/references/ac-quality-criteria.md` ships this section. Evaluations performed against earlier versions of this file deliberately applied Gates 1-5 only; their PASS verdicts do not imply Gate 6 conformance.
+
 ## Evaluator MUST NOT (drift-prevention list)
 
 These rules bind the `ticket-evaluator` specifically and are intended to stop the pedantic-drift failure mode where successive rounds invent new objections.
@@ -143,6 +170,7 @@ These rules bind the `ticket-evaluator` specifically and are intended to stop th
 - **MUST** ensure Scope + Implementation Notes name file paths and public contracts (Gate 4 WHAT).
 - **MUST NOT** embed code snippets that prescribe internal algorithms (Gate 4 HOW).
 - **MUST** write a one-line rationale when file-count and AC-count axes disagree on size (Gate 5 tiebreak enablement).
+- **MUST** emit a `### Capabilities` section between `### Implementation Notes` and `### Claude Code Workflow` whenever Gate 6 applies — that is, whenever at least one AC is runtime/visual per the Gate 6 classifier list. Each row carries `Name | Type | Purpose | Used by | Bound AC(s)`, and every runtime/visual AC MUST appear in at least one row's `Bound AC(s)` column OR be rewritten as a static AC. When no AC is runtime/visual, the section is optional but a one-line note ("All ACs are static; no runtime binding required.") is encouraged for clarity.
 
 ## Output Contract (Evaluator)
 

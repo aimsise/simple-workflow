@@ -7135,15 +7135,237 @@ assert_true \
   "CT-AL-4: no skill excludes ac-evaluator in its handoff line (found $al4_hits still excluding; expected 0)" \
   "$([ "$al4_hits" = "0" ] && echo true || echo false)"
 
-# CT-AL-5: skills/impl/SKILL.md (the sole caller) carries the positive
-# browser-automation handoff bullet for ac-evaluator.
+# CT-AL-5: skills/impl/SKILL.md (the sole caller) carries the deterministic
+# per-AC capability handoff for ac-evaluator. The legacy advisory bullet
+# ("For `ac-evaluator`, hand off a browser-automation utility skill ...")
+# was superseded in v7.1.0 by a forward-reference to Step 13 / Step 15
+# that Read `{ticket-dir}/ticket.md`'s `### Capabilities` section and
+# inline the bound per-AC capability list into the spawn prompt. This
+# assertion locks the new shape: the handoff bullet for ac-evaluator must
+# point at the deterministic per-AC handoff (Step 13/Step 15) and must
+# preserve the evidence-only firewall ("never a skill that authors or
+# modifies the code under review").
 al5_result="false"
-if grep -qF 'For `ac-evaluator`, hand off a browser-automation' "$REPO_DIR/skills/impl/SKILL.md"; then
+if grep -qF 'For `ac-evaluator`, the capability handoff is no longer ad-hoc' "$REPO_DIR/skills/impl/SKILL.md" \
+   && grep -qF '### Capabilities' "$REPO_DIR/skills/impl/SKILL.md" \
+   && grep -qF 'never a skill that authors or modifies the code under review' "$REPO_DIR/skills/impl/SKILL.md"; then
   al5_result="true"
 fi
 assert_true \
-  "CT-AL-5: skills/impl/SKILL.md hands ac-evaluator a browser-automation utility for runtime/visual ACs" \
+  "CT-AL-5: skills/impl/SKILL.md ac-evaluator handoff points at the deterministic per-AC Capabilities binding (Step 13 / Step 15) with the evidence-only firewall preserved" \
   "$al5_result"
+
+echo ""
+
+# =============================================================================
+# Category AM: capability-detection wiring (T-CAP / v7.1.0)
+# Diff: locks the upstream-detection -> per-AC binding -> downstream verifier
+#        contract introduced in v7.1.0. Each assertion pins one of the
+#        invariants from the plan's Acceptance Criteria (AC-1 .. AC-10).
+# =============================================================================
+echo "--- Cat AM: capability-detection wiring (T-CAP / v7.1.0) ---"
+
+# CT-AM-1: ticket-template.md has the new `### Capabilities` block between
+# `### Implementation Notes` and `### Claude Code Workflow`, and the column
+# header sequence two lines below the heading is the canonical
+# `Name | Type | Purpose | Used by | Bound AC(s)`. Pins AC-1.
+TEMPLATE_MD="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+am1_result="false"
+if [ -f "$TEMPLATE_MD" ]; then
+  am1_order=$(grep -nE '^### (Capabilities|Implementation Notes|Claude Code Workflow)' "$TEMPLATE_MD" \
+              | awk -F: '{print $2}' \
+              | tr '\n' '|' | sed 's/|$//')
+  am1_expected='### Implementation Notes|### Capabilities|### Claude Code Workflow'
+  am1_cap_line=$(grep -nE '^### Capabilities$' "$TEMPLATE_MD" | head -1 | cut -d: -f1)
+  am1_col_line=""
+  if [ -n "$am1_cap_line" ]; then
+    am1_col_line=$(awk -v ln="$am1_cap_line" 'NR==ln+2' "$TEMPLATE_MD")
+  fi
+  if [ "$am1_order" = "$am1_expected" ] \
+     && echo "$am1_col_line" | grep -qE '^\| *Name *\| *Type *\| *Purpose *\| *Used by *\| *Bound AC\(s\) *\|'; then
+    am1_result="true"
+  fi
+fi
+assert_true \
+  "CT-AM-1: ticket-template.md has '### Capabilities' between '### Implementation Notes' and '### Claude Code Workflow' with column header 'Name | Type | Purpose | Used by | Bound AC(s)' (pins AC-1)" \
+  "$am1_result"
+
+# CT-AM-2: ac-quality-criteria.md gains the `## Gate 6: Capability Mapping`
+# section AND the `## Planner MUST` bullet starting with the literal
+# `**MUST** emit a \`### Capabilities\``. Pins AC-2 and AC-3.
+ACQC_MD="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+am2_g6=$(grep -cE '^## Gate 6: Capability Mapping$' "$ACQC_MD" || true)
+am2_must=$(grep -cF '**MUST** emit a `### Capabilities`' "$ACQC_MD" || true)
+am2_result="false"
+if [ "$am2_g6" -eq 1 ] && [ "$am2_must" -ge 1 ]; then
+  am2_result="true"
+fi
+assert_true \
+  "CT-AM-2: ac-quality-criteria.md carries '## Gate 6: Capability Mapping' (count=$am2_g6, expected 1) and the literal '**MUST** emit a \`### Capabilities\`' Planner MUST bullet (count=$am2_must, expected >=1) (pins AC-2, AC-3)" \
+  "$am2_result"
+
+# CT-AM-3: create-ticket/SKILL.md Pre-computed Context contains exactly one
+# `Available MCP servers: !` probe line, AND that line's substring includes
+# both `.mcp.json` and `mcpServers` (the user-scope + project-scope sources
+# enumerated by the probe). Pins AC-4.
+CT_SKILL_MD="$REPO_DIR/skills/create-ticket/SKILL.md"
+am3_count=$(grep -cE '^Available MCP servers: !`' "$CT_SKILL_MD" || true)
+am3_probe_line=$(grep -E '^Available MCP servers: !`' "$CT_SKILL_MD" | head -1)
+am3_result="false"
+if [ "$am3_count" -eq 1 ] \
+   && echo "$am3_probe_line" | grep -qF '.mcp.json' \
+   && echo "$am3_probe_line" | grep -qF 'mcpServers'; then
+  am3_result="true"
+fi
+assert_true \
+  "CT-AM-3: create-ticket/SKILL.md has exactly 1 'Available MCP servers: !\`' probe (got $am3_count) whose pipeline references both .mcp.json and mcpServers (pins AC-4)" \
+  "$am3_result"
+
+# CT-AM-4: plan2doc/SKILL.md Step 3 mentions MCP (at least one MCP token
+# within the awk range `/^3. **Scan available tooling/,/^4. /`), AND
+# Step 4 spawn-prompt section includes both `Capabilities` and `verbatim`
+# (count >= 2). Pins AC-5 and AC-7.
+PD_SKILL_MD="$REPO_DIR/skills/plan2doc/SKILL.md"
+am4_step3=$(awk '/^3\. \*\*Scan available tooling/,/^4\. /' "$PD_SKILL_MD" | grep -c -F MCP || true)
+am4_step4=$(awk '/^4\. \*\*MUST invoke the .planner. agent/,/^5\. \*\*Return summary/' "$PD_SKILL_MD" | grep -c -E 'Capabilities|verbatim' || true)
+am4_result="false"
+if [ "$am4_step3" -ge 1 ] && [ "$am4_step4" -ge 2 ]; then
+  am4_result="true"
+fi
+assert_true \
+  "CT-AM-4: plan2doc/SKILL.md Step 3 mentions MCP ($am4_step3 hits, expected >=1) and Step 4 spawn prompt mentions Capabilities|verbatim ($am4_step4 hits, expected >=2) (pins AC-5, AC-7)" \
+  "$am4_result"
+
+# CT-AM-5: agent-spawn-prompts.md Phase 3 'Additional context for the
+# planner' list mentions all three substrings 'Available capabilities',
+# '### Capabilities', and 'Gate 6' (>= 3 line hits across them). Plus
+# planner.md Pre-emit Self-Audit gains binding cross-check prose mentioning
+# both '### Capabilities' and 'bind|bound|binding' (text-based check, since
+# the AC's awk-range verify is brittle under same-line range semantics).
+# Pins AC-6 and AC-8.
+ASP_MD="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+am5_spawn=$(awk '/^Additional context for the planner:/,/^### Partition/' "$ASP_MD" \
+            | grep -c -E 'Available capabilities|### Capabilities|Gate 6' || true)
+# Planner.md Pre-emit Self-Audit: scan the documented section using a
+# delimiter-aware sed (start at heading, stop at the next H2). awk's
+# range expression is unreliable here because the start line itself
+# matches `^## `; sed with explicit start/stop avoids the same-line
+# truncation. Pins the substantive intent of AC-8.
+PLANNER_MD="$REPO_DIR/agents/planner.md"
+am5_planner_section=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_MD" \
+                       | grep -c -E '### Capabilities|bind' || true)
+am5_result="false"
+if [ "$am5_spawn" -ge 3 ] && [ "$am5_planner_section" -ge 2 ]; then
+  am5_result="true"
+fi
+assert_true \
+  "CT-AM-5: agent-spawn-prompts.md Phase 3 inlines all three (Available capabilities | ### Capabilities | Gate 6) — $am5_spawn line-hits (>=3); planner.md Pre-emit Self-Audit names '### Capabilities' AND 'bind*' — $am5_planner_section hits (>=2) (pins AC-6, AC-8)" \
+  "$am5_result"
+
+# CT-AM-6: impl/SKILL.md Step 13 and Step 15 each reference the
+# `### Capabilities` table (>= 2 total) AND every spawner-skill SKILL.md
+# in the 8-skill propagation list carries the new handoff bullet whose
+# body contains the literal '`### Capabilities`'. Pins AC-9 and AC-10.
+IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
+am6_impl_caps=$(grep -cE '### Capabilities' "$IMPL_MD" || true)
+am6_propagation_zero=0
+for f in \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "$REPO_DIR/skills/investigate/SKILL.md" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "$REPO_DIR/skills/refactor/SKILL.md" \
+  "$REPO_DIR/skills/test/SKILL.md" \
+  "$REPO_DIR/skills/tune/SKILL.md"; do
+  am6_one_hit=$(grep -cF '### Capabilities' "$f" || true)
+  if [ "$am6_one_hit" -eq 0 ]; then
+    am6_propagation_zero=$((am6_propagation_zero + 1))
+  fi
+done
+am6_result="false"
+if [ "$am6_impl_caps" -ge 2 ] && [ "$am6_propagation_zero" -eq 0 ]; then
+  am6_result="true"
+fi
+assert_true \
+  "CT-AM-6: impl/SKILL.md Steps 13/15 reference '### Capabilities' ($am6_impl_caps total, expected >=2); each of the 8 spawner SKILL.md files has the handoff propagation bullet (zero-hit count=$am6_propagation_zero, expected 0) (pins AC-9, AC-10)" \
+  "$am6_result"
+
+# CT-AM-7 (AC-12 trivial-pass branch): the AC-counting scanner in Cat AH-7
+# (test-skill-contracts.sh near line 4406) terminates at
+# `#### Negative Acceptance Criteria`. The new `### Capabilities` block
+# lives BETWEEN `### Implementation Notes` and `### Claude Code Workflow`
+# in ticket-template.md, which is OUTSIDE the
+# `### Acceptance Criteria` -> next-`###`-heading window the AH-7 scanner
+# consumes (the scanner stops at the negative-AC heading, and the
+# Capabilities block carries no `AC-N`-formatted list items in any case).
+# Therefore the scanner boundary is preserved trivially: no AC-pattern
+# line appears under `### Capabilities`. This is the trivial-pass branch
+# explicitly committed to by the implementation (see plan's polish note 1).
+am12_template="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+am12_cap_block=$(awk '/^### Capabilities$/,/^### Claude Code Workflow$/' "$am12_template")
+am12_ac_hits=$(echo "$am12_cap_block" | grep -cE '^([0-9]+\.[[:space:]]+\*\*AC-|- AC-|AC-[0-9])' || true)
+am12_result="false"
+if [ "$am12_ac_hits" -eq 0 ]; then
+  am12_result="true"
+fi
+assert_true \
+  "CT-AM-7 (AC-12 boundary, trivial-pass branch): ticket-template.md '### Capabilities' block contains zero AC-pattern lines ($am12_ac_hits hits) — AH-7 scanner stops at '#### Negative Acceptance Criteria' and '### Capabilities' sits outside its window, so the boundary holds without a runtime-fixture diff" \
+  "$am12_result"
+
+# CT-AM-8 (gap-closure follow-up): every Skill-bearing agent body in the
+# 8-agent set (ac-evaluator, code-reviewer, decomposer, implementer,
+# planner, researcher, test-writer, tune-analyzer) carries a top-level
+# `## Bound Capabilities` heading. The planner authors the section and
+# uses a different role-specific subheading wording, but the heading
+# regex `^## Bound Capabilities` matches both the receiver-role
+# "## Bound Capabilities (Handoff from Orchestrator)" and the
+# author-role "## Bound Capabilities (Authoring Role)" variants. The
+# sum across the 8 files MUST be >= 8 (one heading per agent).
+am8_sum=0
+for a in ac-evaluator code-reviewer decomposer implementer planner researcher test-writer tune-analyzer; do
+  am8_one_hit=$(grep -c -E '^## Bound Capabilities' "$REPO_DIR/agents/$a.md" || true)
+  am8_sum=$((am8_sum + am8_one_hit))
+done
+am8_result="false"
+if [ "$am8_sum" -ge 8 ]; then
+  am8_result="true"
+fi
+assert_true \
+  "CT-AM-8 (gap-closure follow-up): every Skill-bearing agent body has a top-level '## Bound Capabilities' heading (sum=$am8_sum across 8 agents, expected >=8)" \
+  "$am8_result"
+
+# CT-AM-9 (gap-closure follow-up): every Subagent Skill-Access Handoff
+# in the 9 spawner skills (audit, brief, create-ticket, impl, investigate,
+# plan2doc, refactor, test, tune) contains the upgraded literal
+# "inline the bound capabilities verbatim into every spawn prompt". The
+# upgrade replaces the legacy "prefer it over re-deriving relevance on
+# the fly" wording with a deterministic-inlining requirement. The check
+# counts how many of the 9 files have ZERO hits — that count MUST be 0
+# (every file MUST carry the upgraded bullet).
+am9_zero=0
+for f in \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "$REPO_DIR/skills/investigate/SKILL.md" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "$REPO_DIR/skills/refactor/SKILL.md" \
+  "$REPO_DIR/skills/test/SKILL.md" \
+  "$REPO_DIR/skills/tune/SKILL.md"; do
+  am9_one_hit=$(grep -cF 'inline the bound capabilities verbatim into every spawn prompt' "$f" || true)
+  if [ "$am9_one_hit" -eq 0 ]; then
+    am9_zero=$((am9_zero + 1))
+  fi
+done
+am9_result="false"
+if [ "$am9_zero" -eq 0 ]; then
+  am9_result="true"
+fi
+assert_true \
+  "CT-AM-9 (gap-closure follow-up): every spawner SKILL.md (audit, brief, create-ticket, impl, investigate, plan2doc, refactor, test, tune) carries the upgraded deterministic-inlining bullet ('inline the bound capabilities verbatim into every spawn prompt'); zero-hit count=$am9_zero, expected 0" \
+  "$am9_result"
 
 echo ""
 

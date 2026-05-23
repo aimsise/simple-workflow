@@ -31,6 +31,16 @@ Generate the ticket in the following format:
 
 - ...
 
+### Capabilities
+
+| Name | Type | Purpose | Used by | Bound AC(s) |
+|------|------|---------|---------|-------------|
+| ... | skill \| agent \| MCP server \| test runner | ... | ... | AC-... |
+
+#### Capability Gaps
+
+- (Optional) List runtime/visual ACs that lack a binding and the reason (e.g. no suitable skill available).
+
 ### Claude Code Workflow
 
 | Phase | Skill / Agent | Purpose |

@@ -90,7 +90,7 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
 
 2. **Analyze**. Identify dependencies, affected files, risks, and implementation order from the research and current repository state.
 
-3. **Scan available tooling**. Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present), and listing installed plugin skills/agents. Read frontmatter only (not full file contents). This list will be passed to the planner agent so it can reference them in the `### Claude Code Workflow` section.
+3. **Scan available tooling**. Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present), and listing installed plugin skills/agents. Read frontmatter only (not full file contents). Additionally enumerate available **MCP servers** by reading the `mcpServers` keys of `.mcp.json` (project-scope, when present) and `~/.claude.json` (user-scope, when present); union the two sets and de-duplicate. The combined skill + agent + MCP list will be passed to the planner agent so it can reference them in the `### Claude Code Workflow` section and bind any runtime/visual AC to a concrete capability in the plan's `## Capabilities` section (Gate 6).
 
 4. **MUST invoke the `planner` agent via the Agent tool** (see `## Mandatory Skill Invocations` above for the binding rules). Set the `Agent` tool call as follows:
    - `subagent_type`: `planner`
@@ -110,7 +110,8 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
        - **Step-by-step implementation plan** (numbered)
        - **Risk assessment** and testing strategy
        - **Acceptance Criteria** (bullet list of measurable, verifiable criteria) — when `ticket.md` exists at `{ticket-dir}/ticket.md`, the planner MUST copy the AC list verbatim from `ticket.md` per the AC SSoT discipline above (item count equal; each item body byte-identical after stripping leading list markers `- `, `* `, or `[0-9]+\. `). The planner MAY swap list-marker style (e.g. `- ` → `1. `) but MUST NOT rewrite, paraphrase, or augment item bodies.
-       - `### Claude Code Workflow` section with a phase/command/agent table referencing the scanned skills/agents
+       - `## Capabilities` section — when `ticket.md` exists at `{ticket-dir}/ticket.md` AND contains a `### Capabilities` section, the planner MUST copy it verbatim into the plan under the heading `## Capabilities` (same AC SSoT verbatim-copy discipline as `## Acceptance Criteria`: row count equal; per-row body byte-identical after stripping the markdown table cell separators). The planner MUST NOT add, remove, reorder, or rewrite rows. When `ticket.md` has no `### Capabilities` section (e.g. older tickets), the plan's `## Capabilities` section MAY be omitted entirely; do NOT fabricate rows. This rule mirrors the AC SSoT contract: `ticket.md` is the single source of truth for both the AC list and the capability bindings; the plan transcribes both.
+       - `### Claude Code Workflow` section with a phase/command/agent table referencing the scanned skills/agents AND any MCP servers detected in Step 3
 
 5. **Return summary**. After the planner agent returns, verify the plan file exists at the resolved output path. Then emit the `ssot-line` Observable Contract event as the **first** line of stdout for this step:
 
@@ -139,4 +140,5 @@ When you spawn a subagent via the Agent tool, consult the `Available user skills
 
 - Do NOT hand skill references to `security-scanner` or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
 - Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- When a ticket's `### Capabilities` section exists (resolve via `{ticket-dir}/ticket.md` or the autopilot state file's `paths.ticket`), `Read` it before constructing any subagent spawn prompt and inline the bound capabilities verbatim into every spawn prompt under the heading `## Bound capabilities (per AC)`. For per-AC spawns (one spawn per AC, e.g. `/impl` Steps 13/15), include only the rows whose `Bound AC(s)` column lists the active AC. For tip / whole-deliverable spawns (the rest), include the full table. The upstream binding is authoritative — do NOT re-derive relevance from the AC text or re-scan `Available user skills:` for plausible matches. When the ticket lacks `### Capabilities` (older ticket pre-dating Gate 6), emit `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)` in the spawn prompt and let the subagent fall back to its in-house capability-selection path.
 - If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.

@@ -54,6 +54,7 @@ Return format:
 - [x] Completeness: description
 - [ ] Implementability: — FAILED: reason
 - [x] Size Fit: description
+- [x] Capability Mapping: description (Gate 6 — applies only when at least one AC is runtime/visual per the canonical classifier; mark `n/a` when no AC triggers the classifier)
 **Issues**: [gate] description (one per line)
 **Feedback**: [specific, actionable improvements for the planner]
 ```

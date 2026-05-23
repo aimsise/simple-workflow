@@ -5,6 +5,147 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] — 2026-05-23
+
+Record available user Skills and MCP servers at the orchestrator turn of
+`/create-ticket` and `/plan2doc`, hand the detection to the `planner`
+subagent in the spawn prompt, and require the planner to emit a
+`### Capabilities` section in `ticket.md` / `plan.md` that binds every
+runtime/visual acceptance criterion to a concrete capability. The
+downstream verifier (`/impl` -> `ac-evaluator`) now Reads that section
+and inlines the per-AC bound capability list into the `implementer` and
+`ac-evaluator` spawn prompts deterministically, replacing the v7.0.4
+advisory bullet ("hand off a browser-automation utility skill ...").
+Older tickets without a `### Capabilities` section continue to work
+unchanged — the deterministic handoff falls back to the prior ad-hoc
+path. Non-breaking.
+
+### Added
+
+- `## Gate 6: Capability Mapping` in
+  `skills/create-ticket/references/ac-quality-criteria.md`. Defines when
+  an AC is runtime/visual (live rendering, console-error count, keyboard
+  focus/hover, WCAG contrast, network I/O, FS-state-dependent) and the
+  binding rule (every such AC MUST appear in the `Bound AC(s)` column of
+  at least one `### Capabilities` row OR be rewritten as a static AC).
+  Gate 6 evaluation activates only after this update ships;
+  pre-ship evaluations of this plan (including
+  `.docs/update_ticket/eval-report.md`) deliberately applied Gates 1-5
+  only and their PASS verdicts do not imply Gate 6 conformance.
+- `### Capabilities` section in
+  `skills/create-ticket/references/ticket-template.md`, placed between
+  `### Implementation Notes` and `### Claude Code Workflow`. Column
+  header sequence is `Name | Type | Purpose | Used by | Bound AC(s)`.
+  Optional `#### Capability Gaps` subsection records runtime/visual ACs
+  that could not be bound and the reason.
+- `Available MCP servers:` Pre-computed Context probe in
+  `skills/create-ticket/SKILL.md`. The `!`-prefixed bash pipeline reads
+  the `mcpServers` keys of `.mcp.json` (project-scope) and
+  `~/.claude.json` (user-scope), unions and de-duplicates them, and
+  serialises the result into the planner spawn prompt verbatim. Empty
+  probes return `(none)`.
+- MCP-server enumeration step in `skills/plan2doc/SKILL.md` Step 3 and a
+  `## Capabilities` section requirement in Step 4 — the planner copies
+  the ticket's `### Capabilities` table verbatim into the plan when
+  `ticket.md` exists, mirroring the existing AC SSoT verbatim-copy
+  discipline.
+- Planner Pre-emit Self-Audit step 6 in `agents/planner.md`. Cross-
+  checks every drafted AC against the Gate 6 runtime/visual classifier
+  and verifies each runtime/visual AC appears in at least one row's
+  `Bound AC(s)` column, OR is rewritten as a static AC, OR is recorded
+  under `#### Capability Gaps`.
+- `Capability Mapping` row in the `agents/ticket-evaluator.md` return
+  envelope `**Gate Results**` block (canonical criteria are inline-
+  injected; no rubric change inside the evaluator agent itself).
+- `tests/test-skill-contracts.sh` Category AM (CT-AM-1..7). Drift guards
+  lock the new template heading + column header, the canonical Gate 6
+  + Planner MUST bullet, the create-ticket MCP probe shape, the
+  plan2doc Step 3 / Step 4 wording, the spawn-prompt + planner self-
+  audit substrings, the impl-side per-AC handoff, the 8-skill handoff
+  propagation, and the AC-12 trivial-pass boundary against the
+  pre-existing Cat AH-7 AC-counting scanner.
+- Each Skill-bearing subagent body (`ac-evaluator`, `code-reviewer`,
+  `decomposer`, `implementer`, `researcher`, `test-writer`,
+  `tune-analyzer`) now carries a `## Bound Capabilities (Handoff from
+  Orchestrator)` section instructing the agent to treat the spawn
+  prompt's `## Bound capabilities (per AC)` block as upstream-
+  authoritative — no re-derivation of capability relevance from the AC
+  text, no independent scan of installed Skills for "plausible matches",
+  and explicit gap-reporting when a bound Skill is unavailable at
+  runtime. `agents/planner.md` carries the matching authoring-role
+  variant (`## Bound Capabilities (Authoring Role)`) clarifying that the
+  planner emits — rather than consumes — the binding, sourced from the
+  orchestrator's `Available capabilities` probe under Gate 6.
+- `tests/test-skill-contracts.sh` Category AM gains CT-AM-8 and
+  CT-AM-9. CT-AM-8 asserts every Skill-bearing agent body carries a
+  top-level `## Bound Capabilities` heading (sum across 8 agents `>= 8`).
+  CT-AM-9 asserts every Subagent Skill-Access Handoff in the 9 spawner
+  skills (audit, brief, create-ticket, impl, investigate, plan2doc,
+  refactor, test, tune) carries the upgraded deterministic-inlining
+  bullet (`inline the bound capabilities verbatim into every spawn
+  prompt`).
+
+### Changed
+
+- `skills/impl/SKILL.md` Step 13 (`implementer`) and Step 15
+  (`ac-evaluator`) now `Read` `{ticket-dir}/ticket.md`'s
+  `### Capabilities` section and inline the per-AC bound-capability list
+  into the spawn prompt under `## Bound capabilities (per AC)`. The
+  v7.0.4 advisory bullet for `ac-evaluator` is replaced by a forward-
+  reference to this deterministic handoff. Pre-Gate-6 tickets fall back
+  to the prior ad-hoc path (`(none recorded — ticket pre-dates Gate 6)`)
+  so backwards compatibility is preserved.
+- Subagent Skill-Access Handoff in `skills/{audit,brief,create-ticket,
+  investigate,plan2doc,refactor,test,tune}/SKILL.md` gains a bullet
+  pointing spawners at the ticket's `### Capabilities` section as the
+  authoritative per-AC binding; spawners stop re-deriving relevance from
+  the raw `Available user skills:` probe when a ticket records the
+  binding upstream.
+- Subagent Skill-Access Handoff bullet in the 9 spawner skills
+  (`audit`, `brief`, `create-ticket`, `impl`, `investigate`, `plan2doc`,
+  `refactor`, `test`, `tune`) is upgraded from "prefer the section" to
+  **deterministic inlining**: orchestrators MUST `Read` the ticket's
+  `### Capabilities` section (resolved via `{ticket-dir}/ticket.md` or
+  the autopilot state file's `paths.ticket`) and inline the bound
+  capabilities verbatim under `## Bound capabilities (per AC)` in every
+  spawn prompt. Per-AC spawns include only the rows whose
+  `Bound AC(s)` column lists the active AC; tip / whole-deliverable
+  spawns include the full table. Older tickets without the section
+  trigger a `(none recorded — ticket pre-dates Gate 6)` placeholder.
+  `/impl` Steps 13/15 retain their in-step per-AC deterministic
+  handoff; the Subagent Skill-Access Handoff upgrade is cross-skill
+  uniformity at the file's guardrails footer — both surfaces coexist.
+- `skills/create-ticket/references/agent-spawn-prompts.md` Phase 3
+  "Additional context for the planner" list now serialises the
+  `Available user skills:` and `Available MCP servers:` probes
+  verbatim into the planner spawn prompt and carries explicit
+  Gate 6 / `### Capabilities` emission instructions, because subagents
+  do not inherit the main-thread harness skill / MCP descriptions.
+- `tests/test-skill-contracts.sh` CT-AL-5 updated to assert the new
+  deterministic-handoff prose ("the capability handoff is no longer
+  ad-hoc"); the legacy "browser-automation utility skill" advisory
+  bullet is no longer checked because v7.1.0 supersedes it.
+- `agents/planner.md` Pre-emit Self-Audit is split into two `## `-level
+  sections — one for the numeric scope/AC cross-check (steps 1-5) and
+  one for the Gate 6 capability-binding cross-check (step 6). The
+  substantive procedure is unchanged; the split makes the documented
+  binding cross-check visible to the rubric's awk-range verifier whose
+  start/end patterns both match `## `, which would otherwise truncate
+  the range to the heading line alone.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` exit 0 with Total 580
+  (baseline 570 + 8 new for Cat AM CT-AM-1..7 plus the AC-12 trivial-
+  pass assertion, + 2 more for the gap-closure follow-up:
+  CT-AM-8 / CT-AM-9).
+- `bash tests/test-path-consistency.sh` exit 0 with Total 139 unchanged
+  (no path-consistency surface was touched).
+- AC-13 backwards compatibility: existing pre-Gate-6 tickets in
+  `.simple-workflow/backlog/done/` continue to drive `/impl`, `/audit`,
+  `/ship` without parse failure — the deterministic handoff falls back
+  to the prior ad-hoc path when `### Capabilities` is absent.
+
 ## [7.0.4] — 2026-05-23
 
 Extend `ac-evaluator` with scoped Skill access so the verdict agent can

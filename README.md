@@ -86,6 +86,8 @@ Three typical execution patterns:
 
 For phase-by-phase workflows on an existing backlog (skipping the brief), run `/help` inside Claude Code to discover the individual slash commands, or browse `skills/` in this repository.
 
+Tickets carry a `### Capabilities` section that records which user Skills and MCP servers were available when the ticket was drafted and binds each runtime/visual acceptance criterion (live rendering, console-error count, keyboard focus/hover, WCAG contrast, network I/O, FS-state-dependent) to a concrete capability — so the downstream verifier (`/impl` -> `ac-evaluator`) picks evidence-gathering tools from the upstream-recorded mapping rather than re-deriving relevance per spawn.
+
 ## Why simple-workflow?
 
 simple-workflow stands on three pillars:
