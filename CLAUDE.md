@@ -87,6 +87,20 @@ This rule was distilled from a v7.1.0 partial-wiring incident: the original plan
 
 Audit Scope before drafting: `grep -l '^[[:space:]]*-[[:space:]]Skill[[:space:]]*$' agents/*.md` lists every `Skill`-bearing agent; cross-reference each against `grep -rln '<agent-name>' skills/*/SKILL.md` to find its callers. The full caller↔callee matrix should appear in the Scope table; whichever cells are intentionally left out should carry a one-line rationale in `### Implementation Notes` so the asymmetry is deliberate rather than incidental.
 
+## Modifications
+
+### Any change to `skills/`, `agents/`, or `hooks/` MUST audit sibling artifacts before commit
+
+Before declaring a change to any file under `skills/`, `agents/`, or `hooks/` complete, audit whether sibling artifacts in the same tree that play an analogous role need the same change. The asymmetry that the `## Plans` rule catches at Scope-authoring time also manifests at implementation time: a bullet added to one SKILL.md, a tool added to one agent's `tools:` field, or a contract added to one hook may need to flow to 3-9 siblings that weren't part of the immediate ticket.
+
+Concrete audits to run before commit:
+
+- **skills/***: `ls skills/*/SKILL.md` then grep for shared section headings (`## Subagent Skill-Access Handoff`, `## Pre-computed Context`, `## Guardrails`, etc.) — changes to one usually apply to all peers carrying the same heading.
+- **agents/***: `ls agents/*.md` and compare `tools:` fields and shared body sections — agents in the same role (generator / evaluator / author / hermetic) should evolve symmetrically.
+- **hooks/***: `ls hooks/*.sh` and `ls hooks/lib/*.sh` — related lifecycle hooks (pre-write/pre-edit, pre-tool/post-tool, Stop/SubagentStop) often need parallel changes; library helpers in `hooks/lib/` are sourced by multiple hooks, so a contract change there ripples to every caller.
+
+For any intentional omission, record a one-line rationale in the commit message (or in the ticket's `### Implementation Notes` if the omission is plan-authored). This rule complements the planning-side `## Plans` rule above by enforcing the same uniformity at implementation time.
+
 ## PII
 
 Never write personally identifying machine paths into tracked files. Specifically, an **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout, and is rejected by the `pre-write-safety.sh` and `pre-edit-safety.sh` hooks.
