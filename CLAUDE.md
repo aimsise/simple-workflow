@@ -77,6 +77,16 @@ Conversations with the user may be in any language — translate before writing 
 
 When in doubt about whether a change is breaking, treat it as breaking.
 
+## Plans
+
+### Cross-agent contracts MUST enumerate every Skill-bearing subagent and its caller
+
+When a ticket introduces a contract that crosses agent boundaries — a new section in `ticket.md` / `plan.md`, a new spawn-prompt block, a new return-envelope row, or any other shared protocol between an orchestrator skill and a subagent (or between two subagents) — the Scope table MUST enumerate **every** `Skill`-bearing subagent AND the caller that spawns it, not only the agents on the motivating regression path. Scoping from the motivating path alone produces asymmetric wiring where one path is deterministic and every other path silently bypasses the new contract via the prior fallback.
+
+This rule was distilled from a v7.1.0 partial-wiring incident: the original plan fully wired `/impl` → `ac-evaluator` (the motivating `### Capabilities` regression path) with per-AC deterministic handoff, but 6 of 8 `Skill`-bearing subagents and 7 of 9 spawner skills received only a generic "prefer the section" preference bullet. The asymmetry was detected during post-commit review and required an immediate amend to add `## Bound Capabilities` body sections to the 7 consumer agents and to upgrade the handoff bullet across all 9 spawners to require deterministic inlining under `## Bound capabilities (per AC)`.
+
+Audit Scope before drafting: `grep -l '^[[:space:]]*-[[:space:]]Skill[[:space:]]*$' agents/*.md` lists every `Skill`-bearing agent; cross-reference each against `grep -rln '<agent-name>' skills/*/SKILL.md` to find its callers. The full caller↔callee matrix should appear in the Scope table; whichever cells are intentionally left out should carry a one-line rationale in `### Implementation Notes` so the asymmetry is deliberate rather than incidental.
+
 ## PII
 
 Never write personally identifying machine paths into tracked files. Specifically, an **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout, and is rejected by the `pre-write-safety.sh` and `pre-edit-safety.sh` hooks.
