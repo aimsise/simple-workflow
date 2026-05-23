@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.4] — 2026-05-23
+
+Extend `ac-evaluator` with scoped Skill access so the verdict agent can
+gather live runtime evidence (render the built artifact, capture console
+output, measure WCAG contrast, take screenshots) for runtime and visual
+acceptance criteria, instead of signing those off by static code
+inspection. The agent's verdict-independence firewall is preserved by a
+new `## External Tool Integration Policy` block that limits skill use to
+evidence gathering — code authoring, AC-fixing, and letting a skill's own
+output stand in for the verdict are all forbidden, and pipeline-skill
+recursion remains banned. `security-scanner` and `ticket-evaluator` stay
+hermetic by design. Drift-guards in `tests/test-skill-contracts.sh`
+Category AL (CT-AL-1..5) lock the new shape in place.
+
+### Added
+
+- `Skill` tool granted to `agents/ac-evaluator.md`. Its new
+  `## External Tool Integration Policy` section scopes use to
+  evidence-only: skills are invoked solely to gather independent evidence
+  about the *already-built* artifact under review (render it, exercise
+  it, measure it, screenshot it). The agent MUST NOT use any skill to
+  author, generate, or modify the implementation, to fix a failing AC,
+  or to let a skill's own output substitute for its independent verdict.
+  Pipeline-skill recursion (`/scout`, `/impl`, `/audit`, ...) is
+  explicitly banned.
+- New AC verification method 6 in `agents/ac-evaluator.md`: "Drive the
+  rendered artifact with a browser-automation utility skill" — for
+  runtime or visual ACs (live rendering, "no console errors", keyboard
+  hover/focus states, WCAG contrast), when such a skill is offered the
+  agent MUST gather live evidence; code inspection alone is not
+  sufficient evidence to PASS such an AC.
+- `skills/impl/SKILL.md` positive handoff bullet: when the plan carries
+  runtime or visual ACs, the orchestrator hands `ac-evaluator` a
+  browser-automation utility skill in its spawn prompt. The handoff is
+  scoped to evidence-gathering utilities — never to a skill that authors
+  or modifies the code under review.
+- `tests/test-skill-contracts.sh` Category AL with CT-AL-1..5: drift
+  guards that lock in (1) `- Skill` standalone entry in ac-evaluator's
+  `tools:`, (2) `## External Tool Integration Policy` heading presence,
+  (3) the evidence-only firewall prose (`MUST NOT ... author/generate/
+  modify` plus `Never invoke pipeline skills`), (4) no spawner skill
+  still excludes ac-evaluator from skill handoff, and (5)
+  `skills/impl/SKILL.md` carries the positive browser-automation handoff
+  bullet for ac-evaluator.
+
+### Changed
+
+- `agents/ac-evaluator.md` Status Decision: **PASS-WITH-CAVEATS is no
+  longer available** for a runtime or visual AC when a browser-automation
+  utility skill was offered in the spawn prompt or otherwise available.
+  In that case the agent MUST gather live evidence (verification
+  method 6) and render PASS or FAIL on what it observes, never
+  PASS-WITH-CAVEATS on code inspection alone.
+- `skills/{audit,brief,create-ticket,impl,investigate,plan2doc,refactor,test,tune}/SKILL.md`
+  Subagent Skill-Access Handoff: `ac-evaluator` removed from the hermetic
+  exclusion list (it now carries the Skill tool). `security-scanner` and
+  `ticket-evaluator` remain excluded.
+- `skills/impl/references/tautological-assertion-rules.md`:
+  "ac-evaluator's available tools (Read, Grep, Glob)" narrowed to
+  "ac-evaluator's text-inspection tools (Read, Grep, Glob)" in the
+  Limitations section. The grep-based tautological-assertion rules
+  continue to use only Read/Grep/Glob regardless of the new Skill tool's
+  availability — the wording change documents that fact without altering
+  rule scope.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` exit 0 with new Category AL pass
+  (CT-AL-1 through CT-AL-5).
+- `bash tests/test-path-consistency.sh` exit 0 — Category 11 (`Bash(*)`
+  restricted to `implementer` + `test-writer`) remains green; ac-evaluator
+  gained Skill, not Bash(*).
+- The evidence-only firewall in the new `## External Tool Integration
+  Policy` is asserted by CT-AL-3 — a future drift PR that removes the
+  `MUST NOT ... author/generate/modify` guard or the `Never invoke
+  pipeline skills` bullet would fail the contract test.
+- v7.0.3 Subagent Skill-Access Handoff exclusions for `security-scanner`
+  and `ticket-evaluator` remain intact across all 9 spawner skills.
+
 ## [7.0.3] — 2026-05-21
 
 Let the research-and-build subagents use the user's installed Skills.
