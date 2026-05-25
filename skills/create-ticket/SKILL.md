@@ -79,7 +79,7 @@ Per-mode deltas:
 | Step | F (findings) | B (brief) | D (bare) |
 |---|---|---|---|
 | 1 Input | findings file exists | brief file exists | derive `{parent-slug}` |
-| 2 Frontmatter | `findings_version`, `title`, `slug_hint` | `slug`, `mode`, `interview_complete`; `brief_mode == auto` gates W-8 + `gates.ticket_quality_fail` brief-parent fallback | (n/a) |
+| 2 Frontmatter | `findings_version`, `title`, `slug_hint` | `slug`, `chain` (canonical, vX.Y.0+) **and** `mode` (legacy alias, retained one minor for backward read compatibility), `interview_complete`; `brief_mode == auto` gates W-8 + `gates.ticket_quality_fail` brief-parent fallback. **Precedence rule (marker literal: chain: precedes mode:)**: `chain:` is read first if present (`on` → `brief_mode == auto`, `off` → `brief_mode == manual`); when `chain:` is absent, `mode:` is read for backward compatibility; super-legacy briefs lacking both keys default to `brief_mode == auto` (≡ `chain=on`). | (n/a) |
 | 3 Phase 1 | enumerates `## Required Work Units` | researcher (reuse path) | researcher (no reuse) |
 | 4 Phase 2 | skip on upstream `interview_complete: true` | skip on `interview_complete: true`, else capped | always capped |
 | 5 Decomposer | F-5 `findings_doc` | B-5 `scope_context` | D-4 `scope_context` |
@@ -184,7 +184,7 @@ Write per [references/write-path-templates.md](references/write-path-templates.m
 
 ### Step W-8: autopilot-policy.yaml propagation
 
-Runs only when ALL hold: `brief=<path>` passed; `brief_mode == auto` (per B-2; legacy `mode:`-less briefs treated as `auto`); `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists.
+Runs only when ALL hold: `brief=<path>` passed; `brief_mode == auto` (per B-2; resolved via the precedence rule **chain: precedes mode:** — `chain: on` → `brief_mode == auto`, `chain: off` → `brief_mode == manual`; when `chain:` is absent the legacy `mode:` is read; super-legacy briefs lacking both keys are treated as `auto` ≡ `chain=on`); `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists.
 
 `brief_mode == manual` (v6.0.0+) **skips** even if source exists; emit one audit line: `[POLICY-PROPAGATION] skipped: brief mode=manual`. Per-ticket dirs receive no policy — indistinguishable from bare tickets to `/impl`'s FIFO selector.
 

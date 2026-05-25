@@ -8090,5 +8090,128 @@ fi
 
 echo ""
 
+# =============================================================================
+# Category PCN: P3-2C /brief chain={on,off} naming redesign (X.Y.0 deprecation
+#               phase — mode=auto|manual retained as deprecated alias)
+# Diff: Cat AC (CT-MODE-1..14) already pins the legacy mode={auto|manual}
+#        contract and the argument-hint substring `mode=auto|manual`. PCN
+#        layers the new `chain=on|off` canonical key on top without removing
+#        any AC literal — argument-hint is rewritten to keep
+#        `mode=auto|manual` (as `(legacy: mode=auto|manual)`) while gaining
+#        `chain=on|off`; the deprecated-warning + simultaneous-spec error
+#        literals; the frontmatter template carrying both `chain:` and
+#        `mode:`; the cross-skill precedence marker `chain: precedes mode:`
+#        in create-ticket SKILL.md and agent-spawn-prompts.md; and the
+#        mode-independence-guard preservation with explicit `chain` mention.
+# Maps to ticket .docs/dogfooding/33-34/P3-2C-brief-mode-naming-redesign.md
+# AC-1..AC-8 (X.Y.0 phase). Future minor will drop the alias (AC-9, AC-10)
+# in a separate Cat.
+# =============================================================================
+echo "--- Cat PCN: /brief chain={on,off} naming (P3-2C X.Y.0 phase) ---"
+
+PCN_BRIEF_SKILL="$REPO_DIR/skills/brief/SKILL.md"
+PCN_CT_SKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+PCN_CT_SPAWN="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+
+# PCN-1a (AC-1): brief SKILL.md has >=1 hit of literal `chain=on`.
+pcn_1a_count=$(grep -cF 'chain=on' "$PCN_BRIEF_SKILL" || true)
+pcn_1a_result="false"
+[ "$pcn_1a_count" -ge 1 ] && pcn_1a_result="true"
+assert_true \
+  "PCN-1a (AC-1): skills/brief/SKILL.md contains 'chain=on' literal (count=$pcn_1a_count, expected >=1)" \
+  "$pcn_1a_result"
+
+# PCN-1b (AC-1): brief SKILL.md has >=1 hit of literal `chain=off`.
+pcn_1b_count=$(grep -cF 'chain=off' "$PCN_BRIEF_SKILL" || true)
+pcn_1b_result="false"
+[ "$pcn_1b_count" -ge 1 ] && pcn_1b_result="true"
+assert_true \
+  "PCN-1b (AC-1): skills/brief/SKILL.md contains 'chain=off' literal (count=$pcn_1b_count, expected >=1)" \
+  "$pcn_1b_result"
+
+# PCN-2 (AC-2): brief SKILL.md argument-hint value contains the substring
+# `chain=on|off`.
+pcn_2_hint=$(extract_frontmatter_field "$PCN_BRIEF_SKILL" "argument-hint")
+pcn_2_result="false"
+printf '%s' "$pcn_2_hint" | grep -qF 'chain=on|off' && pcn_2_result="true"
+assert_true \
+  "PCN-2 (AC-2): skills/brief/SKILL.md argument-hint contains 'chain=on|off' (value: '$pcn_2_hint')" \
+  "$pcn_2_result"
+
+# PCN-3 (AC-3): brief SKILL.md carries the verbatim deprecation warning
+# literal `WARNING: 'mode=' is deprecated` (the inline-parser would emit
+# this on stderr when the alias is supplied).
+pcn_3_count=$(grep -cF "WARNING: 'mode=' is deprecated" "$PCN_BRIEF_SKILL" || true)
+pcn_3_result="false"
+[ "$pcn_3_count" -ge 1 ] && pcn_3_result="true"
+assert_true \
+  "PCN-3 (AC-3): skills/brief/SKILL.md contains \"WARNING: 'mode=' is deprecated\" literal (count=$pcn_3_count, expected >=1)" \
+  "$pcn_3_result"
+
+# PCN-4 (AC-4): brief SKILL.md carries the verbatim simultaneous-specification
+# error literal `ERROR: 'chain=' and 'mode=' cannot be combined`.
+pcn_4_count=$(grep -cF "ERROR: 'chain=' and 'mode=' cannot be combined" "$PCN_BRIEF_SKILL" || true)
+pcn_4_result="false"
+[ "$pcn_4_count" -ge 1 ] && pcn_4_result="true"
+assert_true \
+  "PCN-4 (AC-4): skills/brief/SKILL.md contains \"ERROR: 'chain=' and 'mode=' cannot be combined\" literal (count=$pcn_4_count, expected >=1)" \
+  "$pcn_4_result"
+
+# PCN-5 (AC-5/AC-6): the cross-skill precedence marker `chain: precedes mode:`
+# is documented in BOTH skills/create-ticket/SKILL.md AND
+# skills/create-ticket/references/agent-spawn-prompts.md (one hit each at
+# minimum). AC-5 covers the frontmatter dual-key persistence; AC-6 covers
+# the precedence rule that downstream readers (this marker) apply. The
+# frontmatter template carrying both `chain:` and `mode:` is asserted by
+# PCN-6 below (separate assertion so a frontmatter-only regression is
+# diagnosable on its own).
+pcn_5_ct_count=$(grep -cF 'chain: precedes mode:' "$PCN_CT_SKILL" || true)
+pcn_5_spawn_count=$(grep -cF 'chain: precedes mode:' "$PCN_CT_SPAWN" || true)
+pcn_5_result="false"
+if [ "$pcn_5_ct_count" -ge 1 ] && [ "$pcn_5_spawn_count" -ge 1 ]; then
+  pcn_5_result="true"
+fi
+assert_true \
+  "PCN-5 (AC-5/AC-6): 'chain: precedes mode:' marker present in create-ticket SKILL.md (count=$pcn_5_ct_count) AND agent-spawn-prompts.md (count=$pcn_5_spawn_count); both expected >=1" \
+  "$pcn_5_result"
+
+# PCN-6 (AC-5): the brief Phase 3 frontmatter template carries BOTH the new
+# `chain:` field AND the legacy `mode:` field during the deprecation period.
+# Use loose patterns so any of the canonical forms (`chain: on`, `chain: off`,
+# `chain: {on|off}`, `chain: (on|off)`) is accepted; mode similarly. This
+# preserves Cat AC CT-MODE-2's assertion of `mode: {auto|manual}` while
+# adding the new `chain:` line.
+pcn_6_chain=$(grep -cE '^chain: (\{on\|off\}|\(on\|off\)|on|off)$' "$PCN_BRIEF_SKILL" || true)
+pcn_6_mode=$(grep -cE '^mode: (\{auto\|manual\}|\(auto\|manual\)|auto|manual)$' "$PCN_BRIEF_SKILL" || true)
+pcn_6_result="false"
+if [ "$pcn_6_chain" -ge 1 ] && [ "$pcn_6_mode" -ge 1 ]; then
+  pcn_6_result="true"
+fi
+assert_true \
+  "PCN-6 (AC-5): brief SKILL.md frontmatter template carries both 'chain:' (count=$pcn_6_chain) and 'mode:' (count=$pcn_6_mode) lines; both expected >=1" \
+  "$pcn_6_result"
+
+# PCN-7 (AC-8): the `mode independence guard` section is preserved during the
+# deprecation period AND its prose explicitly mentions `chain` alongside
+# `mode`. The guard heading literal `mode independence guard` MUST still
+# appear in the file (preservation); and the same paragraph (or section)
+# MUST mention the new `chain` argument so the defensive prose covers both
+# keys. We measure preservation by the heading literal count and chain-
+# mention by counting `chain` occurrences in the lines from the guard
+# heading up to the next blank line (the guard paragraph).
+pcn_8_guard_count=$(grep -cF 'mode independence guard' "$PCN_BRIEF_SKILL" || true)
+PCN_8_PARA=$(awk '/mode independence guard/{flag=1} flag{print; if(NR>1 && $0 ~ /^$/) exit}' "$PCN_BRIEF_SKILL")
+pcn_8_chain_in_para=$(printf '%s' "$PCN_8_PARA" | grep -cF 'chain' || true)
+pcn_8_result="false"
+if [ "$pcn_8_guard_count" -ge 1 ] && [ "$pcn_8_chain_in_para" -ge 1 ]; then
+  pcn_8_result="true"
+fi
+assert_true \
+  "PCN-7 (AC-8): brief SKILL.md preserves 'mode independence guard' heading (count=$pcn_8_guard_count) AND its paragraph mentions 'chain' (count=$pcn_8_chain_in_para); both expected >=1" \
+  "$pcn_8_result"
+unset PCN_BRIEF_SKILL PCN_CT_SKILL PCN_CT_SPAWN PCN_8_PARA
+
+echo ""
+
 # --- Summary ---
 print_summary

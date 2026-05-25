@@ -24,7 +24,7 @@ allowed-tools:
   - "Bash(mv:*)"
   - "Bash(ls:*)"
   - "Bash(date:*)"
-argument-hint: "<what-to-build> [mode=auto|manual]"
+argument-hint: "<what-to-build> [chain=on|off] (legacy: mode=auto|manual)"
 ---
 
 ## Pre-computed Context
@@ -51,10 +51,13 @@ User input: $ARGUMENTS
 ## Argument Parsing
 
 Parse `$ARGUMENTS`:
-- Extract `mode=<value>` if present. **Value normalization**: trim whitespace and lowercase the value (`mode=AUTO`, `mode=Manual`, `mode= auto ` normalize to `auto`/`manual`). Token `mode=` is matched case-insensitively. Accepted: `auto` (default if `mode=` is omitted), `manual`. Any other value → stop and emit the invalid-mode error (see ## Error Handling for exact message + side-effect contract).
+- **Preferred new key — `chain=<value>`**: extract `chain=<value>` if present. **Value normalization**: trim whitespace and lowercase the value (`chain=ON`, `chain=Off`, `chain= on ` normalize to `on`/`off`). Token `chain=` is matched case-insensitively. Accepted: `on` (default if neither `chain=` nor `mode=` is supplied), `off`. Any other value → stop and emit `ERROR: invalid chain=<value>. Use chain=on or chain=off` (substituting the offending value); do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`; exit non-zero. Mapping for downstream / legacy reasoning: `chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`.
+- **Deprecated alias — `mode=<value>`**: extract `mode=<value>` if present. **Value normalization**: trim whitespace and lowercase the value (`mode=AUTO`, `mode=Manual`, `mode= auto ` normalize to `auto`/`manual`). Token `mode=` is matched case-insensitively. Accepted: `auto` (treated as `chain=on`), `manual` (treated as `chain=off`). Any other value → stop and emit the invalid-mode error (see ## Error Handling for exact message + side-effect contract). **When `mode=` is supplied, also emit to stderr the single line `WARNING: 'mode=' is deprecated and will be removed in vX.(Y+1).0. Use 'chain=on' instead of 'mode=auto', 'chain=off' instead of 'mode=manual'.`** (verbatim literal, including the leading `WARNING:` and the surrounding single quotes). The warning is informational; processing continues with the `mode=` value mapped to the equivalent `chain=` value.
+- **Simultaneous specification — `chain=` and `mode=` both present**: stop and emit `ERROR: 'chain=' and 'mode=' cannot be combined. Use 'chain=' (preferred).` Do NOT silent-rewrite; do NOT pick one and ignore the other. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero. (This mirrors the v6.0.0 `auto=true` defensive stance — no silent rewrites of ambiguous argument intent.)
+- **Default when both keys are omitted**: `chain=on` (equivalent to legacy `mode=auto`). The default preserves the prior `mode=auto`-default behavior so existing user-typed `/brief "<X>"` invocations continue to chain into `/create-ticket` and `/autopilot`.
 - **`auto=true` removal (v6.0.0)**: if `auto=true` (case-insensitive) appears in `$ARGUMENTS`, stop and emit the v6.0.0 removal error (see ## Error Handling). The removal is intentional and `auto=true` is NOT silently rewritten.
-- Remove the parsed `mode=` token from the description; remaining text is `<what-to-build>`.
-- If `<what-to-build>` is empty, print `Usage: /brief <what-to-build> [mode=auto|manual]` and stop.
+- Remove the parsed `chain=` AND `mode=` tokens from the description; remaining text is `<what-to-build>`.
+- If `<what-to-build>` is empty, print `Usage: /brief <what-to-build> [chain=on|off]` (legacy alias accepted: `mode=auto|manual`) and stop.
 - Generate `{slug}` from `<what-to-build>` using kebab-case (e.g., "Add User Auth" -> `add-user-auth`). The brief `{slug}` also serves as the `{parent-slug}` downstream.
 
 ## Phase 1: Initial Investigation
@@ -69,7 +72,7 @@ Parse `$ARGUMENTS`:
 
 Conduct an iterative Q&A to gather comprehensive requirements.
 
-**mode independence guard (load-bearing)**: Phase 2 Structured Interview (Socratic) **MUST** run regardless of the parsed `mode` value (`auto` or `manual`, including when `mode=` is omitted and defaults to `auto`). The `mode` argument **MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2 — it has **no effect whatsoever** on Phase 2's execution. Any non-interactive wording elsewhere in this skill (e.g. the Finalization Phase Step 2 chain-confirmation context gated on `mode=auto`) is scoped to that specific step and **MUST NOT** be generalized to Phase 2. The **ONLY** condition under which Phase 2 is skipped is the existing **"Non-interactive environment fallback"** below (triggered strictly by `AskUserQuestion` itself being unavailable or returning an error, e.g. `claude -p` / CI automation without a TTY) — **not** by the value of `mode`.
+**mode independence guard (load-bearing — preserved during the `chain=` / `mode=` deprecation period; defensive prose now covers BOTH the new `chain` argument AND the legacy `mode` alias)**: Phase 2 Structured Interview (Socratic) **MUST** run regardless of the parsed `mode` value (`auto` or `manual`, including when `mode=` is omitted and defaults to `auto`). The same independence rule applies to the new canonical `chain` argument introduced in vX.Y.0 — Phase 2 MUST run regardless of the parsed `chain` value (`on` or `off`, including when `chain=` is omitted and defaults to `on` ≡ legacy `mode=auto`). The `mode` argument **MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2 — it has **no effect whatsoever** on Phase 2's execution. The same MUST-NOT applies to the new `chain` argument: it is independence-protected from Phase 2 alongside `mode`, and has no effect whatsoever on Phase 2's execution. Any non-interactive wording elsewhere in this skill (e.g. the Finalization Phase Step 2 chain-confirmation context gated on `mode=auto` ≡ `chain=on`) is scoped to that specific step and **MUST NOT** be generalized to Phase 2. The **ONLY** condition under which Phase 2 is skipped is the existing **"Non-interactive environment fallback"** below (triggered strictly by `AskUserQuestion` itself being unavailable or returning an error, e.g. `claude -p` / CI automation without a TTY) — **not** by the value of `mode` or `chain`. This guard is scheduled for removal in vX.(Y+1).0 alongside the `mode=` alias: `chain={on,off}` does not lexically suggest interview-policy, so the defensive prose becomes unnecessary once the alias is gone and Phase 2 independence can be left implicit.
 
 **Caps (load-bearing for contract)**:
 - At most **3 questions per round** (single `AskUserQuestion` call holds up to 3 items).
@@ -79,7 +82,7 @@ Conduct an iterative Q&A to gather comprehensive requirements.
 
 #### args-aware shrinkage (suppress re-asking what `$ARGUMENTS` already answers)
 
-Before issuing any `AskUserQuestion` call in Phase 2, perform a one-shot scan of `$ARGUMENTS` (the original `<what-to-build>` description, with the parsed `mode=` token already removed) against the seven interview categories listed in `references/interview-templates.md`. For each candidate question, classify it as either:
+Before issuing any `AskUserQuestion` call in Phase 2, perform a one-shot scan of `$ARGUMENTS` (the original `<what-to-build>` description, with the parsed `chain=` and `mode=` tokens already removed) against the seven interview categories listed in `references/interview-templates.md`. For each candidate question, classify it as either:
 
 - `args-resolved` — the answer is already stated or unambiguously implied by `$ARGUMENTS`. Examples: `$ARGUMENTS` contains "Next.js 14 App Router" → "Which framework?" is `args-resolved`. `$ARGUMENTS` contains "must support 10k req/s" → "What throughput target?" is `args-resolved`. `$ARGUMENTS` contains "rollback via feature flag, no DB migration" → "How critical is this feature — can it be rolled back easily?" is `args-resolved`.
 - `needs-question` — the answer is not stated in `$ARGUMENTS` AND not derivable from the researcher's findings.
@@ -134,6 +137,7 @@ At end of Phase 2, record `interview_complete = true` iff **at least one round p
 slug: {slug}
 created: {date}
 status: draft
+chain: {on|off}
 mode: {auto|manual}
 estimated_size: {S|M|L|XL}
 estimated_category: {category}
@@ -141,7 +145,8 @@ interview_complete: {true|false}
 ---
 ```
 
-- `mode` is the literal scalar (`auto` or `manual`) parsed from `$ARGUMENTS` in the Argument Parsing step (defaulting to `auto` when `mode=` is omitted). It is REQUIRED in v6.0.0+. Legacy briefs written before v6.0.0 may lack this key entirely; downstream readers (notably `/create-ticket brief=<path>`) treat the absence of `mode:` as `mode: auto` for backward compatibility.
+- `chain` (canonical, vX.Y.0+) is the literal scalar (`on` or `off`) derived from the parsed argument in the Argument Parsing step (`chain=on|off` if supplied; otherwise mapped from the deprecated `mode=auto|manual` alias as `auto → on`, `manual → off`; otherwise the default `on`). Sample frontmatter MUST include this `chain: (on|off)` line.
+- `mode` (legacy, retained for one minor during the deprecation period — slated for removal in vX.(Y+1).0) is the literal scalar (`auto` or `manual`) parsed from `$ARGUMENTS` in the Argument Parsing step (defaulting to `auto` when both `chain=` and `mode=` are omitted; equivalent to the derived `chain` value via `on ↔ auto` / `off ↔ manual`). During this deprecation window both keys are written to every new brief so legacy `/create-ticket` consumers that have not yet adopted the `chain:` reader keep working unchanged. It is REQUIRED in v6.0.0+ (carried forward as `mode: {auto|manual}` per the deprecation alias contract). Super-legacy briefs written before v6.0.0 may lack this key entirely; downstream readers (notably `/create-ticket brief=<path>`) follow the precedence rule **`chain:` precedes `mode:`** — `chain:` is read first if present, otherwise `mode:` is read for backward compatibility, otherwise the reader defaults to `chain=on` (≡ `mode: auto`).
 - `interview_complete` is the literal scalar recorded at the end of Phase 2 (`true` if at least one round ran to a user response; `false` if Phase 2 was skipped via the non-interactive fallback or no round produced a response).
 - **Do NOT emit `split:`** (obsolete — decomposition is `/create-ticket`'s job).
 - **Do NOT emit `ticket_count:`** (obsolete — decomposition is `/create-ticket`'s job).
@@ -152,15 +157,15 @@ interview_complete: {true|false}
 
 1. Read `.simple-workflow/kb/index.yaml`, filter the `autopilot` section (historical decision patterns produced by `/tune` analysis), and apply confidence-based 3-tier judgment per gate (`>= 0.7` → annotate with `# kb-suggested`; `0.5-0.7` → `# [low confidence]`; `< 0.5` → conservative default). Apply size-scoped pattern priority before falling back to `scope=general`. Full integration logic: see [kb-policy-integration](references/kb-policy-integration.md).
 2. Determine default policy values based on the user's risk tolerance answers from Phase 2 (maps to conservative/moderate/aggressive). If Phase 2 was skipped (`interview_complete: false`), default to **conservative** and emit default gates.
-3. Write to `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml` regardless of Phase 2 outcome **and regardless of the parsed `mode` value** (the top-level `gates:` line MUST be present). Even in `mode=manual`, the brief-level `autopilot-policy.yaml` is written as a **rescue path**: per-ticket propagation is suppressed by `/create-ticket` (so manual-mode tickets work like bare-mode tickets via `/impl`'s FIFO selector), but the brief-level policy file remains so a user can later opt into autopilot by running `/autopilot {slug}` directly — the autopilot's brief-level policy fallback (see `skills/autopilot/SKILL.md` Phase 1 step 2, "Brief optionality") consumes this file.
+3. Write to `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml` regardless of Phase 2 outcome **and regardless of the parsed `chain` value** (or the legacy `mode` value, while the alias is accepted; the top-level `gates:` line MUST be present). Even in `chain=off` (legacy `mode=manual`), the brief-level `autopilot-policy.yaml` is written as a **rescue path**: per-ticket propagation is suppressed by `/create-ticket` (so manual-mode tickets work like bare-mode tickets via `/impl`'s FIFO selector), but the brief-level policy file remains so a user can later opt into autopilot by running `/autopilot {slug}` directly — the autopilot's brief-level policy fallback (see `skills/autopilot/SKILL.md` Phase 1 step 2, "Brief optionality") consumes this file.
 
 The emitted YAML follows the template in [policy-template](references/policy-template.md) (version 1 / risk_tolerance / gates / constraints, with conservative/moderate/aggressive branches inlined as comments).
 
 Split judgement has been removed: `/brief` no longer analyzes `estimated_size` to produce `split-plan.md`, and the legacy `planner` Split Judgment was retired in v6.2.0. `/create-ticket brief=<path>` receives the brief and decomposes the scope via `findings=<path>` mode + `decomposer`.
 
-## Finalization: Output, `mode=auto` handoff, and SW-CHECKPOINT
+## Finalization: Output, `chain=on` handoff, and SW-CHECKPOINT
 
-Final phase of `/brief`: summary print, `mode=auto` chained skill invocations (Step 2), `mode=manual` no-chain guidance (Step 3), mandatory SW-CHECKPOINT (Step 4). **No further file writes occur after this phase**.
+Final phase of `/brief`: summary print, `chain=on` chained skill invocations (Step 2 — also reached via the deprecated `mode=auto` alias), `chain=off` no-chain guidance (Step 3 — also reached via the deprecated `mode=manual` alias), mandatory SW-CHECKPOINT (Step 4). **No further file writes occur after this phase**.
 
 ### Step 1 — Summary
 
@@ -170,11 +175,11 @@ Print:
 - Estimated size and category
 - Interview outcome (`interview_complete: true|false`); if true, number of rounds actually completed
 
-### Step 2 — `mode=auto` handoff
+### Step 2 — `chain=on` handoff
 
-Only runs when mode=auto. (`mode=auto` was passed explicitly, or `mode=` was omitted so the default `auto` was applied. When the parsed `mode` is `manual`, this entire Step 2 is skipped and execution proceeds directly to Step 3.) Within **Step 2's chain-confirmation context**, the flow is strictly linear (display → status update → auto-kick write → `/create-ticket` → `/autopilot`): Step 2 **MUST NOT** call `AskUserQuestion`, nor otherwise prompt the user for a yes/no confirmation, to gate the chain between these sub-steps. The brief + policy display in (a) is passive — it does not gate the chain.
+Only runs when chain=on (equivalent to the deprecated `mode=auto`). (`chain=on` was passed explicitly, OR the legacy alias `mode=auto` was passed and mapped to `chain=on`, OR both `chain=` and `mode=` were omitted so the default `chain=on` was applied. When the parsed `chain` is `off` — equivalent to the deprecated `mode=manual` — this entire Step 2 is skipped and execution proceeds directly to Step 3. The earlier convention "Only runs when mode=auto" remains semantically true during the deprecation window because `mode=auto` is just an alias for `chain=on`.) Within **Step 2's chain-confirmation context**, the flow is strictly linear (display → status update → auto-kick write → `/create-ticket` → `/autopilot`): Step 2 **MUST NOT** call `AskUserQuestion`, nor otherwise prompt the user for a yes/no confirmation, to gate the chain between these sub-steps. The brief + policy display in (a) is passive — it does not gate the chain.
 
-**Scope disclaimer (Step 2-only)**: The non-interactive restriction above is **scoped exclusively to Step 2's chain confirmation** (only reachable when `mode=auto`) and **MUST NOT** be generalized to the rest of `/brief`. In particular, **Phase 2 Structured Interview (Socratic) is independent of this restriction and MUST run regardless of the parsed `mode` value** — `mode` has no effect on Phase 2's behavior (see `## Phase 2` above).
+**Scope disclaimer (Step 2-only)**: The non-interactive restriction above is **scoped exclusively to Step 2's chain confirmation** (only reachable when `chain=on` / legacy `mode=auto`) and **MUST NOT** be generalized to the rest of `/brief`. In particular, **Phase 2 Structured Interview (Socratic) is independent of this restriction and MUST run regardless of the parsed `chain` value (or the legacy `mode` value)** — neither `chain` nor `mode` has any effect on Phase 2's behavior (see `## Phase 2` above).
 
 a. Display the brief content and policy content to the user. This display is passive — it informs the user of what will be chained but does not pause for acknowledgement.
 b. Update `brief.md` `status:` from `draft` to `confirmed`.
@@ -195,9 +200,13 @@ f. Otherwise (`/create-ticket` succeeded), proceed to the final invocation:
 
    **MUST invoke `/autopilot` via the Skill tool** with argument `{slug}` (the brief's slug, which is also the `parent-slug` that `/create-ticket` wrote under `.simple-workflow/backlog/product_backlog/{slug}/`).
 
-### Step 3 — `mode=manual` (no chained handoff)
+### Step 3 — `chain=off` (≡ legacy `mode=manual`; no chained handoff)
 
-Only runs when the parsed `mode` is `manual`. No `auto-kick.yaml` is written, no `/create-ticket` invocation, no `/autopilot` invocation — `/brief` produces the two artifacts (`brief.md` with `mode: manual` in frontmatter, plus `autopilot-policy.yaml` as the rescue path file from Phase 4) and stops. Print the manual-flow guidance below verbatim:
+> Legacy-alias heading kept inline for one-minor backward search compatibility: this section is also reachable as **Step 3 — `mode=manual`** while the `mode=` alias remains accepted (slated for removal in vX.(Y+1).0 alongside the alias).
+
+
+
+Only runs when the parsed `chain` is `off` (equivalently, the deprecated alias `mode=manual` was supplied). No `auto-kick.yaml` is written, no `/create-ticket` invocation, no `/autopilot` invocation — `/brief` produces the two artifacts (`brief.md` with both `chain: off` and `mode: manual` in frontmatter during the deprecation window, plus `autopilot-policy.yaml` as the rescue path file from Phase 4) and stops. Print the manual-flow guidance below verbatim:
 
 ```
 Brief generated in manual mode. To proceed:
@@ -219,31 +228,34 @@ The block MUST be the LAST section of the skill's output. Format + the literal `
 Fields:
 - `phase: brief`
 - `ticket: none`
-- **Success path** (`brief.md` + `autopilot-policy.yaml` both written) — branch on the parsed `mode`:
+- **Success path** (`brief.md` + `autopilot-policy.yaml` both written) — branch on the parsed `chain` (equivalently on the legacy `mode` alias while it is accepted):
   - `artifacts:` — list containing the two repo-relative paths: `.simple-workflow/backlog/briefs/active/{slug}/brief.md` and `.simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml`.
-  - **`mode=auto`**:
+  - **`chain=on`** (≡ legacy `mode=auto`):
     - Emit EXACTLY ONE line matching `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$` with value `/autopilot {slug}`.
     - Emit EXACTLY ONE line matching `^next_recommended_manual:[[:space:]]+/create-ticket[[:space:]]+brief=\S+$` with value `/create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
-  - **`mode=manual`**:
-    - Emit `next_recommended_auto: ""` (literal empty string). This empty value does NOT match the AC #11 regex `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$`, so the Stop hook's auto-`/autopilot` firing path does NOT trigger — load-bearing safety guarantee of `mode=manual`.
+  - **`chain=off`** (≡ legacy `mode=manual`):
+    - Emit `next_recommended_auto: ""` (literal empty string). This empty value does NOT match the AC #11 regex `^next_recommended_auto:[[:space:]]+/autopilot[[:space:]]+\S+$`, so the Stop hook's auto-`/autopilot` firing path does NOT trigger — load-bearing safety guarantee of `chain=off` (legacy `mode=manual`).
     - Emit EXACTLY ONE line matching `^next_recommended_manual:[[:space:]]+/create-ticket[[:space:]]+brief=\S+$` with value `/create-ticket brief=.simple-workflow/backlog/briefs/active/{slug}/brief.md`.
   - Do NOT emit a bare `next_recommended:` line alongside these two.
   - `{slug}` is the brief's `{slug}` (= `parent-slug` downstream; aliases here).
-- **Failure path** (any write failure — `mkdir`, `brief.md`, `autopilot-policy.yaml`, or `mode=auto` chained `/create-ticket` failed):
+- **Failure path** (any write failure — `mkdir`, `brief.md`, `autopilot-policy.yaml`, or `chain=on` / legacy `mode=auto` chained `/create-ticket` failed):
   - `artifacts: []` on a single line.
   - Emit BOTH recommendation lines with empty-string values: `next_recommended_auto: ""` AND `next_recommended_manual: ""`. AC #11's regex does not match empty-string values, so downstream automation does not misfire. Both keys remain present (shape-preserving).
 
-In all three shapes (mode=auto success, mode=manual success, failure), both `next_recommended_auto:` and `next_recommended_manual:` keys are present; only their values differ.
+In all three shapes (`chain=on` success ≡ legacy `mode=auto` success, `chain=off` success ≡ legacy `mode=manual` success, failure), both `next_recommended_auto:` and `next_recommended_manual:` keys are present; only their values differ.
 
 ## Error Handling
 
-- **Empty arguments**: Print `Usage: /brief <what-to-build> [mode=auto|manual]` and stop.
-- **`auto=true` argument (v6.0.0 removal)**: Print `ERROR: 'auto=true' has been removed in v6.0.0; use 'mode=auto' or 'mode=manual'` and stop. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero.
-- **Invalid `mode=<value>`**: Print `ERROR: invalid mode=<value>. Use mode=auto or mode=manual` (substituting the offending value) and stop. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero.
+- **Empty arguments**: Print `Usage: /brief <what-to-build> [chain=on|off]` (legacy alias also accepted during the deprecation window: `mode=auto|manual`) and stop.
+- **`auto=true` argument (v6.0.0 removal)**: Print `ERROR: 'auto=true' has been removed in v6.0.0; use 'mode=auto' or 'mode=manual'` (legacy literal preserved verbatim; the equivalent vX.Y.0+ form is `chain=on` or `chain=off`) and stop. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero.
+- **Invalid `chain=<value>` (vX.Y.0+ canonical form)**: Print `ERROR: invalid chain=<value>. Use chain=on or chain=off` (substituting the offending value) and stop. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero.
+- **Invalid `mode=<value>` (legacy alias path)**: Print `ERROR: invalid mode=<value>. Use mode=auto or mode=manual` (substituting the offending value) and stop. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero. (The deprecation warning for `mode=` itself is emitted only when the alias is *valid*; invalid `mode=` values short-circuit to this error without the warning.)
+- **Deprecated `mode=` alias supplied (warning, not an error)**: When `mode=` is parsed with a valid value (`auto` or `manual`) and `chain=` is NOT also supplied, emit to stderr the single line `WARNING: 'mode=' is deprecated and will be removed in vX.(Y+1).0. Use 'chain=on' instead of 'mode=auto', 'chain=off' instead of 'mode=manual'.` (verbatim literal). Processing continues — the alias is mapped to the equivalent `chain=` value and the brief is written normally.
+- **Simultaneous `chain=` and `mode=` specification (ERROR, exit non-zero)**: Print `ERROR: 'chain=' and 'mode=' cannot be combined. Use 'chain=' (preferred).` and stop. Do NOT silent-rewrite to either key. Do NOT create the brief directory, do NOT write `brief.md`, do NOT write `autopilot-policy.yaml`, and do NOT write `auto-kick.yaml`. Exit non-zero.
 - **Researcher failure**: Report error. Continue to Phase 2 without investigation summary.
 - **AskUserQuestion failure in Phase 2**: Skip Phase 2, proceed with researcher findings only; set `interview_complete: false`.
 - **Write failure** (brief.md or autopilot-policy.yaml): Report the error and emit the failure-path SW-CHECKPOINT from Step 4 (empty-string recommendations, `artifacts: []`).
-- **`mode=auto` path — `/create-ticket` chained invocation fails**: stdout MUST contain `ERROR:` AND `create-ticket failed`. Do NOT invoke `/autopilot`. Emit the failure-path SW-CHECKPOINT from Step 4.
+- **`chain=on` path (≡ legacy `mode=auto`) — `/create-ticket` chained invocation fails**: stdout MUST contain `ERROR:` AND `create-ticket failed`. Do NOT invoke `/autopilot`. Emit the failure-path SW-CHECKPOINT from Step 4.
 
 ## Subagent Skill-Access Handoff
 

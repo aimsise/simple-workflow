@@ -192,6 +192,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suppression decision. New mechanical assertions CT-AC-61..65 in
   `tests/test-skill-contracts.sh` pin the contract grep, caps
   invariance, and guard-body invariance.
+- **`/brief` introduces `chain={on,off}` as the canonical finalization
+  control argument (P3-2C, X.Y.0 deprecation phase)**. The new key
+  expresses what the argument actually controls — whether `/brief`
+  chains into `/create-ticket` + `/autopilot` at Finalization — instead
+  of the misleading `mode=auto|manual` framing that was repeatedly
+  read as "skip the Socratic interview" (it never did, per the
+  `mode independence guard`). Mapping: `chain=on` ≡ legacy
+  `mode=auto`; `chain=off` ≡ legacy `mode=manual`; default when
+  neither is supplied stays `chain=on` to preserve pre-vX.Y.0 user
+  habits. `skills/brief/SKILL.md` `argument-hint` is now
+  `<what-to-build> [chain=on|off] (legacy: mode=auto|manual)`; the
+  `## Argument Parsing` section parses `chain=` first and treats
+  `mode=` as a deprecated alias; the Phase 3 frontmatter writes
+  BOTH `chain:` and `mode:` during the deprecation window so legacy
+  readers continue to work; the Finalization section title is
+  `## Finalization: Output, \`chain=on\` handoff, and SW-CHECKPOINT`
+  with `### Step 2 — \`chain=on\` handoff` and `### Step 3 — \`chain=off\``;
+  the `mode independence guard` is preserved and explicitly extended
+  to mention `chain` alongside `mode` (independence-protection covers
+  both arguments during the deprecation window; the guard is slated
+  for removal in vX.(Y+1).0 once the alias is gone). `skills/create-ticket/SKILL.md`
+  Step W-8 + B-2 frontmatter row and
+  `skills/create-ticket/references/agent-spawn-prompts.md` Phase 4
+  `gates.ticket_quality_fail` fallback both document the precedence
+  rule `chain: precedes mode:` (chain takes precedence; mode read
+  as fallback; super-legacy briefs lacking both keys default to
+  `chain=on` / `mode: auto`). New mechanical assertions PCN-1..PCN-7
+  in `tests/test-skill-contracts.sh` Category PCN pin the literals
+  (`chain=on` / `chain=off` count, `argument-hint` substring,
+  deprecation warning + simultaneous-spec error, frontmatter dual-key
+  presence, cross-skill precedence marker, guard preservation +
+  `chain` mention). The `mode=` argument continues to work unchanged
+  for one minor and emits a stderr deprecation warning when supplied;
+  combining `chain=` and `mode=` simultaneously errors out (no silent
+  rewrite, mirroring the v6.0.0 `auto=true` defensive stance). The
+  removal of `mode=` is a future-minor BREAKING change — flagged here
+  via the `feat(P3-2C)!` commit subject so consumers can prepare.
+
+### Deprecated
+
+- **`/brief mode=auto|manual` argument alias (P3-2C, X.Y.0 deprecation
+  phase)**. The legacy `mode=auto|manual` argument is now a deprecated
+  alias for the canonical `chain=on|off` introduced in the
+  `### Changed` entry above (`mode=auto` ≡ `chain=on`,
+  `mode=manual` ≡ `chain=off`). Supplying `mode=` continues to work
+  for one minor (vX.Y.0) and emits a one-line stderr warning
+  `WARNING: 'mode=' is deprecated and will be removed in vX.(Y+1).0.
+  Use 'chain=on' instead of 'mode=auto', 'chain=off' instead of
+  'mode=manual'.` (verbatim). The Phase 3 frontmatter continues to
+  write the `mode:` field alongside the new `chain:` field during
+  this window so legacy `/create-ticket brief=<path>` readers keep
+  working; downstream readers (notably `/create-ticket`) implement
+  the precedence rule `chain: precedes mode:` (read `chain:` first
+  if present, fall back to `mode:`, default to `chain=on` when both
+  keys are absent). The `mode=` argument, the `mode:` frontmatter
+  field, and the `mode independence guard` defensive prose are
+  scheduled for removal in vX.(Y+1).0. Migration: replace
+  `/brief "X" mode=auto` with `/brief "X" chain=on` (or drop the
+  argument entirely — `chain=on` remains the default) and
+  `/brief "X" mode=manual` with `/brief "X" chain=off`. Combining
+  both keys (`/brief "X" chain=on mode=auto`) is rejected with
+  `ERROR: 'chain=' and 'mode=' cannot be combined. Use 'chain='
+  (preferred).` and exits non-zero without writing any artifacts.
 
 ### Fixed
 
