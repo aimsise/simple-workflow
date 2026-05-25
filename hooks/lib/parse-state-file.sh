@@ -2,6 +2,8 @@
 # parse-state-file.sh — shared YAML parse + autopilot-context detection
 # helpers used by hook scripts and tests.
 #
+# Schema reference: docs/state-schema.md
+#
 # Sourced by:
 #   - hooks/pre-bash-contract-guard.sh (PreToolUse:Bash guard, PX-02a)
 #   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)

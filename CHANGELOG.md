@@ -154,6 +154,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literals, and the behavioural self-heal / kill-switch / metric-only /
   idempotence behaviours against the
   `tests/fixtures/post-ship-integrity/` fixtures.
+- **State-schema cross-version tests + canonical invariant doc + migration tool
+  (P2-4)** — new fixtures `tests/fixtures/state-schema/v7-shelftrack/` and
+  `tests/fixtures/state-schema/v8-shelftrack/` capture the v7 (legacy
+  `total_tickets:` + basename `ticket_mapping:`) and v8 (canonical
+  `processing_order:` + fullpath `ticket_mapping:` + `human_overrides: []` /
+  `kb_overrides: []` / `decisions_made: []`) shapes of `autopilot-state.yaml`
+  sanitised from test_simple_workflow33 / 34. New `tests/test-state-parsers.sh`
+  asserts the four `hooks/lib/parse-state-file.sh` helpers (`is_autopilot_context`,
+  `find_any_autopilot_state_file`, `parse_ticket_ship_dirs`,
+  `parse_ticket_statuses`) return semantically identical results across both
+  fixtures (≥8 PASS, run via the existing `tests/run-all.sh` glob). New
+  `docs/state-schema.md` documents the canonical v8 shape, the read-only v7
+  legacy fields, the three load-bearing invariants (`processing_order:` is
+  the SSoT for ticket count; `ticket_dir:` is always a fullpath; `tickets[]`
+  is list-canonical; forward-compatible additions only), and the migration
+  workflow. New `tools/migrate-state-schema.sh` performs a non-destructive
+  v7 -> v8 rewrite (`--in` / `--out` only; in-place edits unsupported by
+  design) using the project's standard `yq` -> `python3 + PyYAML` ->
+  fail-with-warning three-tier fallback, and is idempotent on already-v8
+  input.
 
 ### Changed
 

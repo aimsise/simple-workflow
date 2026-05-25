@@ -1,0 +1,104 @@
+# Source: test_simple_workflow33 (sanitised verbatim)
+version: 1
+parent_slug: shelftrack
+started: 2026-05-25T00:25:24Z
+execution_mode: split
+risk_tolerance: aggressive
+boundary: pipeline_start
+total_tickets: 7
+completed_tickets: 7
+failed_tickets: 0
+skipped_tickets: 0
+ticket_mapping:
+  shelftrack-part-1: 001-project-scaffold-better-sqlite3-smoke-test
+  shelftrack-part-2: 002-shelf-domain-and-database-schema
+  shelftrack-part-3: 003-shelves-rest-api-and-validation
+  shelftrack-part-4: 004-pantry-items-domain-and-api
+  shelftrack-part-5: 005-stock-events-and-quantity-projection
+  shelftrack-part-6: 006-low-stock-and-expiry-queries
+  shelftrack-part-7: 007-openapi-spec-and-integration-tests
+tickets:
+  - logical_id: shelftrack-part-1
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/001-project-scaffold-better-sqlite3-smoke-test/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+  - logical_id: shelftrack-part-2
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/002-shelf-domain-and-database-schema/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+  - logical_id: shelftrack-part-3
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/003-shelves-rest-api-and-validation/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+  - logical_id: shelftrack-part-4
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/004-pantry-items-domain-and-api/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+  - logical_id: shelftrack-part-5
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/005-stock-events-and-quantity-projection/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+  - logical_id: shelftrack-part-6
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/006-low-stock-and-expiry-queries/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+  - logical_id: shelftrack-part-7
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/007-openapi-spec-and-integration-tests/
+    status: completed
+    depends_on: []
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
