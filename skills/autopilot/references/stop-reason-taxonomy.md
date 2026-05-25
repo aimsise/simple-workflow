@@ -96,7 +96,22 @@ first rule that matches wins.
 5. None of the above matched → `harness_terminated` (fallback).
 
 Policy-gate stops (`policy_gate_stop`) are emitted by the orchestrator skill
-itself; the Stop hook does not synthesise them.
+itself; the Stop hook does not synthesise them. Sources include:
+
+- A configured policy gate firing `action: stop` mid-pipeline (the original
+  v6.x path documented above) -- e.g. `gates.unexpected_error.action: stop`,
+  `gates.audit_infrastructure_fail.action: stop`,
+  `gates.ship_review_gate.action: stop`, etc.
+- **Phase 1 hard-stop conditions** discovered during pre-flight checks
+  before the per-ticket loop starts -- missing split-plan (step 1), brief
+  `status: draft` (step 3), unrecoverable state-file corruption or hostile
+  working tree detected during state recovery (step 5), and any other
+  Phase 1 precondition that cannot be papered over by automatic fallback.
+  These hard-stops MUST surface as `policy_gate_stop` (with the verbatim
+  `ERROR:` literals retained for downstream contract tests) rather than as
+  interactive `AskUserQuestion` prompts; the resume hint
+  `Resume after fixing X with: /autopilot {parent-slug}` accompanies each
+  hard-stop so the user can continue after fixing the upstream issue.
 
 ## Discrimination heuristic (PreCompact hook)
 

@@ -79,6 +79,18 @@
 #       Thin wrapper that re-uses the same three-tier strategy as
 #       `parse_phase_status`. Exits non-zero only on file-not-found.
 #
+#   get_risk_tolerance <state_dir>
+#     - Reads `risk_tolerance:` from <state_dir>/autopilot-policy.yaml.
+#       Prints one of "aggressive" / "moderate" / "conservative" to stdout.
+#       Fallback (file missing / key absent / unparsable / unknown value)
+#       is the literal "conservative" -- the most permissive tier on the
+#       policy-gate axis, chosen so that an absent or malformed policy
+#       file does NOT silently flip every header to deny and break the
+#       recovery paths that the SKILL prose still expects to remain open
+#       (e.g. `audit-fail` / `ac-eval` AskUserQuestion). Uses the same
+#       three-tier strategy as the other helpers in this lib (yq ->
+#       python3+PyYAML -> awk).
+#
 # Implementation strategy: prefer `yq` (mikefarah v4), fall back to
 # `python3 + PyYAML`, and finally to a portable `awk` shell parser. This
 # matches the graceful-degrade contract documented in CLAUDE.md
@@ -651,7 +663,67 @@ PY
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# Public function: get_risk_tolerance
+# Usage: get_risk_tolerance <state_dir>
+#
+# Reads `risk_tolerance:` from <state_dir>/autopilot-policy.yaml and prints
+# one of "aggressive" / "moderate" / "conservative" to stdout. Fallback for
+# file-missing / key-absent / unparsable / unknown-value is the literal
+# "conservative" -- see header doc comment for rationale.
+#
+# Three-tier strategy matches the other helpers in this lib:
+#   1. yq -r '.risk_tolerance // ""' <file>
+#   2. python3 + PyYAML (gated on `import yaml` probe so macOS without
+#      PyYAML falls through to tier 3 rather than short-circuiting empty)
+#   3. POSIX awk fallback walking `^risk_tolerance:[[:space:]]+(\S+)`
+#
+# The trailing case validator normalises unknown values (NAC-5 evidence
+# in P1-3B): an `aggressive` fallback would gridlock recovery paths so
+# `conservative` is the deliberate fail-open choice.
+# ---------------------------------------------------------------------------
+get_risk_tolerance() {
+  local state_dir="$1"
+  local file="${state_dir%/}/autopilot-policy.yaml"
+  local out=""
+  if [ -f "$file" ]; then
+    if _psf_have yq; then
+      out="$(yq -r '.risk_tolerance // ""' "$file" 2>/dev/null || true)"
+      [ "$out" = "null" ] && out=""
+    fi
+    if [ -z "$out" ] && _psf_have python3 \
+        && python3 -c 'import yaml' >/dev/null 2>&1; then
+      out="$(python3 - "$file" <<'PY' 2>/dev/null
+import sys, yaml
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+val = doc.get("risk_tolerance", "")
+print(val if val is not None else "")
+PY
+)"
+    fi
+    if [ -z "$out" ]; then
+      out="$(awk '
+        /^risk_tolerance:[[:space:]]+/ {
+          val=$0
+          sub(/^risk_tolerance:[[:space:]]+/, "", val)
+          gsub(/^"|"$/, "", val)
+          gsub(/^'\''|'\''$/, "", val)
+          sub(/[[:space:]]+#.*$/, "", val)
+          if (val == "null" || val == "~") val = ""
+          print val
+          exit 0
+        }
+      ' "$file" 2>/dev/null || true)"
+    fi
+  fi
+  case "$out" in
+    aggressive|moderate|conservative) printf '%s\n' "$out" ;;
+    *) printf '%s\n' "conservative" ;;
+  esac
+}
+
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action get_risk_tolerance 2>/dev/null || true

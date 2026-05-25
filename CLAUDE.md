@@ -26,6 +26,7 @@ This rule was distilled from a v6.7.0 dogfood incident in which a verify hook ne
 - `SW_AUTO_COMPACT_ON_SHIP_MODE` — controls the v7 auto-`/compact` between autopilot tickets. Values: `on` (default inside autopilot context, off outside), `metric-only` (log intent without injecting), `off` (disable both `hooks/pre-next-scout-auto-compact.sh` and `hooks/post-ship-state-auto-compact.sh`). Set in the shell before launching `claude`.
 - `INJECT_KEYS_DRY_RUN=1` — test-only knob for `hooks/lib/inject-keys.sh`; logs the would-be backend + target + text instead of invoking. Do NOT export in user shell profiles or every auto-`/compact` becomes a silent no-op.
 - `AUTOPILOT_LEGACY_LOOPGUARD=1` — restore the pre-Plan-02 loop-guard semantics in `hooks/autopilot-continue.sh` (FILE_COUNT alone gates release, NOTOOL_COUNT is forced to threshold).
+- `SW_AUTOPILOT_ASK_GUARD` — controls `hooks/pre-askuserquestion-guard.sh`. Values: `on` (default; matrix active), `metric-only` (compute the matrix and log `[ASK-GUARD] metric-only: would deny ...` to stderr without denying), `off` (disable the guard; unknown values collapse here so a typo fails open). The hook implements the 3-tier `risk_tolerance` allow-list documented in `skills/autopilot/SKILL.md ## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`; when `autopilot-policy.yaml` is absent or carries an unknown `risk_tolerance:` value, `hooks/lib/parse-state-file.sh::get_risk_tolerance` returns `conservative` (deliberate fail-open so the six known gate-id headers remain answerable).
 
 ## Language
 

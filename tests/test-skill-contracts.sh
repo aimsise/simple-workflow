@@ -7539,5 +7539,345 @@ assert_true \
 
 echo ""
 
+# =============================================================================
+# Category AP: /autopilot 3-tier risk_tolerance-aware non-interactive contract (P0-3A)
+# Diff: Cat CP already pins the two canonical context-pressure responses and Cat LT
+#        pins the loop-tail end_turn prohibition; neither covers the 3-tier
+#        risk_tolerance allow-list, header naming, or the per-callee header
+#        annotations introduced by P0-3A. This category is the structural
+#        regression guard for the new prose contract. AC-26/27/28 from the
+#        plan are NOT pinned here (27/28 are the test runner itself; 26 is a
+#        meta check that becomes mechanically verifiable only once
+#        hooks/pre-askuserquestion-guard.sh lands via P1-3B).
+# =============================================================================
+echo "--- Cat AP: /autopilot 3-tier risk_tolerance-aware non-interactive contract (P0-3A) ---"
+
+AUTOPILOT_SKILL_AP="$REPO_DIR/skills/autopilot/SKILL.md"
+IMPL_SKILL_AP="$REPO_DIR/skills/impl/SKILL.md"
+SHIP_SKILL_AP="$REPO_DIR/skills/ship/SKILL.md"
+REFACTOR_SKILL_AP="$REPO_DIR/skills/refactor/SKILL.md"
+
+# AP-1 (P0-3A AC-1): new section header is present in skills/autopilot/SKILL.md.
+ap1_result="false"
+if grep -q '^## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)' "$AUTOPILOT_SKILL_AP"; then
+  ap1_result="true"
+fi
+assert_true \
+  "AP-1 (P0-3A AC-1): skills/autopilot/SKILL.md carries the '## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)' section heading" \
+  "$ap1_result"
+
+# AP-2 (P0-3A AC-2): contract start-point literal.
+ap2_result="false"
+if grep -q 'Phase 1 step 1 confirms `SPLIT_PLAN` exists' "$AUTOPILOT_SKILL_AP"; then
+  ap2_result="true"
+fi
+assert_true \
+  "AP-2 (P0-3A AC-2): skills/autopilot/SKILL.md states the contract starts when 'Phase 1 step 1 confirms \`SPLIT_PLAN\` exists'" \
+  "$ap2_result"
+
+# AP-3 (P0-3A AC-3): the '3-tier allow-list matrix' phrase is present.
+ap3_result="false"
+if grep -q '3-tier allow-list matrix' "$AUTOPILOT_SKILL_AP"; then
+  ap3_result="true"
+fi
+assert_true \
+  "AP-3 (P0-3A AC-3): skills/autopilot/SKILL.md mentions the '3-tier allow-list matrix'" \
+  "$ap3_result"
+
+# AP-4 (P0-3A AC-4): the matrix is keyed on `risk_tolerance`.
+ap4_result="false"
+if grep -q 'keyed on `risk_tolerance`' "$AUTOPILOT_SKILL_AP"; then
+  ap4_result="true"
+fi
+assert_true \
+  "AP-4 (P0-3A AC-4): skills/autopilot/SKILL.md declares the matrix is 'keyed on \`risk_tolerance\`'" \
+  "$ap4_result"
+
+# AP-5..AP-11 (P0-3A AC-5..AC-11): allow-list matrix cells (deny/allow per tier).
+ap5_result="false"
+if grep -qE 'audit-fail.*\|.*deny.*\|.*allow.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap5_result="true"
+fi
+assert_true \
+  "AP-5 (P0-3A AC-5): skills/autopilot/SKILL.md matrix row 'audit-fail | deny | allow | allow' present" \
+  "$ap5_result"
+
+ap6_result="false"
+if grep -qE 'ac-eval.*\|.*deny.*\|.*allow.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap6_result="true"
+fi
+assert_true \
+  "AP-6 (P0-3A AC-6): skills/autopilot/SKILL.md matrix row 'ac-eval | deny | allow | allow' present" \
+  "$ap6_result"
+
+ap7_result="false"
+if grep -qE 'ship-review.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap7_result="true"
+fi
+assert_true \
+  "AP-7 (P0-3A AC-7): skills/autopilot/SKILL.md matrix row 'ship-review | deny | deny | allow' present" \
+  "$ap7_result"
+
+ap8_result="false"
+if grep -qE 'ship-ci.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap8_result="true"
+fi
+assert_true \
+  "AP-8 (P0-3A AC-8): skills/autopilot/SKILL.md matrix row 'ship-ci | deny | deny | allow' present" \
+  "$ap8_result"
+
+ap9_result="false"
+if grep -qE 'eval-dry.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap9_result="true"
+fi
+assert_true \
+  "AP-9 (P0-3A AC-9): skills/autopilot/SKILL.md matrix row 'eval-dry | deny | deny | allow' present" \
+  "$ap9_result"
+
+ap10_result="false"
+if grep -qE 'tkt-quality.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap10_result="true"
+fi
+assert_true \
+  "AP-10 (P0-3A AC-10): skills/autopilot/SKILL.md matrix row 'tkt-quality | deny | deny | allow' present" \
+  "$ap10_result"
+
+ap11_result="false"
+if grep -qE '\(any other\).*\|.*deny.*\|.*deny.*\|.*deny' "$AUTOPILOT_SKILL_AP"; then
+  ap11_result="true"
+fi
+assert_true \
+  "AP-11 (P0-3A AC-11): skills/autopilot/SKILL.md matrix fallback row '(any other) | deny | deny | deny' present" \
+  "$ap11_result"
+
+# AP-12..AP-14 (P0-3A AC-12..AC-14): header naming load-bearing literals.
+ap12_result="false"
+if grep -q 'Header naming is load-bearing' "$AUTOPILOT_SKILL_AP"; then
+  ap12_result="true"
+fi
+assert_true \
+  "AP-12 (P0-3A AC-12): skills/autopilot/SKILL.md declares 'Header naming is load-bearing'" \
+  "$ap12_result"
+
+ap13_result="false"
+if grep -q 'max 12 chars' "$AUTOPILOT_SKILL_AP"; then
+  ap13_result="true"
+fi
+assert_true \
+  "AP-13 (P0-3A AC-13): skills/autopilot/SKILL.md exposes the AskUserQuestion 'max 12 chars' header limit" \
+  "$ap13_result"
+
+ap14_result="false"
+if grep -q 'denied at every tier' "$AUTOPILOT_SKILL_AP"; then
+  ap14_result="true"
+fi
+assert_true \
+  "AP-14 (P0-3A AC-14): skills/autopilot/SKILL.md declares off-matrix headers are 'denied at every tier'" \
+  "$ap14_result"
+
+# AP-15..AP-17 (P0-3A AC-15..AC-17): /impl carries the three header annotations.
+ap15_result="false"
+if grep -q 'header:[[:space:]]*eval-dry' "$IMPL_SKILL_AP"; then
+  ap15_result="true"
+fi
+assert_true \
+  "AP-15 (P0-3A AC-15): skills/impl/SKILL.md annotates the evaluator-dry-run question with 'header: eval-dry'" \
+  "$ap15_result"
+
+ap16_result="false"
+if grep -q 'header:[[:space:]]*audit-fail' "$IMPL_SKILL_AP"; then
+  ap16_result="true"
+fi
+assert_true \
+  "AP-16 (P0-3A AC-16): skills/impl/SKILL.md annotates the audit-failure question with 'header: audit-fail'" \
+  "$ap16_result"
+
+ap17_result="false"
+if grep -q 'header:[[:space:]]*ac-eval' "$IMPL_SKILL_AP"; then
+  ap17_result="true"
+fi
+assert_true \
+  "AP-17 (P0-3A AC-17): skills/impl/SKILL.md annotates the AC-eval FAIL escalation with 'header: ac-eval'" \
+  "$ap17_result"
+
+# AP-18 (P0-3A AC-18): /ship carries at least one ship-review or ship-ci header.
+ap18_result="false"
+if grep -qE 'header:[[:space:]]*(ship-review|ship-ci)' "$SHIP_SKILL_AP"; then
+  ap18_result="true"
+fi
+assert_true \
+  "AP-18 (P0-3A AC-18): skills/ship/SKILL.md annotates at least one policy-gate question with 'header: ship-review' or 'header: ship-ci'" \
+  "$ap18_result"
+
+# AP-19 (P0-3A AC-19): /refactor carries header: audit-fail on the autopilot-mode path.
+ap19_result="false"
+if grep -q 'header:[[:space:]]*audit-fail' "$REFACTOR_SKILL_AP"; then
+  ap19_result="true"
+fi
+assert_true \
+  "AP-19 (P0-3A AC-19): skills/refactor/SKILL.md annotates the autopilot-mode code-reviewer failure question with 'header: audit-fail'" \
+  "$ap19_result"
+
+# AP-20 (P0-3A AC-20): policy_gate_stop literal present in autopilot SKILL.md.
+ap20_result="false"
+if grep -q '`policy_gate_stop`' "$AUTOPILOT_SKILL_AP"; then
+  ap20_result="true"
+fi
+assert_true \
+  "AP-20 (P0-3A AC-20): skills/autopilot/SKILL.md surfaces the '\`policy_gate_stop\`' tag in the new section" \
+  "$ap20_result"
+
+# AP-21 (P0-3A AC-21): >=2 occurrences of '[AUTOPILOT-POLICY] gate=unexpected_error action=stop'.
+ap21_count=$(grep -c 'AUTOPILOT-POLICY] gate=unexpected_error action=stop' "$AUTOPILOT_SKILL_AP" || true)
+ap21_result="false"
+if [ "$ap21_count" -ge 2 ]; then
+  ap21_result="true"
+fi
+assert_true \
+  "AP-21 (P0-3A AC-21): skills/autopilot/SKILL.md mentions '[AUTOPILOT-POLICY] gate=unexpected_error action=stop' at least twice (got $ap21_count, expected >=2)" \
+  "$ap21_result"
+
+# AP-22 (P0-3A AC-22): legacy ERROR literal preserved.
+ap22_result="false"
+if grep -q 'ERROR: split-plan not found at' "$AUTOPILOT_SKILL_AP"; then
+  ap22_result="true"
+fi
+assert_true \
+  "AP-22 (P0-3A AC-22): skills/autopilot/SKILL.md retains the verbatim 'ERROR: split-plan not found at' literal (backwards compatibility with existing contract tests)" \
+  "$ap22_result"
+
+# AP-23..AP-25 (P0-3A AC-23..AC-25): forbidden self-rationalisation patterns.
+ap23_result="false"
+if grep -q 'The per-ticket pipeline has not started yet, so the contract is not' "$AUTOPILOT_SKILL_AP"; then
+  ap23_result="true"
+fi
+assert_true \
+  "AP-23 (P0-3A AC-23): skills/autopilot/SKILL.md enumerates the 'pipeline has not started yet' forbidden self-rationalisation" \
+  "$ap23_result"
+
+ap24_result="false"
+if grep -q 'Context budget is running low' "$AUTOPILOT_SKILL_AP"; then
+  ap24_result="true"
+fi
+assert_true \
+  "AP-24 (P0-3A AC-24): skills/autopilot/SKILL.md enumerates the 'Context budget is running low' forbidden self-rationalisation" \
+  "$ap24_result"
+
+ap25_result="false"
+if grep -q 'phrase my question as `header: audit-fail`' "$AUTOPILOT_SKILL_AP"; then
+  ap25_result="true"
+fi
+assert_true \
+  "AP-25 (P0-3A AC-25): skills/autopilot/SKILL.md enumerates the 'phrase my question as \`header: audit-fail\`' header-misuse forbidden self-rationalisation" \
+  "$ap25_result"
+
+# AP-26 partial (P0-3A AC-26): the six gate-id header tokens all appear at least
+# once in the autopilot SKILL.md so the matrix is well-formed. Full meta check
+# vs hooks/pre-askuserquestion-guard.sh lands in P1-3B once the hook exists.
+ap26_count=$(grep -c 'audit-fail\|ac-eval\|ship-review\|ship-ci\|eval-dry\|tkt-quality' "$AUTOPILOT_SKILL_AP" || true)
+ap26_result="false"
+if [ "$ap26_count" -ge 6 ]; then
+  ap26_result="true"
+fi
+assert_true \
+  "AP-26 (P0-3A AC-26, partial — matrix well-formed; full P1-3B parity check deferred): skills/autopilot/SKILL.md mentions each of the six gate-id headers (audit-fail / ac-eval / ship-review / ship-ci / eval-dry / tkt-quality); count=$ap26_count, expected >=6" \
+  "$ap26_result"
+
+echo ""
+
+# =============================================================================
+# Category P1-3B: pre-askuserquestion-guard.sh <-> SKILL.md matrix parity
+# Diff: AP-26 above asserts presence of the six headers in SKILL.md only.
+#        This block adds the structural parity assertions required by P1-3B
+#        AC-9 / AC-10 / AC-6: 6 header literals present in BOTH the hook
+#        script AND skills/autopilot/SKILL.md, the moderate row of the
+#        SKILL.md matrix lists exactly {audit-fail, ac-eval}, and
+#        hooks.json registers a single PreToolUse:AskUserQuestion matcher
+#        pointing at the new hook.
+# =============================================================================
+echo "--- Cat P1-3B: pre-askuserquestion-guard.sh matrix parity ---"
+
+ASK_GUARD_HOOK="$REPO_DIR/hooks/pre-askuserquestion-guard.sh"
+HOOKS_JSON="$REPO_DIR/hooks/hooks.json"
+
+# P1-3B AC-9 (6 assertions): each of the six known gate-id header
+# literals MUST appear at least once in BOTH the hook script and the
+# autopilot SKILL.md. Per-header presence parity prevents a future hook
+# matrix edit from drifting away from the SKILL prose table (or vice
+# versa). We deliberately do NOT require exact count equality — the
+# hook references each header inside two case statements plus the reason
+# literal, while the SKILL.md mentions each inside the matrix table plus
+# the gate-id mapping prose — so the natural multiplicities differ.
+for h in audit-fail ac-eval ship-review ship-ci eval-dry tkt-quality; do
+  hook_hit="false"; skill_hit="false"
+  grep -qF -- "$h" "$ASK_GUARD_HOOK" && hook_hit="true"
+  grep -qF -- "$h" "$AUTOPILOT_SKILL_AP" && skill_hit="true"
+  parity_result="false"
+  if [ "$hook_hit" = "true" ] && [ "$skill_hit" = "true" ]; then
+    parity_result="true"
+  fi
+  assert_true \
+    "P1-3B AC-9: header literal '$h' present in BOTH hooks/pre-askuserquestion-guard.sh and skills/autopilot/SKILL.md (hook=$hook_hit, skill=$skill_hit)" \
+    "$parity_result"
+done
+
+# P1-3B AC-10 (2 assertions): the moderate column of the SKILL.md
+# Non-interactive-contract matrix table allows exactly the pair
+# {audit-fail, ac-eval} and denies the four other known headers
+# (ship-review / ship-ci / eval-dry / tkt-quality). The matrix is
+# rendered as a Markdown table whose column order is
+# `| header | aggressive | moderate | conservative |`, so the moderate
+# cell is the third pipe-delimited field after the header label
+# (positions: 0=label, 1=aggressive, 2=moderate, 3=conservative).
+#
+# AC-10a: every audit-fail / ac-eval row has `allow` in the moderate
+# column (i.e. their row contains `| deny | allow | allow |` after the
+# header literal -- the 2-pair that defines the moderate allow-list).
+# AC-10b: every ship-review / ship-ci / eval-dry / tkt-quality row has
+# `deny` in the moderate column (i.e. `| deny | deny | allow |`), so
+# no extra header has been smuggled into the moderate allow-list.
+ac10_audit_result="false"
+audit_allow_count=0
+for h in 'audit-fail' 'ac-eval'; do
+  if grep -qE "^\|[[:space:]]*\`$h\`[[:space:]]*\|[[:space:]]*deny[[:space:]]*\|[[:space:]]*allow[[:space:]]*\|[[:space:]]*allow" "$AUTOPILOT_SKILL_AP"; then
+    audit_allow_count=$((audit_allow_count + 1))
+  fi
+done
+if [ "$audit_allow_count" -eq 2 ]; then
+  ac10_audit_result="true"
+fi
+assert_true \
+  "P1-3B AC-10a: skills/autopilot/SKILL.md moderate column allows exactly {audit-fail, ac-eval} via 'deny | allow | allow' row shape (matched=$audit_allow_count, expected 2)" \
+  "$ac10_audit_result"
+
+ac10_other_result="false"
+other_deny_count=0
+for h in 'ship-review' 'ship-ci' 'eval-dry' 'tkt-quality'; do
+  if grep -qE "^\|[[:space:]]*\`$h\`[[:space:]]*\|[[:space:]]*deny[[:space:]]*\|[[:space:]]*deny[[:space:]]*\|[[:space:]]*allow" "$AUTOPILOT_SKILL_AP"; then
+    other_deny_count=$((other_deny_count + 1))
+  fi
+done
+if [ "$other_deny_count" -eq 4 ]; then
+  ac10_other_result="true"
+fi
+assert_true \
+  "P1-3B AC-10b: skills/autopilot/SKILL.md moderate column denies the four non-pair headers (ship-review / ship-ci / eval-dry / tkt-quality) via 'deny | deny | allow' row shape (matched=$other_deny_count, expected 4)" \
+  "$ac10_other_result"
+
+# P1-3B AC-6 (1 assertion): hooks.json registers exactly one
+# PreToolUse matcher entry for AskUserQuestion AND that entry points at
+# hooks/pre-askuserquestion-guard.sh.
+ac6_matcher_count=$(grep -cE '"matcher":[[:space:]]*"AskUserQuestion"' "$HOOKS_JSON" || true)
+ac6_hook_ref_count=$(grep -c 'pre-askuserquestion-guard.sh' "$HOOKS_JSON" || true)
+ac6_result="false"
+if [ "$ac6_matcher_count" -eq 1 ] && [ "$ac6_hook_ref_count" -eq 1 ]; then
+  ac6_result="true"
+fi
+assert_true \
+  "P1-3B AC-6: hooks/hooks.json registers exactly one PreToolUse:AskUserQuestion matcher pointing at pre-askuserquestion-guard.sh (matcher_count=$ac6_matcher_count, hook_ref_count=$ac6_hook_ref_count, both expected 1)" \
+  "$ac6_result"
+
+echo ""
+
 # --- Summary ---
 print_summary

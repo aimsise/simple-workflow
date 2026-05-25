@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [8.0.0] — 2026-05-26
 
+### BREAKING CHANGES
+
+- **`/autopilot` non-interactive contract is now 3-tier and
+  `risk_tolerance`-aware**. The prior unconditional ban on
+  `AskUserQuestion` between per-ticket pipeline start and the final
+  `## [SW-CHECKPOINT]` is replaced by an allow-list matrix keyed on
+  `risk_tolerance` from `autopilot-policy.yaml`: `aggressive` denies
+  every header (zero questions); `moderate` allows only the safety-
+  critical `audit-fail` / `ac-eval` headers; `conservative` allows
+  the six gate-id headers (`audit-fail`, `ac-eval`, `ship-review`,
+  `ship-ci`, `eval-dry`, `tkt-quality`) and denies every other
+  (phase-gate / ad-hoc) header. The contract activation point is
+  shifted earlier — from per-ticket pipeline start to the moment
+  Phase 1 step 1 confirms `SPLIT_PLAN` exists — and now spans the
+  full Phase 1 / Phase 2 / post-loop window. Header naming on every
+  `AskUserQuestion` issued under `/autopilot` is load-bearing (gate
+  ID, max 12 chars); the issuing skills (`/impl`, `/ship`,
+  `/refactor`) now record the required `header:` value in prose so
+  off-matrix headers are denied at every tier. Phase 1 hard-stop
+  conditions (missing split-plan, brief `status: draft`, hostile
+  state) emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop`
+  alongside the verbatim legacy `ERROR:` literals and write
+  `## Stop Reason` with `tag: policy_gate_stop` plus a one-line
+  `Resume after fixing X with: /autopilot {parent-slug}` hint instead
+  of escalating to `AskUserQuestion`. Migration: users who relied on
+  the prior two-valued contract should set
+  `risk_tolerance: aggressive` in `autopilot-policy.yaml` to preserve
+  the zero-question behaviour. New mechanical assertions AP-1..AP-26
+  in `tests/test-skill-contracts.sh` pin the new section, matrix
+  cells, header naming, per-callee header annotations, hard-stop
+  path, and forbidden self-rationalisation enumeration. Structural
+  enforcement (`hooks/pre-askuserquestion-guard.sh`) ships in a
+  separate plan; the prose layer here is the sole orchestrator-side
+  enforcement until that hook lands.
+
 ### Added
 
 - **`/autopilot` Phase 1 emits a 1-line `[AUTOPILOT-CONTEXT]` self-doc**
@@ -20,6 +55,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolution mirrors `hooks/pre-next-scout-auto-compact.sh` L81 so the
   self-doc never lies about the active mode. Drift-guarded by
   `tests/test-skill-contracts.sh` CT-AC-52..60.
+- **`hooks/pre-askuserquestion-guard.sh`** — new
+  `PreToolUse:AskUserQuestion` hook that structurally enforces the
+  autopilot non-interactive contract via a 3-tier `risk_tolerance` x
+  6-header allow-list matrix (single source of truth shared verbatim
+  with `skills/autopilot/SKILL.md`). The hook resolves the kill-switch
+  (`SW_AUTOPILOT_ASK_GUARD`), walks the canonical
+  `is_autopilot_context` / `find_any_autopilot_state_file` /
+  `parse_ticket_statuses` detection chain, and emits
+  `hookSpecificOutput.permissionDecision: "deny"` with a reason
+  enumerating the matched tier, the offending header, the
+  `policy_gate_stop` resume path, and the
+  `autopilot-policy.yaml` tuning knob. New helper
+  `hooks/lib/parse-state-file.sh::get_risk_tolerance` reads
+  `risk_tolerance` from `<state_dir>/autopilot-policy.yaml` using the
+  standard `yq -> python3+PyYAML -> awk` three-tier fallback; file
+  absence, missing key, or unknown value normalises to `conservative`
+  so a malformed policy does not silently widen / collapse the
+  allow-list. Kill-switch: `SW_AUTOPILOT_ASK_GUARD=on` (default) /
+  `metric-only` (compute matrix + log `[ASK-GUARD] metric-only: would
+  deny ...` without denying) / `off` (silent allow; unknown values
+  collapse here). Companion to the SKILL prose work above; matrix
+  parity is enforced by 9 new mechanical assertions (P1-3B AC-6 /
+  AC-9 / AC-10) appended to `tests/test-skill-contracts.sh` and by
+  the new `tests/test-ask-guard.sh` (56 scenarios covering all 21
+  matrix cells, metric-only / off / policy-absent kill-switches, the
+  unknown-header stderr signal, the unknown-tier fail-open, and the
+  outside-autopilot / all-terminal negative paths).
 
 ### Changed
 

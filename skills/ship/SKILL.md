@@ -269,7 +269,7 @@ Proceed to Phase 2.
           - PASS / PASS-WITH-CAVEATS → proceed. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to PR body.
           - FAIL or no eval-round → stop (safety valve; never ship code that failed AC). Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop reason=eval_status_not_pass`.
         - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop`.
-      - Else interactive flow: Print "No recent code review found. Recommended: run /audit before shipping." Ask "Proceed without review? (yes/no)". "no" → stop; "yes" → proceed and append "[shipped without /audit]" to the PR body in step 14.
+      - Else interactive flow: Print "No recent code review found. Recommended: run /audit before shipping." Ask "Proceed without review? (yes/no)" via `AskUserQuestion` with `header: ship-review`; the `header` value is load-bearing under the autopilot 3-tier `risk_tolerance` matrix (see `skills/autopilot/SKILL.md` `## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`) — any other header (or an empty one) is denied at every tier when invoked under `/autopilot`. "no" → stop; "yes" → proceed and append "[shipped without /audit]" to the PR body in step 14.
 
 10. Determine target branch from arguments (default `<default-branch>` from pre-computed context). If target ≠ `<default-branch>`, re-run `git log` / `git diff` against the actual target (pre-computed context is always vs `<default-branch>`).
 11. `git log origin/<target>..HEAD --oneline`. If no commits ahead, print "No commits ahead of target branch." and stop.
@@ -298,7 +298,7 @@ Proceed to Phase 2.
       - `wait`: `gh pr checks <pr-number> --watch` with `timeout_minutes`. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
         - Pass within timeout → retry merge. Timeout → `on_timeout` (`stop` by default). Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=on_timeout`.
       - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=stop`.
-    - Else interactive, ask the user:
+    - Else interactive, ask the user via `AskUserQuestion` with `header: ship-ci`; the `header` value is load-bearing under the autopilot 3-tier `risk_tolerance` matrix (see `skills/autopilot/SKILL.md` `## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`) — any other header (or an empty one) is denied at every tier when invoked under `/autopilot`. Options:
       - **Wait**: `gh pr checks <pr-number> --watch`, then retry merge.
       - **Force**: `gh pr merge <pr-url> --squash --delete-branch --admin`. **WARNING: bypasses CI; risks merging untested code. Confirm before proceeding.** Requires admin permissions.
       - **Skip**: Stop without merging. Print PR URL for manual follow-up.
