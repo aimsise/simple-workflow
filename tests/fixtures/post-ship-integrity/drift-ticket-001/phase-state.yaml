@@ -1,0 +1,41 @@
+# Source: test_simple_workflow34 ticket 001-bootstrap-and-scaffold (sanitised verbatim).
+# Reproduces the post-ship Step 15a drop-out described in
+# .docs/dogfooding/33-34/P3-5-post-ship-phase-state-integrity.md:
+# the ticket directory has been moved to backlog/done/ (so step 5.b
+# completed), `phases.ship.status` is `in-progress` and the three
+# top-level scalars (`overall_status`, `current_phase`,
+# `last_completed_phase`) never advanced past the begin-ship write.
+# Used by tests/test-skill-contracts.sh Cat PSI to drive the
+# post-ship integrity hook's self-heal path.
+version: 1
+size: M
+created: 2026-05-25T03:20:49Z
+
+current_phase: ship
+last_completed_phase: impl
+overall_status: in-progress
+
+phases:
+  create_ticket:
+    status: completed
+    started_at: 2026-05-25T03:20:49Z
+    completed_at: 2026-05-25T03:20:49Z
+    artifacts:
+      ticket: .simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/ticket.md
+
+  scout:
+    status: completed
+    started_at: 2026-05-25T03:21:10Z
+    completed_at: 2026-05-25T03:22:30Z
+
+  impl:
+    status: completed
+    started_at: 2026-05-25T03:22:30Z
+    completed_at: 2026-05-25T06:42:30Z
+
+  ship:
+    status: in-progress
+    started_at: 2026-05-25T06:42:30Z
+    completed_at: null
+    artifacts:
+      pr_url: null

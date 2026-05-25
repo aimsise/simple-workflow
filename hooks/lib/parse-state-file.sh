@@ -79,6 +79,20 @@
 #       Thin wrapper that re-uses the same three-tier strategy as
 #       `parse_phase_status`. Exits non-zero only on file-not-found.
 #
+#   parse_yaml_scalar <file_path> <key>
+#     - Generic top-level YAML scalar reader. Walks the same three-tier
+#       fallback (yq -> python3+PyYAML -> awk) as the phase-state /
+#       autopilot-state helpers above. Prints the literal scalar value
+#       for `<key>:` at the document root (no dotted traversal — for
+#       nested keys callers should use a more specific helper). Empty
+#       output when the key is absent, the value is null/`~`, or the
+#       file is unreadable. Exit non-zero only on file-not-found /
+#       missing-key arguments. Used by
+#       `hooks/post-ship-state-auto-compact.sh` Gate 5.5 (post-ship
+#       integrity self-heal) to read `overall_status:` from each
+#       done-ticket's `phase-state.yaml` without re-implementing the
+#       three-tier strategy.
+#
 #   get_risk_tolerance <state_dir>
 #     - Reads `risk_tolerance:` from <state_dir>/autopilot-policy.yaml.
 #       Prints one of "aggressive" / "moderate" / "conservative" to stdout.
@@ -664,6 +678,77 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# Public function: parse_yaml_scalar
+# Usage: parse_yaml_scalar <file_path> <key>
+#
+# Generic top-level YAML scalar reader. Mirrors the three-tier strategy of
+# parse_phase_status / parse_impl_next_action so a new top-level invariant
+# (e.g. `overall_status:` for the post-ship integrity self-heal) does not
+# need its own bespoke parser. The contract is intentionally narrow:
+#   - Only top-level keys are supported (no `.phases.ship.status` dotted
+#     paths — callers needing nested traversal should use a dedicated
+#     helper such as parse_phase_status).
+#   - `null` / `~` / missing key all normalise to an empty string on
+#     stdout so consumers can test `[ -n "$out" ]` uniformly.
+#   - File-not-found returns rc 1 with no stdout; missing-args returns rc 2.
+# ---------------------------------------------------------------------------
+parse_yaml_scalar() {
+  local file="$1"
+  local key="$2"
+  if [ -z "$file" ] || [ -z "$key" ]; then
+    return 2
+  fi
+  if [ ! -f "$file" ]; then
+    return 1
+  fi
+
+  if _psf_have yq; then
+    local out
+    out="$(yq -r ".${key} // \"\"" "$file" 2>/dev/null || true)"
+    [ "$out" = "null" ] && out=""
+    printf '%s\n' "$out"
+    return 0
+  fi
+
+  # Tier 2: python3 + PyYAML. Gated on `import yaml` probe so a stock
+  # macOS without PyYAML falls through to the awk tier rather than
+  # silently short-circuiting empty on ImportError.
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$file" "$key" <<'PY' 2>/dev/null || return 1
+import sys
+import yaml
+path, key = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+val = doc.get(key, "") if isinstance(doc, dict) else ""
+if val is None:
+    val = ""
+print(val)
+PY
+    return 0
+  fi
+
+  # awk fallback: locate `<key>:` at column 0 (top-level scalar) and emit
+  # the value with the same normalisation as the other awk fallbacks in
+  # this lib (strip quotes, strip trailing comments, treat `null`/`~`
+  # as empty). POSIX awk only — uses `sub()` strip-by-prefix instead of
+  # the gawk-specific 3-arg `match()` form so macOS BSD awk works.
+  awk -v key="$key" '
+    $0 ~ "^"key":[[:space:]]" {
+      val = $0
+      sub("^"key":[[:space:]]+", "", val)
+      gsub(/^"|"$/, "", val)
+      gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      if (val == "null" || val == "~") val = ""
+      print val
+      exit 0
+    }
+  ' "$file"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Public function: get_risk_tolerance
 # Usage: get_risk_tolerance <state_dir>
 #
@@ -726,4 +811,4 @@ PY
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action get_risk_tolerance 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance 2>/dev/null || true

@@ -133,6 +133,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `tests/test-pre-next-scout-auto-compact.sh` (AC-2 / AC-3 via
   PATH-stubbed `tmux` from `tests/fixtures/tmux-stub.sh`) pin the
   sentinel lifecycle end-to-end.
+- **`SW_POST_SHIP_INTEGRITY` runtime env knob (P3-5)** — controls the
+  new post-ship integrity Gate 5.5 inside
+  `hooks/post-ship-state-auto-compact.sh`. Values: `on` (default —
+  self-heal each ticket's `phase-state.yaml` when
+  `overall_status:` is still `in-progress` after `steps.ship: completed`
+  was written to the brief-side `autopilot-state.yaml`), `metric-only`
+  (emit the `[POST-SHIP-INTEGRITY] self-healing <dir>` warning to
+  stderr but skip the write — forensic mode), `off` (silent skip;
+  unknown values collapse here so a typo fails closed for the rewrite
+  path). The rewrite uses `yq -i` first then a `python3 + PyYAML`
+  tempfile + rename fallback; awk-tier rewriting is intentionally not
+  attempted (ticket Risk R3) so the original file is preserved on
+  failure. Companion helper `parse_yaml_scalar <file> <key>` lands in
+  `hooks/lib/parse-state-file.sh` with the canonical
+  `yq -> python3+PyYAML -> awk` three-tier fallback. New
+  mechanical assertions PSI AC-1..AC-7 in
+  `tests/test-skill-contracts.sh` pin the SKILL prose (Step 15a
+  idempotence + Step 16 ordering), the hook Gate 5.5 + kill-switch
+  literals, and the behavioural self-heal / kill-switch / metric-only /
+  idempotence behaviours against the
+  `tests/fixtures/post-ship-integrity/` fixtures.
 
 ### Changed
 
@@ -151,6 +172,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suppression decision. New mechanical assertions CT-AC-61..65 in
   `tests/test-skill-contracts.sh` pin the contract grep, caps
   invariance, and guard-body invariance.
+
+### Fixed
+
+- **`/ship` Step 15a is now idempotent and the post-ship integrity hook
+  self-heals stale `phase-state.yaml` (P3-5)**. Field evidence
+  (`test_simple_workflow34`) showed 4/5 tickets shipped with
+  `overall_status: in-progress` paired with `phases.ship.status:
+  in-progress` while the brief-side `autopilot-state.yaml` recorded
+  every ticket as `steps.ship: completed` — the per-ticket `/ship`
+  Step 15a write was systematically dropped under autopilot chaining.
+  `skills/ship/SKILL.md` Step 15a now carries an explicit **PSI
+  contract** paragraph (`Step 15a MUST run on every successful pass
+  through Phase 2`, including the no-remote / no-commits-ahead /
+  pre-existing-PR branches) and an **Ordering with Step 16** paragraph
+  (`Step 15a MUST complete its write to disk BEFORE Step 16`'s
+  `print PR URL and stop` early-exit). The companion safety net lives
+  in `hooks/post-ship-state-auto-compact.sh` as new Gate 5.5
+  (post-ship integrity self-heal), gated by
+  `SW_POST_SHIP_INTEGRITY` (see `### Added` above for kill-switch
+  semantics): for every ticket whose `steps.ship` just flipped to
+  `completed`, the hook reads
+  `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` and,
+  when `overall_status: in-progress`, rewrites the four canonical
+  scalars (`overall_status: done`, `current_phase: done`,
+  `last_completed_phase: ship`, `phases.ship.status: completed`).
 
 ## [7.1.0] — 2026-05-23
 

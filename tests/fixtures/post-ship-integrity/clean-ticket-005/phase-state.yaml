@@ -1,0 +1,36 @@
+# Source: test_simple_workflow34 ticket 005-e2e-hardening-and-accessibility (sanitised verbatim).
+# Reference "clean" state — every Step 15a scalar already at its
+# terminal value. Used by Cat PSI's AC-7 idempotence assertion: the
+# post-ship integrity hook MUST NOT touch this file (diff is zero).
+version: 1
+size: M
+created: 2026-05-25T04:10:00Z
+
+current_phase: done
+last_completed_phase: ship
+overall_status: done
+
+phases:
+  create_ticket:
+    status: completed
+    started_at: 2026-05-25T04:10:00Z
+    completed_at: 2026-05-25T04:10:00Z
+    artifacts:
+      ticket: .simple-workflow/backlog/done/shelftrack/005-e2e-hardening-and-accessibility/ticket.md
+
+  scout:
+    status: completed
+    started_at: 2026-05-25T04:10:30Z
+    completed_at: 2026-05-25T04:11:30Z
+
+  impl:
+    status: completed
+    started_at: 2026-05-25T04:11:30Z
+    completed_at: 2026-05-25T07:00:00Z
+
+  ship:
+    status: completed
+    started_at: 2026-05-25T07:00:00Z
+    completed_at: 2026-05-25T07:10:00Z
+    artifacts:
+      pr_url: https://github.com/example/shelftrack/pull/5

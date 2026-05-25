@@ -179,6 +179,122 @@ if [ -n "$TMP_PAYLOAD_FILE" ]; then
   [ "$LIE_DETECTED" = "1" ] && exit 0
 fi
 
+# Gate 5.5 (post-ship integrity self-heal — P3-5):
+#
+# After Gate 5 has confirmed every `tickets[].steps.ship == completed`
+# element resolves to a genuine `.simple-workflow/backlog/done/` directory,
+# walk those same elements again and check each ticket's per-ticket
+# `phase-state.yaml` for an `overall_status: in-progress` left over by a
+# `/ship` Step 15a that was skipped or interrupted (test_simple_workflow34
+# evidence: 4/5 tickets shipped with `overall_status: in-progress`
+# residue). When detected, rewrite the four canonical scalars
+# (`overall_status: done`, `current_phase: done`, `last_completed_phase:
+# ship`, `phases.ship.status: completed`) so the per-ticket record
+# matches the autopilot-state.yaml ground truth.
+#
+# Kill-switch: SW_POST_SHIP_INTEGRITY
+#   on (default)   -> self-heal: rewrite phase-state.yaml + warn to stderr.
+#   metric-only    -> warn to stderr only, NO write.
+#   off / unknown  -> silent skip.
+#
+# Failure-mode policy (ticket Risk R3): yq -i is atomic, python3+PyYAML
+# uses tempfile + rename, awk-tier rewriting is NOT attempted (silent
+# skip on awk fallback to preserve the original file rather than risk
+# corrupting it). If both yq and python3+PyYAML are unavailable the
+# self-heal is a no-op for that file.
+PSI_MODE_RAW="${SW_POST_SHIP_INTEGRITY:-on}"
+case "$PSI_MODE_RAW" in
+  on|metric-only|off) PSI_MODE="$PSI_MODE_RAW" ;;
+  *)                  PSI_MODE="off" ;;
+esac
+
+if [ "$PSI_MODE" != "off" ]; then
+  # REPO_ROOT may have been set by Gate 5 above; if not (mktemp failure
+  # path in Gate 5), recompute it from $TOOL_FILE_PATH / $PWD so Gate 5.5
+  # remains usable.
+  PSI_REPO_ROOT="${REPO_ROOT:-}"
+  if [ -z "$PSI_REPO_ROOT" ]; then
+    if [ -n "$TOOL_FILE_PATH" ]; then
+      PSI_REPO_ROOT="${TOOL_FILE_PATH%%/.simple-workflow/*}"
+    fi
+    [ -n "$PSI_REPO_ROOT" ] || PSI_REPO_ROOT="$PWD"
+  fi
+  PSI_TMP_PAYLOAD=$(mktemp 2>/dev/null) || PSI_TMP_PAYLOAD=""
+  if [ -n "$PSI_TMP_PAYLOAD" ]; then
+    printf '%s' "$TOOL_PAYLOAD" > "$PSI_TMP_PAYLOAD" 2>/dev/null || true
+    while IFS= read -r PSI_TICKET_DIR; do
+      [ -n "$PSI_TICKET_DIR" ] || continue
+      case "$PSI_TICKET_DIR" in
+        /*) PSI_RESOLVED="$PSI_TICKET_DIR" ;;
+        *)  PSI_RESOLVED="$PSI_REPO_ROOT/$PSI_TICKET_DIR" ;;
+      esac
+      # Same active/-to-done rewrite as Gate 5 — the autopilot writer
+      # may still record `backlog/active/...` mid-move; the canonical
+      # destination is always `backlog/done/...`.
+      case "$PSI_RESOLVED" in
+        */backlog/done/*) ;;
+        */backlog/active/*)
+          PSI_RESOLVED="${PSI_RESOLVED//\/backlog\/active\//\/backlog\/done\/}"
+          ;;
+      esac
+      # Strip any trailing slash so we can append /phase-state.yaml uniformly.
+      PSI_RESOLVED="${PSI_RESOLVED%/}"
+      PSI_PHASE_STATE="$PSI_RESOLVED/phase-state.yaml"
+      [ -f "$PSI_PHASE_STATE" ] || continue
+      PSI_OVERALL=$(parse_yaml_scalar "$PSI_PHASE_STATE" overall_status 2>/dev/null || true)
+      if [ "$PSI_OVERALL" = "in-progress" ]; then
+        echo "[POST-SHIP-INTEGRITY] self-healing $PSI_RESOLVED (overall_status was 'in-progress'; /ship Step 15a was skipped or interrupted)" >&2
+        if [ "$PSI_MODE" = "metric-only" ]; then
+          # SW_POST_SHIP_INTEGRITY=metric-only — log only, no write.
+          continue
+        fi
+        if command -v yq >/dev/null 2>&1; then
+          # yq -i is atomic; on failure the original file is preserved.
+          yq -i '
+            .overall_status = "done" |
+            .current_phase = "done" |
+            .last_completed_phase = "ship" |
+            .phases.ship.status = "completed"
+          ' "$PSI_PHASE_STATE" 2>/dev/null || \
+            echo "[POST-SHIP-INTEGRITY] yq self-heal failed for $PSI_PHASE_STATE (original preserved)" >&2
+        elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+          PSI_PY_TMP=$(mktemp 2>/dev/null) || PSI_PY_TMP=""
+          if [ -n "$PSI_PY_TMP" ]; then
+            if python3 - "$PSI_PHASE_STATE" "$PSI_PY_TMP" <<'PY' 2>/dev/null
+import sys
+import yaml
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+doc["overall_status"] = "done"
+doc["current_phase"] = "done"
+doc["last_completed_phase"] = "ship"
+phases = doc.setdefault("phases", {})
+ship = phases.setdefault("ship", {})
+ship["status"] = "completed"
+with open(dst, "w", encoding="utf-8") as fh:
+    yaml.safe_dump(doc, fh, sort_keys=False, default_flow_style=False)
+PY
+            then
+              mv "$PSI_PY_TMP" "$PSI_PHASE_STATE" 2>/dev/null || \
+                echo "[POST-SHIP-INTEGRITY] python3 self-heal mv failed for $PSI_PHASE_STATE (original preserved)" >&2
+            else
+              rm -f "$PSI_PY_TMP" 2>/dev/null || true
+              echo "[POST-SHIP-INTEGRITY] python3 self-heal failed for $PSI_PHASE_STATE (original preserved)" >&2
+            fi
+          fi
+        else
+          # awk-tier rewriting deliberately not attempted (ticket Risk R3):
+          # complex YAML mutation in pure awk risks corrupting the file.
+          echo "[POST-SHIP-INTEGRITY] yq and python3+PyYAML both unavailable; skipping self-heal for $PSI_PHASE_STATE (original preserved)" >&2
+        fi
+      fi
+    done < <(parse_ticket_ship_dirs "$PSI_TMP_PAYLOAD" 2>/dev/null)
+    rm -f "$PSI_TMP_PAYLOAD" 2>/dev/null || true
+  fi
+fi
+unset PSI_MODE PSI_MODE_RAW PSI_TMP_PAYLOAD PSI_TICKET_DIR PSI_RESOLVED PSI_PHASE_STATE PSI_OVERALL PSI_PY_TMP PSI_REPO_ROOT
+
 # State file path (H5 fix): derive deterministically from $TOOL_FILE_PATH
 # rather than the most-recently-modified heuristic
 # `find_any_autopilot_state_file` would return. Gate 1 already guaranteed

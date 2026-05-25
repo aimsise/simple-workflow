@@ -7888,5 +7888,207 @@ assert_true \
 
 echo ""
 
+# =============================================================================
+# Category PSI: Post-Ship Integrity self-heal contract (P3-5)
+# Diff: pins the SKILL prose (Step 15a idempotence + Step 16 ordering),
+#        the hook Gate 5.5 + SW_POST_SHIP_INTEGRITY kill-switch literals,
+#        and the behavioral self-heal / kill-switch / metric-only /
+#        idempotence behaviours required by
+#        .docs/dogfooding/33-34/P3-5-post-ship-phase-state-integrity.md.
+# =============================================================================
+echo "--- Cat PSI: post-ship integrity self-heal contract (P3-5) ---"
+
+SHIP_SKILL_PSI="$REPO_DIR/skills/ship/SKILL.md"
+PSI_HOOK="$REPO_DIR/hooks/post-ship-state-auto-compact.sh"
+PSI_FIXTURE_DIR="$REPO_DIR/tests/fixtures/post-ship-integrity"
+
+# PSI AC-1a: skills/ship/SKILL.md carries the literal `PSI contract` token.
+psi_ac1a_count=$(grep -cF 'PSI contract' "$SHIP_SKILL_PSI" || true)
+psi_ac1a_result="false"
+[ "$psi_ac1a_count" -ge 1 ] && psi_ac1a_result="true"
+assert_true \
+  "PSI AC-1a: skills/ship/SKILL.md contains 'PSI contract' literal (count=$psi_ac1a_count, expected >=1)" \
+  "$psi_ac1a_result"
+
+# PSI AC-1b: Step 15a MUST run literal appears in SKILL.md (idempotence rule).
+psi_ac1b_count=$(grep -cF 'Step 15a MUST run on every successful pass through Phase 2' "$SHIP_SKILL_PSI" || true)
+psi_ac1b_result="false"
+[ "$psi_ac1b_count" -ge 1 ] && psi_ac1b_result="true"
+assert_true \
+  "PSI AC-1b: skills/ship/SKILL.md contains 'Step 15a MUST run on every successful pass through Phase 2' (count=$psi_ac1b_count, expected >=1)" \
+  "$psi_ac1b_result"
+
+# PSI AC-2a: 'Ordering with Step 16' literal appears in SKILL.md.
+psi_ac2a_count=$(grep -cF 'Ordering with Step 16' "$SHIP_SKILL_PSI" || true)
+psi_ac2a_result="false"
+[ "$psi_ac2a_count" -ge 1 ] && psi_ac2a_result="true"
+assert_true \
+  "PSI AC-2a: skills/ship/SKILL.md contains 'Ordering with Step 16' (count=$psi_ac2a_count, expected >=1)" \
+  "$psi_ac2a_result"
+
+# PSI AC-2b: Step 15a MUST complete its write to disk BEFORE Step 16 literal.
+psi_ac2b_count=$(grep -cF 'Step 15a MUST complete its write to disk BEFORE Step 16' "$SHIP_SKILL_PSI" || true)
+psi_ac2b_result="false"
+[ "$psi_ac2b_count" -ge 1 ] && psi_ac2b_result="true"
+assert_true \
+  "PSI AC-2b: skills/ship/SKILL.md contains 'Step 15a MUST complete its write to disk BEFORE Step 16' (count=$psi_ac2b_count, expected >=1)" \
+  "$psi_ac2b_result"
+
+# PSI AC-3a: Gate 5.5 literal appears in post-ship-state-auto-compact.sh.
+psi_ac3a_count=$(grep -cF 'Gate 5.5' "$PSI_HOOK" || true)
+psi_ac3a_result="false"
+[ "$psi_ac3a_count" -ge 1 ] && psi_ac3a_result="true"
+assert_true \
+  "PSI AC-3a: hooks/post-ship-state-auto-compact.sh contains 'Gate 5.5' (count=$psi_ac3a_count, expected >=1)" \
+  "$psi_ac3a_result"
+
+# PSI AC-3b: SW_POST_SHIP_INTEGRITY appears >=2 times in the hook
+# (kill-switch interpretation + metric-only branch).
+psi_ac3b_count=$(grep -cF 'SW_POST_SHIP_INTEGRITY' "$PSI_HOOK" || true)
+psi_ac3b_result="false"
+[ "$psi_ac3b_count" -ge 2 ] && psi_ac3b_result="true"
+assert_true \
+  "PSI AC-3b: hooks/post-ship-state-auto-compact.sh contains 'SW_POST_SHIP_INTEGRITY' (count=$psi_ac3b_count, expected >=2)" \
+  "$psi_ac3b_result"
+
+# Behavioural assertions (AC-4 / AC-5 / AC-6 / AC-7) require yq or
+# python3+PyYAML for the hook self-heal write tier. If neither is
+# available the rewrite tier is a no-op (ticket Risk R3): skip the
+# behavioural block in that case but still emit a single sentinel
+# assertion so test totals are stable.
+psi_has_writer="false"
+if command -v yq >/dev/null 2>&1; then
+  psi_has_writer="true"
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+  psi_has_writer="true"
+fi
+
+if [ "$psi_has_writer" = "true" ]; then
+  # Helper: prepare a temp repo root containing a fake ticket-done dir
+  # and a brief-side autopilot-state.yaml, then return the stdin payload
+  # the hook expects (PostToolUse Edit/Write tool input).
+  _psi_setup_tmproot() {
+    local fixture_phase_state="$1"   # absolute path to fixture phase-state.yaml
+    local tmproot
+    tmproot="$(mktemp -d)"
+    mkdir -p "$tmproot/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold"
+    mkdir -p "$tmproot/.simple-workflow/backlog/done/shelftrack/005-e2e-hardening-and-accessibility"
+    mkdir -p "$tmproot/.simple-workflow/backlog/briefs/active/shelftrack"
+    cp "$fixture_phase_state" "$tmproot/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+    cp "$PSI_FIXTURE_DIR/clean-ticket-005/phase-state.yaml" "$tmproot/.simple-workflow/backlog/done/shelftrack/005-e2e-hardening-and-accessibility/phase-state.yaml"
+    cp "$PSI_FIXTURE_DIR/briefs/active/shelftrack/autopilot-state.yaml" "$tmproot/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+    printf '%s\n' "$tmproot"
+  }
+  _psi_payload_for() {
+    local state_file="$1"
+    local content
+    content="$(cat "$state_file")"
+    jq -n \
+      --arg fp "$state_file" \
+      --arg content "$content" \
+      '{tool_input: {file_path: $fp, new_string: $content}}'
+  }
+
+  # PSI AC-4: self-heal rewrites overall_status -> done AND emits the
+  # canonical '[POST-SHIP-INTEGRITY] self-healing' warning to stderr.
+  PSI_TMP1="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET1="$PSI_TMP1/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE1="$PSI_TMP1/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_STDERR1="$(mktemp)"
+  PSI_PAYLOAD1="$(_psi_payload_for "$PSI_STATE1")"
+  ( cd "$PSI_TMP1" && printf '%s' "$PSI_PAYLOAD1" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=on \
+      bash "$PSI_HOOK" >/dev/null 2>"$PSI_STDERR1" ) || true
+  psi_ac4_overall="$(grep -E '^overall_status:' "$PSI_TARGET1" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac4_stderr_hit="false"
+  grep -qF '[POST-SHIP-INTEGRITY] self-healing' "$PSI_STDERR1" && psi_ac4_stderr_hit="true"
+  psi_ac4_result="false"
+  if [ "$psi_ac4_overall" = "done" ] && [ "$psi_ac4_stderr_hit" = "true" ]; then
+    psi_ac4_result="true"
+  fi
+  assert_true \
+    "PSI AC-4: hook self-heals drift fixture (overall_status='$psi_ac4_overall', expected 'done'; stderr contains '[POST-SHIP-INTEGRITY] self-healing'=$psi_ac4_stderr_hit)" \
+    "$psi_ac4_result"
+  rm -rf "$PSI_TMP1" "$PSI_STDERR1" 2>/dev/null || true
+
+  # PSI AC-5: SW_POST_SHIP_INTEGRITY=off leaves overall_status untouched.
+  PSI_TMP2="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET2="$PSI_TMP2/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE2="$PSI_TMP2/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_PAYLOAD2="$(_psi_payload_for "$PSI_STATE2")"
+  ( cd "$PSI_TMP2" && printf '%s' "$PSI_PAYLOAD2" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=off \
+      bash "$PSI_HOOK" >/dev/null 2>/dev/null ) || true
+  psi_ac5_overall="$(grep -E '^overall_status:' "$PSI_TARGET2" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac5_result="false"
+  [ "$psi_ac5_overall" = "in-progress" ] && psi_ac5_result="true"
+  assert_true \
+    "PSI AC-5: SW_POST_SHIP_INTEGRITY=off preserves drift overall_status (got '$psi_ac5_overall', expected 'in-progress')" \
+    "$psi_ac5_result"
+  rm -rf "$PSI_TMP2" 2>/dev/null || true
+
+  # PSI AC-6: SW_POST_SHIP_INTEGRITY=metric-only emits warning log but
+  # leaves the file unchanged.
+  PSI_TMP3="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET3="$PSI_TMP3/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE3="$PSI_TMP3/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_STDERR3="$(mktemp)"
+  PSI_PAYLOAD3="$(_psi_payload_for "$PSI_STATE3")"
+  ( cd "$PSI_TMP3" && printf '%s' "$PSI_PAYLOAD3" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=metric-only \
+      bash "$PSI_HOOK" >/dev/null 2>"$PSI_STDERR3" ) || true
+  psi_ac6_overall="$(grep -E '^overall_status:' "$PSI_TARGET3" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac6_stderr_hit="false"
+  grep -qF '[POST-SHIP-INTEGRITY] self-healing' "$PSI_STDERR3" && psi_ac6_stderr_hit="true"
+  psi_ac6_result="false"
+  if [ "$psi_ac6_overall" = "in-progress" ] && [ "$psi_ac6_stderr_hit" = "true" ]; then
+    psi_ac6_result="true"
+  fi
+  assert_true \
+    "PSI AC-6: SW_POST_SHIP_INTEGRITY=metric-only logs without writing (overall_status='$psi_ac6_overall' expected 'in-progress'; stderr hit=$psi_ac6_stderr_hit expected true)" \
+    "$psi_ac6_result"
+  rm -rf "$PSI_TMP3" "$PSI_STDERR3" 2>/dev/null || true
+
+  # PSI AC-7: on a clean fixture (overall_status: done) the hook leaves
+  # the file byte-identical (diff zero).
+  PSI_TMP4="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/clean-ticket-005/phase-state.yaml")"
+  PSI_TARGET4="$PSI_TMP4/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE4="$PSI_TMP4/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_PAYLOAD4="$(_psi_payload_for "$PSI_STATE4")"
+  PSI_PRE4="$(mktemp)"
+  cp "$PSI_TARGET4" "$PSI_PRE4"
+  ( cd "$PSI_TMP4" && printf '%s' "$PSI_PAYLOAD4" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=on \
+      bash "$PSI_HOOK" >/dev/null 2>/dev/null ) || true
+  psi_ac7_result="false"
+  if diff -q "$PSI_PRE4" "$PSI_TARGET4" >/dev/null 2>&1; then
+    psi_ac7_result="true"
+  fi
+  assert_true \
+    "PSI AC-7: clean fixture (overall_status: done) is unchanged by the hook (diff zero)" \
+    "$psi_ac7_result"
+  rm -rf "$PSI_TMP4" "$PSI_PRE4" 2>/dev/null || true
+
+  unset PSI_TMP1 PSI_TARGET1 PSI_STATE1 PSI_STDERR1 PSI_PAYLOAD1
+  unset PSI_TMP2 PSI_TARGET2 PSI_STATE2 PSI_PAYLOAD2
+  unset PSI_TMP3 PSI_TARGET3 PSI_STATE3 PSI_STDERR3 PSI_PAYLOAD3
+  unset PSI_TMP4 PSI_TARGET4 PSI_STATE4 PSI_PAYLOAD4 PSI_PRE4
+  unset -f _psi_setup_tmproot _psi_payload_for
+else
+  assert_true \
+    "PSI behavioural skipped: neither yq nor python3+PyYAML available; self-heal write tier is a no-op (ticket Risk R3)" \
+    "true"
+fi
+
+echo ""
+
 # --- Summary ---
 print_summary
