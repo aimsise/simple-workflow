@@ -44,6 +44,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`hooks/lib/inject-keys.sh` gains a post-inject capture-pane verify
+  for the tmux backend (P1-1)**. After `tmux send-keys` returns rc=0,
+  the library now sleeps `SW_INJECT_KEYS_VERIFY_SLEEP_MS` ms (default
+  `150`) and runs `tmux capture-pane -p -S -3 -E -` against
+  `$TMUX_PANE`; if the injected text is not visible, `inject_keys`
+  downgrades rc to 1 and emits `[INJECT-VERIFY] missed: ...` to
+  stderr. The upstream auto-compact hooks
+  (`hooks/pre-next-scout-auto-compact.sh` L169,
+  `hooks/post-ship-state-auto-compact.sh` L328) already gate the
+  `.auto-compact-pending` sentinel and the `runtime_metrics`
+  `auto_compact_inject` write on `INJECT_RC = 0`, so the verify miss
+  flips them to the failure branch without further changes —
+  `additionalContext` now begins `auto-compact-on-ship: injection
+  failed — ` and includes the new verify-missed hint (greppable by
+  the substring `verify window`) emitted by `inject_keys_failure_hint`.
+  Kill-switches: `SW_INJECT_KEYS_VERIFY=0` disables the verify block
+  entirely (rc reflects `tmux send-keys` exit code only, restoring
+  pre-P1-1 behaviour); `SW_INJECT_KEYS_VERIFY_SLEEP_MS` overrides the
+  sleep window. The DRY_RUN early-return (`INJECT_KEYS_DRY_RUN=1 +
+  SW_TEST_HARNESS=1`) runs before the verify block so the existing
+  `[inject-keys] DRY_RUN backend=tmux target=... text=... enter=...`
+  stderr contract is unchanged. New hermetic test
+  `tests/test-inject-keys.sh` (PATH-stubbed `tmux` via
+  `tests/fixtures/tmux-stub.sh`) covers DRY_RUN unchanged, opt-out,
+  verify success, verify failure, sleep-ms override, and the
+  `inject_keys_failure_hint` `verify window` substring contract.
 - **`/autopilot` Phase 1 emits a 1-line `[AUTOPILOT-CONTEXT]` self-doc**
   describing the resolved `SW_AUTO_COMPACT_ON_SHIP_MODE` so the
   orchestrator never asks about auto-compaction. New step 0.5 in

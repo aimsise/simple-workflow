@@ -6333,7 +6333,14 @@ AC42_STUB
 chmod +x "$AC42_STUB_DIR/tmux"
 
 # Path A: DRY_RUN=1 alone (NO SW_TEST_HARNESS) → real backend invoked.
-AC42_OUT_A=$(env -u SW_TEST_HARNESS TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+# P1-1 note: `SW_INJECT_KEYS_VERIFY=0` disables the post-inject
+# capture-pane verify so the stubbed `tmux` (which exits 0 for every
+# subcommand and produces no real pane output) does not flip rc to 1
+# via the verify-missed branch. The H11 contract this test pins is
+# about DRY_RUN short-circuit semantics, not about verify exit codes;
+# disabling verify keeps the inner inject_keys rc=0 so the outer
+# `set -e` does not abort the script before the assertions run.
+AC42_OUT_A=$(env -u SW_TEST_HARNESS SW_INJECT_KEYS_VERIFY=0 TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 if echo "$AC42_OUT_A" | grep -qE 'DRY_RUN backend='; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} dry_run-short-circuited-without-harness-env"
 fi
@@ -6342,7 +6349,9 @@ if ! echo "$AC42_OUT_A" | grep -qE 'real-tmux-stub'; then
 fi
 
 # Path B: DRY_RUN=1 + SW_TEST_HARNESS=1 → short-circuit (existing
-# fixtures depend on this).
+# fixtures depend on this). The DRY_RUN early-return precedes the
+# P1-1 verify block, so `SW_INJECT_KEYS_VERIFY` is irrelevant here —
+# but we keep the env minimal to mirror real DRY_RUN call sites.
 AC42_OUT_B=$(SW_TEST_HARNESS=1 TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 if ! echo "$AC42_OUT_B" | grep -qE 'DRY_RUN backend=tmux'; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} dry_run-not-short-circuited-with-harness"
