@@ -7369,5 +7369,74 @@ assert_true \
 
 echo ""
 
+# --- P0-3C: [AUTOPILOT-CONTEXT] self-doc contract (CT-AC-52..60) ---------
+# Plan P0-3C adds a Phase 1 step 0.5 to skills/autopilot/SKILL.md that emits
+# EXACTLY ONE `[AUTOPILOT-CONTEXT]` block per pipeline run, with three
+# verbatim branches (on / metric-only / off) kept in a new reference file
+# so the model can recognise the active auto-compact-on-ship mode and
+# never preventively asks the user about auto-compaction. The assertions
+# pin the SKILL.md anchor tokens (env-var name, prefix, single-emit /
+# unknown-fallback / hook-sync norms) and the verbatim branch lines in
+# references/autopilot-context-self-doc.md.
+
+# CT-AC-52 (P0-3C AC-1): [AUTOPILOT-CONTEXT] prefix appears in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-52 (P0-3C AC-1): autopilot SKILL.md mentions [AUTOPILOT-CONTEXT] prefix" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  '\[AUTOPILOT-CONTEXT\]'
+
+# CT-AC-53 (P0-3C AC-2): the new reference file exists.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md exists"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md missing" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-54 (P0-3C AC-3): Branch A verbatim sentinel.
+assert_file_contains \
+  "CT-AC-54 (P0-3C AC-3): autopilot-context-self-doc.md carries Branch A (mode=on) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is enabled \(mode=on\)'
+
+# CT-AC-55 (P0-3C AC-4): Branch B verbatim sentinel.
+assert_file_contains \
+  "CT-AC-55 (P0-3C AC-4): autopilot-context-self-doc.md carries Branch B (metric-only) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is in metric-only mode'
+
+# CT-AC-56 (P0-3C AC-5): Branch C verbatim sentinel.
+assert_file_contains \
+  "CT-AC-56 (P0-3C AC-5): autopilot-context-self-doc.md carries Branch C (mode=off) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is disabled \(mode=off\)'
+
+# CT-AC-57 (P0-3C AC-6): env var name surfaced in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-57 (P0-3C AC-6): autopilot SKILL.md names SW_AUTO_COMPACT_ON_SHIP_MODE in step 0.5" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'SW_AUTO_COMPACT_ON_SHIP_MODE'
+
+# CT-AC-58 (P0-3C AC-7): unknown-value fallback norm in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-58 (P0-3C AC-7): autopilot SKILL.md codifies the unknown-value -> off fallback" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'unknown values are treated as `off`'
+
+# CT-AC-59 (P0-3C AC-8): hook-sync anchor in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-59 (P0-3C AC-8): autopilot SKILL.md cross-references hooks/pre-next-scout-auto-compact.sh as the resolution-logic SSoT" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'matches `hooks/pre-next-scout-auto-compact.sh`'
+
+# CT-AC-60 (P0-3C AC-9): single-emit / idempotency norm in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-60 (P0-3C AC-9): autopilot SKILL.md mandates EXACTLY ONE [AUTOPILOT-CONTEXT] emission per run" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'Emit EXACTLY ONE'
+
+echo ""
 # --- Summary ---
 print_summary

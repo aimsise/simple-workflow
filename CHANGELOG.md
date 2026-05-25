@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] — 2026-05-26
+
+### Added
+
+- **`/autopilot` Phase 1 emits a 1-line `[AUTOPILOT-CONTEXT]` self-doc**
+  describing the resolved `SW_AUTO_COMPACT_ON_SHIP_MODE` so the
+  orchestrator never asks about auto-compaction. New step 0.5 in
+  `skills/autopilot/SKILL.md` (between auto-kick cleanup and split-plan
+  discovery) reads the env var, defaults to `on` in autopilot context,
+  treats unknown values as `off`, and emits EXACTLY ONE block whose
+  three verbatim branches (on / metric-only / off) live in the new
+  `skills/autopilot/references/autopilot-context-self-doc.md`. The
+  resolution mirrors `hooks/pre-next-scout-auto-compact.sh` L81 so the
+  self-doc never lies about the active mode. Drift-guarded by
+  `tests/test-skill-contracts.sh` CT-AC-52..60.
+
 ## [7.1.0] — 2026-05-23
 
 Record available user Skills and MCP servers at the orchestrator turn of

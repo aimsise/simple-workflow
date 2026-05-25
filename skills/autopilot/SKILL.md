@@ -78,6 +78,16 @@ Pre-flight gate decides whether `/autopilot` has a runnable input. SSoT is `.sim
 
 0. **Auto-kick cleanup**: delete `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` if present (idempotent). Do NOT touch `brief.md`, `autopilot-policy.yaml`, `autopilot-state.yaml`. `hooks/post-skill-cleanup.sh` (PostToolUse) removes stale `auto-kick.yaml` as defense-in-depth.
 
+0.5. **Emit `[AUTOPILOT-CONTEXT]` self-doc**: Read
+`SW_AUTO_COMPACT_ON_SHIP_MODE` from the environment (default `on` in
+autopilot context; matches `hooks/pre-next-scout-auto-compact.sh` L81).
+Emit EXACTLY ONE `[AUTOPILOT-CONTEXT]` block to stdout per the
+branch matching the resolved mode (`on` / `metric-only` / `off`;
+unknown values are treated as `off`). The verbatim text of each
+branch is fixed and lives in `references/autopilot-context-self-doc.md`.
+This step is read-only and idempotent: re-runs after `/compact`
+re-emit the same block.
+
 1. **Split-plan discovery**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`. Exists → parse Phase 2. Missing + brief exists → print exactly `ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and exit non-zero (no stdout matches `^/create-ticket`). Neither → print exactly `ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and exit non-zero. Never create/modify `active/`.
 
 2. **Brief optionality**: brief not required; runs whenever `SPLIT_PLAN` exists. Policy propagation is upstream (`/create-ticket brief=<path>` copies `autopilot-policy.yaml` into each ticket dir). No policy → Policy guard aborts. Brief-level `autopilot-policy.yaml` at `briefs/active/{parent-slug}/` is read for decision logging; else per-ticket policy serves the same role.
