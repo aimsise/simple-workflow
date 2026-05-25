@@ -108,6 +108,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matrix cells, metric-only / off / policy-absent kill-switches, the
   unknown-header stderr signal, the unknown-tier fail-open, and the
   outside-autopilot / all-terminal negative paths).
+- **Sentinel-based session-start `/compact` retry (P2-1)** —
+  `hooks/pre-next-scout-auto-compact.sh` and
+  `hooks/post-ship-state-auto-compact.sh` now drop
+  `<state_dir>/.next-compact-pending` (UNIX timestamp) BEFORE every
+  `inject_keys '/compact'` call and delete it only on confirmed
+  success (`INJECT_RC == 0` after P1-1 verify). On rc=1 the sentinel
+  is RETAINED and stderr carries
+  `retaining .next-compact-pending for session-start retry`, so
+  `hooks/session-start.sh` can replay the injection on the next
+  `source=startup` / `source=resume` boot (the timestamp is refreshed
+  before each replay attempt); `source=compact` deletes the sentinel
+  without re-injecting (logs `sentinel cleared on source=compact`).
+  Sentinels older than `SW_NEXT_COMPACT_PENDING_TTL_SEC` (default
+  21600 = 6h) are deleted without retry (`stale sentinel ... removed
+  without retry`). `hooks/autopilot-continue.sh` co-deletes
+  `.next-compact-pending` whenever it yields on
+  `.auto-compact-pending`, so a same-session yield never triggers a
+  duplicate session-start retry. Kill-switch:
+  `SW_AUTO_COMPACT_ON_SHIP_MODE=off` short-circuits the entire P2-1
+  block in both writers and reader (full backward compat). New
+  hermetic tests `tests/test-session-start-next-compact.sh` (AC-5 /
+  AC-6 / AC-7 / AC-8 via `INJECT_KEYS_DRY_RUN=1 + SW_TEST_HARNESS=1`)
+  and `tests/test-pre-next-scout-auto-compact.sh` (AC-2 / AC-3 via
+  PATH-stubbed `tmux` from `tests/fixtures/tmux-stub.sh`) pin the
+  sentinel lifecycle end-to-end.
 
 ### Changed
 

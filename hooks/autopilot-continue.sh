@@ -149,6 +149,16 @@ if [ -n "$STATE_FILE" ]; then
     # discarding a real fresh sentinel.
     if [ "$SENTINEL_AGE" -ge 0 ] && [ "$SENTINEL_AGE" -le 120 ]; then
       rm -f "$SENTINEL_FILE"
+      # P2-1: yield = `/compact` is about to drain. The session-start
+      # retry sentinel (`.next-compact-pending`) was placed by the
+      # upstream auto-compact hook before the inject_keys call and
+      # would normally be deleted only on verify success. Yield via
+      # `.auto-compact-pending` is proof that the inject did fire and
+      # the TUI is about to consume it, so the retry role is also
+      # discharged here — co-delete to prevent a duplicate `/compact`
+      # being injected by session-start.sh after the rehydrated
+      # session boots.
+      rm -f "$SENTINEL_DIR/.next-compact-pending" 2>/dev/null || true
       echo "[AUTO-COMPACT-YIELD] sentinel found (age=${SENTINEL_AGE}s); yielding Stop tick so queued /compact can drain. autopilot will resume after compaction via state file." >&2
       _emit_session_end_metrics "auto_compact_yield" "null"
       exit 0

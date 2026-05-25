@@ -250,32 +250,96 @@ jq -n --arg ctx "$CONTEXT" '{"additionalContext": $ctx}'
 # unavailable, or backend missing — the user can always type
 # `/autopilot {slug}` manually.
 _sw_session_source=$(printf '%s' "$SESSION_START_INPUT" | jq -r '.source // ""' 2>/dev/null || echo "")
-if [ "$_sw_session_source" = "compact" ] \
-   && [ "${SW_AUTO_COMPACT_ON_SHIP_MODE:-on}" != "off" ] \
+
+# --- P2-1: .next-compact-pending sentinel handling (source-discriminated) ---
+# The auto-compact hooks (`pre-next-scout-auto-compact.sh` /
+# `post-ship-state-auto-compact.sh`) drop `<state_dir>/.next-compact-pending`
+# BEFORE every `inject_keys '/compact'` call and only remove it on
+# confirmed-success (rc=0). When `inject_keys` returns rc=1 (e.g. P1-1
+# verify miss) the sentinel survives the turn and the orchestrator may
+# stall. The next session boot reaches this hook and:
+#
+#   * source=startup / source=resume (TTL-valid sentinel):
+#     replay `inject_keys '/compact' --enter` so a fresh context has a
+#     chance to consume the keystroke; sentinel timestamp is refreshed
+#     before the call so subsequent retries TTL-check against the new
+#     attempt time.
+#   * source=startup / source=resume (TTL-exceeded sentinel):
+#     delete the sentinel without retry; stale attempts (>6h by default)
+#     belong to an old context that the user has likely abandoned.
+#   * source=compact:
+#     the `/compact` already ran — delete the sentinel only; never
+#     replay (would queue a redundant `/compact` after the recap).
+#
+# Kill-switch: `SW_AUTO_COMPACT_ON_SHIP_MODE=off` short-circuits the
+# entire block (file existence is left untouched). TTL knob:
+# `SW_NEXT_COMPACT_PENDING_TTL_SEC` (default 21600 = 6h). Co-deleted
+# by `autopilot-continue.sh` when it yields on `.auto-compact-pending`
+# (= compact is about to drain in the SAME session) so a duplicate
+# session-start retry is never queued.
+if [ "${SW_AUTO_COMPACT_ON_SHIP_MODE:-on}" != "off" ] \
    && command -v jq >/dev/null 2>&1; then
   _sw_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   # shellcheck source=lib/parse-state-file.sh
   source "$_sw_self_dir/lib/parse-state-file.sh"
   # shellcheck source=lib/inject-keys.sh
   source "$_sw_self_dir/lib/inject-keys.sh"
-  if is_autopilot_context; then
-    _sw_resume_state=$(find_any_autopilot_state_file 2>/dev/null || true)
-    if [ -n "$_sw_resume_state" ] && [ -f "$_sw_resume_state" ]; then
-      # Only resume if the pipeline genuinely has unfinished work.
-      # Matches the canonical `status:` fields written by /autopilot;
-      # avoids re-kicking a completed/failed run that was manually
-      # /compacted.
-      if grep -qE '^[[:space:]]+status:[[:space:]]+(in_progress|pending)' "$_sw_resume_state" 2>/dev/null; then
-        _sw_resume_slug=$(grep -E '^parent_slug:' "$_sw_resume_state" 2>/dev/null \
-          | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
-        if [ -n "$_sw_resume_slug" ]; then
-          inject_keys "/autopilot $_sw_resume_slug" --enter 2>&1 \
-            | sed 's/^/[SESSION-START-RESUME] /' >&2 || true
+
+  _sw_next_state=$(find_any_autopilot_state_file 2>/dev/null || true)
+  if [ -n "$_sw_next_state" ] && [ -f "$_sw_next_state" ]; then
+    _sw_next_compact_sentinel="$(dirname "$_sw_next_state")/.next-compact-pending"
+    if [ -f "$_sw_next_compact_sentinel" ]; then
+      _sw_next_compact_ts=$(cat "$_sw_next_compact_sentinel" 2>/dev/null || echo 0)
+      case "$_sw_next_compact_ts" in *[!0-9]*|"") _sw_next_compact_ts=0 ;; esac
+      _sw_next_compact_now=$(date +%s)
+      _sw_next_compact_age=$((_sw_next_compact_now - _sw_next_compact_ts))
+      _sw_next_compact_ttl="${SW_NEXT_COMPACT_PENDING_TTL_SEC:-21600}"
+      case "$_sw_session_source" in
+        compact)
+          rm -f "$_sw_next_compact_sentinel" 2>/dev/null || true
+          echo "[SESSION-START-NEXT-COMPACT] sentinel cleared on source=compact (age=${_sw_next_compact_age}s)" >&2
+          ;;
+        startup|resume|"")
+          if [ "$_sw_next_compact_age" -ge 0 ] \
+             && [ "$_sw_next_compact_age" -le "$_sw_next_compact_ttl" ]; then
+            # TTL-valid: refresh sentinel before replay so the next
+            # retry's TTL window starts from this attempt.
+            date +%s > "$_sw_next_compact_sentinel" 2>/dev/null || true
+            inject_keys '/compact' --enter 2>&1 \
+              | sed 's/^/[SESSION-START-NEXT-COMPACT-RETRY] /' >&2 || true
+            echo "[SESSION-START-NEXT-COMPACT] retried /compact injection on source=${_sw_session_source:-startup} (sentinel age=${_sw_next_compact_age}s)" >&2
+          else
+            rm -f "$_sw_next_compact_sentinel" 2>/dev/null || true
+            echo "[SESSION-START-NEXT-COMPACT] stale sentinel (age=${_sw_next_compact_age}s > ttl=${_sw_next_compact_ttl}s) removed without retry" >&2
+          fi
+          ;;
+      esac
+      unset _sw_next_compact_ts _sw_next_compact_now _sw_next_compact_age _sw_next_compact_ttl
+    fi
+    unset _sw_next_compact_sentinel
+  fi
+
+  # --- Existing source=compact resume kick (autopilot rehydrate) ---
+  if [ "$_sw_session_source" = "compact" ]; then
+    if is_autopilot_context; then
+      _sw_resume_state="$_sw_next_state"
+      if [ -n "$_sw_resume_state" ] && [ -f "$_sw_resume_state" ]; then
+        # Only resume if the pipeline genuinely has unfinished work.
+        # Matches the canonical `status:` fields written by /autopilot;
+        # avoids re-kicking a completed/failed run that was manually
+        # /compacted.
+        if grep -qE '^[[:space:]]+status:[[:space:]]+(in_progress|pending)' "$_sw_resume_state" 2>/dev/null; then
+          _sw_resume_slug=$(grep -E '^parent_slug:' "$_sw_resume_state" 2>/dev/null \
+            | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+          if [ -n "$_sw_resume_slug" ]; then
+            inject_keys "/autopilot $_sw_resume_slug" --enter 2>&1 \
+              | sed 's/^/[SESSION-START-RESUME] /' >&2 || true
+          fi
         fi
       fi
+      unset _sw_resume_state _sw_resume_slug
     fi
-    unset _sw_resume_state _sw_resume_slug
   fi
-  unset _sw_self_dir
+  unset _sw_self_dir _sw_next_state
 fi
 unset _sw_session_source

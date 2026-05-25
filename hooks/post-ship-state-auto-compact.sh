@@ -309,6 +309,20 @@ fi
 # H9: capture inject_keys stderr so the failure path can render a
 # disambiguating hint instead of the misleading "unsupported terminal"
 # blanket message.
+#
+# P2-1: create `<state_dir>/.next-compact-pending` sentinel BEFORE the
+# inject call so `hooks/session-start.sh` can detect a likely-silent
+# failure on the next session boot and retry the `/compact` injection.
+# Mirrors the lifecycle in pre-next-scout-auto-compact.sh — sentinel is
+# deleted only on confirmed success (INJECT_RC == 0 after P1-1 verify);
+# on rc=1 the sentinel is RETAINED so session-start can replay the
+# inject from a fresh context.
+NEXT_COMPACT_SENTINEL=""
+if [ -n "$STATE_FILE_PATH" ]; then
+  NEXT_COMPACT_SENTINEL="$(dirname "$STATE_FILE_PATH")/.next-compact-pending"
+  date +%s > "$NEXT_COMPACT_SENTINEL" 2>/dev/null || true
+fi
+
 INJECT_TMP=$(mktemp 2>/dev/null) || INJECT_TMP=""
 INJECT_RC=0
 INJECT_LOG=""
@@ -327,6 +341,8 @@ fi
 
 if [ "$INJECT_RC" = "0" ]; then
   if [ -n "$STATE_FILE_PATH" ]; then
+    # P2-1: P1-1 verify succeeded -> sentinel role discharged, delete it.
+    [ -n "$NEXT_COMPACT_SENTINEL" ] && rm -f "$NEXT_COMPACT_SENTINEL" 2>/dev/null || true
     SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
     date +%s > "$SENTINEL" 2>/dev/null || true
     # M4: audit trail — one runtime_metrics entry per successful inject
@@ -355,7 +371,13 @@ if [ "$INJECT_RC" = "0" ]; then
     jq -n '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:"auto-compact-on-ship (state-write safety-net): `/compact` has been queued. The just-shipped ticket'"'"'s `steps.ship = completed` was just written to autopilot-state.yaml — the full ticket loop (scout → impl → audit → ship → tune) is complete. To let the queued /compact drain, end this turn now without proceeding to the next ticket'"'"'s preamble. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh PTY-injects `/autopilot {parent-slug}` and the resume contract (skills/autopilot/SKILL.md:180) picks up from autopilot-state.yaml."}}'
   fi
 else
+  # P2-1: inject verify failed (rc=1) -> RETAIN .next-compact-pending so
+  # hooks/session-start.sh can replay the `/compact` injection on the
+  # next session boot. Mirrors the pre-next-scout-auto-compact.sh failure
+  # path so both auto-compact triggers participate in the session-start
+  # retry contract.
+  echo "[POST-SHIP-STATE-AUTO-COMPACT] retaining .next-compact-pending for session-start retry (INJECT_RC=$INJECT_RC)" >&2
   INJECT_HINT=$(inject_keys_failure_hint "$INJECT_LOG")
-  jq -n --arg hint "$INJECT_HINT" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:("auto-compact-on-ship: injection failed — " + $hint + ". User may run /compact manually.")}}'
+  jq -n --arg hint "$INJECT_HINT" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:("auto-compact-on-ship: injection failed — " + $hint + ". A retry will be attempted on the next session start (sentinel `.next-compact-pending` retained). User may run /compact manually.")}}'
 fi
 exit 0

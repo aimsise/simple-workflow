@@ -147,6 +147,20 @@ echo "${SHIPPED_COUNT}:$(date +%s)" > "$LOOP_GATE_ATTEMPT_FILE" 2>/dev/null || t
 # H9: capture inject_keys stderr so the failure path can render a
 # disambiguating hint instead of the misleading "unsupported terminal"
 # blanket message.
+#
+# P2-1: create `<state_dir>/.next-compact-pending` sentinel BEFORE the
+# inject call so `hooks/session-start.sh` can detect a likely-silent
+# failure on the next session boot and retry the `/compact` injection.
+# The sentinel is deleted only on confirmed success (INJECT_RC == 0
+# after the P1-1 verify); on rc=1 the sentinel is RETAINED so session-
+# start can replay the inject from a fresh context. The sentinel is
+# distinct from `.auto-compact-pending` (Stop hook yield signal): both
+# can coexist on different code paths but not simultaneously on the
+# success path (verify success deletes the next-compact sentinel and
+# keeps only `.auto-compact-pending`).
+NEXT_COMPACT_SENTINEL="$(dirname "$STATE_FILE_PATH")/.next-compact-pending"
+date +%s > "$NEXT_COMPACT_SENTINEL" 2>/dev/null || true
+
 INJECT_TMP=$(mktemp 2>/dev/null) || INJECT_TMP=""
 INJECT_RC=0
 INJECT_LOG=""
@@ -167,6 +181,8 @@ else
 fi
 
 if [ "$INJECT_RC" = "0" ]; then
+  # P2-1: P1-1 verify succeeded -> sentinel role discharged, delete it.
+  rm -f "$NEXT_COMPACT_SENTINEL" 2>/dev/null || true
   SENTINEL="$(dirname "$STATE_FILE_PATH")/.auto-compact-pending"
   date +%s > "$SENTINEL" 2>/dev/null || true
   # M4: audit trail. Record one runtime_metrics entry per successful
@@ -191,7 +207,14 @@ if [ "$INJECT_RC" = "0" ]; then
   # needs to honour.
   jq -n '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:"auto-compact-on-ship (ticket-boundary): `/compact` has been queued. The previous ticket'"'"'s full pipeline (scout → impl → audit → ship → tune) has completed and its `steps.ship = completed` is already in autopilot-state.yaml. To let the queued /compact drain, end this turn now WITHOUT invoking the next /scout. Do NOT print a summary, do NOT issue any further tool call. After compaction, hooks/session-start.sh will PTY-inject `/autopilot {parent-slug}` on the rehydrated session and the resume contract (skills/autopilot/SKILL.md:180) will re-issue this same /scout from a fresh context."}}'
 else
+  # P2-1: inject verify failed (rc=1) -> RETAIN .next-compact-pending so
+  # hooks/session-start.sh can replay the `/compact` injection on the
+  # next session boot. This closes the "verify window false-negative"
+  # gap from test 33 (P1-1 verify can miss true silent failures where
+  # capture-pane sees the echo but the TUI input loop discards the
+  # keystroke at turn-end).
+  echo "[PRE-NEXT-SCOUT-AUTO-COMPACT] retaining .next-compact-pending for session-start retry (INJECT_RC=$INJECT_RC)" >&2
   INJECT_HINT=$(inject_keys_failure_hint "$INJECT_LOG")
-  jq -n --arg hint "$INJECT_HINT" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:("auto-compact-on-ship: injection failed — " + $hint + ". /scout will proceed without compaction. User may run /compact manually.")}}'
+  jq -n --arg hint "$INJECT_HINT" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:("auto-compact-on-ship: injection failed — " + $hint + ". A retry will be attempted on the next session start (sentinel `.next-compact-pending` retained). /scout will proceed without compaction for now. User may run /compact manually.")}}'
 fi
 exit 0
