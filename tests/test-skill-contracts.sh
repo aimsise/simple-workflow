@@ -7073,6 +7073,74 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# --- P0-3C: [AUTOPILOT-CONTEXT] self-doc contract (CT-AC-52..60) ---------
+# Plan P0-3C adds a Phase 1 step 0.5 to skills/autopilot/SKILL.md that emits
+# EXACTLY ONE `[AUTOPILOT-CONTEXT]` block per pipeline run, with three
+# verbatim branches (on / metric-only / off) kept in a new reference file
+# so the model can recognise the active auto-compact-on-ship mode and
+# never preventively asks the user about auto-compaction. The assertions
+# pin the SKILL.md anchor tokens (env-var name, prefix, single-emit /
+# unknown-fallback / hook-sync norms) and the verbatim branch lines in
+# references/autopilot-context-self-doc.md.
+
+# CT-AC-52 (P0-3C AC-1): [AUTOPILOT-CONTEXT] prefix appears in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-52 (P0-3C AC-1): autopilot SKILL.md mentions [AUTOPILOT-CONTEXT] prefix" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  '\[AUTOPILOT-CONTEXT\]'
+
+# CT-AC-53 (P0-3C AC-2): the new reference file exists.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md exists"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md missing" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-54 (P0-3C AC-3): Branch A verbatim sentinel.
+assert_file_contains \
+  "CT-AC-54 (P0-3C AC-3): autopilot-context-self-doc.md carries Branch A (mode=on) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is enabled \(mode=on\)'
+
+# CT-AC-55 (P0-3C AC-4): Branch B verbatim sentinel.
+assert_file_contains \
+  "CT-AC-55 (P0-3C AC-4): autopilot-context-self-doc.md carries Branch B (metric-only) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is in metric-only mode'
+
+# CT-AC-56 (P0-3C AC-5): Branch C verbatim sentinel.
+assert_file_contains \
+  "CT-AC-56 (P0-3C AC-5): autopilot-context-self-doc.md carries Branch C (mode=off) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is disabled \(mode=off\)'
+
+# CT-AC-57 (P0-3C AC-6): env var name surfaced in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-57 (P0-3C AC-6): autopilot SKILL.md names SW_AUTO_COMPACT_ON_SHIP_MODE in step 0.5" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'SW_AUTO_COMPACT_ON_SHIP_MODE'
+
+# CT-AC-58 (P0-3C AC-7): unknown-value fallback norm in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-58 (P0-3C AC-7): autopilot SKILL.md codifies the unknown-value -> off fallback" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'unknown values are treated as `off`'
+
+# CT-AC-59 (P0-3C AC-8): hook-sync anchor in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-59 (P0-3C AC-8): autopilot SKILL.md cross-references hooks/pre-next-scout-auto-compact.sh as the resolution-logic SSoT" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'matches `hooks/pre-next-scout-auto-compact.sh`'
+
+# CT-AC-60 (P0-3C AC-9): single-emit / idempotency norm in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-60 (P0-3C AC-9): autopilot SKILL.md mandates EXACTLY ONE [AUTOPILOT-CONTEXT] emission per run" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'Emit EXACTLY ONE'
+
 echo ""
 
 # =============================================================================
@@ -7378,75 +7446,223 @@ assert_true \
 
 echo ""
 
-# --- P0-3C: [AUTOPILOT-CONTEXT] self-doc contract (CT-AC-52..60) ---------
-# Plan P0-3C adds a Phase 1 step 0.5 to skills/autopilot/SKILL.md that emits
-# EXACTLY ONE `[AUTOPILOT-CONTEXT]` block per pipeline run, with three
-# verbatim branches (on / metric-only / off) kept in a new reference file
-# so the model can recognise the active auto-compact-on-ship mode and
-# never preventively asks the user about auto-compaction. The assertions
-# pin the SKILL.md anchor tokens (env-var name, prefix, single-emit /
-# unknown-fallback / hook-sync norms) and the verbatim branch lines in
-# references/autopilot-context-self-doc.md.
+# =============================================================================
+# Category AN: v8.0.0 omit-tools invariants (MCP inherit-all for productive
+#              subagents)
+# Rationale: v8.0.0 removes the `tools:` allowlist from the four productive
+#   subagents (implementer, planner, researcher, test-writer) so they inherit
+#   the parent session's full tool inventory, including every user-configured
+#   MCP server. The remaining six agents (ac-evaluator, code-reviewer,
+#   decomposer, security-scanner, ticket-evaluator, tune-analyzer) keep their
+#   explicit allowlists for verdict independence / read-only invariants. This
+#   category drift-guards seven facets of that contract:
+#     1. Group A frontmatter omits `^tools:`
+#     2. Group C frontmatter retains `^tools:`
+#     3. Group A frontmatter omits `^permissionMode:`
+#     4. planner.md / researcher.md ship a `## Side-effect ban` body section
+#        with the three canonical forbidden tokens
+#     5. Group A bodies carry the Bound Capabilities MCP-extension bullet
+#        ('Skills **or MCP servers**')
+#     6. agent-spawn-prompts.md and ac-quality-criteria.md doctrine is updated
+#        and the legacy "subagents do not inherit MCP" wording is gone
+#     7. hooks/pre-bash-safety.sh denylist gains the seven new tokens
+#        (curl, wget, git remote add, npm install, pip install,
+#         git config user.email, git commit --amend)
+# =============================================================================
+echo "--- Cat AN: v8.0.0 omit-tools invariants ---"
 
-# CT-AC-52 (P0-3C AC-1): [AUTOPILOT-CONTEXT] prefix appears in autopilot SKILL.md.
-assert_file_contains \
-  "CT-AC-52 (P0-3C AC-1): autopilot SKILL.md mentions [AUTOPILOT-CONTEXT] prefix" \
-  "$REPO_DIR/skills/autopilot/SKILL.md" \
-  '\[AUTOPILOT-CONTEXT\]'
+GROUP_A=(
+  "implementer"
+  "planner"
+  "researcher"
+  "test-writer"
+)
+GROUP_C=(
+  "ac-evaluator"
+  "code-reviewer"
+  "decomposer"
+  "security-scanner"
+  "ticket-evaluator"
+  "tune-analyzer"
+)
 
-# CT-AC-53 (P0-3C AC-2): the new reference file exists.
-TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ -f "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" ]; then
-  echo -e "  ${GREEN}PASS${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md exists"
-  TESTS_PASSED=$((TESTS_PASSED + 1))
-else
-  echo -e "  ${RED}FAIL${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md missing" >&2
-  TESTS_FAILED=$((TESTS_FAILED + 1))
+# CT-AN-1: Group A frontmatter has zero `^tools:` lines across the 4 files.
+an1_hits=0
+for slug in "${GROUP_A[@]}"; do
+  fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
+  one=$(echo "$fm" | { grep -cE '^tools:' 2>/dev/null || true; })
+  one=${one:-0}
+  an1_hits=$((an1_hits + one))
+done
+an1_result="false"
+if [ "$an1_hits" -eq 0 ]; then
+  an1_result="true"
 fi
+assert_true \
+  "CT-AN-1 (Group A frontmatter omit): agents/{implementer,planner,researcher,test-writer}.md frontmatter has zero '^tools:' lines (got $an1_hits, expected 0)" \
+  "$an1_result"
 
-# CT-AC-54 (P0-3C AC-3): Branch A verbatim sentinel.
-assert_file_contains \
-  "CT-AC-54 (P0-3C AC-3): autopilot-context-self-doc.md carries Branch A (mode=on) verbatim" \
-  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
-  'auto-compact-on-ship is enabled \(mode=on\)'
+# CT-AN-2: Group C frontmatter retains `^tools:` (6 hits across the 6 files).
+an2_hits=0
+for slug in "${GROUP_C[@]}"; do
+  fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
+  if echo "$fm" | grep -qE '^tools:'; then
+    an2_hits=$((an2_hits + 1))
+  fi
+done
+an2_result="false"
+if [ "$an2_hits" -eq 6 ]; then
+  an2_result="true"
+fi
+assert_true \
+  "CT-AN-2 (Group C frontmatter tools: retained): agents/{ac-evaluator,code-reviewer,decomposer,security-scanner,ticket-evaluator,tune-analyzer}.md frontmatter has '^tools:' (got $an2_hits, expected 6)" \
+  "$an2_result"
 
-# CT-AC-55 (P0-3C AC-4): Branch B verbatim sentinel.
-assert_file_contains \
-  "CT-AC-55 (P0-3C AC-4): autopilot-context-self-doc.md carries Branch B (metric-only) verbatim" \
-  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
-  'auto-compact-on-ship is in metric-only mode'
+# CT-AN-3: Group A frontmatter has zero `^permissionMode:` lines (the silently
+# ignored field is removed per CC docs).
+an3_hits=0
+for slug in "${GROUP_A[@]}"; do
+  fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
+  one=$(echo "$fm" | { grep -cE '^permissionMode:' 2>/dev/null || true; })
+  one=${one:-0}
+  an3_hits=$((an3_hits + one))
+done
+an3_result="false"
+if [ "$an3_hits" -eq 0 ]; then
+  an3_result="true"
+fi
+assert_true \
+  "CT-AN-3 (Group A permissionMode removed): agents/{implementer,planner,researcher,test-writer}.md frontmatter has zero '^permissionMode:' lines (got $an3_hits, expected 0)" \
+  "$an3_result"
 
-# CT-AC-56 (P0-3C AC-5): Branch C verbatim sentinel.
-assert_file_contains \
-  "CT-AC-56 (P0-3C AC-5): autopilot-context-self-doc.md carries Branch C (mode=off) verbatim" \
-  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
-  'auto-compact-on-ship is disabled \(mode=off\)'
+# CT-AN-4: planner.md and researcher.md ship a top-level `## Side-effect ban`
+# heading; the section body MUST contain three canonical forbidden tokens:
+#   - `git commit`            (destructive Bash example)
+#   - `curl`                  (network egress example)
+#   - `mcp__Gmail__send`      (unbound MCP invocation example)
+# The section body is the prose between `^## Side-effect ban$` and the next
+# top-level `^## ` heading.
+an4_files_ok=0
+for slug in planner researcher; do
+  agent_md="$REPO_DIR/agents/$slug.md"
+  has_heading=$(grep -cE '^## Side-effect ban$' "$agent_md" || true)
+  if [ "$has_heading" -lt 1 ]; then
+    continue
+  fi
+  section=$(sed -n '/^## Side-effect ban$/,/^## /{/^## Side-effect ban$/!{/^## /!p;};}' "$agent_md")
+  tokens_present=1
+  for t in 'git commit' 'curl' 'mcp__Gmail__send'; do
+    if ! echo "$section" | grep -qF "$t"; then
+      tokens_present=0
+      break
+    fi
+  done
+  if [ "$tokens_present" -eq 1 ]; then
+    an4_files_ok=$((an4_files_ok + 1))
+  fi
+done
+an4_result="false"
+if [ "$an4_files_ok" -eq 2 ]; then
+  an4_result="true"
+fi
+assert_true \
+  "CT-AN-4 (Side-effect ban section exists): agents/{planner,researcher}.md body has '^## Side-effect ban$' heading and the section contains tokens {git commit, curl, mcp__Gmail__send} ($an4_files_ok / 2 files pass)" \
+  "$an4_result"
 
-# CT-AC-57 (P0-3C AC-6): env var name surfaced in autopilot SKILL.md.
-assert_file_contains \
-  "CT-AC-57 (P0-3C AC-6): autopilot SKILL.md names SW_AUTO_COMPACT_ON_SHIP_MODE in step 0.5" \
-  "$REPO_DIR/skills/autopilot/SKILL.md" \
-  'SW_AUTO_COMPACT_ON_SHIP_MODE'
+# CT-AN-5: each of the 4 Group A agents carries the literal string
+# `Skills **or MCP servers**` (the Bound Capabilities MCP-extension bullet).
+an5_hits=0
+for slug in "${GROUP_A[@]}"; do
+  if grep -qF 'Skills **or MCP servers**' "$REPO_DIR/agents/$slug.md"; then
+    an5_hits=$((an5_hits + 1))
+  fi
+done
+an5_result="false"
+if [ "$an5_hits" -eq 4 ]; then
+  an5_result="true"
+fi
+assert_true \
+  "CT-AN-5 (Bound Capabilities MCP-extension bullet): agents/{implementer,planner,researcher,test-writer}.md contain the literal 'Skills **or MCP servers**' (got $an5_hits, expected 4)" \
+  "$an5_result"
 
-# CT-AC-58 (P0-3C AC-7): unknown-value fallback norm in autopilot SKILL.md.
-assert_file_contains \
-  "CT-AC-58 (P0-3C AC-7): autopilot SKILL.md codifies the unknown-value -> off fallback" \
-  "$REPO_DIR/skills/autopilot/SKILL.md" \
-  'unknown values are treated as `off`'
+# CT-AN-6: doctrine update — agent-spawn-prompts.md and ac-quality-criteria.md
+# reflect the v8.0.0 reality (productive agents inherit MCP) and the legacy
+# v7.1.0 "subagents do not inherit MCP" wording is gone.
+ASP_AN6="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+ACQC_AN6="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+an6_asp_new1=$(grep -cF 'MCP inheritance under v8.0.0' "$ASP_AN6" || true)
+an6_asp_new2=$(grep -cF 'productive subagents' "$ASP_AN6" || true)
+an6_asp_legacy=$(grep -cF 'The subagent does not inherit the main-thread harness skill / MCP descriptions' "$ASP_AN6" || true)
+an6_acqc_new=$(grep -cF 'Forked subagents inherit the parent session' "$ACQC_AN6" || true)
+an6_acqc_legacy=$(grep -cF 'not guaranteed to inherit MCP tool access' "$ACQC_AN6" || true)
+an6_result="false"
+if [ "$an6_asp_new1" -ge 1 ] \
+   && [ "$an6_asp_new2" -ge 1 ] \
+   && [ "$an6_asp_legacy" -eq 0 ] \
+   && [ "$an6_acqc_new" -ge 1 ] \
+   && [ "$an6_acqc_legacy" -eq 0 ]; then
+  an6_result="true"
+fi
+assert_true \
+  "CT-AN-6 (doctrine update confirmed): agent-spawn-prompts.md contains 'MCP inheritance under v8.0.0' ($an6_asp_new1>=1) and 'productive subagents' ($an6_asp_new2>=1); legacy 'The subagent does not inherit ...' is gone ($an6_asp_legacy=0). ac-quality-criteria.md contains 'Forked subagents inherit the parent session' ($an6_acqc_new>=1); legacy 'not guaranteed to inherit MCP tool access' is gone ($an6_acqc_legacy=0)" \
+  "$an6_result"
 
-# CT-AC-59 (P0-3C AC-8): hook-sync anchor in autopilot SKILL.md.
-assert_file_contains \
-  "CT-AC-59 (P0-3C AC-8): autopilot SKILL.md cross-references hooks/pre-next-scout-auto-compact.sh as the resolution-logic SSoT" \
-  "$REPO_DIR/skills/autopilot/SKILL.md" \
-  'matches `hooks/pre-next-scout-auto-compact.sh`'
+# CT-AN-7: hooks/pre-bash-safety.sh contains the 4 v8.0.0 denylist token
+# anchors that remain after the supply-chain category was removed
+# (npm/pnpm/yarn/pip/gem/cargo/brew/apt-get/apk/go/composer/bundle/mix/
+# dart pub/conda/nuget/dotnet + git remote add are intentionally NOT
+# blocked — see hook header for rationale). Existing destructive patterns
+# remain untouched.
+PBS_AN7="$REPO_DIR/hooks/pre-bash-safety.sh"
+an7_missing=""
+for t in 'curl' 'wget' 'git config user\.email' 'git commit --amend'; do
+  if ! grep -qE "$t" "$PBS_AN7"; then
+    an7_missing="$an7_missing $t"
+  fi
+done
+an7_result="false"
+if [ -z "$an7_missing" ]; then
+  an7_result="true"
+fi
+assert_true \
+  "CT-AN-7 (pre-bash-safety.sh new patterns): hooks/pre-bash-safety.sh contains all 4 remaining tokens (curl, wget, git config user.email, git commit --amend); missing:'${an7_missing:- (none)}'" \
+  "$an7_result"
 
-# CT-AC-60 (P0-3C AC-9): single-emit / idempotency norm in autopilot SKILL.md.
-assert_file_contains \
-  "CT-AC-60 (P0-3C AC-9): autopilot SKILL.md mandates EXACTLY ONE [AUTOPILOT-CONTEXT] emission per run" \
-  "$REPO_DIR/skills/autopilot/SKILL.md" \
-  'Emit EXACTLY ONE'
+# CT-AN-8: hooks/pre-bash-safety.sh behaviorally blocks one representative
+# command per v8.0.0 category. Mechanical guard against the "tokens in
+# comments but regex broken" silent-regression class detected by Round 1
+# evaluator review of v8.0.0.
+PBS_AN8="$REPO_DIR/hooks/pre-bash-safety.sh"
+an8_missing=""
+# (label : exemplar command) — each must yield hook exit 2 (Blocked)
+declare -a an8_specs=(
+  "NETWORK_EGRESS|curl https://example.com"
+  "IDENTITY_SPOOF|git config user.email evil@x.com"
+  "PRIVILEGE_ESC|sudo apt-get install vim"
+  "COMMIT_SUBVERT|git commit --amend"
+)
+for spec in "${an8_specs[@]}"; do
+  label="${spec%%|*}"
+  cmd="${spec#*|}"
+  set +e
+  echo "{\"tool_input\":{\"command\":\"$cmd\"}}" | bash "$PBS_AN8" >/dev/null 2>&1
+  rc=$?
+  set -e
+  if [ "$rc" != "2" ]; then
+    an8_missing="$an8_missing ${label}(rc=$rc)"
+  fi
+done
+an8_result="false"
+if [ -z "$an8_missing" ]; then
+  an8_result="true"
+fi
+assert_true \
+  "CT-AN-8 (pre-bash-safety.sh behavioral block): each of the 4 v8.0.0 categories (NETWORK_EGRESS, IDENTITY_SPOOF, PRIVILEGE_ESC, COMMIT_SUBVERT) actually exits 2 for a representative command; failed:'${an8_missing:- (none)}'" \
+  "$an8_result"
 
 echo ""
+
+# =============================================================================
 # Category AO: args-aware shrinkage spec wiring (P0-2A)
 # Diff: pins the four mechanically-detectable invariants from P0-2A's AC-1
 #        .. AC-5. AC-6 is dogfood-observable only and asserted indirectly via

@@ -238,11 +238,56 @@ done
 
 echo ""
 
-# --- Category 6: Agent structural validity ---
+# --- Category 6: Agent structural validity (v8.0.0 plane) ---
+#
+# v8.0.0 splits agents into two groups:
+#   Group A (4 productive agents — implementer / planner / researcher /
+#   test-writer) omit the `tools:` field so they inherit the parent session's
+#   full tool inventory (including MCP servers). For these, `^tools:` MUST be
+#   ABSENT from the frontmatter block.
+#
+#   Group C (6 verdict / read-only agents — ac-evaluator / code-reviewer /
+#   decomposer / security-scanner / ticket-evaluator / tune-analyzer) retain
+#   their explicit `tools:` allowlists for verdict independence / read-only
+#   invariants. For these, `^tools:` MUST be PRESENT.
+#
+# In both groups, `name:` and `description:` are still required.
 echo "--- Agent structural validity ---"
 
-assert_agent_frontmatter_valid() {
+# Group A — productive agents that omit tools: (must NOT have ^tools: in
+# frontmatter; v8.0.0 inherit-all).
+GROUP_A_AGENTS=(
+  "implementer"
+  "planner"
+  "researcher"
+  "test-writer"
+)
+
+# Group C — verdict / read-only agents that retain explicit tools: allowlist.
+GROUP_C_AGENTS=(
+  "ac-evaluator"
+  "code-reviewer"
+  "decomposer"
+  "security-scanner"
+  "ticket-evaluator"
+  "tune-analyzer"
+)
+
+# Extract just the YAML frontmatter block (between the first two `---` lines)
+# into a temp file so per-agent grep checks don't accidentally pick up `tools:`
+# strings in the body prose.
+extract_agent_frontmatter() {
   local agent_md="$1"
+  awk '
+    BEGIN { fences=0 }
+    /^---[[:space:]]*$/ { fences++; if (fences==2) exit; next }
+    fences==1 { print }
+  ' "$agent_md"
+}
+
+assert_agent_frontmatter_valid_v8() {
+  local agent_md="$1"
+  local expect_tools="$2"  # "yes" for Group C, "no" for Group A
   local agent_basename
   agent_basename=$(basename "$agent_md" .md)
 
@@ -264,24 +309,40 @@ assert_agent_frontmatter_valid() {
     return
   fi
 
-  if ! grep -qE '^description:' "$agent_md"; then
+  local fm
+  fm=$(extract_agent_frontmatter "$agent_md")
+
+  if ! echo "$fm" | grep -qE '^description:'; then
     echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter has 'description'"
     TESTS_FAILED=$((TESTS_FAILED + 1))
     return
   fi
 
-  if ! grep -qE '^tools:' "$agent_md"; then
-    echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter has 'tools'"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-    return
+  if [ "$expect_tools" = "yes" ]; then
+    if ! echo "$fm" | grep -qE '^tools:'; then
+      echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter has 'tools' (Group C: explicit allowlist required)"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      return
+    fi
+    echo -e "  ${GREEN}PASS${NC} agents/$agent_basename.md frontmatter is valid (name=$name, Group C: has tools:)"
+  else
+    if echo "$fm" | grep -qE '^tools:'; then
+      echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter MUST NOT have 'tools' (Group A: v8.0.0 inherit-all omit)"
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      return
+    fi
+    echo -e "  ${GREEN}PASS${NC} agents/$agent_basename.md frontmatter is valid (name=$name, Group A: tools: omitted)"
   fi
 
-  echo -e "  ${GREEN}PASS${NC} agents/$agent_basename.md frontmatter is valid (name=$name)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 }
 
-for agent_md in "$REPO_DIR"/agents/*.md; do
-  assert_agent_frontmatter_valid "$agent_md"
+for slug in "${GROUP_A_AGENTS[@]}"; do
+  assert_agent_frontmatter_valid_v8 "$REPO_DIR/agents/$slug.md" "no"
+done
+
+for slug in "${GROUP_C_AGENTS[@]}"; do
+  assert_agent_frontmatter_valid_v8 "$REPO_DIR/agents/$slug.md" "yes"
 done
 
 echo ""
@@ -421,19 +482,65 @@ done
 
 echo ""
 
-# --- Category 11: Bash(*) scope restricted to generator agents ---
-echo "--- Bash(*) scope guard ---"
+# --- Category 11: tools: allowlist enumeration (v8.0.0 plane) ---
+#
+# v8.0.0 removed the `tools:` allowlist from the 4 productive Group A agents.
+# As a result:
+#   (a) No agent in agents/*.md may carry the literal `"Bash(*)"` entry under
+#       a frontmatter `tools:` allowlist. Group A omits the field entirely;
+#       Group C agents use either no Bash entry or scoped Bash(...) entries
+#       (e.g. Bash(git diff:*)). An unrestricted `"Bash(*)"` would silently
+#       widen a Group C agent's surface and is forbidden.
+#   (b) The set of agents whose frontmatter contains `^tools:` is exactly the
+#       6 Group C agents (ac-evaluator, code-reviewer, decomposer,
+#       security-scanner, ticket-evaluator, tune-analyzer).
+echo "--- tools: allowlist enumeration (v8.0.0) ---"
 
+# (a) Zero agents may declare the unrestricted "Bash(*)" entry.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-bstar_files=$(grep -rl '"Bash(\*)"' "$REPO_DIR"/agents/*.md 2>/dev/null | sort)
-bstar_count=$(echo "$bstar_files" | { grep -c . 2>/dev/null || true; })
+bstar_files=$( { grep -rl '"Bash(\*)"' "$REPO_DIR"/agents/*.md 2>/dev/null || true; } | sort)
+bstar_count=$(echo -n "$bstar_files" | { grep -c . 2>/dev/null || true; })
 bstar_count=${bstar_count:-0}
-expected_files=$(printf '%s\n' "$REPO_DIR/agents/implementer.md" "$REPO_DIR/agents/test-writer.md")
-if [ "$bstar_count" -eq 2 ] && [ "$bstar_files" = "$expected_files" ]; then
-  echo -e "  ${GREEN}PASS${NC} Bash(*) restricted to implementer + test-writer"
+if [ "$bstar_count" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} no agent frontmatter declares unrestricted \"Bash(*)\" (v8.0.0: Group A omits tools, Group C uses scoped Bash only)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} Unexpected Bash(*) agents (expected implementer + test-writer only): $(echo "$bstar_files" | tr '\n' ' ')"
+  echo -e "  ${RED}FAIL${NC} agent(s) still declare unrestricted \"Bash(*)\" (forbidden under v8.0.0): $(echo "$bstar_files" | tr '\n' ' ')"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# (b) Positive enumeration: the agents whose frontmatter contains `^tools:`
+# is exactly the 6 Group C agents. Compute the actual set and diff against
+# the expected set.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+expected_tools_set=$(printf '%s\n' \
+  "ac-evaluator" \
+  "code-reviewer" \
+  "decomposer" \
+  "security-scanner" \
+  "ticket-evaluator" \
+  "tune-analyzer" | sort)
+
+actual_tools_set=$(
+  for agent_md in "$REPO_DIR"/agents/*.md; do
+    fm=$(awk '
+      BEGIN { fences=0 }
+      /^---[[:space:]]*$/ { fences++; if (fences==2) exit; next }
+      fences==1 { print }
+    ' "$agent_md")
+    if echo "$fm" | grep -qE '^tools:'; then
+      basename "$agent_md" .md
+    fi
+  done | sort
+)
+
+if [ "$actual_tools_set" = "$expected_tools_set" ]; then
+  echo -e "  ${GREEN}PASS${NC} the 6 agents with ^tools: in frontmatter are exactly Group C (ac-evaluator, code-reviewer, decomposer, security-scanner, ticket-evaluator, tune-analyzer)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} agents with ^tools: do not match Group C"
+  echo -e "       expected: $(echo "$expected_tools_set" | tr '\n' ' ')"
+  echo -e "       actual:   $(echo "$actual_tools_set" | tr '\n' ' ')"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

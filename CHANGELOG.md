@@ -7,7 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [8.0.0] — 2026-05-26
 
+**Migration.** If your `.mcp.json` (project scope) or `~/.claude.json`
+(user scope) configures MCP servers, the `implementer`, `planner`,
+`researcher`, and `test-writer` subagents can now invoke any of them —
+provided the capability is bound to an AC in the planner-authored
+`### Capabilities` table of the ticket. Verdict / read-only agents
+(`ac-evaluator`, `code-reviewer`, `decomposer`, `security-scanner`,
+`ticket-evaluator`, `tune-analyzer`) still cannot inherit MCP; bind a
+plain Skill (e.g. Playwright Skill) instead when authoring a verification
+path. Pre-Gate-6 tickets (no `### Capabilities` section) continue to
+drive `/impl` / `/audit` / `/ship` unchanged. `planner` / `researcher`
+`Bash` permission expands from scoped `Bash(git log|diff|status|branch:*)`
+to `Bash(*)`, mitigated by the new agent-body `## Side-effect ban`
+section and the extended `hooks/pre-bash-safety.sh` denylist
+(best-effort — see Caveats below). No kill switch; rollback is
+`git checkout v7.1.0` plus reinstall.
+
+This release completes the v7.1.0 capability-binding contract for MCP
+servers. v7.1.0 wired upstream detection (`/create-ticket` and
+`/plan2doc` probe `.mcp.json` + `~/.claude.json`), planner-side binding
+(`### Capabilities` table in `ticket.md` / `plan.md`), and
+orchestrator-side deterministic inlining (`## Bound capabilities
+(per AC)` in every spawn prompt), but no subagent's `tools:` enumerated
+any `mcp__*`, leaving MCP bindings non-executable at the callee. The
+empirical basis is a 2026-05-24 CC 2.1.149 four-probe spike (user scope
+plus `--plugin-dir` plugin scope) confirming that omitting `tools:`
+truly inherits everything including MCP, that exact-name
+`disallowedTools` removes tools from inventory, and that `mcp__*` glob
+in `disallowedTools` does NOT work.
+
 ### BREAKING CHANGES
+
+- **`agents/{implementer,planner,researcher,test-writer}.md` no longer ship
+  a `tools:` allowlist**; they now inherit the parent session's full tool
+  inventory. `planner` and `researcher` Bash permission expands from
+  `Bash(git log|diff|status|branch:*)` to `Bash(*)`. Mitigation: each
+  agent's new `## Side-effect ban` (or expanded body prose) forbids
+  destructive Bash, unbound MCP invocation, identity spoofing, and
+  outbound network calls; `hooks/pre-bash-safety.sh` adds defense-in-
+  depth at the shell level for `curl`, `wget`,
+  `git config user.email`, `git commit --amend`, `sudo`, `chmod 777`,
+  and related destructive / identity-spoofing patterns. Package-manager
+  installs (`npm install`, `pnpm install`, `yarn add`, `pip install`,
+  `gem install`, `cargo install`, `brew install`, `apt-get install`,
+  `apk add`, `go install`, `composer require`, `bundle install`,
+  `mix deps.get`, `dart pub get`, `conda install`, `nuget restore`,
+  `dotnet add package`, etc., across every language) and `git remote
+  add` are intentionally NOT blocked so autopilot can install declared
+  dependencies and add remotes without manual interruption; the
+  prompt-injection-driven-install mitigation lives at the prompt level
+  via the `## Bound capabilities (per AC)` discipline and the planner
+  Pre-emit Self-Audit step 6(d).
+- **`tests/test-path-consistency.sh` Cat 6 + Cat 11 invariants redesigned**:
+  Cat 6 (`^tools:` required) now allows Group A omission while still
+  enforcing `^tools:` presence for the six Group C agents; Cat 11 is
+  redesigned as a positive enumeration of (a) zero agents declaring the
+  unrestricted `"Bash(*)"` allowlist entry and (b) exactly the six Group C
+  agents carrying `^tools:` in their frontmatter.
+- **v7.1.0 doctrine retracted**: `skills/create-ticket/references/agent-
+  spawn-prompts.md` and `skills/create-ticket/references/ac-quality-
+  criteria.md` no longer say "subagents do not inherit MCP". The new
+  wording reflects the v8.0.0 reality: productive agents inherit, verdict
+  / read-only agents do not. Tickets created on v7.x continue to drive
+  `/impl` / `/audit` / `/ship` without parse failure.
 
 - **`/autopilot` non-interactive contract is now 3-tier and
   `risk_tolerance`-aware**. The prior unconditional ban on
@@ -44,6 +106,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP inheritance for 4 productive subagents** via `tools:` omission:
+  `agents/{implementer,planner,researcher,test-writer}.md` now inherit
+  every MCP server configured in `.mcp.json` (project) and
+  `~/.claude.json` (user), including custom user-authored servers.
+- **`## Side-effect ban` section** in `agents/planner.md` and
+  `agents/researcher.md`. Forbids destructive Bash, unbound MCP
+  invocation, identity spoofing, and outbound network calls. Three
+  canonical forbidden tokens (`git commit`, `curl`, `mcp__Gmail__send`)
+  appear in each section as concrete examples. Note that package-
+  manager installs ARE allowed by the hook (see BREAKING CHANGES
+  bullet) — Side-effect ban discourages planner / researcher from
+  introducing new dependencies as part of their authoring / read-mostly
+  role, but the hook lets implementer / test-writer install declared
+  dependencies as part of their productive role. Intentionally NOT
+  applied to `agents/implementer.md` / `agents/test-writer.md` because
+  productive code-mutation and test-execution work legitimately
+  requires `Write` / `Edit` and `Bash(*)` beyond read-only inspection
+  (a build script may run `rm` on build artifacts, an integration
+  test may invoke `npm run test:e2e`). Defense-in-depth at the hook
+  level (`hooks/pre-bash-safety.sh`) backstops these productive agents
+  for the destructive / identity-spoof patterns even without an agent-
+  body Side-effect ban.
+- **Bound Capabilities MCP-extension bullet** in
+  `agents/{implementer,planner,researcher,test-writer}.md`. Extends the
+  v7.1.0 "Do NOT scan installed Skills independently" guidance to also
+  cover MCP servers — only `mcp__*` bound to an active AC may be invoked
+  (`Skills **or MCP servers**`).
+- **`hooks/pre-bash-safety.sh` denylist extension** covering 4 new
+  categories: network egress (`curl`, `wget`, `scp`, `rsync ... ssh`),
+  identity spoofing (`git config user.email`, `git config user.name`),
+  privilege escalation (`sudo`, `chmod 777`, `chown root`), and
+  branch / commit subversion (`git commit --amend`, `git stash drop`,
+  `git reflog expire`, `git push --no-verify`). Defense-in-depth
+  against the Group A `Bash(*)` expansion. A supply-chain mutation
+  category was prototyped in earlier drafts and intentionally dropped
+  before release — package-manager installs (`npm install` and
+  equivalents across every language) and `git remote add` are
+  allowed by the hook so autopilot does not stall on routine
+  dependency setup. See the BREAKING CHANGES bullet for the prompt-
+  level mitigation. Patterns
+  accept a permissive prefix that blocks the common obfuscations —
+  full-path invocation (`/usr/bin/curl ...`), relative-path invocation
+  (`./curl`, `../curl`, `bin/curl`, `node_modules/.bin/curl`,
+  `~/bin/curl`, `$HOME/bin/curl`), arbitrary env-var assignment
+  (`FOO=bar curl ...`), command wrappers (`env`, `command`, `exec`,
+  `time`, `nice`, `ionice`, `nohup`), and flags between `git push` and
+  `--no-verify` at any argument position (including quoted args
+  containing pipe / semicolon / ampersand). Out-of-scope
+  obfuscations (covered by the agent-body `## Side-effect ban` and the
+  per-AC binding discipline instead): the quoted argument inside
+  `bash -c '...'` / `sh -c '...'`, parenthesised subshell token-start
+  `(cmd)`, and brace-group token-start `{ cmd; }`.
+- **Cat AN drift-guard tests (CT-AN-1..CT-AN-8)** in
+  `tests/test-skill-contracts.sh`. Pin the Group A omit, Group C
+  retention, `permissionMode` removal, Side-effect ban presence,
+  Bound Capabilities MCP bullet, doctrine update, `pre-bash-safety.sh`
+  new pattern tokens (CT-AN-7), and behavioral block per category
+  (CT-AN-8 — pipes a representative command per category into the hook
+  and asserts exit 2, guarding against the "tokens in comments but
+  regex broken" silent-regression class).
+- **Category J in `tests/test-pre-bash-safety.sh`** — full behavioral
+  block / allow coverage of the v8.0.0 denylist, including the bypass
+  cases listed in the previous bullet. Total grows from 126 to 195
+  assertions (+69) including J.7 (7 BLOCK assertions for relative-path
+  and quoted-arg bypasses: `./curl`, `../curl`, `bin/curl`,
+  `node_modules/.bin/curl`, `git push 'arg|piped' --no-verify`, etc.)
+  and 36 ALLOW assertions: 24 covering legitimate package-manager
+  installs across npm / pnpm / yarn / pip / pip3 / gem / cargo /
+  brew / apt-get / apk / go / composer / bundle / mix / dart pub /
+  conda / nuget / dotnet plus `git remote add`, and 12 false-positive
+  sanity cases (`git remote -v`, `git push`, `git commit -m`,
+  `ls bin/curl`, `git push origin some--no-verify-branch`, etc.).
+
 - **`hooks/lib/inject-keys.sh` gains a post-inject capture-pane verify
   for the tmux backend (P1-1)**. After `tmux send-keys` returns rc=0,
   the library now sleeps `SW_INJECT_KEYS_VERIFY_SLEEP_MS` ms (default
@@ -70,6 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/fixtures/tmux-stub.sh`) covers DRY_RUN unchanged, opt-out,
   verify success, verify failure, sleep-ms override, and the
   `inject_keys_failure_hint` `verify window` substring contract.
+
 - **`/autopilot` Phase 1 emits a 1-line `[AUTOPILOT-CONTEXT]` self-doc**
   describing the resolved `SW_AUTO_COMPACT_ON_SHIP_MODE` so the
   orchestrator never asks about auto-compaction. New step 0.5 in
@@ -230,6 +366,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removal of `mode=` is a future-minor BREAKING change — flagged here
   via the `feat(P3-2C)!` commit subject so consumers can prepare.
 
+- `skills/create-ticket/references/agent-spawn-prompts.md` — v7.1.0
+  paragraph "The subagent does not inherit the main-thread harness skill
+  / MCP descriptions" replaced by "MCP inheritance under v8.0.0" with
+  the Group A / Group C split documented explicitly and the
+  `productive subagents` term introduced.
+- `skills/create-ticket/references/ac-quality-criteria.md` — v7.1.0
+  wording "Forked subagents are not guaranteed to inherit MCP tool
+  access" replaced by "Forked subagents inherit the parent session's
+  MCP tool access when their `tools:` field is omitted".
+- `skills/{impl,audit,test,tune,create-ticket}/SKILL.md` and
+  `skills/{brief,investigate,plan2doc,refactor}/SKILL.md` — the
+  `## Subagent Skill-Access Handoff` opening bullet is rewritten as a
+  three-bullet structure that distinguishes (a) truly hermetic agents
+  (`security-scanner`, `ticket-evaluator`) which carry no Skill tool,
+  (b) Skill-bearing verdict / read-only agents (`ac-evaluator`,
+  `code-reviewer`, `decomposer`, `tune-analyzer`) which receive
+  capability handoffs via deterministic per-AC binding only, and
+  (c) productive agents (`implementer`, `planner`, `researcher`,
+  `test-writer`) which inherit-all under v8.0.0 but are still bound to
+  the active-AC `## Bound capabilities (per AC)` block. The same
+  three-bullet structure is applied uniformly across all 9 spawner
+  SKILL.md so the v7.1.0 sibling-audit asymmetry that produced the
+  Round 1 finding does not recur.
+- `agents/planner.md` — body paragraph "Note on the `tools:` allowlist
+  above" rewritten as "Note on subagent permission model" reflecting
+  omit + prompt-level FS-search ban. Pre-emit Self-Audit step 6 also
+  gains a new sub-step (d) that rejects MCP-typed `### Capabilities`
+  rows whose `Used by` column lists a Group C agent — MCP servers are
+  unexecutable for those agents under v8.0.0, so the binding must
+  either split (productive agent invokes the MCP; verdict agent
+  verifies via a plain Skill) or move under `#### Capability Gaps`.
+- `skills/refactor/SKILL.md` — Phase 1 Step 1 (planner spawn) and
+  Phase 3 Step 6 (code-reviewer spawn) now inline the per-AC
+  `## Bound capabilities (per AC)` block from `{ticket-dir}/ticket.md`'s
+  `### Capabilities` section into each spawn prompt (parity with
+  `/impl` Steps 13/15). Pre-Gate-6 / `ticket-dir`-absent invocations
+  fall back to the prior advisory path. The `## Pre-computed Context`
+  block gains the `Available MCP servers:` probe (mirroring
+  `/create-ticket`) so the planner authoring a brand-new
+  `### Capabilities` table can see MCP servers from `.mcp.json` /
+  `~/.claude.json`. **Known gap, v8.0.x candidate**: explicit in-step
+  capability pre-load instructions (analogous to `/impl` Steps 13/15
+  and `/refactor` Phase 1 Step 1 / Phase 3 Step 6) are NOT yet present
+  in the remaining 7 spawner SKILL.md (`audit`, `brief`,
+  `create-ticket`, `investigate`, `plan2doc`, `test`, `tune`). Those
+  7 spawners received the v8.0.0 three-bullet `## Subagent
+  Skill-Access Handoff` doctrine update so the contract is stated
+  ("inline the bound capabilities verbatim into every spawn prompt"),
+  but the in-step pre-load wording is advisory only. Existing
+  consumers fall back to the agent body's in-house capability-
+  selection path when the orchestrator omits the explicit pre-load.
+  Tracked as a known gap for a future v8.0.x release; no backlog
+  ticket has been filed yet.
+- `tests/test-path-consistency.sh` Cat 6 + Cat 11 redesigned for v8.0.0.
+
 ### Deprecated
 
 - **`/brief mode=auto|manual` argument alias (P3-2C, X.Y.0 deprecation
@@ -280,6 +471,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when `overall_status: in-progress`, rewrites the four canonical
   scalars (`overall_status: done`, `current_phase: done`,
   `last_completed_phase: ship`, `phases.ship.status: completed`).
+
+### Removed
+
+- `permissionMode: acceptEdits` line from
+  `agents/{implementer,planner,researcher,test-writer}.md` and from
+  `agents/decomposer.md`. Per CC docs and the 2026-05-24 spike this
+  field is silently ignored for plugin subagents — removal is a no-op
+  cleanup that aligns all five agents to omit the field. Behaviorally
+  equivalent settings can be set per-user via
+  `~/.claude/settings.local.json` if needed.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` exit 0 with Total >= 588 (baseline
+  580 + 8 new for Cat AN CT-AN-1..CT-AN-8); current run reports 641 / 641
+  PASS. The Total above the 588 floor reflects Cat D's dynamic per-skill
+  agent-name assertions growing as the v8.0.0 doctrine update referenced
+  more agent names in the spawner SKILL.md bodies (Cat AL v7.0.4 and
+  Cat AM v7.1.0 invariants remain intact).
+- `bash tests/test-path-consistency.sh` exit 0 with the redesigned Cat 6
+  (Group A omit + Group C retention) and Cat 11 (positive enumeration —
+  zero `Bash(*)` declarations and exactly the 6 Group C agents carrying
+  `^tools:`).
+- `bash tests/test-pre-bash-safety.sh` exit 0 with Total 195 / 195 PASS.
+  Every existing destructive / sensitive-staging / bulk-staging case
+  still blocks; the new Category J adds 69 v8.0.0 assertions split
+  into BLOCK (4 categories: network egress / identity spoofing /
+  privilege escalation / branch-commit subversion) including bypass
+  coverage (full-path and relative-path invocation, env-var prefix,
+  `exec`/`time`/`nice`/`nohup` wrappers, `git push --no-verify` at any
+  argument position with quoted-arg variants) and ALLOW (24 package-
+  manager installs across all common languages plus `git remote add`,
+  plus 12 false-positive sanity negatives for legitimate operations).
+- Spike basis: 2026-05-24 CC 2.1.149 four-probe spike (user scope) plus
+  `--plugin-dir` invocation (plugin scope) confirmed (a) omit-`tools:`
+  inherits all including MCP, (b) exact-name `disallowedTools` blocks
+  tools, (c) `mcp__*` glob in `disallowedTools` is NOT honored, and
+  (d) `permissionMode` is a silent no-op for plugin subagents.
+- Pre-flight: spawning 5 parallel general-purpose evaluator subagents on
+  2026-05-24 found 9 unique problems in the original 7-agent transition
+  plan; this release addresses all 9 (decomposer / code-reviewer /
+  tune-analyzer moved to Group C, side-effect ban added, doctrine
+  updated, `pre-bash-safety.sh` extended, Cat 6 + Cat 11 redesigned).
 
 ## [7.1.0] — 2026-05-23
 

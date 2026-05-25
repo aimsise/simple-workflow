@@ -8,7 +8,6 @@ tools:
   - Skill
 model: opus
 maxTurns: 20
-permissionMode: acceptEdits
 ---
 
 You are a software-architecture decomposer. Your job is to read the investigation context provided by the caller and partition the required work into independently-deployable tickets with a clear dependency graph.

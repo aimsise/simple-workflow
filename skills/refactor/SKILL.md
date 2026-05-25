@@ -54,6 +54,8 @@ Plan and execute refactoring: $ARGUMENTS
 
 Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
 
+Available MCP servers: !`( jq -r '.mcpServers // {} | keys[]' .mcp.json 2>/dev/null ; jq -r '.mcpServers // {} | keys[]' ~/.claude.json 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Argument Parsing
 
 Parse `$ARGUMENTS` for the following:
@@ -90,7 +92,10 @@ Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is inten
 ## Instructions
 
 ### Phase 1: Planning
-1. Spawn the **planner** agent to create a refactoring plan
+1. Spawn the **planner** agent to create a refactoring plan. Before constructing the spawn prompt:
+   - **Resolve `ticket-dir`** by running the ticket-detection logic from Step 1b below (it is referenced here as well as later in Phase 3 Step 6). Set `ticket-dir` to either the resolved path or `(none)` when no match is found.
+   - **Capability binding pre-load** (v8.0.0): when `ticket-dir` resolves and `{ticket-dir}/ticket.md` exists with a `### Capabilities` section, `Read` it and inline the full table verbatim into the planner spawn prompt under the heading `## Bound capabilities (per AC)`. When the ticket lacks `### Capabilities` (older ticket pre-dating Gate 6), inline `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)`. When `ticket-dir` is `(none)`, skip the binding block — the planner authors from scratch using the `Available capabilities` probe.
+   - **`Available capabilities` probe**: always inline the `Available user skills:` and `Available MCP servers:` lines from the Pre-computed Context above so the planner (authoring role) can populate Gate 6 rows.
 1b. **Ticket detection**: Get the current branch name and active ticket list from the pre-computed context above. Determine `ticket-dir` using the following priority:
    - **Explicit `ticket-dir=` argument**: If `ticket-dir=<dir-name>` was provided in the arguments, check whether `.simple-workflow/backlog/active/{dir-name}` exists. If it exists, set `ticket-dir` to `.simple-workflow/backlog/active/{dir-name}` and skip branch name matching. If it does **not** exist, print a WARNING: "ticket-dir '{dir-name}' not found in .simple-workflow/backlog/active/ — falling back to branch name matching." and proceed to the fallback below.
    - **Fallback — branch name matching**: For each directory in `.simple-workflow/backlog/active/`, extract the slug portion by stripping the leading `NNN-` prefix (the initial sequence of digits followed by a hyphen, e.g., `001-add-search-feature` → `add-search-feature`). Check if the branch name contains this slug portion. If a match is found, set `ticket-dir` to `.simple-workflow/backlog/active/{full-directory-name}` (including the numeric prefix).
@@ -109,6 +114,7 @@ Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is inten
    - Run the project's test command (as defined in CLAUDE.md or project conventions)
    - Run the project's lint command (as defined in CLAUDE.md or project conventions)
 6. Spawn the **code-reviewer** agent to review all changes:
+   - **Capability binding pre-load** (v8.0.0): when `ticket-dir` is set (resolved in Step 1 / Step 1b) and `{ticket-dir}/ticket.md` exists with a `### Capabilities` section, inline the full table verbatim into the code-reviewer spawn prompt under `## Bound capabilities (per AC)`. The code-reviewer is a Skill-bearing Group C agent that consumes the deterministic per-AC binding (never speculative — see `## Subagent Skill-Access Handoff` below). When the ticket lacks `### Capabilities`, inline `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)`.
    - If `ticket-dir` is set: specify output path as `{ticket-dir}/quality-refactor-{n}.md` where {n} is the iteration number
    - If `ticket-dir` is not set: let the code-reviewer use its default (`.simple-workflow/docs/reviews/{topic}.md`)
 7. Evaluate review results:
@@ -144,7 +150,9 @@ Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is inten
 
 When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
 
-- Do NOT hand skill references to `security-scanner` or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- **Truly hermetic agents** (`security-scanner`, `ticket-evaluator`) carry no Skill tool, no MCP, no `Bash(*)`. If you spawn one, hand off nothing — speculative references only add noise.
+- **Skill-bearing verdict / read-only agents** (`ac-evaluator`, `code-reviewer`, `decomposer`, `tune-analyzer`) retain explicit `tools:` allowlists and do NOT inherit MCP / `Bash(*)`. They DO carry the Skill tool and receive capability handoffs, but only via **deterministic per-AC binding** (the `## Bound capabilities (per AC)` block extracted from `{ticket-dir}/ticket.md`'s `### Capabilities` section) — never via ad-hoc speculation from the `Available user skills:` probe.
+- **Productive agents** (`implementer`, `planner`, `researcher`, `test-writer`) inherit-all under v8.0.0 — every parent-session MCP server and `Bash(*)` is in their tool inventory. Only `mcp__*` and Skills bound to an active AC via `## Bound capabilities (per AC)` may be invoked (per the agent body's `## Bound Capabilities (Handoff from Orchestrator)` section).
 - Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
 - When a ticket's `### Capabilities` section exists (resolve via `{ticket-dir}/ticket.md` or the autopilot state file's `paths.ticket`), `Read` it before constructing any subagent spawn prompt and inline the bound capabilities verbatim into every spawn prompt under the heading `## Bound capabilities (per AC)`. For per-AC spawns (one spawn per AC, e.g. `/impl` Steps 13/15), include only the rows whose `Bound AC(s)` column lists the active AC. For tip / whole-deliverable spawns (the rest), include the full table. The upstream binding is authoritative — do NOT re-derive relevance from the AC text or re-scan `Available user skills:` for plausible matches. When the ticket lacks `### Capabilities` (older ticket pre-dating Gate 6), emit `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)` in the spawn prompt and let the subagent fall back to its in-house capability-selection path.
 - If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.
