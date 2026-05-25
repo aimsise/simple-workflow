@@ -115,6 +115,8 @@ Brief with `interview_complete: true` skips Phase 2 (no `AskUserQuestion`, no st
 
 Caps (load-bearing): max **3 questions/round**, **10 rounds**, **30 total**. Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors. Do NOT hang.
 
+**args-aware shrinkage**: Phase 2 MUST suppress questions whose answers are already in `$ARGUMENTS` (bare) or brief body (brief mode, `interview_complete: false`). Full rule: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md) Phase 2.
+
 ### Phase 3: Ticket Draft (planner agent)
 
 `MUST invoke the planner via the Agent tool`. `NEVER bypass` by drafting inline — planner output (Background / Scope / ACs / Implementation Notes + category/size/workflow) is the canonical draft. `Fail the task` if planner cannot be invoked. Planner return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/planner.md`.

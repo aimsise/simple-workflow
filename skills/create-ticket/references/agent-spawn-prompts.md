@@ -42,6 +42,27 @@ For fresh bare and brief runs (no reuse), the orchestrator passes a transient ou
 
 **Bare description mode**: always run the capped interview (unless non-interactive fallback fires).
 
+#### args-aware shrinkage (suppress re-asking what the input already answers)
+
+**Scope**: this rule applies to **bare mode** (input is `$ARGUMENTS`) AND **brief mode with `interview_complete: false`** (input is the brief body, principally the `## Vision` / `## Business Context` / `## Technical Requirements` / `## Scope` sections of `brief.md`). The brief-mode `interview_complete: true` path skips Phase 2 entirely, so args-aware shrinkage does NOT run there. Findings mode follows the upstream brief's `interview_complete` value; when Phase 2 runs there, the input is the findings document body.
+
+Before issuing any `AskUserQuestion` call in Phase 2, perform a one-shot scan of the active input (`$ARGUMENTS` in bare mode; brief body in brief mode with `interview_complete: false`) against the seven interview categories listed in `skills/brief/references/interview-templates.md`. For each candidate question, classify it as either:
+
+- `args-resolved` — the answer is already stated or unambiguously implied by the input. Examples: input contains "Next.js App Router" → "Which framework?" is `args-resolved`. Input contains "/api/login endpoint" → "What endpoint name?" is `args-resolved`. Input contains "rollback via feature flag" → rollback-criticality questions are `args-resolved`.
+- `needs-question` — the answer is not stated in the input AND not derivable from the researcher's findings.
+
+Construction rule for every `AskUserQuestion` call in Phase 2:
+
+1. A single call MUST carry at most 3 items (existing cap; unchanged).
+2. Items MUST be drawn only from the `needs-question` set. `args-resolved` candidates MUST NOT appear in any `AskUserQuestion` payload, including paraphrased or "to confirm" variants.
+3. If fewer than 3 `needs-question` items remain in the highest-priority category, fill the remaining slots from the next-highest-priority category that still has `needs-question` items. Do NOT pad with `args-resolved` items.
+4. If zero `needs-question` items remain across all seven categories, end Phase 2 (convergence). This is an additional convergence trigger on top of the existing ones (user says "sufficient", scope is clear, 10 rounds reached).
+5. The shrinkage decision MUST be applied on every round, not only on round 1 — newly arrived user answers can convert `needs-question` items to `args-resolved` mid-interview.
+
+Output a single line at the top of the round-1 console trace listing the `args-resolved` categories so the user can audit the suppression decision: `[args-aware shrinkage] args-resolved categories: <list>; needs-question categories: <list>`. The line is informational; do NOT block on it. The shrinkage decision MUST NOT widen the round / question caps stated above (it can only shorten the interview, never lengthen it).
+
+Confidence rule: when classification is ambiguous (the input partially answers a question), default to `needs-question`. This bias keeps Phase 2's quality-first design intact: when in doubt, ask. This rule mirrors `skills/brief/SKILL.md` Phase 2 `#### args-aware shrinkage` so the `/brief` → `/create-ticket` chain never re-asks `$ARGUMENTS`-resolved questions on either side.
+
 **Interview caps** (load-bearing for contract):
 - At most **3 questions per round** (a single `AskUserQuestion` call carries at most 3 items).
 - At most **10 rounds** total across the interview.

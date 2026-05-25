@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-doc never lies about the active mode. Drift-guarded by
   `tests/test-skill-contracts.sh` CT-AC-52..60.
 
+### Changed
+
+- **`/brief` and `/create-ticket` Phase 2 enforce args-aware shrinkage**:
+  before issuing any `AskUserQuestion`, both skills now scan the active
+  input (`$ARGUMENTS` in bare mode; brief body in brief mode with
+  `interview_complete: false`) against the seven interview-template
+  categories and classify each candidate question as `args-resolved`
+  or `needs-question`. `args-resolved` items MUST NOT appear in any
+  payload (including paraphrased / "to confirm" variants); a fully
+  exhausted `needs-question` set is a new convergence trigger. Round /
+  question caps (10 rounds × 3/round × 30 total) are unchanged; the
+  `mode independence guard` body is unchanged. The orchestrator emits
+  `[args-aware shrinkage] args-resolved categories: <list>; needs-question
+  categories: <list>` once on round 1 so users can audit the
+  suppression decision. New mechanical assertions CT-AC-61..65 in
+  `tests/test-skill-contracts.sh` pin the contract grep, caps
+  invariance, and guard-body invariance.
+
 ## [7.1.0] — 2026-05-23
 
 Record available user Skills and MCP servers at the orchestrator turn of

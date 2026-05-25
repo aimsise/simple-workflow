@@ -7438,5 +7438,106 @@ assert_file_contains \
   'Emit EXACTLY ONE'
 
 echo ""
+# Category AO: args-aware shrinkage spec wiring (P0-2A)
+# Diff: pins the four mechanically-detectable invariants from P0-2A's AC-1
+#        .. AC-5. AC-6 is dogfood-observable only and asserted indirectly via
+#        AC-1 (the orchestrator's `[args-aware shrinkage] args-resolved
+#        categories:` literal MUST appear in skills/brief/SKILL.md so the
+#        orchestrator emits it). The Caps-invariance assertion (AC-4) uses a
+#        hard-coded expected count of 3 — the v7.x baseline immediately
+#        before this plan landed — so any future bullet that adds, removes,
+#        or paraphrases one of the three Caps phrases trips the test.
+# =============================================================================
+echo "--- Cat AO: args-aware shrinkage spec wiring (P0-2A) ---"
+
+BRIEF_SKILL_AO="$REPO_DIR/skills/brief/SKILL.md"
+ASP_AO="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+CT_SKILL_AO="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# CT-AC-61 (P0-2A AC-1): skills/brief/SKILL.md carries the 'args-aware
+# shrinkage' literal, AND the `#### args-aware shrinkage` subsection body
+# contains both `$ARGUMENTS` and `args-resolved` tokens. The orchestrator's
+# AC-6 console-trace literal (`[args-aware shrinkage] args-resolved
+# categories:`) lives inside that same subsection, so its presence is
+# verified transitively here.
+ao1_main_hit=$(grep -cF 'args-aware shrinkage' "$BRIEF_SKILL_AO" || true)
+ao1_section=$(awk '/^#### args-aware shrinkage/,/^#### Dynamic Phase 2 shrinkage/' "$BRIEF_SKILL_AO")
+ao1_arguments=$(echo "$ao1_section" | grep -cF '$ARGUMENTS' || true)
+ao1_resolved=$(echo "$ao1_section" | grep -cF 'args-resolved' || true)
+ao1_trace=$(echo "$ao1_section" | grep -cF '[args-aware shrinkage] args-resolved categories:' || true)
+ao1_result="false"
+if [ "$ao1_main_hit" -ge 1 ] \
+   && [ "$ao1_arguments" -ge 1 ] \
+   && [ "$ao1_resolved" -ge 1 ] \
+   && [ "$ao1_trace" -ge 1 ]; then
+  ao1_result="true"
+fi
+assert_true \
+  "CT-AC-61 (P0-2A AC-1): skills/brief/SKILL.md mentions 'args-aware shrinkage' (count=$ao1_main_hit, expected >=1); the '#### args-aware shrinkage' subsection contains \$ARGUMENTS (count=$ao1_arguments, expected >=1), 'args-resolved' (count=$ao1_resolved, expected >=1), and the orchestrator console-trace literal '[args-aware shrinkage] args-resolved categories:' (count=$ao1_trace, expected >=1; transitively pins AC-6)" \
+  "$ao1_result"
+
+# CT-AC-62 (P0-2A AC-2): skills/create-ticket/references/agent-spawn-prompts.md
+# carries the 'args-aware shrinkage' literal in its Phase 2 section.
+ao2_hit=$(grep -cF 'args-aware shrinkage' "$ASP_AO" || true)
+ao2_result="false"
+if [ "$ao2_hit" -ge 1 ]; then
+  ao2_result="true"
+fi
+assert_true \
+  "CT-AC-62 (P0-2A AC-2): skills/create-ticket/references/agent-spawn-prompts.md mentions 'args-aware shrinkage' (count=$ao2_hit, expected >=1)" \
+  "$ao2_result"
+
+# CT-AC-63 (P0-2A AC-3): skills/create-ticket/SKILL.md Phase 2 section
+# carries the 'args-aware shrinkage' literal at least once AND the same
+# line (the references-pointer line) contains the substring
+# 'references/agent-spawn-prompts.md'. The literal pointer is enforced
+# directly with a one-line grep that demands both tokens on the same
+# line — the ticket spec requires the transition link to live "同行内"
+# (on the same line) with the literal.
+ao3_line=$(grep -nF 'args-aware shrinkage' "$CT_SKILL_AO" | head -1 | cut -d: -f2-)
+ao3_result="false"
+if [ -n "$ao3_line" ] \
+   && echo "$ao3_line" | grep -qF 'references/agent-spawn-prompts.md'; then
+  ao3_result="true"
+fi
+assert_true \
+  "CT-AC-63 (P0-2A AC-3): skills/create-ticket/SKILL.md has at least one 'args-aware shrinkage' line whose text also contains the references/agent-spawn-prompts.md pointer on the SAME line (intra-line link required by ticket spec)" \
+  "$ao3_result"
+
+# CT-AC-64 (P0-2A AC-4): the three Caps phrases retain their pre-P0-2A
+# count. Pre-P0-2A baseline = 3 hits total (one per phrase). This
+# assertion guards against a future shrinkage-style change that
+# silently drops or paraphrases one of the three load-bearing Caps
+# bullets in skills/brief/SKILL.md.
+ao4_caps=$(grep -cE 'At most \*\*10 rounds\*\*|At most \*\*3 questions per round\*\*|at most \*\*30 questions total\*\*' "$BRIEF_SKILL_AO" || true)
+ao4_result="false"
+if [ "$ao4_caps" -eq 3 ]; then
+  ao4_result="true"
+fi
+assert_true \
+  "CT-AC-64 (P0-2A AC-4): skills/brief/SKILL.md retains exactly 3 Caps-phrase hits ('At most **10 rounds**' + 'At most **3 questions per round**' + 'at most **30 questions total**') — got $ao4_caps, expected 3" \
+  "$ao4_result"
+
+# CT-AC-65 (P0-2A AC-5): the 'mode independence guard' literal remains
+# present in skills/brief/SKILL.md AND its body content (the prose
+# immediately after the load-bearing label) is unchanged from the
+# v7.1.0 baseline. Body equivalence is asserted by grepping for the
+# verbatim opening clause that has been present in the guard's prose
+# since v6.0.0 and that the P0-2A change MUST NOT touch. If a future
+# edit rewrites that clause (e.g. weakens "MUST" to "should" or drops
+# the parenthetical), the assertion trips.
+ao5_label=$(grep -cF 'mode independence guard' "$BRIEF_SKILL_AO" || true)
+ao5_body=$(grep -cF 'MUST** run regardless of the parsed `mode` value' "$BRIEF_SKILL_AO" || true)
+ao5_no_skip=$(grep -cF 'MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2' "$BRIEF_SKILL_AO" || true)
+ao5_result="false"
+if [ "$ao5_label" -ge 1 ] && [ "$ao5_body" -ge 1 ] && [ "$ao5_no_skip" -ge 1 ]; then
+  ao5_result="true"
+fi
+assert_true \
+  "CT-AC-65 (P0-2A AC-5): skills/brief/SKILL.md retains the 'mode independence guard' literal (count=$ao5_label, expected >=1) AND its body's two load-bearing clauses ('MUST run regardless of the parsed mode value' count=$ao5_body, expected >=1; 'MUST NOT be interpreted as a signal to skip, shorten, or bypass Phase 2' count=$ao5_no_skip, expected >=1) are byte-identical to the v7.1.0 baseline (P0-2A MUST NOT rewrite the guard body)" \
+  "$ao5_result"
+
+echo ""
+
 # --- Summary ---
 print_summary
