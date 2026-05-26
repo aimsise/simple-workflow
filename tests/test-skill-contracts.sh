@@ -5071,8 +5071,13 @@ mkdir -p "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC12_TMP/.simple-workflow/backlog/active/dummy/001-fakery"
 # done/ deliberately NOT created (parent dir for the rewritten done/ path
 # also absent, so the active→done rewriter must fail to find the dir).
-touch "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC12_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/active/dummy/001-fakery\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+# test_simple_workflow35 fix: Gate 5 now reads $TOOL_FILE_PATH (the
+# brief-side state file on disk), not the Edit-tool $TOOL_PAYLOAD
+# fragment. Write the YAML payload INTO the state file so the hook
+# can iterate it (matches the post-Edit on-disk reality the
+# PostToolUse hook observes in production).
+printf '%s' "$AC12_NEW" > "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC12_INPUT=$(jq -n --arg fp "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC12_OUT=$(cd "$AC12_TMP" && INPUT="$AC12_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 if echo "$AC12_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
@@ -5651,8 +5656,10 @@ AC24_TMP=$(mktemp -d)
 mkdir -p "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC24_TMP/.simple-workflow/backlog/done/dummy/001-real"
 # T-002's done/ counterpart deliberately NOT created.
-touch "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC24_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-real\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n  - logical_id: T-002\n    ticket_dir: .simple-workflow/backlog/active/dummy/002-fake\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+# test_simple_workflow35 fix (see CT-AC-12): state-lie protection
+# now reads the on-disk state file via $TOOL_FILE_PATH.
+printf '%s' "$AC24_NEW" > "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC24_INPUT=$(jq -n --arg fp "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC24_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC24_OUT=$(cd "$AC24_TMP" && INPUT="$AC24_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC24_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 if echo "$AC24_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC24_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
@@ -5683,10 +5690,12 @@ AC25_TMP=$(mktemp -d)
 mkdir -p "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC25_TMP/.simple-workflow/backlog/done/dummy/001-real"
 # T-002's done/ counterpart deliberately NOT created.
-touch "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 # Note the atypical key ordering within each element: ship: completed
 # appears BEFORE ticket_dir:. Both elements use the same ordering.
 AC25_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    steps:\n      ship: completed\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-real\n    status: completed\n  - logical_id: T-002\n    steps:\n      ship: completed\n    ticket_dir: .simple-workflow/backlog/active/dummy/002-fake\n    status: completed\n')
+# test_simple_workflow35 fix (see CT-AC-12): state-lie protection
+# now reads the on-disk state file via $TOOL_FILE_PATH.
+printf '%s' "$AC25_NEW" > "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC25_INPUT=$(jq -n --arg fp "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC25_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC25_OUT=$(cd "$AC25_TMP" && INPUT="$AC25_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC25_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 if echo "$AC25_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC25_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
@@ -8509,10 +8518,51 @@ if [ "$psi_has_writer" = "true" ]; then
     "$psi_ac7_result"
   rm -rf "$PSI_TMP4" "$PSI_PRE4" 2>/dev/null || true
 
+  # PSI AC-8 (test_simple_workflow35 regression guard): production hook
+  # scenario — the Edit's `new_string` carries a SINGLE-ticket fragment
+  # (no top-level `tickets:` key) rather than the full autopilot-state.yaml
+  # content. Pre-fix, Gate 5.5 piped this fragment through
+  # `parse_ticket_ship_dirs`, which requires a `.tickets` root and so
+  # returned zero entries; the self-heal loop body never ran and
+  # `phase-state.yaml` drift persisted (TW35 ticket 001:
+  # `overall_status: in-progress` despite 5 successful hook fires).
+  # The fix iterates `$TOOL_FILE_PATH` (the brief-side state file on
+  # disk, which already reflects the PostToolUse write) so the parse is
+  # always well-formed regardless of the payload shape. This assertion
+  # locks the regression by passing the realistic fragment payload and
+  # asserting the self-heal still fires.
+  PSI_TMP5="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET5="$PSI_TMP5/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE5="$PSI_TMP5/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_STDERR5="$(mktemp)"
+  # Realistic Edit-tool fragment: only the changed ticket block, no
+  # `tickets:` root, no other tickets — matches what the harness
+  # actually delivers on Edit/PostToolUse for `steps.ship: completed`
+  # transitions (verified via test_simple_workflow35 JSONL replay).
+  PSI_FRAGMENT5=$(printf '  - logical_id: shelftrack-part-1\n    ticket_dir: .simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+  PSI_PAYLOAD5=$(jq -n --arg fp "$PSI_STATE5" --arg ns "$PSI_FRAGMENT5" '{tool_input: {file_path: $fp, new_string: $ns}}')
+  ( cd "$PSI_TMP5" && printf '%s' "$PSI_PAYLOAD5" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=on \
+      bash "$PSI_HOOK" >/dev/null 2>"$PSI_STDERR5" ) || true
+  psi_ac8_overall="$(grep -E '^overall_status:' "$PSI_TARGET5" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac8_stderr_hit="false"
+  grep -qF '[POST-SHIP-INTEGRITY] self-healing' "$PSI_STDERR5" && psi_ac8_stderr_hit="true"
+  psi_ac8_result="false"
+  if [ "$psi_ac8_overall" = "done" ] && [ "$psi_ac8_stderr_hit" = "true" ]; then
+    psi_ac8_result="true"
+  fi
+  assert_true \
+    "PSI AC-8 (TW35 regression guard): Gate 5.5 self-heals when payload is an Edit-tool fragment (single ticket block, no 'tickets:' root); overall_status='$psi_ac8_overall' expected 'done'; stderr hit=$psi_ac8_stderr_hit expected true" \
+    "$psi_ac8_result"
+  rm -rf "$PSI_TMP5" "$PSI_STDERR5" 2>/dev/null || true
+
   unset PSI_TMP1 PSI_TARGET1 PSI_STATE1 PSI_STDERR1 PSI_PAYLOAD1
   unset PSI_TMP2 PSI_TARGET2 PSI_STATE2 PSI_PAYLOAD2
   unset PSI_TMP3 PSI_TARGET3 PSI_STATE3 PSI_STDERR3 PSI_PAYLOAD3
   unset PSI_TMP4 PSI_TARGET4 PSI_STATE4 PSI_PAYLOAD4 PSI_PRE4
+  unset PSI_TMP5 PSI_TARGET5 PSI_STATE5 PSI_STDERR5 PSI_PAYLOAD5 PSI_FRAGMENT5
   unset -f _psi_setup_tmproot _psi_payload_for
 else
   assert_true \

@@ -582,6 +582,32 @@ in `disallowedTools` does NOT work.
   when `overall_status: in-progress`, rewrites the four canonical
   scalars (`overall_status: done`, `current_phase: done`,
   `last_completed_phase: ship`, `phases.ship.status: completed`).
+- **`hooks/post-ship-state-auto-compact.sh` Gate 5 + Gate 5.5 now read
+  the on-disk brief-side `autopilot-state.yaml` instead of the
+  Edit-tool payload fragment**. Field evidence
+  (`test_simple_workflow35`) showed P3-5's Gate 5.5 self-heal never
+  fired for the 5 ticket boundaries it was meant to cover, leaving
+  ticket 001 with `overall_status: in-progress` despite the hook
+  running 5 times — the exact `test_simple_workflow34` regression
+  P3-5 was supposed to prevent. Root cause: both gates piped the
+  Edit's `new_string` (a single-ticket YAML fragment lacking the
+  top-level `tickets:` key) through `parse_ticket_ship_dirs`, whose
+  yq query `.tickets | .[]` returns zero entries from such a
+  fragment; the loops silently never iterated any ticket. The fix
+  is a one-line source swap in each gate
+  (`parse_ticket_ship_dirs "$TOOL_FILE_PATH"`) plus removal of the
+  now-unneeded `mktemp + printf` payload-to-tempfile plumbing. The
+  brief-side state file on disk already reflects the PostToolUse
+  write at the time the hook fires, so the parse is always
+  well-formed regardless of payload shape. Side effect: Gate 5
+  (state-lie protection) now actually detects state-lies for the
+  fragment-payload code path that has been the production norm
+  since v6 (previously fail-open). Regression-guarded by new
+  `tests/test-skill-contracts.sh` PSI AC-8 (fragment payload still
+  triggers self-heal) and by hardening the existing CT-AC-12 /
+  CT-AC-24 / CT-AC-25 fixtures to write the YAML into the state
+  file instead of relying on the now-discarded payload-fragment
+  parse path.
 
 ### Removed
 
@@ -595,13 +621,14 @@ in `disallowedTools` does NOT work.
 
 ### Verification
 
-- `bash tests/test-skill-contracts.sh` exit 0 with Total >= 597 (baseline
+- `bash tests/test-skill-contracts.sh` exit 0 with Total >= 598 (baseline
   580 + 8 new for Cat AN CT-AN-1..CT-AN-8 + 9 new for Cat AQ
-  CT-AQ-1..CT-AQ-9); current run reports 718 / 718 PASS. The Total above
-  the 597 floor reflects Cat D's dynamic per-skill agent-name
-  assertions growing as the v8.0.0 doctrine update referenced more
-  agent names in the spawner SKILL.md bodies (Cat AL v7.0.4, Cat AM
-  v7.1.0, and Cat AQ Gate 6.5 invariants all intact).
+  CT-AQ-1..CT-AQ-9 + 1 new for PSI AC-8 TW35 regression guard);
+  current run reports 719 / 719 PASS. The Total above the 598 floor
+  reflects Cat D's dynamic per-skill agent-name assertions growing as
+  the v8.0.0 doctrine update referenced more agent names in the
+  spawner SKILL.md bodies (Cat AL v7.0.4, Cat AM v7.1.0, Cat AQ
+  Gate 6.5, and PSI Gate 5.5 fragment-payload invariants all intact).
 - `bash tests/test-path-consistency.sh` exit 0 with the redesigned Cat 6
   (Group A omit + Group C retention) and Cat 11 (positive enumeration —
   zero `Bash(*)` declarations and exactly the 6 Group C agents carrying

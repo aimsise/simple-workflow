@@ -138,46 +138,49 @@ esac
 # `parse_ticket_ship_dirs` (hooks/lib/parse-state-file.sh) pairs each
 # ship status with its OWN element's ticket_dir, so both bypasses are
 # closed at the parser layer.
-TMP_PAYLOAD_FILE=$(mktemp 2>/dev/null) || TMP_PAYLOAD_FILE=""
-if [ -n "$TMP_PAYLOAD_FILE" ]; then
-  printf '%s' "$TOOL_PAYLOAD" > "$TMP_PAYLOAD_FILE" 2>/dev/null || true
-
-  REPO_ROOT=""
-  if [ -n "$TOOL_FILE_PATH" ]; then
-    REPO_ROOT="${TOOL_FILE_PATH%%/.simple-workflow/*}"
-  fi
-  [ -n "$REPO_ROOT" ] || REPO_ROOT="$PWD"
-
-  LIE_DETECTED=0
-  # Process substitution (`< <(...)`) keeps the loop in the parent shell so
-  # the LIE_DETECTED assignment is visible after the loop.
-  while IFS= read -r TICKET_DIR; do
-    [ -n "$TICKET_DIR" ] || continue
-    case "$TICKET_DIR" in
-      /*) RESOLVED_TICKET_DIR="$TICKET_DIR" ;;
-      *)  RESOLVED_TICKET_DIR="$REPO_ROOT/$TICKET_DIR" ;;
-    esac
-    # The ticket_dir written into autopilot-state.yaml may point at either
-    # backlog/active/<slug>/<ticket>/ (mid-ship, before move) or
-    # backlog/done/<slug>/<ticket>/ (post-move). Only done/ form qualifies
-    # as genuine ship completion; rewrite active/ → done/ before checking
-    # so a still-in-active path with a real done/ counterpart passes.
-    case "$RESOLVED_TICKET_DIR" in
-      */backlog/done/*) ;;
-      */backlog/active/*)
-        RESOLVED_TICKET_DIR="${RESOLVED_TICKET_DIR//\/backlog\/active\//\/backlog\/done\/}"
-        ;;
-    esac
-    if [ ! -d "$RESOLVED_TICKET_DIR" ]; then
-      echo "[POST-SHIP-STATE-AUTO-COMPACT] state-lie protection: ticket dir not in done/ ($RESOLVED_TICKET_DIR). Skipping inject — model wrote ship: completed without actually completing ship body." >&2
-      LIE_DETECTED=1
-      break
-    fi
-  done < <(parse_ticket_ship_dirs "$TMP_PAYLOAD_FILE" 2>/dev/null)
-
-  rm -f "$TMP_PAYLOAD_FILE" 2>/dev/null || true
-  [ "$LIE_DETECTED" = "1" ] && exit 0
+#
+# Source-of-truth (test_simple_workflow35 fix): iterate `$TOOL_FILE_PATH`
+# (the brief-side autopilot-state.yaml on disk after the PostToolUse
+# write completed), NOT the Edit-tool `$TOOL_PAYLOAD` fragment. The
+# fragment is a single ticket block lacking the top-level `tickets:`
+# key, so `parse_ticket_ship_dirs` returns 0 entries and Gate 5 silently
+# fails open. Reading the persisted state guarantees a well-formed YAML
+# document with the canonical `tickets:` root key. The just-written
+# change is already reflected on disk by the time PostToolUse fires.
+REPO_ROOT=""
+if [ -n "$TOOL_FILE_PATH" ]; then
+  REPO_ROOT="${TOOL_FILE_PATH%%/.simple-workflow/*}"
 fi
+[ -n "$REPO_ROOT" ] || REPO_ROOT="$PWD"
+
+LIE_DETECTED=0
+# Process substitution (`< <(...)`) keeps the loop in the parent shell so
+# the LIE_DETECTED assignment is visible after the loop.
+while IFS= read -r TICKET_DIR; do
+  [ -n "$TICKET_DIR" ] || continue
+  case "$TICKET_DIR" in
+    /*) RESOLVED_TICKET_DIR="$TICKET_DIR" ;;
+    *)  RESOLVED_TICKET_DIR="$REPO_ROOT/$TICKET_DIR" ;;
+  esac
+  # The ticket_dir written into autopilot-state.yaml may point at either
+  # backlog/active/<slug>/<ticket>/ (mid-ship, before move) or
+  # backlog/done/<slug>/<ticket>/ (post-move). Only done/ form qualifies
+  # as genuine ship completion; rewrite active/ → done/ before checking
+  # so a still-in-active path with a real done/ counterpart passes.
+  case "$RESOLVED_TICKET_DIR" in
+    */backlog/done/*) ;;
+    */backlog/active/*)
+      RESOLVED_TICKET_DIR="${RESOLVED_TICKET_DIR//\/backlog\/active\//\/backlog\/done\/}"
+      ;;
+  esac
+  if [ ! -d "$RESOLVED_TICKET_DIR" ]; then
+    echo "[POST-SHIP-STATE-AUTO-COMPACT] state-lie protection: ticket dir not in done/ ($RESOLVED_TICKET_DIR). Skipping inject — model wrote ship: completed without actually completing ship body." >&2
+    LIE_DETECTED=1
+    break
+  fi
+done < <(parse_ticket_ship_dirs "$TOOL_FILE_PATH" 2>/dev/null)
+
+[ "$LIE_DETECTED" = "1" ] && exit 0
 
 # Gate 5.5 (post-ship integrity self-heal — P3-5):
 #
@@ -209,9 +212,9 @@ case "$PSI_MODE_RAW" in
 esac
 
 if [ "$PSI_MODE" != "off" ]; then
-  # REPO_ROOT may have been set by Gate 5 above; if not (mktemp failure
-  # path in Gate 5), recompute it from $TOOL_FILE_PATH / $PWD so Gate 5.5
-  # remains usable.
+  # REPO_ROOT was set by Gate 5 above. Recompute defensively for the
+  # rare case where Gate 5's REPO_ROOT derivation could not run (e.g.,
+  # a future refactor reorders the gates).
   PSI_REPO_ROOT="${REPO_ROOT:-}"
   if [ -z "$PSI_REPO_ROOT" ]; then
     if [ -n "$TOOL_FILE_PATH" ]; then
@@ -219,48 +222,59 @@ if [ "$PSI_MODE" != "off" ]; then
     fi
     [ -n "$PSI_REPO_ROOT" ] || PSI_REPO_ROOT="$PWD"
   fi
-  PSI_TMP_PAYLOAD=$(mktemp 2>/dev/null) || PSI_TMP_PAYLOAD=""
-  if [ -n "$PSI_TMP_PAYLOAD" ]; then
-    printf '%s' "$TOOL_PAYLOAD" > "$PSI_TMP_PAYLOAD" 2>/dev/null || true
-    while IFS= read -r PSI_TICKET_DIR; do
-      [ -n "$PSI_TICKET_DIR" ] || continue
-      case "$PSI_TICKET_DIR" in
-        /*) PSI_RESOLVED="$PSI_TICKET_DIR" ;;
-        *)  PSI_RESOLVED="$PSI_REPO_ROOT/$PSI_TICKET_DIR" ;;
-      esac
-      # Same active/-to-done rewrite as Gate 5 — the autopilot writer
-      # may still record `backlog/active/...` mid-move; the canonical
-      # destination is always `backlog/done/...`.
-      case "$PSI_RESOLVED" in
-        */backlog/done/*) ;;
-        */backlog/active/*)
-          PSI_RESOLVED="${PSI_RESOLVED//\/backlog\/active\//\/backlog\/done\/}"
-          ;;
-      esac
-      # Strip any trailing slash so we can append /phase-state.yaml uniformly.
-      PSI_RESOLVED="${PSI_RESOLVED%/}"
-      PSI_PHASE_STATE="$PSI_RESOLVED/phase-state.yaml"
-      [ -f "$PSI_PHASE_STATE" ] || continue
-      PSI_OVERALL=$(parse_yaml_scalar "$PSI_PHASE_STATE" overall_status 2>/dev/null || true)
-      if [ "$PSI_OVERALL" = "in-progress" ]; then
-        echo "[POST-SHIP-INTEGRITY] self-healing $PSI_RESOLVED (overall_status was 'in-progress'; /ship Step 15a was skipped or interrupted)" >&2
-        if [ "$PSI_MODE" = "metric-only" ]; then
-          # SW_POST_SHIP_INTEGRITY=metric-only — log only, no write.
-          continue
-        fi
-        if command -v yq >/dev/null 2>&1; then
-          # yq -i is atomic; on failure the original file is preserved.
-          yq -i '
-            .overall_status = "done" |
-            .current_phase = "done" |
-            .last_completed_phase = "ship" |
-            .phases.ship.status = "completed"
-          ' "$PSI_PHASE_STATE" 2>/dev/null || \
-            echo "[POST-SHIP-INTEGRITY] yq self-heal failed for $PSI_PHASE_STATE (original preserved)" >&2
-        elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
-          PSI_PY_TMP=$(mktemp 2>/dev/null) || PSI_PY_TMP=""
-          if [ -n "$PSI_PY_TMP" ]; then
-            if python3 - "$PSI_PHASE_STATE" "$PSI_PY_TMP" <<'PY' 2>/dev/null
+  # Source-of-truth (test_simple_workflow35 fix): iterate
+  # `$TOOL_FILE_PATH` (the brief-side autopilot-state.yaml on disk
+  # after the PostToolUse write completed), NOT the Edit-tool
+  # `$TOOL_PAYLOAD` fragment. The fragment is a single ticket block
+  # lacking the top-level `tickets:` key, so `parse_ticket_ship_dirs`
+  # returns 0 entries and the self-heal loop silently never runs
+  # (root cause of the test_simple_workflow35 ticket-001 drift residue
+  # despite the hook firing 5 times). Reading the persisted state
+  # guarantees a well-formed YAML document with the canonical
+  # `tickets:` root key. The just-written change is already on disk
+  # by the time PostToolUse fires, so the iteration includes the
+  # newly-completed ticket plus every prior completed ticket — the
+  # loop is idempotent on clean phase-state.yaml files (PSI AC-7), so
+  # repeated sweeps cost only a parse + scalar read per clean entry.
+  while IFS= read -r PSI_TICKET_DIR; do
+    [ -n "$PSI_TICKET_DIR" ] || continue
+    case "$PSI_TICKET_DIR" in
+      /*) PSI_RESOLVED="$PSI_TICKET_DIR" ;;
+      *)  PSI_RESOLVED="$PSI_REPO_ROOT/$PSI_TICKET_DIR" ;;
+    esac
+    # Same active/-to-done rewrite as Gate 5 — the autopilot writer
+    # may still record `backlog/active/...` mid-move; the canonical
+    # destination is always `backlog/done/...`.
+    case "$PSI_RESOLVED" in
+      */backlog/done/*) ;;
+      */backlog/active/*)
+        PSI_RESOLVED="${PSI_RESOLVED//\/backlog\/active\//\/backlog\/done\/}"
+        ;;
+    esac
+    # Strip any trailing slash so we can append /phase-state.yaml uniformly.
+    PSI_RESOLVED="${PSI_RESOLVED%/}"
+    PSI_PHASE_STATE="$PSI_RESOLVED/phase-state.yaml"
+    [ -f "$PSI_PHASE_STATE" ] || continue
+    PSI_OVERALL=$(parse_yaml_scalar "$PSI_PHASE_STATE" overall_status 2>/dev/null || true)
+    if [ "$PSI_OVERALL" = "in-progress" ]; then
+      echo "[POST-SHIP-INTEGRITY] self-healing $PSI_RESOLVED (overall_status was 'in-progress'; /ship Step 15a was skipped or interrupted)" >&2
+      if [ "$PSI_MODE" = "metric-only" ]; then
+        # SW_POST_SHIP_INTEGRITY=metric-only — log only, no write.
+        continue
+      fi
+      if command -v yq >/dev/null 2>&1; then
+        # yq -i is atomic; on failure the original file is preserved.
+        yq -i '
+          .overall_status = "done" |
+          .current_phase = "done" |
+          .last_completed_phase = "ship" |
+          .phases.ship.status = "completed"
+        ' "$PSI_PHASE_STATE" 2>/dev/null || \
+          echo "[POST-SHIP-INTEGRITY] yq self-heal failed for $PSI_PHASE_STATE (original preserved)" >&2
+      elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+        PSI_PY_TMP=$(mktemp 2>/dev/null) || PSI_PY_TMP=""
+        if [ -n "$PSI_PY_TMP" ]; then
+          if python3 - "$PSI_PHASE_STATE" "$PSI_PY_TMP" <<'PY' 2>/dev/null
 import sys
 import yaml
 src, dst = sys.argv[1], sys.argv[2]
@@ -275,25 +289,23 @@ ship["status"] = "completed"
 with open(dst, "w", encoding="utf-8") as fh:
     yaml.safe_dump(doc, fh, sort_keys=False, default_flow_style=False)
 PY
-            then
-              mv "$PSI_PY_TMP" "$PSI_PHASE_STATE" 2>/dev/null || \
-                echo "[POST-SHIP-INTEGRITY] python3 self-heal mv failed for $PSI_PHASE_STATE (original preserved)" >&2
-            else
-              rm -f "$PSI_PY_TMP" 2>/dev/null || true
-              echo "[POST-SHIP-INTEGRITY] python3 self-heal failed for $PSI_PHASE_STATE (original preserved)" >&2
-            fi
+          then
+            mv "$PSI_PY_TMP" "$PSI_PHASE_STATE" 2>/dev/null || \
+              echo "[POST-SHIP-INTEGRITY] python3 self-heal mv failed for $PSI_PHASE_STATE (original preserved)" >&2
+          else
+            rm -f "$PSI_PY_TMP" 2>/dev/null || true
+            echo "[POST-SHIP-INTEGRITY] python3 self-heal failed for $PSI_PHASE_STATE (original preserved)" >&2
           fi
-        else
-          # awk-tier rewriting deliberately not attempted (ticket Risk R3):
-          # complex YAML mutation in pure awk risks corrupting the file.
-          echo "[POST-SHIP-INTEGRITY] yq and python3+PyYAML both unavailable; skipping self-heal for $PSI_PHASE_STATE (original preserved)" >&2
         fi
+      else
+        # awk-tier rewriting deliberately not attempted (ticket Risk R3):
+        # complex YAML mutation in pure awk risks corrupting the file.
+        echo "[POST-SHIP-INTEGRITY] yq and python3+PyYAML both unavailable; skipping self-heal for $PSI_PHASE_STATE (original preserved)" >&2
       fi
-    done < <(parse_ticket_ship_dirs "$PSI_TMP_PAYLOAD" 2>/dev/null)
-    rm -f "$PSI_TMP_PAYLOAD" 2>/dev/null || true
-  fi
+    fi
+  done < <(parse_ticket_ship_dirs "$TOOL_FILE_PATH" 2>/dev/null)
 fi
-unset PSI_MODE PSI_MODE_RAW PSI_TMP_PAYLOAD PSI_TICKET_DIR PSI_RESOLVED PSI_PHASE_STATE PSI_OVERALL PSI_PY_TMP PSI_REPO_ROOT
+unset PSI_MODE PSI_MODE_RAW PSI_TICKET_DIR PSI_RESOLVED PSI_PHASE_STATE PSI_OVERALL PSI_PY_TMP PSI_REPO_ROOT
 
 # State file path (H5 fix): derive deterministically from $TOOL_FILE_PATH
 # rather than the most-recently-modified heuristic
