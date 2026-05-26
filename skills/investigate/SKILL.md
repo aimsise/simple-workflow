@@ -32,6 +32,8 @@ Current repo state:
 
 Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
 
+Available MCP servers: !`( jq -r '.mcpServers // {} | keys[]' .mcp.json 2>/dev/null ; jq -r '.mcpServers // {} | keys[]' ~/.claude.json 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## Instructions
 
 1. Parse `$ARGUMENTS` for `(ticket-dir: <path>)` to determine the output destination so downstream `/scout` and `/plan2doc` find the artifact at its canonical path:

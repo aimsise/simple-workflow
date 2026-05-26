@@ -60,3 +60,21 @@ When the orchestrator's spawn prompt contains a `## Bound capabilities (per AC)`
 - When a binding lists a Skill that is unavailable to you at runtime, report the gap explicitly (e.g. via a CAVEAT or `### Limitations` entry) rather than substituting a similarly-named Skill.
 
 When the spawn prompt has no `## Bound capabilities` block or says `(none recorded — ticket pre-dates Gate 6)`, fall back to your usual ad-hoc capability-selection path; pre-Gate-6 tickets remain valid input.
+
+## Advisory Capabilities (v8.0.0+, Gate 6.5 exception to speculative-invocation ban)
+
+The orchestrator's spawn prompt MAY ALSO contain a `## Advisory capabilities (per ticket)` block, distinct from `## Bound capabilities (per AC)`. The Advisory block lists capabilities — utility skills (e.g. `ui-ux-pro-max` for UI/UX heuristics) or MCP servers (e.g. `mcp__context7__query-docs` for library API lookup) — that the planner classified as useful authoring / investigation references per Gate 6.5 in `skills/create-ticket/references/ac-quality-criteria.md` (the planner's Pre-emit Self-Audit step 7). Advisory capabilities do NOT drive PASS/FAIL on any AC, but you MAY invoke them during research when they materially advance the investigation. The speculative-invocation ban above is **lifted exclusively for entries on the Advisory list** — invoking an Advisory-listed Skill or `mcp__*` tool is contractually authorised; invoking an unlisted Skill or `mcp__*` tool remains forbidden.
+
+### Consultation discipline (v8.0.0+ — Recommending, not just Permitting)
+
+For every entry in the `## Advisory capabilities (per ticket)` block whose `Used by` column lists `researcher`, you MUST do exactly one of the following before returning to the orchestrator:
+
+1. **Invoke** the listed Skill or `mcp__*` tool at least once during research (the speculative-invocation ban is lifted for these entries — see the bullet list below for the precise scope of the exception), OR
+2. **Record a one-line skip rationale** under `### Limitations` in your investigation output file (or, if your return envelope has no `### Limitations` heading, append the rationale to `Next Steps`) explaining why the Advisory entry was NOT consulted. Acceptable rationales include: investigation topic does not intersect the entry's domain, the entry was unreachable at runtime, in-house Read / Grep / Glob already produced sufficient evidence and an external lookup would not change the findings, etc.
+
+Silent omission — neither invoking nor recording a rationale — is a contract violation. The Advisory discipline mirrors Gate 6.5's probe-completeness principle at the consumer side: a probe-visible capability bound for your use must result in either an invocation OR a documented skip, never invisible inaction. The reason: dogfood (TW33-TW35) showed that Advisory bindings without consultation discipline collapse into permitting-only, leaving probe-visible capabilities silently uninvoked even when the planner classified them as relevant.
+
+- The Advisory block has shape `Name | Type | Purpose | Used by` (no `Bound AC(s)` column). Entries whose `Used by` column lists `researcher` are the ones you may invoke; entries listing only `implementer` / `test-writer` are for those other productive subagents and are out of scope for you.
+- Treat Advisory entries as **reference / guidance** tools — for example, `mcp__context7__query-docs` for looking up a library's current API surface during investigation, or `ui-ux-pro-max` for understanding existing UI patterns before recommending a new one. Use them to inform `investigation.md`'s findings; do NOT use them to fabricate evidence the codebase does not actually contain.
+- When the spawn prompt says `## Advisory capabilities (per ticket): (none)`, the Advisory pathway is empty for this ticket; the speculative-invocation ban applies in full.
+- An Advisory entry that turns out to be unavailable at runtime (Skill not installed, MCP server unreachable) is a soft failure — report it under `### Limitations` in your output file and fall back to in-house Read / Grep / Glob reasoning; do NOT block on the missing reference.

@@ -7663,6 +7663,222 @@ assert_true \
 echo ""
 
 # =============================================================================
+# Category AQ: Gate 6.5 probe completeness + Advisory pathway (v8.0.0+)
+# Rationale: v8.0.0 ships MCP inheritance for productive subagents; this
+#   category drift-guards the Gate 6.5 + Advisory Capabilities + speculative-
+#   invocation-exception contract that closes the "probe-visible capability
+#   silently dropped" failure mode (dogfood-observed in TW33/TW34: 4 of 5
+#   TW34 tickets carried `mcp__context7__query-docs` as `(advisory; no AC
+#   binding)` but the orchestrator did not propagate Advisory to spawn prompts,
+#   so context7 was never invoked even though planner had classified it
+#   useful; ui-ux-pro-max was never classified at all in 12 tickets across
+#   both dogfood directories despite being probe-visible).
+# Invariants drift-guarded by this category:
+#     1. ac-quality-criteria.md ships `## Gate 6.5: Probe Completeness`
+#        section + the three-bucket vocabulary (Bound / Advisory / Skipped).
+#     2. agents/planner.md ships Pre-emit Self-Audit step 7 (Gate 6.5
+#        probe completeness cross-check) with the three bucket markers.
+#     3. agents/ticket-evaluator.md Gate Results template lists Probe
+#        Completeness (Gate 6.5) row.
+#     4. ticket-template.md ships `### Advisory Capabilities` block AND
+#        `#### Capability Skip Rationale` block.
+#     5. The three productive subagents that consume Advisory (implementer,
+#        researcher, test-writer) ship `## Advisory Capabilities` body
+#        section with the speculative-invocation exception wording.
+#     6. The four probe-emitting skills that previously lacked the MCP
+#        probe (impl, brief, plan2doc, investigate) now emit the
+#        `Available MCP servers:` probe in their `## Pre-computed Context`.
+#     7. The orchestrator skills that spawn productive subagents (impl,
+#        refactor) carry the `Advisory capabilities (per ticket)` handoff
+#        instruction so the Advisory block reaches the subagent verbatim.
+# =============================================================================
+echo "--- Cat AQ: Gate 6.5 probe completeness + Advisory pathway ---"
+
+ACQC_AQ="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+PLANNER_AQ="$REPO_DIR/agents/planner.md"
+TEV_AQ="$REPO_DIR/agents/ticket-evaluator.md"
+TT_AQ="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+
+# CT-AQ-1: ac-quality-criteria.md ships `## Gate 6.5: Probe Completeness`
+# section and the three bucket vocabulary tokens (Bound, Advisory, Skipped
+# with rationale).
+aq1_section=$(grep -cE '^## Gate 6\.5: Probe Completeness$' "$ACQC_AQ" || true)
+aq1_bound=$(grep -cF '**Bound**' "$ACQC_AQ" || true)
+aq1_advisory=$(grep -cF '**Advisory**' "$ACQC_AQ" || true)
+aq1_skipped=$(grep -cF '**Skipped with rationale**' "$ACQC_AQ" || true)
+aq1_result="false"
+if [ "$aq1_section" -ge 1 ] \
+   && [ "$aq1_bound" -ge 1 ] \
+   && [ "$aq1_advisory" -ge 1 ] \
+   && [ "$aq1_skipped" -ge 1 ]; then
+  aq1_result="true"
+fi
+assert_true \
+  "CT-AQ-1 (canonical Gate 6.5 section): ac-quality-criteria.md has '## Gate 6.5: Probe Completeness' (section=$aq1_section>=1) and the three buckets (Bound=$aq1_bound>=1, Advisory=$aq1_advisory>=1, Skipped=$aq1_skipped>=1)" \
+  "$aq1_result"
+
+# CT-AQ-2: planner.md ships Pre-emit Self-Audit step 7 (Gate 6.5 probe
+# completeness cross-check). Look for the literal step-7 marker AND the
+# three-bucket vocabulary in the planner's body.
+aq2_step7=$(grep -cF '7. **Gate 6.5 probe completeness cross-check**' "$PLANNER_AQ" || true)
+aq2_bound_bucket=$(grep -cE '\*\*Bound\*\*:' "$PLANNER_AQ" || true)
+aq2_advisory_bucket=$(grep -cE '\*\*Advisory\*\*:' "$PLANNER_AQ" || true)
+aq2_skipped_bucket=$(grep -cE '\*\*Skipped\*\*:' "$PLANNER_AQ" || true)
+aq2_result="false"
+if [ "$aq2_step7" -ge 1 ] \
+   && [ "$aq2_bound_bucket" -ge 1 ] \
+   && [ "$aq2_advisory_bucket" -ge 1 ] \
+   && [ "$aq2_skipped_bucket" -ge 1 ]; then
+  aq2_result="true"
+fi
+assert_true \
+  "CT-AQ-2 (planner Pre-emit step 7): agents/planner.md has step 7 marker (got=$aq2_step7>=1) and three-bucket vocabulary (Bound=$aq2_bound_bucket>=1, Advisory=$aq2_advisory_bucket>=1, Skipped=$aq2_skipped_bucket>=1)" \
+  "$aq2_result"
+
+# CT-AQ-3: ticket-evaluator.md Result template lists Probe Completeness
+# (Gate 6.5) row in the Gate Results checklist.
+aq3_hit=$(grep -cF 'Probe Completeness:' "$TEV_AQ" || true)
+aq3_gate65=$(grep -cF 'Gate 6.5' "$TEV_AQ" || true)
+aq3_result="false"
+if [ "$aq3_hit" -ge 1 ] && [ "$aq3_gate65" -ge 1 ]; then
+  aq3_result="true"
+fi
+assert_true \
+  "CT-AQ-3 (ticket-evaluator Gate 6.5 row): agents/ticket-evaluator.md has 'Probe Completeness:' (got=$aq3_hit>=1) and 'Gate 6.5' (got=$aq3_gate65>=1) in the Result template" \
+  "$aq3_result"
+
+# CT-AQ-4: ticket-template.md ships `### Advisory Capabilities` heading
+# AND `#### Capability Skip Rationale` heading.
+aq4_adv_heading=$(grep -cE '^### Advisory Capabilities$' "$TT_AQ" || true)
+aq4_skip_heading=$(grep -cE '^#### Capability Skip Rationale$' "$TT_AQ" || true)
+aq4_result="false"
+if [ "$aq4_adv_heading" -ge 1 ] && [ "$aq4_skip_heading" -ge 1 ]; then
+  aq4_result="true"
+fi
+assert_true \
+  "CT-AQ-4 (ticket template Advisory + Skip Rationale): ticket-template.md has '### Advisory Capabilities' (got=$aq4_adv_heading>=1) and '#### Capability Skip Rationale' (got=$aq4_skip_heading>=1)" \
+  "$aq4_result"
+
+# CT-AQ-5: the 3 Productive subagents that consume Advisory (implementer,
+# researcher, test-writer) ship the `## Advisory Capabilities` body section
+# AND the speculative-invocation-exception wording.
+# Note: planner is also a productive subagent but AUTHORS the Advisory
+# section rather than consuming it, so it is intentionally excluded.
+PRODUCTIVE_CONSUMERS=(
+  "implementer"
+  "researcher"
+  "test-writer"
+)
+aq5_hits=0
+for slug in "${PRODUCTIVE_CONSUMERS[@]}"; do
+  agent_md="$REPO_DIR/agents/$slug.md"
+  has_heading=$(grep -cE '^## Advisory Capabilities' "$agent_md" || true)
+  has_exception=$(grep -cF 'speculative-invocation ban' "$agent_md" || true)
+  has_block_marker=$(grep -cF 'Advisory capabilities (per ticket)' "$agent_md" || true)
+  if [ "$has_heading" -ge 1 ] \
+     && [ "$has_exception" -ge 1 ] \
+     && [ "$has_block_marker" -ge 1 ]; then
+    aq5_hits=$((aq5_hits + 1))
+  fi
+done
+aq5_result="false"
+if [ "$aq5_hits" -eq 3 ]; then
+  aq5_result="true"
+fi
+assert_true \
+  "CT-AQ-5 (Productive consumer Advisory section): agents/{implementer,researcher,test-writer}.md ship '## Advisory Capabilities' heading + 'speculative-invocation ban' exception + '## Advisory capabilities (per ticket)' marker ($aq5_hits / 3 files pass)" \
+  "$aq5_result"
+
+# CT-AQ-6: the four probe-emitting skills that previously lacked the MCP
+# probe (impl, brief, plan2doc, investigate) now emit the
+# `Available MCP servers:` probe in their Pre-computed Context block.
+MCP_PROBE_SKILLS=(
+  "impl"
+  "brief"
+  "plan2doc"
+  "investigate"
+)
+aq6_hits=0
+for slug in "${MCP_PROBE_SKILLS[@]}"; do
+  skill_md="$REPO_DIR/skills/$slug/SKILL.md"
+  if grep -qF 'Available MCP servers:' "$skill_md" 2>/dev/null; then
+    aq6_hits=$((aq6_hits + 1))
+  fi
+done
+aq6_result="false"
+if [ "$aq6_hits" -eq 4 ]; then
+  aq6_result="true"
+fi
+assert_true \
+  "CT-AQ-6 (MCP probe coverage): skills/{impl,brief,plan2doc,investigate}/SKILL.md emit 'Available MCP servers:' probe in Pre-computed Context ($aq6_hits / 4 files pass)" \
+  "$aq6_result"
+
+# CT-AQ-7: orchestrator skills that spawn productive subagents (impl,
+# refactor) carry an `Advisory capabilities (per ticket)` handoff
+# instruction so the planner-authored Advisory table reaches the
+# downstream subagent verbatim.
+ADVISORY_ORCHESTRATORS=(
+  "impl"
+  "refactor"
+)
+aq7_hits=0
+for slug in "${ADVISORY_ORCHESTRATORS[@]}"; do
+  skill_md="$REPO_DIR/skills/$slug/SKILL.md"
+  if grep -qF 'Advisory capabilities (per ticket)' "$skill_md" 2>/dev/null; then
+    aq7_hits=$((aq7_hits + 1))
+  fi
+done
+aq7_result="false"
+if [ "$aq7_hits" -eq 2 ]; then
+  aq7_result="true"
+fi
+assert_true \
+  "CT-AQ-7 (Advisory handoff in orchestrators): skills/{impl,refactor}/SKILL.md carry 'Advisory capabilities (per ticket)' handoff instruction ($aq7_hits / 2 files pass)" \
+  "$aq7_result"
+
+# CT-AQ-8: ac-quality-criteria.md Gate 6.5 section AND planner.md step 7
+# both reference the `(none)` exception wording so the vacuous-pass path
+# is documented in both authoring sites.
+aq8_acqc_none=$(grep -cF '`(none)` exception' "$ACQC_AQ" || true)
+aq8_planner_none=$(grep -cF '`(none)` exception' "$PLANNER_AQ" || true)
+aq8_result="false"
+if [ "$aq8_acqc_none" -ge 1 ] && [ "$aq8_planner_none" -ge 1 ]; then
+  aq8_result="true"
+fi
+assert_true \
+  "CT-AQ-8 (probe '(none)' exception documented): ac-quality-criteria.md (got=$aq8_acqc_none>=1) AND agents/planner.md (got=$aq8_planner_none>=1) both reference the '(none) exception' for empty probes" \
+  "$aq8_result"
+
+# CT-AQ-9 (Advisory consultation discipline — Recommending, not just Permitting):
+# the 3 productive consumer agents AND ac-quality-criteria.md must carry the
+# Recommending-semantics wording so silent omission of Advisory entries
+# (invoke=0 AND no skip rationale) is a documented contract violation. This
+# closes the TW35 dogfood-observed gap where ui-ux-pro-max was Advisory-bound
+# in 4 tickets but invoked 0 times with no recorded skip rationale.
+aq9_consumer_hits=0
+for slug in implementer researcher test-writer; do
+  agent_md="$REPO_DIR/agents/$slug.md"
+  has_discipline_heading=$(grep -cF '### Consultation discipline' "$agent_md" || true)
+  has_silent_omission=$(grep -cF 'Silent omission' "$agent_md" || true)
+  has_skip_rationale=$(grep -cF 'skip rationale' "$agent_md" || true)
+  if [ "$has_discipline_heading" -ge 1 ] \
+     && [ "$has_silent_omission" -ge 1 ] \
+     && [ "$has_skip_rationale" -ge 1 ]; then
+    aq9_consumer_hits=$((aq9_consumer_hits + 1))
+  fi
+done
+aq9_acqc_hit=$(grep -cF 'Consumer-side consultation discipline' "$ACQC_AQ" || true)
+aq9_result="false"
+if [ "$aq9_consumer_hits" -eq 3 ] && [ "$aq9_acqc_hit" -ge 1 ]; then
+  aq9_result="true"
+fi
+assert_true \
+  "CT-AQ-9 (Advisory Recommending semantics): agents/{implementer,researcher,test-writer}.md carry '### Consultation discipline' + 'Silent omission' + 'skip rationale' ($aq9_consumer_hits / 3 files pass) AND ac-quality-criteria.md carries 'Consumer-side consultation discipline' (got=$aq9_acqc_hit>=1)" \
+  "$aq9_result"
+
+echo ""
+
+# =============================================================================
 # Category AO: args-aware shrinkage spec wiring (P0-2A)
 # Diff: pins the four mechanically-detectable invariants from P0-2A's AC-1
 #        .. AC-5. AC-6 is dogfood-observable only and asserted indirectly via

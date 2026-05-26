@@ -166,6 +166,117 @@ in `disallowedTools` does NOT work.
   (CT-AN-8 — pipes a representative command per category into the hook
   and asserts exit 2, guarding against the "tokens in comments but
   regex broken" silent-regression class).
+
+- **Gate 6.5 (Probe Completeness) + Advisory Capabilities pathway**
+  closes the v8.0.0 probe-visible-but-silently-dropped failure mode.
+  Dogfood (TW33 / TW34, 12 tickets) showed `ui-ux-pro-max` was probe-
+  visible in both directories but classified in zero tickets, and
+  `mcp__context7__query-docs` was classified as `(advisory; no AC
+  binding)` in 4 of 5 TW34 tickets but never reached the implementer
+  because the orchestrator did not propagate that advisory annotation
+  into spawn prompts. v8.0.0 ships the structural fix:
+  - **`skills/create-ticket/references/ac-quality-criteria.md`**
+    gains `## Gate 6.5: Probe Completeness` between Gate 6 and the
+    Evaluator-MUST-NOT list. The new gate defines a three-bucket
+    classification (Bound / Advisory / Skipped with rationale) and
+    REQUIRES the planner to classify every probe-visible entry into
+    exactly one bucket. Silent omission is FAIL. `(none)` probes are
+    vacuously PASS. Pipeline orchestrator skill names (`/scout`,
+    `/impl`, etc.) qualify for an automatic Skipped path with a fixed
+    rationale. The Evaluator MUST NOT list gains two new entries
+    (bucket-choice debatability is not FAIL; `(none)` probe is PASS).
+    The Planner MUST list gains a corresponding entry requiring
+    classification of every probe entry on every emit / re-emit.
+  - **`agents/planner.md`** gains Pre-emit Self-Audit step 7 (Gate 6.5
+    probe completeness cross-check) with the three-bucket vocabulary,
+    the self-skip exception for pipeline orchestrators, the `(none)`
+    exception, and the Advisory authoring discipline (`Used by`
+    column MUST list productive subagents only; verdict / Group C
+    agents in an Advisory row's `Used by` is a Gate 6.5 FAIL). The
+    Capabilities Authoring (Authoring Role) body section is updated
+    to enumerate the three sections the planner authors
+    (`### Capabilities`, `### Advisory Capabilities`,
+    `#### Capability Skip Rationale`) and confirm their union covers
+    every probe entry.
+  - **`agents/ticket-evaluator.md`** Result template gains a Probe
+    Completeness (Gate 6.5) Gate Result row; `n/a` is permitted when
+    both probes are `(none)` or the ticket pre-dates Gate 6.5.
+  - **`skills/create-ticket/references/ticket-template.md`** ships the
+    `### Advisory Capabilities` table block (with `Name | Type |
+    Purpose | Used by` columns; no `Bound AC(s)` column) and the
+    `#### Capability Skip Rationale` bullet block, both emitted by
+    the planner between `### Capabilities` and `### Claude Code
+    Workflow`.
+  - **`agents/implementer.md`, `agents/researcher.md`,
+    `agents/test-writer.md`** each gain a `## Advisory Capabilities`
+    body section that lifts the speculative-invocation ban
+    exclusively for entries the orchestrator listed under
+    `## Advisory capabilities (per ticket)` in the spawn prompt. The
+    ban remains in force for any Skill or `mcp__*` tool not listed in
+    Bound or Advisory. The four productive subagents (`planner`,
+    `implementer`, `researcher`, `test-writer`) split into one author
+    (planner) and three consumers (implementer / researcher /
+    test-writer); only consumers gain the section because the
+    planner authors the Advisory table rather than reading it.
+  - **MCP probe coverage extended** to four previously probe-light
+    skills (`skills/{impl,brief,plan2doc,investigate}/SKILL.md`).
+    Each `## Pre-computed Context` block now emits both
+    `Available user skills:` and `Available MCP servers:` so
+    downstream planner / researcher invocations see the full probe
+    set and Gate 6.5 cross-check has authoritative input.
+  - **Advisory propagation pathway** in `skills/impl/SKILL.md` Step 13
+    (implementer spawn) and `skills/refactor/SKILL.md` Phase 1 Step 1
+    (planner spawn). The orchestrator now extracts the
+    `### Advisory Capabilities` table from `{ticket-dir}/ticket.md`
+    in addition to `### Capabilities`, and inlines the full table
+    into the productive-subagent spawn prompt under
+    `## Advisory capabilities (per ticket)`. The block is NOT inlined
+    into `ac-evaluator` (Step 15) spawn prompts — Advisory is for
+    authoring, not verification.
+- **Cat AQ drift-guard tests (CT-AQ-1..CT-AQ-9)** in
+  `tests/test-skill-contracts.sh`. Pin Gate 6.5 canonical section
+  presence (CT-AQ-1), planner step 7 wiring (CT-AQ-2), ticket-
+  evaluator Gate Results row (CT-AQ-3), ticket template Advisory +
+  Skip Rationale blocks (CT-AQ-4), productive-consumer Advisory body
+  section across `{implementer,researcher,test-writer}.md` (CT-AQ-5),
+  MCP probe coverage across the four newly-probe-emitting skills
+  (CT-AQ-6), Advisory handoff in `impl` / `refactor` orchestrators
+  (CT-AQ-7), the `(none)` probe vacuous-pass documentation in
+  both authoring sites (CT-AQ-8), and the Recommending-semantics
+  consultation discipline that elevates Advisory from
+  permitting-only to invoke-or-record-rationale (CT-AQ-9).
+
+- **Advisory Capabilities Recommending semantics (v8.0.0+
+  consumer-side consultation discipline)**: TW35 dogfood
+  (`/Users/kytk/workspace/repos/test_simple_workflow35`) confirmed
+  the planner-side Gate 6.5 + orchestrator-side Advisory propagation
+  pathway both worked end-to-end (`ui-ux-pro-max` was Advisory-bound
+  in 4/5 tickets and inlined into every implementer spawn prompt),
+  but the consumer side silently skipped the entry — `ui-ux-pro-max`
+  was invoked 0 times across the entire session with no recorded
+  skip rationale anywhere in the audit trail. The collapse of
+  permitting-only Advisory into "silent inaction" hides the
+  implementer's design decision from downstream review. This release
+  promotes Advisory from permitting to Recommending:
+  - **`agents/{implementer,researcher,test-writer}.md`** each gain a
+    `### Consultation discipline (v8.0.0+ — Recommending, not just
+    Permitting)` subsection under their `## Advisory Capabilities`
+    body section. For every Advisory entry whose `Used by` column
+    lists the consumer, the consumer MUST either (a) invoke the
+    listed Skill / `mcp__*` tool at least once during work, OR
+    (b) record a one-line skip rationale under `### Limitations`
+    (or `Next Steps` when no `### Limitations` heading exists in the
+    consumer's return envelope) explaining why the entry was not
+    consulted. Silent omission — neither invoking nor recording a
+    rationale — is a contract violation.
+  - **`skills/create-ticket/references/ac-quality-criteria.md`**
+    Gate 6.5 section gains a `Consumer-side consultation discipline`
+    paragraph documenting the Recommending semantics and the TW35
+    dogfood evidence that motivated it.
+  - The discipline mirrors Gate 6.5's probe-completeness principle
+    at the consumer side: a probe-visible capability bound for a
+    consumer must result in either an invocation OR a documented
+    skip, never invisible inaction.
 - **Category J in `tests/test-pre-bash-safety.sh`** — full behavioral
   block / allow coverage of the v8.0.0 denylist, including the bypass
   cases listed in the previous bullet. Total grows from 126 to 195
@@ -484,12 +595,13 @@ in `disallowedTools` does NOT work.
 
 ### Verification
 
-- `bash tests/test-skill-contracts.sh` exit 0 with Total >= 588 (baseline
-  580 + 8 new for Cat AN CT-AN-1..CT-AN-8); current run reports 641 / 641
-  PASS. The Total above the 588 floor reflects Cat D's dynamic per-skill
-  agent-name assertions growing as the v8.0.0 doctrine update referenced
-  more agent names in the spawner SKILL.md bodies (Cat AL v7.0.4 and
-  Cat AM v7.1.0 invariants remain intact).
+- `bash tests/test-skill-contracts.sh` exit 0 with Total >= 597 (baseline
+  580 + 8 new for Cat AN CT-AN-1..CT-AN-8 + 9 new for Cat AQ
+  CT-AQ-1..CT-AQ-9); current run reports 718 / 718 PASS. The Total above
+  the 597 floor reflects Cat D's dynamic per-skill agent-name
+  assertions growing as the v8.0.0 doctrine update referenced more
+  agent names in the spawner SKILL.md bodies (Cat AL v7.0.4, Cat AM
+  v7.1.0, and Cat AQ Gate 6.5 invariants all intact).
 - `bash tests/test-path-consistency.sh` exit 0 with the redesigned Cat 6
   (Group A omit + Group C retention) and Cat 11 (positive enumeration —
   zero `Bash(*)` declarations and exactly the 6 Group C agents carrying

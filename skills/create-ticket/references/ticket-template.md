@@ -37,9 +37,19 @@ Generate the ticket in the following format:
 |------|------|---------|---------|-------------|
 | ... | skill \| agent \| MCP server \| test runner | ... | ... | AC-... |
 
+### Advisory Capabilities
+
+| Name | Type | Purpose | Used by |
+|------|------|---------|---------|
+| ... | skill \| MCP server | implementation reference / library docs / design guidance | implementer \| researcher \| test-writer |
+
 #### Capability Gaps
 
 - (Optional) List runtime/visual ACs that lack a binding and the reason (e.g. no suitable skill available).
+
+#### Capability Skip Rationale
+
+- **<name>**: <one-line reason this probe-visible capability is neither Bound nor Advisory for this ticket>
 
 ### Claude Code Workflow
 
