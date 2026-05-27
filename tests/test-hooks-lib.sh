@@ -314,6 +314,132 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Section 2c: find_done_autopilot_state_file (v8.0.1, AC-5)
+# ---------------------------------------------------------------------------
+# Counterpart to find_any_autopilot_state_file that scans briefs/done/ and
+# applies an optional mtime TTL bound. Six cases mirror the AC-5(a)..(f)
+# enumeration in the ticket.
+
+echo "--- find_done_autopilot_state_file (v8.0.1) ---"
+
+# 2c.0: function is exported and callable.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash -c "source '$PSF_PATH' && declare -F find_done_autopilot_state_file" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} find_done_autopilot_state_file is defined and sourceable"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} find_done_autopilot_state_file missing or not sourceable"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+DONE_TMP=$(mktemp -d)
+mkdir -p "$DONE_TMP/.simple-workflow/backlog/briefs"
+
+# 2c.a: no briefs/done/ directory at all -> exit 1, empty stdout.
+set +e
+out="$( cd "$DONE_TMP" && find_done_autopilot_state_file 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_nonzero "(a) no briefs/done/ directory -> exit non-zero" "$exit_code"
+assert_eq "(a) no briefs/done/ -> empty stdout" "" "$out"
+
+# 2c.b: empty briefs/done/ -> exit 1.
+mkdir -p "$DONE_TMP/.simple-workflow/backlog/briefs/done"
+set +e
+out="$( cd "$DONE_TMP" && find_done_autopilot_state_file 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_nonzero "(b) empty briefs/done/ -> exit non-zero" "$exit_code"
+assert_eq "(b) empty briefs/done/ -> empty stdout" "" "$out"
+
+# 2c.c: single fresh briefs/done/<slug>/autopilot-state.yaml -> prints its
+# absolute path, exit 0. Mtime is "now" so any TTL >= 1 should accept it.
+mkdir -p "$DONE_TMP/.simple-workflow/backlog/briefs/done/colorforge"
+cat > "$DONE_TMP/.simple-workflow/backlog/briefs/done/colorforge/autopilot-state.yaml" <<'YAML'
+version: 1
+slug: colorforge
+tickets:
+  - logical_id: t1
+    status: completed
+    steps:
+      ship: completed
+YAML
+expected_path="$( cd "$DONE_TMP/.simple-workflow/backlog/briefs/done/colorforge" && pwd -P )/autopilot-state.yaml"
+set +e
+actual_path="$( cd "$DONE_TMP" && find_done_autopilot_state_file 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_zero "(c) single fresh done state -> exit 0" "$exit_code"
+assert_eq "(c) single fresh done state -> prints absolute path" "$expected_path" "$actual_path"
+
+# 2c.d: two done state files, different mtimes -> the newer one wins.
+mkdir -p "$DONE_TMP/.simple-workflow/backlog/briefs/done/older-brief"
+cat > "$DONE_TMP/.simple-workflow/backlog/briefs/done/older-brief/autopilot-state.yaml" <<'YAML'
+version: 1
+slug: older-brief
+tickets:
+  - logical_id: t1
+    status: completed
+YAML
+# Touch the older one with an older mtime explicitly so the comparison is
+# deterministic on filesystems with low timestamp resolution.
+touch -t 202401010000 "$DONE_TMP/.simple-workflow/backlog/briefs/done/older-brief/autopilot-state.yaml"
+# Re-touch colorforge to "now" to ensure it wins.
+touch "$DONE_TMP/.simple-workflow/backlog/briefs/done/colorforge/autopilot-state.yaml"
+set +e
+actual_path="$( cd "$DONE_TMP" && find_done_autopilot_state_file 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_zero "(d) two done states -> exit 0" "$exit_code"
+assert_eq "(d) two done states -> newest (colorforge) wins" "$expected_path" "$actual_path"
+
+# 2c.e: TTL bound rejects a stale match. Aging the file by touch -t to
+# year-2020, then passing TTL=60 seconds.
+touch -t 202001010000 "$DONE_TMP/.simple-workflow/backlog/briefs/done/colorforge/autopilot-state.yaml"
+touch -t 202001010000 "$DONE_TMP/.simple-workflow/backlog/briefs/done/older-brief/autopilot-state.yaml"
+set +e
+out="$( cd "$DONE_TMP" && find_done_autopilot_state_file 60 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_nonzero "(e) all matches older than TTL -> exit non-zero" "$exit_code"
+assert_eq "(e) stale match -> empty stdout" "" "$out"
+
+# 2c.e-bis: TTL=0 disables the bound, the same stale match becomes acceptable.
+set +e
+actual_path="$( cd "$DONE_TMP" && find_done_autopilot_state_file 0 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_zero "(e-bis) TTL=0 disables bound -> exit 0 on stale match" "$exit_code"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$actual_path" ] && [ -f "$actual_path" ]; then
+  echo -e "  ${GREEN}PASS${NC} (e-bis) TTL=0 returns a valid existing path"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (e-bis) TTL=0 returned '$actual_path' which is not a regular file"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# 2c.f: non-numeric TTL coerces to 0 (unbounded), so the stale match wins
+# rather than being rejected. This pairs the helper's defensive coercion
+# with the gate-side caller policy (which prints a warning AND substitutes
+# the default 86400 — the helper itself collapses non-numeric to 0).
+set +e
+actual_path="$( cd "$DONE_TMP" && find_done_autopilot_state_file "garbage" 2>/dev/null )"
+exit_code=$?
+set -e
+assert_exit_zero "(f) non-numeric TTL coerces to 0 -> exit 0 on stale match" "$exit_code"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -n "$actual_path" ] && [ -f "$actual_path" ]; then
+  echo -e "  ${GREEN}PASS${NC} (f) non-numeric TTL returns a valid existing path"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (f) non-numeric TTL returned '$actual_path' which is not a regular file"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+rm -rf "$DONE_TMP"
+
+# ---------------------------------------------------------------------------
 # --- _psf_repo_root strict anchor (T-01) ---
 #
 # Field evidence (`test_simple_workflow29`, session

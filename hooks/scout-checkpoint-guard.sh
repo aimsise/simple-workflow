@@ -36,12 +36,27 @@
 #   (d) optional: when phase-state.yaml exists AND
 #       `phases.scout.status == completed`, silent-exit. Otherwise
 #       (file missing OR status != completed), proceed with (a)(b)(c).
+#   (e) optional (v8.0.1, Step 2a — autopilot-completion gate): when NO
+#       active autopilot exists (briefs/active/ + product_backlog/ carry
+#       no autopilot-state.yaml) AND a briefs/done/ autopilot-state.yaml
+#       is fresh (mtime within SW_AUTOPILOT_DONE_GATE_TTL_SEC seconds,
+#       default 86400) AND every tickets[].status is "completed",
+#       silent-exit. Required because condition (d) cannot see the moved
+#       phase-state.yaml after /ship migrates the brief to briefs/done/.
 #
 # Kill switch (default `block`):
 #   SW_SCOUT_CHECKPOINT_MODE=block        — return decision:"block" up to 3x
 #   SW_SCOUT_CHECKPOINT_MODE=metric-only  — record metric only, never block
 #   SW_SCOUT_CHECKPOINT_MODE=off          — record `phasegate_disabled` and exit;
 #                                            CI / debug only — never production.
+#   SW_AUTOPILOT_DONE_GATE_TTL_SEC=<sec>  — TTL (seconds) for Step 2a's done
+#                                           state freshness window. Default
+#                                           86400 (24 h). Set 0 to disable
+#                                           the TTL bound (gate fires on any
+#                                           all-completed done state). Any
+#                                           non-numeric value falls back to
+#                                           86400 with a one-line stderr
+#                                           warning.
 #
 # Loop guard: counter at /tmp/.scout-checkpoint-${SESSION_ID}; release at 3.
 # Release stdout pattern: `[SCOUT-CHECKPOINT-RELEASE] ... Resume with: /scout
@@ -216,6 +231,73 @@ case "$MODE" in
     MODE=block
     ;;
 esac
+
+# --- Step 2a: autopilot-completion gate (v8.0.1) ---------------------------
+# After /autopilot finishes a brief (every tickets[].status == "completed",
+# brief moved to briefs/done/), the transcript can still carry the
+# /scout Skill invocation and /plan2doc ssot-line emitted earlier in the
+# pipeline. Without this gate, the existing 3-AND (Steps 5-7) would
+# false-block on the autopilot-completed Stop tick because find_phase_state_file
+# only scans active/ — the moved phase-state.yaml is invisible to Step 3.
+#
+# Silent-exit when ALL of:
+#   - is_autopilot_context() is false (no active autopilot under
+#     briefs/active/ or product_backlog/)
+#   - find_done_autopilot_state_file returns an autopilot-state.yaml whose
+#     mtime is within SW_AUTOPILOT_DONE_GATE_TTL_SEC seconds (default 86400 s
+#     = 24 h)
+#   - every tickets[].status in that file equals "completed"
+#
+# Env knob:
+#   SW_AUTOPILOT_DONE_GATE_TTL_SEC=<seconds>  default 86400. Set to 0 to
+#     disable the TTL check (gate fires on any all-completed done state).
+#     Non-numeric values fall back to 86400 with a one-line stderr warning.
+#
+# The kill switch (`SW_SCOUT_CHECKPOINT_MODE=off`) in Step 2 above already
+# bypasses this entire block; no further escape hatch is wired here.
+if ! is_autopilot_context; then
+  DONE_TTL="${SW_AUTOPILOT_DONE_GATE_TTL_SEC:-86400}"
+  case "$DONE_TTL" in
+    ''|*[!0-9]*)
+      echo "[SCOUT-AUTOPILOT-DONE-GATE] non-numeric SW_AUTOPILOT_DONE_GATE_TTL_SEC='$DONE_TTL'; using default 86400" >&2
+      DONE_TTL=86400
+      ;;
+  esac
+  DONE_STATE_FILE=$(find_done_autopilot_state_file "$DONE_TTL" 2>/dev/null || true)
+  if [ -n "${DONE_STATE_FILE:-}" ] && [ -f "$DONE_STATE_FILE" ]; then
+    # Collect every tickets[].status. Fail-closed on empty list OR any
+    # non-"completed" entry — both shapes signal "autopilot not finished"
+    # and the gate falls through to the existing logic.
+    DONE_STATUSES=$(parse_ticket_statuses "$DONE_STATE_FILE" 2>/dev/null || true)
+    ALL_COMPLETED=0
+    if [ -n "$DONE_STATUSES" ]; then
+      ALL_COMPLETED=1
+      while IFS= read -r _status; do
+        [ -n "$_status" ] || continue
+        if [ "$_status" != "completed" ]; then
+          ALL_COMPLETED=0
+          break
+        fi
+      done <<< "$DONE_STATUSES"
+      unset _status
+    fi
+    if [ "$ALL_COMPLETED" = "1" ]; then
+      DONE_MTIME=""
+      if _m=$(stat -f %m "$DONE_STATE_FILE" 2>/dev/null) && [ -n "$_m" ]; then
+        DONE_MTIME="$_m"
+      elif _m=$(stat -c %Y "$DONE_STATE_FILE" 2>/dev/null) && [ -n "$_m" ]; then
+        DONE_MTIME="$_m"
+      fi
+      unset _m
+      DONE_AGE="unknown"
+      if [ -n "$DONE_MTIME" ]; then
+        DONE_AGE=$(( $(date +%s) - DONE_MTIME ))
+      fi
+      echo "[SCOUT-AUTOPILOT-DONE-GATE] silent exit (state=$DONE_STATE_FILE, age=${DONE_AGE}s)" >&2
+      exit 0
+    fi
+  fi
+fi
 
 # --- Step 3: if phase-state.yaml exists AND scout completed, silent exit ---
 # This is the only branch that consults phase-state.yaml. The hook MUST

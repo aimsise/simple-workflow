@@ -421,6 +421,90 @@ find_any_autopilot_state_file() {
 }
 
 # ---------------------------------------------------------------------------
+# Public function: find_done_autopilot_state_file
+# Usage: find_done_autopilot_state_file [ttl_seconds] [start_dir]
+#
+# Counterpart to `find_any_autopilot_state_file` that scans
+# `.simple-workflow/backlog/briefs/done/` instead of briefs/active +
+# product_backlog. Used by `hooks/scout-checkpoint-guard.sh` Step 2a
+# (autopilot-completion gate) to detect the "autopilot just finished"
+# state independently of phase-state.yaml location.
+#
+# Returns the absolute path of the most-recently-modified
+# `autopilot-state.yaml` under briefs/done/. When the first positional
+# argument is a positive integer, the helper additionally requires the
+# match's mtime to be strictly newer than (now - ttl_seconds); matches
+# at exactly the TTL boundary fall through to a return-1 (defensive
+# strict-less-than). A zero or empty ttl_seconds disables the TTL
+# check; the helper then returns the newest match unconditionally
+# (useful for the SW_AUTOPILOT_DONE_GATE_TTL_SEC=0 kill switch).
+#
+# Returns 1 (no stdout) when briefs/done/ is absent, empty, or the
+# newest match is older than the TTL. Symlink resolution mirrors the
+# pattern in find_state_file / find_any_autopilot_state_file: the
+# emitted path is the canonical absolute path resolved via
+# `cd ... && pwd -P`.
+# ---------------------------------------------------------------------------
+find_done_autopilot_state_file() {
+  local ttl_seconds="${1:-0}"
+  local start_dir="${2:-$PWD}"
+
+  # Defensive coercion: only positive integers are honored. A non-numeric
+  # value collapses to 0 (disabled TTL check) so a typo in the caller's
+  # env-var passthrough cannot accidentally silent-exit the gate by
+  # treating an arbitrary string as a giant TTL.
+  case "$ttl_seconds" in
+    ''|*[!0-9]*) ttl_seconds=0 ;;
+  esac
+
+  local root
+  root="$(_psf_repo_root "$start_dir")"
+  [ -d "$root/.simple-workflow" ] || return 1
+
+  local done_dir="$root/.simple-workflow/backlog/briefs/done"
+  [ -d "$done_dir" ] || return 1
+
+  local match=""
+  while IFS= read -r _f; do
+    [ -f "$_f" ] || continue
+    if [ -z "$match" ] || [ "$_f" -nt "$match" ]; then
+      match="$_f"
+    fi
+  done < <(find "$done_dir" -type f -name 'autopilot-state.yaml' 2>/dev/null)
+  unset _f
+
+  [ -n "$match" ] || return 1
+
+  # TTL check: when ttl_seconds > 0, the file mtime must satisfy
+  # (now - mtime) < ttl_seconds. POSIX `stat -c %Y` is GNU; on BSD/macOS
+  # it is `stat -f %m`. Use the portable awk-on-find combination to
+  # avoid OS-specific stat invocations.
+  if [ "$ttl_seconds" -gt 0 ] 2>/dev/null; then
+    local now mtime age
+    now="$(date +%s)"
+    # find with -printf is GNU-only; use a portable two-step instead.
+    if mtime="$(stat -f %m "$match" 2>/dev/null)" && [ -n "$mtime" ]; then
+      :
+    elif mtime="$(stat -c %Y "$match" 2>/dev/null)" && [ -n "$mtime" ]; then
+      :
+    else
+      # stat unavailable in both forms — fail closed (do not silently
+      # accept the match; the gate should fall through to existing
+      # logic rather than silent-exit on unknown freshness).
+      return 1
+    fi
+    age=$((now - mtime))
+    [ "$age" -lt "$ttl_seconds" ] || return 1
+  fi
+
+  local d b
+  d="$(cd "$(dirname "$match")" && pwd -P)"
+  b="$(basename "$match")"
+  printf '%s/%s\n' "$d" "$b"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Public function: parse_ticket_ship_dirs
 # Usage: parse_ticket_ship_dirs <file_path>
 #
@@ -813,4 +897,4 @@ PY
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file find_done_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance 2>/dev/null || true
