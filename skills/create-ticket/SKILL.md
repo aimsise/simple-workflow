@@ -109,6 +109,14 @@ Prose: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md). E
 
 Modes: findings — satisfied by findings doc. Brief — reuse `{ticket-dir}/investigation.md` only when freshness-valid (`phase-state.yaml` provenance, mtime ≤ 24 h, or matching `investigation_sha256:`; see [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md)). Bare — always invoked. Fresh runs write `.simple-workflow/.tmp/create-ticket-{parent-slug}/investigation.md`.
 
+### Phase 1.5: Advisory Consultation Pre-Check (gating, v8.0.0+ Phase 6 enforcement; mirrors `/impl` Step 14b)
+
+After Phase 1 completes with a fresh researcher spawn and before Phase 2 (Socratic Refinement), the researcher return value MUST contain a `**Advisory consultation**:` field per the format in `agents/researcher.md` `## Advisory Capabilities` → `### Consultation reporting format`. Match by regex `^\*\*Advisory consultation\*\*:` on the return value (case-sensitive, line-anchored). Three outcomes:
+
+- **Field present** → emit `[ADVISORY-CONSULT] create-ticket researcher present` to stderr and proceed to Phase 2.
+- **Field absent** (fresh-spawn path) → contract violation. Emit `[PIPELINE] create-ticket: ADVISORY-MISSING (agent=researcher)` to stderr; `Fail the task` (same severity as a missing researcher invocation per Phase 1's binding rules — silent omission of the Phase 6 audit trail is treated like missing the researcher entirely); do NOT silently re-spawn. Re-rolling the same researcher without surfacing the contract violation would mask the regression.
+- **Skip (cached investigation reuse path)** → when Phase 1 took the brief-mode freshness-validated reuse path (existing `{ticket-dir}/investigation.md` was reused instead of a fresh researcher spawn), there is no return envelope to inspect. Emit `[ADVISORY-CONSULT] create-ticket researcher skipped (cached investigation reused)` to stderr for trace symmetry and proceed to Phase 2. The Phase 6 audit trail responsibility lies with the original fresh spawn that produced the cached `investigation.md`.
+
 ### Phase 2: Socratic Refinement
 
 Brief with `interview_complete: true` skips Phase 2 (no `AskUserQuestion`, no stdin block; ticket file under `.simple-workflow/backlog/` within 10 s on closed stdin). Findings mirrors upstream brief's `interview_complete`. Bare always runs the capped interview unless non-interactive fallback fires.

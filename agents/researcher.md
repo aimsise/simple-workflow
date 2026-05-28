@@ -28,7 +28,7 @@ You are a codebase researcher. Explore, discover, and document findings.
 **Status**: success | partial | failed
 **Output**: [file path] (see this file for details)
 **Summary**: [200 words or less]
-**Advisory consultation**: [REQUIRED FIELD — see ## Advisory Capabilities → ### Consultation reporting format below for the exact line shape. Use `(none)` when the spawn prompt carried no Advisory block or no entry's `Used by` column lists `researcher`. Omitting this field is a contract violation and the orchestrator (`/scout`, `/investigate`, `/refactor`) will FAIL the round at its researcher-return gate.]
+**Advisory consultation**: [REQUIRED FIELD — see ## Advisory Capabilities → ### Consultation reporting format below for the exact line shape. Use `(none)` when the spawn prompt carried no Advisory block or no entry's `Used by` column lists `researcher`. Omitting this field is a contract violation; the orchestrator that spawned you reads the field by regex on `^\*\*Advisory consultation\*\*:` and gates on its presence — explicit-Agent-tool spawners (`/brief`, `/catchup`, `/create-ticket`) FAIL the round and emit `[PIPELINE] <skill>: ADVISORY-MISSING (agent=researcher)`; declarative spawners (`/investigate`, including the `/scout`-mediated invocation that runs `/investigate` via the Skill tool) surface the violation in the executive summary returned to the caller.]
 **Next Steps**: [recommended actions, one per line]
 
 ## External Tool Integration Policy
@@ -108,6 +108,11 @@ The `**Advisory consultation**:` field in the Result envelope (`## Context Conse
 
    `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`). Every researcher-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `researcher`. Missing entries, duplicates, or paraphrased names are contract violations.
 
-The researcher-side orchestrator (`/scout`, `/investigate`, `/refactor` — whichever spawned this round) reads this field by regex on `^\*\*Advisory consultation\*\*:` and gates the round on its presence and shape. Silent omission (field absent) makes the round FAIL.
+The researcher-side orchestrator — whichever spawned this round — reads this field by regex on `^\*\*Advisory consultation\*\*:` and gates the round on its presence and shape. The direct spawners fall into two categories with different failure modes:
+
+- **Explicit-Agent-tool spawners** (`/brief` Phase 1 §1.5, `/catchup` Step 2.5, `/create-ticket` Phase 1.5) emit `[PIPELINE] <skill>: ADVISORY-MISSING (agent=researcher)` on absence and either FAIL the round (`/brief`, `/create-ticket`) or surface the violation in the in-band summary (`/catchup`, which is read-only with no phase-state to FAIL).
+- **Declarative spawner** (`/investigate`, including the `/scout`-mediated invocation that calls `/investigate` via the Skill tool) cannot gate via an inline orchestrator step because the spawn is automated by the Claude Code platform via `context: fork` + `agent: researcher` in the frontmatter. The contract is enforced by this agent body alone: silent omission makes the field absent in the returned executive summary, which any downstream consumer of `/investigate`'s output will surface as a Phase 6 audit-trail gap.
+
+Silent omission (field absent) is always a contract violation regardless of which spawner is in play.
 
 The mapping is deliberate: by writing this field every round, you create an audit trail the orchestrator and downstream verifiers can read without having to re-derive Advisory-entry relevance from the ticket. The audit trail is what makes the "Recommending, not Permitting" semantics measurable and enforceable — the same property the planner's Gate 6.5 self-audit provides at the upstream side.

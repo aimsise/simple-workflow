@@ -8850,17 +8850,83 @@ assert_true \
   "AR-RES-5: agents/researcher.md contains '### How to invoke each Advisory entry' subsection (count=$ar_res_5_count, expected >=1)" \
   "$ar_res_5_result"
 
-# AR-RES-6: researcher Result template's field doc names at least one of the
-# expected researcher-side orchestrators that will gate the field. This guards
-# against the agent body drifting from the Phase 2 wiring that comes next.
-ar_res_6_orch=$(awk '/\*\*Advisory consultation\*\*:/,/\*\*Next Steps\*\*:/' "$AR_RES" | grep -cE '/scout|/investigate|/refactor' || true)
+# AR-RES-6: researcher.md MUST name each of the four direct researcher
+# spawners somewhere in the agent body. Phase 2a re-aligned this list from
+# the speculative /scout|/investigate|/refactor placeholder (incorrect:
+# /refactor does not spawn researcher and /scout calls /investigate
+# transitively) to the real direct spawners: the three explicit-Agent-tool
+# spawners /brief, /catchup, /create-ticket and the declarative spawner
+# /investigate. The check is per-spawner (grep -c counts lines, so a single
+# line with all four names would otherwise look like count=1, hiding a
+# missing entry).
+ar_res_6_brief=$(grep -cF '/brief' "$AR_RES" || true)
+ar_res_6_catchup=$(grep -cF '/catchup' "$AR_RES" || true)
+ar_res_6_ct=$(grep -cF '/create-ticket' "$AR_RES" || true)
+ar_res_6_inv=$(grep -cF '/investigate' "$AR_RES" || true)
 ar_res_6_result="false"
-if [ "$ar_res_6_orch" -ge 1 ]; then ar_res_6_result="true"; fi
+if [ "$ar_res_6_brief" -ge 1 ] && [ "$ar_res_6_catchup" -ge 1 ] && [ "$ar_res_6_ct" -ge 1 ] && [ "$ar_res_6_inv" -ge 1 ]; then
+  ar_res_6_result="true"
+fi
 assert_true \
-  "AR-RES-6: researcher Result-template field references at least one orchestrator (/scout, /investigate, /refactor) as the gating spawner (count=$ar_res_6_orch, expected >=1)" \
+  "AR-RES-6: agents/researcher.md names all four direct researcher spawners (/brief count=$ar_res_6_brief, /catchup count=$ar_res_6_catchup, /create-ticket count=$ar_res_6_ct, /investigate count=$ar_res_6_inv; all expected >=1)" \
   "$ar_res_6_result"
 
 unset AR_RES AR_RES_BODY
+
+# AR-RES-7..9: Phase 2a orchestrator gates. Each explicit-Agent-tool researcher
+# spawner (/brief, /catchup, /create-ticket) MUST carry a regex-based Advisory
+# Consultation Pre-Check that mirrors /impl Step 14b. We verify three things
+# per skill: (1) the canonical pipeline-failure literal `[PIPELINE] <skill>:
+# ADVISORY-MISSING (agent=researcher)` is emitted on absence, (2) the success
+# trace literal `[ADVISORY-CONSULT] <skill> researcher` is emitted on
+# presence, (3) the section that owns the check uses the per-skill numbering
+# convention (§1.5 / §2.5 / Phase 1.5) so the gate is locatable by humans
+# auditing the SKILL.md by section number.
+
+# AR-RES-7: /brief Phase 1 §1.5
+AR_BRIEF=skills/brief/SKILL.md
+ar_res_7_fail=$(grep -cF '[PIPELINE] brief: ADVISORY-MISSING (agent=researcher)' "$AR_BRIEF" || true)
+ar_res_7_trace=$(grep -cF '[ADVISORY-CONSULT] brief researcher' "$AR_BRIEF" || true)
+ar_res_7_section=$(grep -cF '§1.5 — Advisory Consultation Pre-Check' "$AR_BRIEF" || true)
+ar_res_7_result="false"
+if [ "$ar_res_7_fail" -ge 1 ] && [ "$ar_res_7_trace" -ge 1 ] && [ "$ar_res_7_section" -ge 1 ]; then
+  ar_res_7_result="true"
+fi
+assert_true \
+  "AR-RES-7: /brief SKILL.md wires Phase 6 gate ('[PIPELINE] brief: ADVISORY-MISSING (agent=researcher)' count=$ar_res_7_fail, '[ADVISORY-CONSULT] brief researcher' count=$ar_res_7_trace, '§1.5' section count=$ar_res_7_section; all expected >=1)" \
+  "$ar_res_7_result"
+
+# AR-RES-8: /catchup Step 2.5 (conditional — researcher is spawned only on the
+# Otherwise branch, so the trace literal must distinguish skipped from present)
+AR_CATCHUP=skills/catchup/SKILL.md
+ar_res_8_fail=$(grep -cF '[PIPELINE] catchup: ADVISORY-MISSING (agent=researcher)' "$AR_CATCHUP" || true)
+ar_res_8_trace=$(grep -cF '[ADVISORY-CONSULT] catchup researcher' "$AR_CATCHUP" || true)
+ar_res_8_section=$(grep -cF '### 2.5 Advisory Consultation Pre-Check' "$AR_CATCHUP" || true)
+ar_res_8_skip=$(grep -cF 'catchup researcher skipped' "$AR_CATCHUP" || true)
+ar_res_8_result="false"
+if [ "$ar_res_8_fail" -ge 1 ] && [ "$ar_res_8_trace" -ge 1 ] && [ "$ar_res_8_section" -ge 1 ] && [ "$ar_res_8_skip" -ge 1 ]; then
+  ar_res_8_result="true"
+fi
+assert_true \
+  "AR-RES-8: /catchup SKILL.md wires Phase 6 gate ('[PIPELINE] catchup: ADVISORY-MISSING' count=$ar_res_8_fail, '[ADVISORY-CONSULT] catchup researcher' count=$ar_res_8_trace, '### 2.5' section count=$ar_res_8_section, 'catchup researcher skipped' trace count=$ar_res_8_skip; all expected >=1)" \
+  "$ar_res_8_result"
+
+# AR-RES-9: /create-ticket Phase 1.5 (also has a skip path when cached
+# investigation is reused per brief-mode freshness validation)
+AR_CT=skills/create-ticket/SKILL.md
+ar_res_9_fail=$(grep -cF '[PIPELINE] create-ticket: ADVISORY-MISSING (agent=researcher)' "$AR_CT" || true)
+ar_res_9_trace=$(grep -cF '[ADVISORY-CONSULT] create-ticket researcher' "$AR_CT" || true)
+ar_res_9_section=$(grep -cF '### Phase 1.5: Advisory Consultation Pre-Check' "$AR_CT" || true)
+ar_res_9_skip=$(grep -cF 'create-ticket researcher skipped (cached investigation reused)' "$AR_CT" || true)
+ar_res_9_result="false"
+if [ "$ar_res_9_fail" -ge 1 ] && [ "$ar_res_9_trace" -ge 1 ] && [ "$ar_res_9_section" -ge 1 ] && [ "$ar_res_9_skip" -ge 1 ]; then
+  ar_res_9_result="true"
+fi
+assert_true \
+  "AR-RES-9: /create-ticket SKILL.md wires Phase 6 gate ('[PIPELINE] create-ticket: ADVISORY-MISSING' count=$ar_res_9_fail, '[ADVISORY-CONSULT] create-ticket researcher' count=$ar_res_9_trace, 'Phase 1.5' section count=$ar_res_9_section, 'cached investigation reused' skip count=$ar_res_9_skip; all expected >=1)" \
+  "$ar_res_9_result"
+
+unset AR_BRIEF AR_CATCHUP AR_CT
 
 # Helper-style block: test-writer.md
 AR_TW=agents/test-writer.md

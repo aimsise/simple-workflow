@@ -70,6 +70,10 @@ Parse `$ARGUMENTS`:
    - model: sonnet
 2. Save the researcher's summary for use in Phase 2 and Phase 3.
 
+3. **§1.5 — Advisory Consultation Pre-Check** (gating, v8.0.0+ Phase 6 enforcement; mirrors `/impl` Step 14b): the researcher return value received at Step 1 MUST contain a `**Advisory consultation**:` field per the format in `agents/researcher.md` `## Advisory Capabilities` → `### Consultation reporting format`. Match by regex `^\*\*Advisory consultation\*\*:` on the return value (case-sensitive, line-anchored). Two outcomes:
+   - **Field present** (the value is either `(none)` or a bullet list of `- <Name>: invoked/not invoked (...)` entries) → emit `[ADVISORY-CONSULT] brief researcher present` to stderr and proceed to Phase 2.
+   - **Field absent** → contract violation. Emit `[PIPELINE] brief: ADVISORY-MISSING (agent=researcher)` to stderr; record the violation in the final summary surfaced to the user (note the missing Phase 6 audit trail and degrade gracefully); do NOT silently re-spawn the researcher. Re-rolling the same Generator without surfacing the contract violation would mask the regression. Since `/brief` has no `phase-state.yaml` of its own, the violation is surfaced in-band via the executive summary rather than via a state-file FAIL write.
+
 ## Phase 2: Structured Interview (Socratic)
 
 Conduct an iterative Q&A to gather comprehensive requirements.
