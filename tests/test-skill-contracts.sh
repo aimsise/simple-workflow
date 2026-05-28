@@ -8695,5 +8695,105 @@ unset PCN_BRIEF_SKILL PCN_CT_SKILL PCN_CT_SPAWN PCN_8_PARA
 
 echo ""
 
+# --- Cat AR: Advisory Consultation reporting field + Step 14b orchestrator gate ---
+# (a)(b) of the Phase 6 PoC follow-up: the implementer's Result envelope grows
+# a `**Advisory consultation**:` REQUIRED field, the implementer.md body
+# documents its `(none)` / bullet-list shapes, and `/impl` Step 14b reads the
+# field by regex and FAILs the round when it is absent — without breaking
+# the ac-evaluator firewall (Generator return value never enters Step 15's
+# spawn prompt). Verifies the contract is wired end-to-end across both files.
+echo "--- Cat AR: Advisory Consultation reporting field + Step 14b orchestrator gate ---"
+
+AR_IMPL=agents/implementer.md
+AR_IMPL_SKILL=skills/impl/SKILL.md
+
+# AR-1: Result template lists the `**Advisory consultation**:` field as REQUIRED.
+ar_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' "$AR_IMPL" || true)
+ar_1_result="false"
+if [ "$ar_1_count" -ge 1 ]; then ar_1_result="true"; fi
+assert_true \
+  "AR-1: agents/implementer.md Result template contains '**Advisory consultation**:' line (count=$ar_1_count, expected >=1)" \
+  "$ar_1_result"
+
+# AR-2: implementer.md carries a dedicated '### Consultation reporting format'
+# subsection that defines the field shape (so the requirement is enforceable,
+# not just stated).
+ar_2_count=$(grep -cF '### Consultation reporting format' "$AR_IMPL" || true)
+ar_2_result="false"
+if [ "$ar_2_count" -ge 1 ]; then ar_2_result="true"; fi
+assert_true \
+  "AR-2: agents/implementer.md contains '### Consultation reporting format' subsection (count=$ar_2_count, expected >=1)" \
+  "$ar_2_result"
+
+# AR-3: Reporting-format subsection documents the literal '(none)' value for
+# the no-applicable-entries case.
+AR_3_BODY=$(awk '/^### Consultation reporting format/{flag=1; next} flag && /^### |^## /{exit} flag' "$AR_IMPL")
+ar_3_count=$(printf '%s' "$AR_3_BODY" | grep -cF '(none)' || true)
+ar_3_result="false"
+if [ "$ar_3_count" -ge 1 ]; then ar_3_result="true"; fi
+assert_true \
+  "AR-3: '### Consultation reporting format' documents '(none)' literal for no-applicable-entries case (count=$ar_3_count, expected >=1)" \
+  "$ar_3_result"
+
+# AR-4: Reporting-format subsection documents both ': invoked' and ': not
+# invoked' bullet shapes (the two consultation outcomes).
+ar_4_inv=$(printf '%s' "$AR_3_BODY" | grep -cE ': invoked' || true)
+ar_4_not=$(printf '%s' "$AR_3_BODY" | grep -cE ': not invoked' || true)
+ar_4_result="false"
+if [ "$ar_4_inv" -ge 1 ] && [ "$ar_4_not" -ge 1 ]; then ar_4_result="true"; fi
+assert_true \
+  "AR-4: '### Consultation reporting format' documents both ': invoked' and ': not invoked' bullet shapes (invoked=$ar_4_inv, not_invoked=$ar_4_not, both expected >=1)" \
+  "$ar_4_result"
+
+# AR-5: implementer.md Result template forward-references Step 14b — without
+# this pointer the agent has no signal that the field is gated.
+ar_5_count=$(grep -cE 'Step 14b' "$AR_IMPL" || true)
+ar_5_result="false"
+if [ "$ar_5_count" -ge 1 ]; then ar_5_result="true"; fi
+assert_true \
+  "AR-5: agents/implementer.md references 'Step 14b' (orchestrator-side gate forward-pointer) (count=$ar_5_count, expected >=1)" \
+  "$ar_5_result"
+
+# AR-6: /impl SKILL.md carries the '§14b — Advisory Consultation Pre-Check'
+# subsection that owns the gate.
+ar_6_count=$(grep -cF '§14b — Advisory Consultation Pre-Check' "$AR_IMPL_SKILL" || true)
+ar_6_result="false"
+if [ "$ar_6_count" -ge 1 ]; then ar_6_result="true"; fi
+assert_true \
+  "AR-6: skills/impl/SKILL.md contains '§14b — Advisory Consultation Pre-Check' subsection (count=$ar_6_count, expected >=1)" \
+  "$ar_6_result"
+
+# AR-7: §14b emits the canonical pipeline-failure literal so downstream
+# log scrapers (audit-round / autopilot-log) can detect it.
+ar_7_count=$(grep -cF '[PIPELINE] impl: ADVISORY-MISSING' "$AR_IMPL_SKILL" || true)
+ar_7_result="false"
+if [ "$ar_7_count" -ge 1 ]; then ar_7_result="true"; fi
+assert_true \
+  "AR-7: skills/impl/SKILL.md emits '[PIPELINE] impl: ADVISORY-MISSING' literal on Step 14b violation (count=$ar_7_count, expected >=1)" \
+  "$ar_7_result"
+
+# AR-8: §14b also emits the success/skip-trace literal so the happy path is
+# observable (the field being present is itself an audit signal).
+ar_8_count=$(grep -cF '[ADVISORY-CONSULT]' "$AR_IMPL_SKILL" || true)
+ar_8_result="false"
+if [ "$ar_8_count" -ge 1 ]; then ar_8_result="true"; fi
+assert_true \
+  "AR-8: skills/impl/SKILL.md emits '[ADVISORY-CONSULT]' trace literal (count=$ar_8_count, expected >=1)" \
+  "$ar_8_result"
+
+# AR-9: §14b documents the FAIL state-write — without this the next round
+# would silently retry and the contract violation would be masked.
+ar_9_status=$(awk '/§14b — Advisory Consultation Pre-Check/{flag=1; next} flag && /CHECKPOINT/{exit} flag' "$AR_IMPL_SKILL" | grep -cF 'phases.impl.status: failed' || true)
+ar_9_substatus=$(awk '/§14b — Advisory Consultation Pre-Check/{flag=1; next} flag && /CHECKPOINT/{exit} flag' "$AR_IMPL_SKILL" | grep -cF 'advisory-missing' || true)
+ar_9_result="false"
+if [ "$ar_9_status" -ge 1 ] && [ "$ar_9_substatus" -ge 1 ]; then ar_9_result="true"; fi
+assert_true \
+  "AR-9: skills/impl/SKILL.md §14b documents 'phases.impl.status: failed' + 'advisory-missing' phase_sub on violation (status_in_14b=$ar_9_status, phase_sub_in_14b=$ar_9_substatus, both expected >=1)" \
+  "$ar_9_result"
+
+unset AR_IMPL AR_IMPL_SKILL AR_3_BODY
+
+echo ""
+
 # --- Summary ---
 print_summary

@@ -41,6 +41,7 @@ Do NOT include self-assessment, subjective comments, or quality judgments in you
 **Output**: [list of created/modified files]
 **Lint**: pass | fail (final status)
 **Test**: pass | fail (final status, with pass/fail counts if available)
+**Advisory consultation**: [REQUIRED FIELD — see ## Advisory Capabilities → ### Consultation reporting format below for the exact line shape. Use `(none)` when the spawn prompt carried no Advisory block or no entry's `Used by` column lists `implementer`. Omitting this field is a contract violation and the orchestrator will FAIL the round at Step 14b of skills/impl/SKILL.md.]
 **Next Steps**: [recommended actions]
 ```
 
@@ -107,3 +108,23 @@ This mechanical procedure makes the Advisory pathway **capability-name-agnostic 
 - Treat Advisory entries as **reference / guidance** tools, not as verification tools — if you find yourself reaching for an Advisory entry to "prove" an AC PASS, the AC's verification capability belongs in `## Bound capabilities (per AC)` instead, which is upstream (planner's Gate 6 responsibility).
 - When the spawn prompt says `## Advisory capabilities (per ticket): (none)`, the Advisory pathway is empty for this ticket; the speculative-invocation ban applies in full.
 - An Advisory entry that turns out to be unavailable at runtime (Skill not installed, MCP server unreachable) is a soft failure — report it under `Next Steps` / `### Limitations` and fall back to in-house reasoning; do NOT block on the missing reference.
+
+### Consultation reporting format (Result envelope `**Advisory consultation**:` field)
+
+The `**Advisory consultation**:` field in the Result envelope (`## Context Conservation Protocol` → Return format) is REQUIRED on every implementer return. The field has one of two shapes:
+
+1. **No applicable Advisory entries** — write the literal value `(none)`. Use this exactly when:
+   - the spawn prompt's `## Advisory capabilities (per ticket)` block was `(none)`, OR
+   - the spawn prompt had Advisory entries but none of them list `implementer` in their `Used by` column.
+2. **At least one applicable Advisory entry** — write a Markdown bullet list, one bullet per Advisory entry whose `Used by` column lists `implementer`. Each bullet is exactly one line in the form:
+
+   ```
+   - <Name>: invoked (<≤80-char evidence noun phrase, e.g. file path, observation, returned doc section>)
+   - <Name>: not invoked (<≤80-char rationale, e.g. "plan supplied the focus-ring spec verbatim", "MCP server unreachable", "domain mismatch despite planner classification">)
+   ```
+
+   `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`). Every implementer-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `implementer`. Missing entries, duplicates, or paraphrased names are contract violations.
+
+The orchestrator (`/impl` Step 14b) reads this field by regex on `^\*\*Advisory consultation\*\*:` and gates the round on its presence and shape. Silent omission (field absent) makes the round FAIL.
+
+The mapping is deliberate: by writing this field every round, you create an audit trail the orchestrator and downstream verifiers can read without having to re-derive Advisory-entry relevance from the ticket. The audit trail is what makes the "Recommending, not Permitting" semantics measurable and enforceable — the same property the planner's Gate 6.5 self-audit provides at the upstream side.
