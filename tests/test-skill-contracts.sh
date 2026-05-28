@@ -8791,7 +8791,140 @@ assert_true \
   "AR-9: skills/impl/SKILL.md §14b documents 'phases.impl.status: failed' + 'advisory-missing' phase_sub on violation (status_in_14b=$ar_9_status, phase_sub_in_14b=$ar_9_substatus, both expected >=1)" \
   "$ar_9_result"
 
+# AR-10: implementer.md also documents the '### How to invoke each Advisory
+# entry' deferred-tool resolution procedure (added in the Phase 6 PoC commit
+# 7aa2ba4 but never asserted; cover the gap so the procedure cannot drift).
+ar_10_count=$(grep -cF '### How to invoke each Advisory entry' "$AR_IMPL" || true)
+ar_10_result="false"
+if [ "$ar_10_count" -ge 1 ]; then ar_10_result="true"; fi
+assert_true \
+  "AR-10: agents/implementer.md contains '### How to invoke each Advisory entry' subsection (count=$ar_10_count, expected >=1)" \
+  "$ar_10_result"
+
 unset AR_IMPL AR_IMPL_SKILL AR_3_BODY
+
+# Cat AR (Phase 1 expansion): apply the same Advisory consultation field
+# + Consultation reporting format + How-to-invoke subsection to the other
+# productive subagents (researcher, test-writer). planner is excluded by
+# design — it AUTHORS the Advisory table inside the ticket draft, it does
+# not CONSUME it, so no consumer-side reporting field applies. The matrix
+# below uses one helper per agent to keep the assertions readable.
+
+# Helper-style block: researcher.md
+AR_RES=agents/researcher.md
+AR_RES_BODY=$(awk '/^### Consultation reporting format/{flag=1; next} flag && /^### |^## /{exit} flag' "$AR_RES")
+
+ar_res_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' "$AR_RES" || true)
+ar_res_1_result="false"
+if [ "$ar_res_1_count" -ge 1 ]; then ar_res_1_result="true"; fi
+assert_true \
+  "AR-RES-1: agents/researcher.md Result template contains '**Advisory consultation**:' line (count=$ar_res_1_count, expected >=1)" \
+  "$ar_res_1_result"
+
+ar_res_2_count=$(grep -cF '### Consultation reporting format' "$AR_RES" || true)
+ar_res_2_result="false"
+if [ "$ar_res_2_count" -ge 1 ]; then ar_res_2_result="true"; fi
+assert_true \
+  "AR-RES-2: agents/researcher.md contains '### Consultation reporting format' subsection (count=$ar_res_2_count, expected >=1)" \
+  "$ar_res_2_result"
+
+ar_res_3_count=$(printf '%s' "$AR_RES_BODY" | grep -cF '(none)' || true)
+ar_res_3_result="false"
+if [ "$ar_res_3_count" -ge 1 ]; then ar_res_3_result="true"; fi
+assert_true \
+  "AR-RES-3: researcher '### Consultation reporting format' documents '(none)' literal (count=$ar_res_3_count, expected >=1)" \
+  "$ar_res_3_result"
+
+ar_res_4_inv=$(printf '%s' "$AR_RES_BODY" | grep -cE ': invoked' || true)
+ar_res_4_not=$(printf '%s' "$AR_RES_BODY" | grep -cE ': not invoked' || true)
+ar_res_4_result="false"
+if [ "$ar_res_4_inv" -ge 1 ] && [ "$ar_res_4_not" -ge 1 ]; then ar_res_4_result="true"; fi
+assert_true \
+  "AR-RES-4: researcher '### Consultation reporting format' documents both ': invoked' and ': not invoked' shapes (invoked=$ar_res_4_inv, not_invoked=$ar_res_4_not, both expected >=1)" \
+  "$ar_res_4_result"
+
+ar_res_5_count=$(grep -cF '### How to invoke each Advisory entry' "$AR_RES" || true)
+ar_res_5_result="false"
+if [ "$ar_res_5_count" -ge 1 ]; then ar_res_5_result="true"; fi
+assert_true \
+  "AR-RES-5: agents/researcher.md contains '### How to invoke each Advisory entry' subsection (count=$ar_res_5_count, expected >=1)" \
+  "$ar_res_5_result"
+
+# AR-RES-6: researcher Result template's field doc names at least one of the
+# expected researcher-side orchestrators that will gate the field. This guards
+# against the agent body drifting from the Phase 2 wiring that comes next.
+ar_res_6_orch=$(awk '/\*\*Advisory consultation\*\*:/,/\*\*Next Steps\*\*:/' "$AR_RES" | grep -cE '/scout|/investigate|/refactor' || true)
+ar_res_6_result="false"
+if [ "$ar_res_6_orch" -ge 1 ]; then ar_res_6_result="true"; fi
+assert_true \
+  "AR-RES-6: researcher Result-template field references at least one orchestrator (/scout, /investigate, /refactor) as the gating spawner (count=$ar_res_6_orch, expected >=1)" \
+  "$ar_res_6_result"
+
+unset AR_RES AR_RES_BODY
+
+# Helper-style block: test-writer.md
+AR_TW=agents/test-writer.md
+AR_TW_BODY=$(awk '/^### Consultation reporting format/{flag=1; next} flag && /^### |^## /{exit} flag' "$AR_TW")
+
+ar_tw_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' "$AR_TW" || true)
+ar_tw_1_result="false"
+if [ "$ar_tw_1_count" -ge 1 ]; then ar_tw_1_result="true"; fi
+assert_true \
+  "AR-TW-1: agents/test-writer.md Result template contains '**Advisory consultation**:' line (count=$ar_tw_1_count, expected >=1)" \
+  "$ar_tw_1_result"
+
+ar_tw_2_count=$(grep -cF '### Consultation reporting format' "$AR_TW" || true)
+ar_tw_2_result="false"
+if [ "$ar_tw_2_count" -ge 1 ]; then ar_tw_2_result="true"; fi
+assert_true \
+  "AR-TW-2: agents/test-writer.md contains '### Consultation reporting format' subsection (count=$ar_tw_2_count, expected >=1)" \
+  "$ar_tw_2_result"
+
+ar_tw_3_count=$(printf '%s' "$AR_TW_BODY" | grep -cF '(none)' || true)
+ar_tw_3_result="false"
+if [ "$ar_tw_3_count" -ge 1 ]; then ar_tw_3_result="true"; fi
+assert_true \
+  "AR-TW-3: test-writer '### Consultation reporting format' documents '(none)' literal (count=$ar_tw_3_count, expected >=1)" \
+  "$ar_tw_3_result"
+
+ar_tw_4_inv=$(printf '%s' "$AR_TW_BODY" | grep -cE ': invoked' || true)
+ar_tw_4_not=$(printf '%s' "$AR_TW_BODY" | grep -cE ': not invoked' || true)
+ar_tw_4_result="false"
+if [ "$ar_tw_4_inv" -ge 1 ] && [ "$ar_tw_4_not" -ge 1 ]; then ar_tw_4_result="true"; fi
+assert_true \
+  "AR-TW-4: test-writer '### Consultation reporting format' documents both ': invoked' and ': not invoked' shapes (invoked=$ar_tw_4_inv, not_invoked=$ar_tw_4_not, both expected >=1)" \
+  "$ar_tw_4_result"
+
+ar_tw_5_count=$(grep -cF '### How to invoke each Advisory entry' "$AR_TW" || true)
+ar_tw_5_result="false"
+if [ "$ar_tw_5_count" -ge 1 ]; then ar_tw_5_result="true"; fi
+assert_true \
+  "AR-TW-5: agents/test-writer.md contains '### How to invoke each Advisory entry' subsection (count=$ar_tw_5_count, expected >=1)" \
+  "$ar_tw_5_result"
+
+# AR-TW-6: test-writer Result template field references the gating spawner.
+# /test is the canonical owner; other spawners may be added in Phase 2.
+ar_tw_6_orch=$(awk '/\*\*Advisory consultation\*\*:/,/\*\*Next Steps\*\*:/' "$AR_TW" | grep -cE '/test' || true)
+ar_tw_6_result="false"
+if [ "$ar_tw_6_orch" -ge 1 ]; then ar_tw_6_result="true"; fi
+assert_true \
+  "AR-TW-6: test-writer Result-template field references the gating spawner (/test) (count=$ar_tw_6_orch, expected >=1)" \
+  "$ar_tw_6_result"
+
+unset AR_TW AR_TW_BODY
+
+# AR-PLN-1 (negative assertion): planner.md MUST NOT carry the consumer-side
+# Result-template field, because planner AUTHORS the Advisory block inside
+# the ticket draft and does not CONSUME it. Adding the field to planner
+# would be a category error (planner's Result reports the draft path, not
+# its own Advisory consultations). If a future PR ever puts the field on
+# planner, this assertion forces a re-think.
+ar_pln_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' agents/planner.md || true)
+ar_pln_1_result="false"
+if [ "$ar_pln_1_count" -eq 0 ]; then ar_pln_1_result="true"; fi
+assert_true \
+  "AR-PLN-1 (negative): agents/planner.md MUST NOT carry '**Advisory consultation**:' in its Result template (planner is the AUTHOR, not consumer) (count=$ar_pln_1_count, expected =0)" \
+  "$ar_pln_1_result"
 
 echo ""
 

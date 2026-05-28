@@ -28,6 +28,7 @@ You are a codebase researcher. Explore, discover, and document findings.
 **Status**: success | partial | failed
 **Output**: [file path] (see this file for details)
 **Summary**: [200 words or less]
+**Advisory consultation**: [REQUIRED FIELD — see ## Advisory Capabilities → ### Consultation reporting format below for the exact line shape. Use `(none)` when the spawn prompt carried no Advisory block or no entry's `Used by` column lists `researcher`. Omitting this field is a contract violation and the orchestrator (`/scout`, `/investigate`, `/refactor`) will FAIL the round at its researcher-return gate.]
 **Next Steps**: [recommended actions, one per line]
 
 ## External Tool Integration Policy
@@ -74,7 +75,39 @@ For every entry in the `## Advisory capabilities (per ticket)` block whose `Used
 
 Silent omission — neither invoking nor recording a rationale — is a contract violation. The Advisory discipline mirrors Gate 6.5's probe-completeness principle at the consumer side: a probe-visible capability bound for your use must result in either an invocation OR a documented skip, never invisible inaction. The reason: dogfood (TW33-TW35) showed that Advisory bindings without consultation discipline collapse into permitting-only, leaving probe-visible capabilities silently uninvoked even when the planner classified them as relevant.
 
+### How to invoke each Advisory entry (deferred-tool resolution, capability-name-agnostic)
+
+Even when an Advisory entry is contractually authorised for invocation per the discipline above, the underlying tool may not be **directly callable** from your subagent context. Plugin subagents expose `mcp__*` tools (and, depending on harness state, some Skills) as **deferred tools** — their names appear in the system reminder but their JSON schemas are NOT loaded, so calling them directly raises `InputValidationError`. The orchestrator's spawn-prompt Advisory table includes a `How to load` column that resolves this; if the column is missing (older orchestrator), apply the procedure below mechanically from the `Type` column alone.
+
+The translation depends ONLY on the `Type` column, so a user-installed Skill or a user-added MCP server is handled identically to anything shipped by the plugin — there is no skill-name-specific or server-name-specific branch:
+
+1. **`Type = skill`** — invoke via the `Skill` tool with `skill: <Name>` exactly as listed (no schema fetch required; the `Skill` tool itself is available by default).
+2. **`Type = MCP`** — the entry's `Name` is the full `mcp__<server>__<tool>` slug. Before the first invocation, call `ToolSearch` with `query: "select:<Name>"` and `max_results: 1` to load the schema. Pass `<Name>` verbatim from the Advisory table — do NOT paraphrase, shorten, or substitute a similar name. Once `ToolSearch` returns the schema inside a `<functions>` block, invoke the tool directly.
+3. **Either type, environmental failure** — if the Skill is reported "not installed", the `mcp__*` schema is missing from the `ToolSearch` result, or the MCP server is unreachable at invocation time, record a one-line rationale under `### Limitations` of your investigation output file (or, fallback, in the return-envelope `**Advisory consultation**:` bullet for that entry) and continue. Environmental failure is an acceptable skip reason under the consultation discipline above; do NOT block the investigation on a missing Advisory tool.
+
+This mechanical procedure makes the Advisory pathway **capability-name-agnostic by design**: any Skill or MCP server the user mounts into their harness (via `~/.claude/skills/`, `.claude/skills/`, `.mcp.json`, or `~/.claude.json`) and the planner classifies as Advisory will be reached through the same two-step (`ToolSearch` → invoke) or one-step (`Skill`) path with no `agents/researcher.md` change required.
+
 - The Advisory block has shape `Name | Type | Purpose | Used by` (no `Bound AC(s)` column). Entries whose `Used by` column lists `researcher` are the ones you may invoke; entries listing only `implementer` / `test-writer` are for those other productive subagents and are out of scope for you.
 - Treat Advisory entries as **reference / guidance** tools — for example, `mcp__context7__query-docs` for looking up a library's current API surface during investigation, or `ui-ux-pro-max` for understanding existing UI patterns before recommending a new one. Use them to inform `investigation.md`'s findings; do NOT use them to fabricate evidence the codebase does not actually contain.
 - When the spawn prompt says `## Advisory capabilities (per ticket): (none)`, the Advisory pathway is empty for this ticket; the speculative-invocation ban applies in full.
 - An Advisory entry that turns out to be unavailable at runtime (Skill not installed, MCP server unreachable) is a soft failure — report it under `### Limitations` in your output file and fall back to in-house Read / Grep / Glob reasoning; do NOT block on the missing reference.
+
+### Consultation reporting format (Result envelope `**Advisory consultation**:` field)
+
+The `**Advisory consultation**:` field in the Result envelope (`## Context Conservation Protocol` → Return format) is REQUIRED on every researcher return. The field has one of two shapes:
+
+1. **No applicable Advisory entries** — write the literal value `(none)`. Use this exactly when:
+   - the spawn prompt's `## Advisory capabilities (per ticket)` block was `(none)`, OR
+   - the spawn prompt had Advisory entries but none of them list `researcher` in their `Used by` column.
+2. **At least one applicable Advisory entry** — write a Markdown bullet list, one bullet per Advisory entry whose `Used by` column lists `researcher`. Each bullet is exactly one line in the form:
+
+   ```
+   - <Name>: invoked (<≤80-char evidence noun phrase, e.g. returned doc section, file path, observation>)
+   - <Name>: not invoked (<≤80-char rationale, e.g. "in-house Grep produced sufficient evidence", "MCP server unreachable", "topic does not intersect entry's domain">)
+   ```
+
+   `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`). Every researcher-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `researcher`. Missing entries, duplicates, or paraphrased names are contract violations.
+
+The researcher-side orchestrator (`/scout`, `/investigate`, `/refactor` — whichever spawned this round) reads this field by regex on `^\*\*Advisory consultation\*\*:` and gates the round on its presence and shape. Silent omission (field absent) makes the round FAIL.
+
+The mapping is deliberate: by writing this field every round, you create an audit trail the orchestrator and downstream verifiers can read without having to re-derive Advisory-entry relevance from the ticket. The audit trail is what makes the "Recommending, not Permitting" semantics measurable and enforceable — the same property the planner's Gate 6.5 self-audit provides at the upstream side.
