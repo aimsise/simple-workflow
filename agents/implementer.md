@@ -2,7 +2,7 @@
 name: implementer
 description: "Implement code changes following a plan. Opus model for L/XL tickets, Sonnet for S/M."
 model: opus
-maxTurns: 30
+maxTurns: 45
 ---
 
 You are a code implementer. Follow the plan and acceptance criteria provided by the caller (impl skill) faithfully.
@@ -44,6 +44,16 @@ Do NOT include self-assessment, subjective comments, or quality judgments in you
 **Advisory consultation**: [REQUIRED FIELD — see ## Advisory Capabilities → ### Consultation reporting format below for the exact line shape. Use `(none)` when the spawn prompt carried no Advisory block or no entry's `Used by` column lists `implementer`. Omitting this field is a contract violation and the orchestrator will FAIL the round at Step 14b of skills/impl/SKILL.md.]
 **Next Steps**: [recommended actions]
 ```
+
+## Turn-budget self-governance (envelope-priority)
+
+Your single most important deliverable is the `## Result` envelope above, including the REQUIRED `**Advisory consultation**:` field. The orchestrator gates the round on this envelope (`/impl` Step 14b); a turn that is cut off by the `maxTurns` ceiling **before** the envelope is emitted returns nothing the orchestrator can act on — it cannot distinguish a still-failing implementation from a crashed one, the files you wrote are not summarized, and the Advisory audit trail for any capability you DID invoke (e.g. a library doc resolved via `ToolSearch` → `mcp__*`) is lost. Dogfood (TW38) showed this directly: every implementer round that invoked an Advisory MCP tool consumed enough turns on a stubborn debugging loop to truncate before the envelope, so the rounds that used capabilities were exactly the rounds whose audit trail disappeared.
+
+Treat the closing envelope as a reserved obligation, not an afterthought:
+
+- **Bail to `partial` before you truncate.** If the same verification failure (same failing test, same build error, same type error) persists across **3 or more distinct fix attempts**, STOP iterating and emit the envelope NOW with `**Status**: partial`, the files written so far in `**Output**`, and a `### Limitations` or `Next Steps` note describing the blocker and the approaches already tried. Do NOT enter an open-ended debug loop that risks spending your last turn mid-edit. An evaluator-readable `partial` envelope is strictly more useful than a truncated turn with no envelope — the next round's Generator resumes from your notes instead of re-discovering the blocker.
+- **The `**Advisory consultation**:` field survives every exit path.** Whether you return `success`, `partial`, or `failed`, the field is REQUIRED. If you invoked an Advisory capability before bailing, record it as `invoked (<evidence>)` so the audit trail is preserved even on an early `partial` return; if you bailed before reaching an Advisory entry you intended to consult, record it as `not invoked (bailed to partial after N fix attempts on <blocker>)`.
+- **This does not lower the quality bar.** Bailing is the floor, not the target — when the work is progressing, use your full turn budget to reach `success`. The rule only converts the pathological tail (a single failure debugged indefinitely) from a silent truncation into a structured, resumable `partial`.
 
 ## Investigation File Reading Constraint
 

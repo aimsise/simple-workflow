@@ -8992,6 +8992,96 @@ assert_true \
   "AR-PLN-1 (negative): agents/planner.md MUST NOT carry '**Advisory consultation**:' in its Result template (planner is the AUTHOR, not consumer) (count=$ar_pln_1_count, expected =0)" \
   "$ar_pln_1_result"
 
+# --- Cat AR (Phase 2b + truncation mitigation, v8.0.0): declarative-spawner
+# Advisory enforcement + implementer turn-budget self-governance. TW38 dogfood
+# showed (a) /investigate-spawned researchers emitted 0/7 Advisory fields because
+# the skill-body return contract omitted the field (the forked researcher follows
+# the immediate task prompt's return spec over the persona's REQUIRED field), and
+# (b) 6/20 implementer rounds truncated (maxTurns) before the closing envelope —
+# and the rounds that DID invoke Advisory MCP tools were exactly the ones that
+# truncated, losing the audit trail. These assertions lock both fixes in. ---
+echo "--- Cat AR (Phase 2b): declarative-spawner Advisory enforcement + truncation mitigation ---"
+
+# AR-INV-1: /investigate skill-body return contract names the Advisory field
+# (the root-cause fix — the forked researcher reads this skill body as its task
+# prompt, so the field must be enumerated here, not just in the agent persona).
+AR_INV=skills/investigate/SKILL.md
+ar_inv_1_count=$(grep -cF '**Advisory consultation**' "$AR_INV" || true)
+ar_inv_1_result="false"
+if [ "$ar_inv_1_count" -ge 1 ]; then ar_inv_1_result="true"; fi
+assert_true \
+  "AR-INV-1: skills/investigate/SKILL.md return contract names '**Advisory consultation**' (count=$ar_inv_1_count, expected >=1)" \
+  "$ar_inv_1_result"
+
+# AR-INV-2: /investigate documents the /scout-mediated path is gated at Step 4a
+# (the gate-able caller), distinguishing it from the ungate-able standalone fork.
+ar_inv_2_count=$(grep -cF 'Step 4a' "$AR_INV" || true)
+ar_inv_2_result="false"
+if [ "$ar_inv_2_count" -ge 1 ]; then ar_inv_2_result="true"; fi
+assert_true \
+  "AR-INV-2: skills/investigate/SKILL.md references the '/scout Step 4a' gate-able caller (count=$ar_inv_2_count, expected >=1)" \
+  "$ar_inv_2_result"
+unset AR_INV
+
+# AR-TST-1: /test skill-body return contract names the Advisory field (it
+# previously enumerated only four fields, omitting Advisory).
+AR_TST=skills/test/SKILL.md
+ar_tst_1_count=$(grep -cF '**Advisory consultation**' "$AR_TST" || true)
+ar_tst_1_result="false"
+if [ "$ar_tst_1_count" -ge 1 ]; then ar_tst_1_result="true"; fi
+assert_true \
+  "AR-TST-1: skills/test/SKILL.md return contract names '**Advisory consultation**' (count=$ar_tst_1_count, expected >=1)" \
+  "$ar_tst_1_result"
+unset AR_TST
+
+# AR-SCT-1: /scout Step 4a wires the researcher Advisory gate (surface-don't-fail).
+# /scout is the gate-able caller of declarative /investigate — it resumes after
+# the Skill-tool invocation returns, so it verifies the field the fork cannot gate.
+AR_SCT=skills/scout/SKILL.md
+ar_sct_1_fail=$(grep -cF '[PIPELINE] scout: ADVISORY-MISSING (agent=researcher)' "$AR_SCT" || true)
+ar_sct_1_trace=$(grep -cF '[ADVISORY-CONSULT] scout researcher present' "$AR_SCT" || true)
+ar_sct_1_section=$(grep -cF '4a. **Advisory Consultation Pre-Check**' "$AR_SCT" || true)
+ar_sct_1_result="false"
+if [ "$ar_sct_1_fail" -ge 1 ] && [ "$ar_sct_1_trace" -ge 1 ] && [ "$ar_sct_1_section" -ge 1 ]; then
+  ar_sct_1_result="true"
+fi
+assert_true \
+  "AR-SCT-1: /scout SKILL.md wires Phase 6 gate ('[PIPELINE] scout: ADVISORY-MISSING (agent=researcher)' count=$ar_sct_1_fail, '[ADVISORY-CONSULT] scout researcher present' count=$ar_sct_1_trace, '4a.' section count=$ar_sct_1_section; all expected >=1)" \
+  "$ar_sct_1_result"
+unset AR_SCT
+
+# AR-TRN-1: implementer maxTurns raised to >=45 (was 30; TW38 truncated at ~39
+# tool uses). Numeric compare so a future bump to 50+ still passes.
+ar_trn_1_val=$(grep -E '^maxTurns:' agents/implementer.md | grep -oE '[0-9]+' | head -1)
+ar_trn_1_result="false"
+if [ -n "$ar_trn_1_val" ] && [ "$ar_trn_1_val" -ge 45 ]; then ar_trn_1_result="true"; fi
+assert_true \
+  "AR-TRN-1: agents/implementer.md maxTurns >= 45 (value=$ar_trn_1_val, expected >=45)" \
+  "$ar_trn_1_result"
+
+# AR-TRN-2: all three productive agents carry the '## Turn-budget self-governance'
+# envelope-priority section (sibling-symmetry per CLAUDE.md ## Modifications).
+ar_trn_2_impl=$(grep -cF '## Turn-budget self-governance' agents/implementer.md || true)
+ar_trn_2_res=$(grep -cF '## Turn-budget self-governance' agents/researcher.md || true)
+ar_trn_2_tw=$(grep -cF '## Turn-budget self-governance' agents/test-writer.md || true)
+ar_trn_2_result="false"
+if [ "$ar_trn_2_impl" -ge 1 ] && [ "$ar_trn_2_res" -ge 1 ] && [ "$ar_trn_2_tw" -ge 1 ]; then
+  ar_trn_2_result="true"
+fi
+assert_true \
+  "AR-TRN-2: implementer + researcher + test-writer carry '## Turn-budget self-governance' section (impl=$ar_trn_2_impl, researcher=$ar_trn_2_res, test-writer=$ar_trn_2_tw; all expected >=1)" \
+  "$ar_trn_2_result"
+
+# AR-TRN-3: implementer self-governance documents the bail-to-partial rule that
+# preserves the Advisory audit trail through truncation (the TW38 inversion fix).
+ar_trn_3_bail=$(grep -ciF 'bail to' agents/implementer.md || true)
+ar_trn_3_partial=$(grep -cF 'Status**: partial' agents/implementer.md || true)
+ar_trn_3_result="false"
+if [ "$ar_trn_3_bail" -ge 1 ] && [ "$ar_trn_3_partial" -ge 1 ]; then ar_trn_3_result="true"; fi
+assert_true \
+  "AR-TRN-3: implementer self-governance documents bail-to-partial ('bail to' count=$ar_trn_3_bail, 'Status**: partial' count=$ar_trn_3_partial; both expected >=1)" \
+  "$ar_trn_3_result"
+
 echo ""
 
 # --- Summary ---
