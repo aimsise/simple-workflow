@@ -611,5 +611,148 @@ fi
 cleanup_session "$SID"
 rm -rf "$TMP"
 
+# ===========================================================================
+# Policy-gate-stop honour gate (SW_AUTOPILOT_POLICY_STOP_HONOR)
+# ===========================================================================
+echo ""
+echo "--- Policy-gate-stop honour gate ---"
+
+# env-capable runner (the default run_guard_hook above does not forward env).
+run_guard_hook_env() {
+  local input="$1"; local cwd="$2"; local env_kv="$3"
+  local stdout_file stderr_file
+  stdout_file=$(mktemp); stderr_file=$(mktemp)
+  set +e
+  if [ -n "$env_kv" ]; then
+    echo "$input" | (cd "$cwd" && env "$env_kv" bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  else
+    echo "$input" | (cd "$cwd" && bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  fi
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
+  rm -f "$stdout_file" "$stderr_file"
+}
+
+# Transcript whose LAST assistant turn carries the plan2doc ssot-line (so the
+# 3-AND would normally block) AND the policy_gate_stop marker in the same
+# text block.
+TRANSCRIPT_PLAN2DOC_PLUS_POLICY_STOP='{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"/scout 001-test"}]}}
+{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Skill","input":{"skill":"simple-workflow:scout","args":""}}]}}
+{"type":"assistant","uuid":"a2","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Skill","input":{"skill":"simple-workflow:plan2doc","args":""}}]}}
+{"type":"assistant","uuid":"a3","message":{"role":"assistant","content":[{"type":"text","text":"plan2doc: ac-source=ticket.md verbatim=true\n[AUTOPILOT-POLICY] gate=unexpected_error action=stop reason=state_recovery_hard_stop"}]}}'
+
+# (P-i): honour on → 3-AND met but marker present → NO block, exit 0.
+echo "--- (P-i): honour on → 3-AND met + marker → no block ---"
+TMP=$(mktemp -d)
+mkdir -p "$TMP/.simple-workflow/backlog/active"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_PLUS_POLICY_STOP"
+SID="scout-cp-pgs-i-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=on"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
+   && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]'; then
+  echo -e "  ${GREEN}PASS${NC} (P-i): honour → exit 0, no block, [POLICY-GATE-STOP] stderr"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-i): expected exit 0 + no block"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:160}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-ii): regression — same 3-AND but NO marker → still blocks (honour on).
+echo "--- (P-ii): no marker → still blocks ---"
+TMP=$(mktemp -d)
+mkdir -p "$TMP/.simple-workflow/backlog/active"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_EMIT_NO_CHECKPOINT"
+SID="scout-cp-pgs-ii-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=on"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} (P-ii): no marker → decision=block (unchanged)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-ii): expected decision=block"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-iii): kill switch off → ignore marker → block.
+echo "--- (P-iii): off → block despite marker ---"
+TMP=$(mktemp -d)
+mkdir -p "$TMP/.simple-workflow/backlog/active"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_PLUS_POLICY_STOP"
+SID="scout-cp-pgs-iii-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=off"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} (P-iii): off → decision=block (marker ignored)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-iii): expected decision=block"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-iv): metric-only → block + [POLICY-GATE-STOP] would-honour stderr.
+echo "--- (P-iv): metric-only → block + stderr ---"
+TMP=$(mktemp -d)
+mkdir -p "$TMP/.simple-workflow/backlog/active"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_PLUS_POLICY_STOP"
+SID="scout-cp-pgs-iv-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]' \
+   && echo "$LAST_STDERR" | grep -qiF 'would honour'; then
+  echo -e "  ${GREEN}PASS${NC} (P-iv): metric-only → block + would-honour stderr"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-iv): expected block + would-honour stderr"
+  echo -e "       Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-v): unknown value → fail-closed to off → block.
+echo "--- (P-v): unknown value → fail-closed (block) ---"
+TMP=$(mktemp -d)
+mkdir -p "$TMP/.simple-workflow/backlog/active"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_PLUS_POLICY_STOP"
+SID="scout-cp-pgs-v-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=garbage-value"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} (P-v): unknown → decision=block (fail-closed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-v): expected decision=block"
+  echo -e "       Decision: '$DECISION'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
 echo ""
 print_summary

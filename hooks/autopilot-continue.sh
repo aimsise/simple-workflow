@@ -26,6 +26,10 @@ INPUT=$(cat 2>/dev/null || echo '{}')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # `append_runtime_metrics_entry` is defined in hooks/lib/runtime-metrics.sh.
 source "$SCRIPT_DIR/lib/runtime-metrics.sh"
+# `last_turn_declares_policy_gate_stop` is defined in
+# hooks/lib/detect-policy-gate-stop.sh (single source of truth for the
+# model-declared policy-gate-stop marker — see AC-6 / the helper header).
+source "$SCRIPT_DIR/lib/detect-policy-gate-stop.sh"
 
 # `_runtime_metrics_payload_field` is currently duplicated in
 # hooks/pre-compact-save.sh as `_pc_runtime_metrics_payload_field`. Both
@@ -267,6 +271,12 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || ech
 COUNTER_FILE="/tmp/.autopilot-continue-${SESSION_ID}"
 FILE_COUNT=0
 
+# Extract TRANSCRIPT_PATH up-front (used by both the NOTOOL block below and
+# the policy-gate-stop honour gate). Hoisted out of the legacy-conditional
+# `else` branch so the honour gate works regardless of
+# AUTOPILOT_LEGACY_LOOPGUARD.
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+
 if [ "$SESSION_ID" != "unknown" ] && [ -f "$COUNTER_FILE" ]; then
   FILE_COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")
   # Reset counter if state file was modified since last block (progress was made)
@@ -294,7 +304,8 @@ if [ "$LEGACY_LOOPGUARD" = "1" ]; then
   # alone gate the release decision.
   NOTOOL_COUNT="$NOTOOL_THRESHOLD"
 else
-  TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+  # TRANSCRIPT_PATH was extracted up-front (above) so the policy-gate-stop
+  # honour gate can also use it under AUTOPILOT_LEGACY_LOOPGUARD=1.
   if [ "$SESSION_ID" != "unknown" ] && [ -f "$NOTOOL_COUNTER_FILE" ]; then
     NOTOOL_COUNT=$(cat "$NOTOOL_COUNTER_FILE" 2>/dev/null || echo "0")
     case "$NOTOOL_COUNT" in *[!0-9]*|"") NOTOOL_COUNT=0 ;; esac
@@ -339,6 +350,55 @@ else
     NOTOOL_COUNT="$NOTOOL_THRESHOLD"
   fi
 fi
+
+# --- Policy-gate-stop honour gate (SW_AUTOPILOT_POLICY_STOP_HONOR) ---
+# When the orchestrator model legitimately hard-stops it emits the marker
+# `[AUTOPILOT-POLICY] gate=<name> action=stop reason=<...>` in its last
+# assistant turn (mandated by skills/autopilot/SKILL.md). Without this gate
+# the hook ignores that declaration and keeps re-injecting "Do NOT stop"
+# even though the model has correctly stopped (the v6.x dogfood thrash:
+# 11 consecutive re-injections). Honour the declaration by allowing the
+# stop and recording a session_end / policy_gate_stop runtime_metrics entry.
+#
+# This gate is PURELY ADDITIVE and sits BEFORE the existing FILE_COUNT /
+# NOTOOL_COUNT loop guard and the ACTIVE_STEPS continuation below: with the
+# kill switch off OR no marker present, every downstream branch behaves
+# exactly as before (the loop guard remains the backstop). The gate calls
+# the shared detector directly with $TRANSCRIPT_PATH so it is independent
+# of AUTOPILOT_LEGACY_LOOPGUARD.
+#
+# Kill switch (tri-value; mirrors SW_AUTOPILOT_ASK_GUARD):
+#   on (default)  — honour: allow stop, emit policy_gate_stop metric.
+#   metric-only   — detect + log `[POLICY-GATE-STOP]` to stderr (would
+#                   honour) but STILL fall through to block.
+#   off           — ignore entirely.
+#   unknown value — fail-closed to `off` semantics (a typo never widens
+#                   honour behaviour).
+POLICY_STOP_HONOR="${SW_AUTOPILOT_POLICY_STOP_HONOR:-on}"
+case "$POLICY_STOP_HONOR" in
+  on)
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+      echo "[POLICY-GATE-STOP] honouring model-declared policy_gate_stop (last assistant turn emitted [AUTOPILOT-POLICY] ... action=stop); allowing end_turn instead of re-injecting continuation." >&2
+      _emit_session_end_metrics "policy_gate_stop" "$FILE_COUNT"
+      rm -f "$COUNTER_FILE" 2>/dev/null || true
+      rm -f "$NOTOOL_COUNTER_FILE" 2>/dev/null || true
+      exit 0
+    fi
+    ;;
+  metric-only)
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+      echo "[POLICY-GATE-STOP] metric-only: would honour model-declared policy_gate_stop (last assistant turn emitted [AUTOPILOT-POLICY] ... action=stop); still blocking per SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only." >&2
+    fi
+    ;;
+  off)
+    : # honour disabled — fall through to existing logic.
+    ;;
+  *)
+    # Unknown value: fail-closed to `off` semantics (a typo must not widen
+    # the honour behaviour).
+    :
+    ;;
+esac
 
 if [ "$FILE_COUNT" -ge 5 ] && [ "$NOTOOL_COUNT" -ge "$NOTOOL_THRESHOLD" ]; then
   echo "[AUTOPILOT-STALL] file-based loop guard released after $FILE_COUNT consecutive blocks" >&2

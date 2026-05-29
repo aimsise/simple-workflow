@@ -376,5 +376,149 @@ fi
 cleanup_session "$SID"
 rm -rf "$TMP"
 
+# ============================================================
+# Policy-gate-stop honour gate (SW_AUTOPILOT_POLICY_STOP_HONOR)
+# ============================================================
+echo ""
+echo "--- Policy-gate-stop honour gate ---"
+
+# env-capable runner (the default run_guard_hook above does not forward env).
+run_guard_hook_env() {
+  local input="$1"; local cwd="$2"; local env_kv="$3"
+  local stdout_file stderr_file
+  stdout_file=$(mktemp); stderr_file=$(mktemp)
+  set +e
+  if [ -n "$env_kv" ]; then
+    echo "$input" | (cd "$cwd" && env "$env_kv" bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  else
+    echo "$input" | (cd "$cwd" && bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  fi
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
+  rm -f "$stdout_file" "$stderr_file"
+}
+
+# Transcript whose LAST assistant turn is the audit block (so the 5-AND
+# would normally block) AND carries the policy_gate_stop marker in the same
+# text block. This is the realistic shape: the orchestrator emits the audit
+# block, then hard-stops with the [AUTOPILOT-POLICY] line in the same turn.
+TRANSCRIPT_AUDIT_PLUS_POLICY_STOP='{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"/impl"}]}}
+{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Skill","input":{"skill":"simple-workflow:impl","args":""}}]}}
+{"type":"assistant","uuid":"a2","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Skill","input":{"skill":"simple-workflow:audit","args":"round=1"}}]}}
+{"type":"assistant","uuid":"a3","message":{"role":"assistant","content":[{"type":"text","text":"**Status**: FAIL\n**Reports**:\n  - Code review: q.md\n**Summary**: audit infrastructure failure\n[AUTOPILOT-POLICY] gate=audit_infrastructure_fail action=stop reason=audit_infra_fail"}]}}'
+
+# (P-i): honour on → 5-AND met but marker present → NO block, exit 0.
+echo "--- (P-i): honour on → 5-AND met + marker → no block ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_PLUS_POLICY_STOP"
+SID="impl-cp-pgs-i-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=on"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
+   && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]'; then
+  echo -e "  ${GREEN}PASS${NC} (P-i): honour → exit 0, no block, [POLICY-GATE-STOP] stderr"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-i): expected exit 0 + no block"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:160}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-ii): regression — same 5-AND but NO marker → still blocks (honour on).
+echo "--- (P-ii): no marker → still blocks ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-pgs-ii-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=on"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} (P-ii): no marker → decision=block (unchanged)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-ii): expected decision=block"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-iii): kill switch off → ignore marker → block.
+echo "--- (P-iii): off → block despite marker ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_PLUS_POLICY_STOP"
+SID="impl-cp-pgs-iii-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=off"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} (P-iii): off → decision=block (marker ignored)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-iii): expected decision=block"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-iv): metric-only → block + [POLICY-GATE-STOP] would-honour stderr.
+echo "--- (P-iv): metric-only → block + stderr ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_PLUS_POLICY_STOP"
+SID="impl-cp-pgs-iv-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]' \
+   && echo "$LAST_STDERR" | grep -qiF 'would honour'; then
+  echo -e "  ${GREEN}PASS${NC} (P-iv): metric-only → block + would-honour stderr"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-iv): expected block + would-honour stderr"
+  echo -e "       Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (P-v): unknown value → fail-closed to off → block.
+echo "--- (P-v): unknown value → fail-closed (block) ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_PLUS_POLICY_STOP"
+SID="impl-cp-pgs-v-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s}')
+run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=garbage-value"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} (P-v): unknown → decision=block (fail-closed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (P-v): expected decision=block"
+  echo -e "       Decision: '$DECISION'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
 echo ""
 print_summary

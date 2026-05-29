@@ -82,6 +82,11 @@ source "$SCRIPT_DIR/lib/parse-state-file.sh"
 source "$SCRIPT_DIR/lib/jsonl-tail-audit.sh"
 # shellcheck source=hooks/lib/runtime-metrics.sh
 source "$SCRIPT_DIR/lib/runtime-metrics.sh"
+# shellcheck source=hooks/lib/detect-policy-gate-stop.sh
+# `last_turn_declares_policy_gate_stop` — single source of truth for the
+# model-declared policy-gate-stop marker (AC-6). Honoured below, right
+# before the decision:block emit.
+source "$SCRIPT_DIR/lib/detect-policy-gate-stop.sh"
 
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || echo "unknown")
@@ -392,6 +397,43 @@ if [ "$BLOCK_COUNT" -ge 3 ] 2>/dev/null; then
   rm -f "$COUNTER_FILE" 2>/dev/null || true
   exit 0
 fi
+
+# --- Policy-gate-stop honour gate (SW_AUTOPILOT_POLICY_STOP_HONOR) ---------
+# When the orchestrator model legitimately hard-stops it emits the marker
+# `[AUTOPILOT-POLICY] gate=<name> action=stop reason=<...>` in its last
+# assistant turn (mandated by skills/autopilot/SKILL.md). A Stop is blocked
+# if ANY of the three autopilot Stop hooks blocks, so this hook must honour
+# the declaration too. On honour: clear THIS hook's counter and exit 0
+# without blocking. runtime_metrics is intentionally NOT written here — the
+# session_end / policy_gate_stop entry is autopilot-continue.sh's job; this
+# hook only stands down (and frequently has no STATE_FILE to write to in the
+# legacy product_backlog flow anyway).
+#
+# PURELY ADDITIVE: sits right before the decision:block emit. With the kill
+# switch off OR no marker present, the existing 3-counter block behaviour is
+# unchanged. Same tri-value kill switch as the other two Stop hooks:
+#   on (default)  — honour: clear counter, exit 0 (no block).
+#   metric-only   — detect + log `[POLICY-GATE-STOP]` (would honour) but
+#                   STILL block.
+#   off / unknown — ignore (block as before); unknown fails closed here.
+POLICY_STOP_HONOR="${SW_AUTOPILOT_POLICY_STOP_HONOR:-on}"
+case "$POLICY_STOP_HONOR" in
+  on)
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+      echo "[POLICY-GATE-STOP] honouring model-declared policy_gate_stop (last assistant turn emitted [AUTOPILOT-POLICY] ... action=stop); standing down without blocking." >&2
+      rm -f "$COUNTER_FILE" 2>/dev/null || true
+      exit 0
+    fi
+    ;;
+  metric-only)
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+      echo "[POLICY-GATE-STOP] metric-only: would honour model-declared policy_gate_stop; still blocking per SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only." >&2
+    fi
+    ;;
+  *)
+    : # off / unknown → ignore (block as before); unknown fails closed.
+    ;;
+esac
 
 # --- block: increment counter, emit decision:block, record metric ---------
 BLOCK_COUNT=$((BLOCK_COUNT + 1))
