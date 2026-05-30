@@ -5,6 +5,776 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] — 2026-05-30
+
+**TL;DR.** First `8.x` major release. It consolidates the entire capability-detection feature line developed since `v7.0.4` (the prior `v7.1.0` / `v8.0.0` / `v8.0.1` milestones were never tagged and are merged here): per-AC capability binding (`### Capabilities` table in `ticket.md` / `plan.md`, Gate 6), the Advisory-capability tier (Gate 6.5, "Recommending, not Permitting"), MCP-server inheritance for the four productive subagents, **Phase 6 machine-enforcement** of Advisory consultation as an audit trail across `/impl`, `/brief`, `/catchup`, `/create-ticket`, `/scout`, `/investigate`, and `/test`, the autopilot 3-tier non-interactive contract, and the `brief` mode rename. Everything is **capability-name-agnostic**: any Skill or MCP server the user mounts into their harness flows through the same detection → binding → invocation → audit path with no plugin-file change.
+
+**Migration (breaking).**
+- **MCP inheritance / `tools:` removal** — `agents/{implementer,planner,researcher,test-writer}.md` no longer ship a `tools:` allowlist; they inherit the parent session's full inventory (including any `mcp__*`), and `planner` / `researcher` `Bash` widens to `Bash(*)`, fenced by each agent's `## Side-effect ban` and the extended `hooks/pre-bash-safety.sh` denylist. An `mcp__*` tool is invocable only when bound to an AC via the planner-authored `### Capabilities` table. Rollback: `git checkout v7.0.4` plus reinstall.
+- **`brief` mode rename** — the legacy brief mode value is renamed to `chain`, with a deprecation alias retained for one release. Update any `autopilot-policy.yaml` / scripted invocations that pass the old mode literal.
+- **Autopilot 3-tier non-interactive contract** — `/autopilot` now resolves an explicit `risk_tolerance` (conservative / moderate / aggressive) and a deterministic `AskUserQuestion` allow-list; absent or unknown `risk_tolerance` fails closed to `conservative`. Review `autopilot-policy.yaml` against the new tiers before running non-interactively.
+- Pre-Gate-6 tickets (no `### Capabilities` section) continue to drive `/impl` / `/audit` / `/ship` unchanged.
+
+### BREAKING CHANGES
+
+- **`agents/{implementer,planner,researcher,test-writer}.md` no longer ship
+  a `tools:` allowlist**; they now inherit the parent session's full tool
+  inventory. `planner` and `researcher` Bash permission expands from
+  `Bash(git log|diff|status|branch:*)` to `Bash(*)`. Mitigation: each
+  agent's new `## Side-effect ban` (or expanded body prose) forbids
+  destructive Bash, unbound MCP invocation, identity spoofing, and
+  outbound network calls; `hooks/pre-bash-safety.sh` adds defense-in-
+  depth at the shell level for `curl`, `wget`,
+  `git config user.email`, `git commit --amend`, `sudo`, `chmod 777`,
+  and related destructive / identity-spoofing patterns. Package-manager
+  installs (`npm install`, `pnpm install`, `yarn add`, `pip install`,
+  `gem install`, `cargo install`, `brew install`, `apt-get install`,
+  `apk add`, `go install`, `composer require`, `bundle install`,
+  `mix deps.get`, `dart pub get`, `conda install`, `nuget restore`,
+  `dotnet add package`, etc., across every language) and `git remote
+  add` are intentionally NOT blocked so autopilot can install declared
+  dependencies and add remotes without manual interruption; the
+  prompt-injection-driven-install mitigation lives at the prompt level
+  via the `## Bound capabilities (per AC)` discipline and the planner
+  Pre-emit Self-Audit step 6(d).
+- **`tests/test-path-consistency.sh` Cat 6 + Cat 11 invariants redesigned**:
+  Cat 6 (`^tools:` required) now allows Group A omission while still
+  enforcing `^tools:` presence for the six Group C agents; Cat 11 is
+  redesigned as a positive enumeration of (a) zero agents declaring the
+  unrestricted `"Bash(*)"` allowlist entry and (b) exactly the six Group C
+  agents carrying `^tools:` in their frontmatter.
+- **v7.1.0 doctrine retracted**: `skills/create-ticket/references/agent-
+  spawn-prompts.md` and `skills/create-ticket/references/ac-quality-
+  criteria.md` no longer say "subagents do not inherit MCP". The new
+  wording reflects the v8.0.0 reality: productive agents inherit, verdict
+  / read-only agents do not. Tickets created on v7.x continue to drive
+  `/impl` / `/audit` / `/ship` without parse failure.
+
+- **`/autopilot` non-interactive contract is now 3-tier and
+  `risk_tolerance`-aware**. The prior unconditional ban on
+  `AskUserQuestion` between per-ticket pipeline start and the final
+  `## [SW-CHECKPOINT]` is replaced by an allow-list matrix keyed on
+  `risk_tolerance` from `autopilot-policy.yaml`: `aggressive` denies
+  every header (zero questions); `moderate` allows only the safety-
+  critical `audit-fail` / `ac-eval` headers; `conservative` allows
+  the six gate-id headers (`audit-fail`, `ac-eval`, `ship-review`,
+  `ship-ci`, `eval-dry`, `tkt-quality`) and denies every other
+  (phase-gate / ad-hoc) header. The contract activation point is
+  shifted earlier — from per-ticket pipeline start to the moment
+  Phase 1 step 1 confirms `SPLIT_PLAN` exists — and now spans the
+  full Phase 1 / Phase 2 / post-loop window. Header naming on every
+  `AskUserQuestion` issued under `/autopilot` is load-bearing (gate
+  ID, max 12 chars); the issuing skills (`/impl`, `/ship`,
+  `/refactor`) now record the required `header:` value in prose so
+  off-matrix headers are denied at every tier. Phase 1 hard-stop
+  conditions (missing split-plan, brief `status: draft`, hostile
+  state) emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop`
+  alongside the verbatim legacy `ERROR:` literals and write
+  `## Stop Reason` with `tag: policy_gate_stop` plus a one-line
+  `Resume after fixing X with: /autopilot {parent-slug}` hint instead
+  of escalating to `AskUserQuestion`. Migration: users who relied on
+  the prior two-valued contract should set
+  `risk_tolerance: aggressive` in `autopilot-policy.yaml` to preserve
+  the zero-question behaviour. New mechanical assertions AP-1..AP-26
+  in `tests/test-skill-contracts.sh` pin the new section, matrix
+  cells, header naming, per-callee header annotations, hard-stop
+  path, and forbidden self-rationalisation enumeration. Structural
+  enforcement (`hooks/pre-askuserquestion-guard.sh`) ships in a
+  separate plan; the prose layer here is the sole orchestrator-side
+  enforcement until that hook lands.
+
+### Added
+
+- **MCP inheritance for 4 productive subagents** via `tools:` omission:
+  `agents/{implementer,planner,researcher,test-writer}.md` now inherit
+  every MCP server configured in `.mcp.json` (project) and
+  `~/.claude.json` (user), including custom user-authored servers.
+- **`## Side-effect ban` section** in `agents/planner.md` and
+  `agents/researcher.md`. Forbids destructive Bash, unbound MCP
+  invocation, identity spoofing, and outbound network calls. Three
+  canonical forbidden tokens (`git commit`, `curl`, `mcp__Gmail__send`)
+  appear in each section as concrete examples. Note that package-
+  manager installs ARE allowed by the hook (see BREAKING CHANGES
+  bullet) — Side-effect ban discourages planner / researcher from
+  introducing new dependencies as part of their authoring / read-mostly
+  role, but the hook lets implementer / test-writer install declared
+  dependencies as part of their productive role. Intentionally NOT
+  applied to `agents/implementer.md` / `agents/test-writer.md` because
+  productive code-mutation and test-execution work legitimately
+  requires `Write` / `Edit` and `Bash(*)` beyond read-only inspection
+  (a build script may run `rm` on build artifacts, an integration
+  test may invoke `npm run test:e2e`). Defense-in-depth at the hook
+  level (`hooks/pre-bash-safety.sh`) backstops these productive agents
+  for the destructive / identity-spoof patterns even without an agent-
+  body Side-effect ban.
+- **Bound Capabilities MCP-extension bullet** in
+  `agents/{implementer,planner,researcher,test-writer}.md`. Extends the
+  v7.1.0 "Do NOT scan installed Skills independently" guidance to also
+  cover MCP servers — only `mcp__*` bound to an active AC may be invoked
+  (`Skills **or MCP servers**`).
+- **`hooks/pre-bash-safety.sh` denylist extension** covering 4 new
+  categories: network egress (`curl`, `wget`, `scp`, `rsync ... ssh`),
+  identity spoofing (`git config user.email`, `git config user.name`),
+  privilege escalation (`sudo`, `chmod 777`, `chown root`), and
+  branch / commit subversion (`git commit --amend`, `git stash drop`,
+  `git reflog expire`, `git push --no-verify`). Defense-in-depth
+  against the Group A `Bash(*)` expansion. A supply-chain mutation
+  category was prototyped in earlier drafts and intentionally dropped
+  before release — package-manager installs (`npm install` and
+  equivalents across every language) and `git remote add` are
+  allowed by the hook so autopilot does not stall on routine
+  dependency setup. See the BREAKING CHANGES bullet for the prompt-
+  level mitigation. Patterns
+  accept a permissive prefix that blocks the common obfuscations —
+  full-path invocation (`/usr/bin/curl ...`), relative-path invocation
+  (`./curl`, `../curl`, `bin/curl`, `node_modules/.bin/curl`,
+  `~/bin/curl`, `$HOME/bin/curl`), arbitrary env-var assignment
+  (`FOO=bar curl ...`), command wrappers (`env`, `command`, `exec`,
+  `time`, `nice`, `ionice`, `nohup`), and flags between `git push` and
+  `--no-verify` at any argument position (including quoted args
+  containing pipe / semicolon / ampersand). Out-of-scope
+  obfuscations (covered by the agent-body `## Side-effect ban` and the
+  per-AC binding discipline instead): the quoted argument inside
+  `bash -c '...'` / `sh -c '...'`, parenthesised subshell token-start
+  `(cmd)`, and brace-group token-start `{ cmd; }`.
+- **Cat AN drift-guard tests (CT-AN-1..CT-AN-8)** in
+  `tests/test-skill-contracts.sh`. Pin the Group A omit, Group C
+  retention, `permissionMode` removal, Side-effect ban presence,
+  Bound Capabilities MCP bullet, doctrine update, `pre-bash-safety.sh`
+  new pattern tokens (CT-AN-7), and behavioral block per category
+  (CT-AN-8 — pipes a representative command per category into the hook
+  and asserts exit 2, guarding against the "tokens in comments but
+  regex broken" silent-regression class).
+
+- **Gate 6.5 (Probe Completeness) + Advisory Capabilities pathway**
+  closes the v8.0.0 probe-visible-but-silently-dropped failure mode.
+  Dogfood (TW33 / TW34, 12 tickets) showed `ui-ux-pro-max` was probe-
+  visible in both directories but classified in zero tickets, and
+  `mcp__context7__query-docs` was classified as `(advisory; no AC
+  binding)` in 4 of 5 TW34 tickets but never reached the implementer
+  because the orchestrator did not propagate that advisory annotation
+  into spawn prompts. v8.0.0 ships the structural fix:
+  - **`skills/create-ticket/references/ac-quality-criteria.md`**
+    gains `## Gate 6.5: Probe Completeness` between Gate 6 and the
+    Evaluator-MUST-NOT list. The new gate defines a three-bucket
+    classification (Bound / Advisory / Skipped with rationale) and
+    REQUIRES the planner to classify every probe-visible entry into
+    exactly one bucket. Silent omission is FAIL. `(none)` probes are
+    vacuously PASS. Pipeline orchestrator skill names (`/scout`,
+    `/impl`, etc.) qualify for an automatic Skipped path with a fixed
+    rationale. The Evaluator MUST NOT list gains two new entries
+    (bucket-choice debatability is not FAIL; `(none)` probe is PASS).
+    The Planner MUST list gains a corresponding entry requiring
+    classification of every probe entry on every emit / re-emit.
+  - **`agents/planner.md`** gains Pre-emit Self-Audit step 7 (Gate 6.5
+    probe completeness cross-check) with the three-bucket vocabulary,
+    the self-skip exception for pipeline orchestrators, the `(none)`
+    exception, and the Advisory authoring discipline (`Used by`
+    column MUST list productive subagents only; verdict / Group C
+    agents in an Advisory row's `Used by` is a Gate 6.5 FAIL). The
+    Capabilities Authoring (Authoring Role) body section is updated
+    to enumerate the three sections the planner authors
+    (`### Capabilities`, `### Advisory Capabilities`,
+    `#### Capability Skip Rationale`) and confirm their union covers
+    every probe entry.
+  - **`agents/ticket-evaluator.md`** Result template gains a Probe
+    Completeness (Gate 6.5) Gate Result row; `n/a` is permitted when
+    both probes are `(none)` or the ticket pre-dates Gate 6.5.
+  - **`skills/create-ticket/references/ticket-template.md`** ships the
+    `### Advisory Capabilities` table block (with `Name | Type |
+    Purpose | Used by` columns; no `Bound AC(s)` column) and the
+    `#### Capability Skip Rationale` bullet block, both emitted by
+    the planner between `### Capabilities` and `### Claude Code
+    Workflow`.
+  - **`agents/implementer.md`, `agents/researcher.md`,
+    `agents/test-writer.md`** each gain a `## Advisory Capabilities`
+    body section that lifts the speculative-invocation ban
+    exclusively for entries the orchestrator listed under
+    `## Advisory capabilities (per ticket)` in the spawn prompt. The
+    ban remains in force for any Skill or `mcp__*` tool not listed in
+    Bound or Advisory. The four productive subagents (`planner`,
+    `implementer`, `researcher`, `test-writer`) split into one author
+    (planner) and three consumers (implementer / researcher /
+    test-writer); only consumers gain the section because the
+    planner authors the Advisory table rather than reading it.
+  - **MCP probe coverage extended** to four previously probe-light
+    skills (`skills/{impl,brief,plan2doc,investigate}/SKILL.md`).
+    Each `## Pre-computed Context` block now emits both
+    `Available user skills:` and `Available MCP servers:` so
+    downstream planner / researcher invocations see the full probe
+    set and Gate 6.5 cross-check has authoritative input.
+  - **Advisory propagation pathway** in `skills/impl/SKILL.md` Step 13
+    (implementer spawn) and `skills/refactor/SKILL.md` Phase 1 Step 1
+    (planner spawn). The orchestrator now extracts the
+    `### Advisory Capabilities` table from `{ticket-dir}/ticket.md`
+    in addition to `### Capabilities`, and inlines the full table
+    into the productive-subagent spawn prompt under
+    `## Advisory capabilities (per ticket)`. The block is NOT inlined
+    into `ac-evaluator` (Step 15) spawn prompts — Advisory is for
+    authoring, not verification.
+- **Cat AQ drift-guard tests (CT-AQ-1..CT-AQ-9)** in
+  `tests/test-skill-contracts.sh`. Pin Gate 6.5 canonical section
+  presence (CT-AQ-1), planner step 7 wiring (CT-AQ-2), ticket-
+  evaluator Gate Results row (CT-AQ-3), ticket template Advisory +
+  Skip Rationale blocks (CT-AQ-4), productive-consumer Advisory body
+  section across `{implementer,researcher,test-writer}.md` (CT-AQ-5),
+  MCP probe coverage across the four newly-probe-emitting skills
+  (CT-AQ-6), Advisory handoff in `impl` / `refactor` orchestrators
+  (CT-AQ-7), the `(none)` probe vacuous-pass documentation in
+  both authoring sites (CT-AQ-8), and the Recommending-semantics
+  consultation discipline that elevates Advisory from
+  permitting-only to invoke-or-record-rationale (CT-AQ-9).
+
+- **Advisory Capabilities Recommending semantics (v8.0.0+
+  consumer-side consultation discipline)**: TW35 dogfood
+  (`/Users/kytk/workspace/repos/test_simple_workflow35`) confirmed
+  the planner-side Gate 6.5 + orchestrator-side Advisory propagation
+  pathway both worked end-to-end (`ui-ux-pro-max` was Advisory-bound
+  in 4/5 tickets and inlined into every implementer spawn prompt),
+  but the consumer side silently skipped the entry — `ui-ux-pro-max`
+  was invoked 0 times across the entire session with no recorded
+  skip rationale anywhere in the audit trail. The collapse of
+  permitting-only Advisory into "silent inaction" hides the
+  implementer's design decision from downstream review. This release
+  promotes Advisory from permitting to Recommending:
+  - **`agents/{implementer,researcher,test-writer}.md`** each gain a
+    `### Consultation discipline (v8.0.0+ — Recommending, not just
+    Permitting)` subsection under their `## Advisory Capabilities`
+    body section. For every Advisory entry whose `Used by` column
+    lists the consumer, the consumer MUST either (a) invoke the
+    listed Skill / `mcp__*` tool at least once during work, OR
+    (b) record a one-line skip rationale under `### Limitations`
+    (or `Next Steps` when no `### Limitations` heading exists in the
+    consumer's return envelope) explaining why the entry was not
+    consulted. Silent omission — neither invoking nor recording a
+    rationale — is a contract violation.
+  - **`skills/create-ticket/references/ac-quality-criteria.md`**
+    Gate 6.5 section gains a `Consumer-side consultation discipline`
+    paragraph documenting the Recommending semantics and the TW35
+    dogfood evidence that motivated it.
+  - The discipline mirrors Gate 6.5's probe-completeness principle
+    at the consumer side: a probe-visible capability bound for a
+    consumer must result in either an invocation OR a documented
+    skip, never invisible inaction.
+- **Category J in `tests/test-pre-bash-safety.sh`** — full behavioral
+  block / allow coverage of the v8.0.0 denylist, including the bypass
+  cases listed in the previous bullet. Total grows from 126 to 195
+  assertions (+69) including J.7 (7 BLOCK assertions for relative-path
+  and quoted-arg bypasses: `./curl`, `../curl`, `bin/curl`,
+  `node_modules/.bin/curl`, `git push 'arg|piped' --no-verify`, etc.)
+  and 36 ALLOW assertions: 24 covering legitimate package-manager
+  installs across npm / pnpm / yarn / pip / pip3 / gem / cargo /
+  brew / apt-get / apk / go / composer / bundle / mix / dart pub /
+  conda / nuget / dotnet plus `git remote add`, and 12 false-positive
+  sanity cases (`git remote -v`, `git push`, `git commit -m`,
+  `ls bin/curl`, `git push origin some--no-verify-branch`, etc.).
+
+- **`hooks/lib/inject-keys.sh` gains a post-inject capture-pane verify
+  for the tmux backend (P1-1)**. After `tmux send-keys` returns rc=0,
+  the library now sleeps `SW_INJECT_KEYS_VERIFY_SLEEP_MS` ms (default
+  `150`) and runs `tmux capture-pane -p -S -3 -E -` against
+  `$TMUX_PANE`; if the injected text is not visible, `inject_keys`
+  downgrades rc to 1 and emits `[INJECT-VERIFY] missed: ...` to
+  stderr. The upstream auto-compact hooks
+  (`hooks/pre-next-scout-auto-compact.sh` L169,
+  `hooks/post-ship-state-auto-compact.sh` L328) already gate the
+  `.auto-compact-pending` sentinel and the `runtime_metrics`
+  `auto_compact_inject` write on `INJECT_RC = 0`, so the verify miss
+  flips them to the failure branch without further changes —
+  `additionalContext` now begins `auto-compact-on-ship: injection
+  failed — ` and includes the new verify-missed hint (greppable by
+  the substring `verify window`) emitted by `inject_keys_failure_hint`.
+  Kill-switches: `SW_INJECT_KEYS_VERIFY=0` disables the verify block
+  entirely (rc reflects `tmux send-keys` exit code only, restoring
+  pre-P1-1 behaviour); `SW_INJECT_KEYS_VERIFY_SLEEP_MS` overrides the
+  sleep window. The DRY_RUN early-return (`INJECT_KEYS_DRY_RUN=1 +
+  SW_TEST_HARNESS=1`) runs before the verify block so the existing
+  `[inject-keys] DRY_RUN backend=tmux target=... text=... enter=...`
+  stderr contract is unchanged. New hermetic test
+  `tests/test-inject-keys.sh` (PATH-stubbed `tmux` via
+  `tests/fixtures/tmux-stub.sh`) covers DRY_RUN unchanged, opt-out,
+  verify success, verify failure, sleep-ms override, and the
+  `inject_keys_failure_hint` `verify window` substring contract.
+
+- **`/autopilot` Phase 1 emits a 1-line `[AUTOPILOT-CONTEXT]` self-doc**
+  describing the resolved `SW_AUTO_COMPACT_ON_SHIP_MODE` so the
+  orchestrator never asks about auto-compaction. New step 0.5 in
+  `skills/autopilot/SKILL.md` (between auto-kick cleanup and split-plan
+  discovery) reads the env var, defaults to `on` in autopilot context,
+  treats unknown values as `off`, and emits EXACTLY ONE block whose
+  three verbatim branches (on / metric-only / off) live in the new
+  `skills/autopilot/references/autopilot-context-self-doc.md`. The
+  resolution mirrors `hooks/pre-next-scout-auto-compact.sh` L81 so the
+  self-doc never lies about the active mode. Drift-guarded by
+  `tests/test-skill-contracts.sh` CT-AC-52..60.
+- **`hooks/pre-askuserquestion-guard.sh`** — new
+  `PreToolUse:AskUserQuestion` hook that structurally enforces the
+  autopilot non-interactive contract via a 3-tier `risk_tolerance` x
+  6-header allow-list matrix (single source of truth shared verbatim
+  with `skills/autopilot/SKILL.md`). The hook resolves the kill-switch
+  (`SW_AUTOPILOT_ASK_GUARD`), walks the canonical
+  `is_autopilot_context` / `find_any_autopilot_state_file` /
+  `parse_ticket_statuses` detection chain, and emits
+  `hookSpecificOutput.permissionDecision: "deny"` with a reason
+  enumerating the matched tier, the offending header, the
+  `policy_gate_stop` resume path, and the
+  `autopilot-policy.yaml` tuning knob. New helper
+  `hooks/lib/parse-state-file.sh::get_risk_tolerance` reads
+  `risk_tolerance` from `<state_dir>/autopilot-policy.yaml` using the
+  standard `yq -> python3+PyYAML -> awk` three-tier fallback; file
+  absence, missing key, or unknown value normalises to `conservative`
+  so a malformed policy does not silently widen / collapse the
+  allow-list. Kill-switch: `SW_AUTOPILOT_ASK_GUARD=on` (default) /
+  `metric-only` (compute matrix + log `[ASK-GUARD] metric-only: would
+  deny ...` without denying) / `off` (silent allow; unknown values
+  collapse here). Companion to the SKILL prose work above; matrix
+  parity is enforced by 9 new mechanical assertions (P1-3B AC-6 /
+  AC-9 / AC-10) appended to `tests/test-skill-contracts.sh` and by
+  the new `tests/test-ask-guard.sh` (56 scenarios covering all 21
+  matrix cells, metric-only / off / policy-absent kill-switches, the
+  unknown-header stderr signal, the unknown-tier fail-open, and the
+  outside-autopilot / all-terminal negative paths).
+- **Sentinel-based session-start `/compact` retry (P2-1)** —
+  `hooks/pre-next-scout-auto-compact.sh` and
+  `hooks/post-ship-state-auto-compact.sh` now drop
+  `<state_dir>/.next-compact-pending` (UNIX timestamp) BEFORE every
+  `inject_keys '/compact'` call and delete it only on confirmed
+  success (`INJECT_RC == 0` after P1-1 verify). On rc=1 the sentinel
+  is RETAINED and stderr carries
+  `retaining .next-compact-pending for session-start retry`, so
+  `hooks/session-start.sh` can replay the injection on the next
+  `source=startup` / `source=resume` boot (the timestamp is refreshed
+  before each replay attempt); `source=compact` deletes the sentinel
+  without re-injecting (logs `sentinel cleared on source=compact`).
+  Sentinels older than `SW_NEXT_COMPACT_PENDING_TTL_SEC` (default
+  21600 = 6h) are deleted without retry (`stale sentinel ... removed
+  without retry`). `hooks/autopilot-continue.sh` co-deletes
+  `.next-compact-pending` whenever it yields on
+  `.auto-compact-pending`, so a same-session yield never triggers a
+  duplicate session-start retry. Kill-switch:
+  `SW_AUTO_COMPACT_ON_SHIP_MODE=off` short-circuits the entire P2-1
+  block in both writers and reader (full backward compat). New
+  hermetic tests `tests/test-session-start-next-compact.sh` (AC-5 /
+  AC-6 / AC-7 / AC-8 via `INJECT_KEYS_DRY_RUN=1 + SW_TEST_HARNESS=1`)
+  and `tests/test-pre-next-scout-auto-compact.sh` (AC-2 / AC-3 via
+  PATH-stubbed `tmux` from `tests/fixtures/tmux-stub.sh`) pin the
+  sentinel lifecycle end-to-end.
+- **`SW_POST_SHIP_INTEGRITY` runtime env knob (P3-5)** — controls the
+  new post-ship integrity Gate 5.5 inside
+  `hooks/post-ship-state-auto-compact.sh`. Values: `on` (default —
+  self-heal each ticket's `phase-state.yaml` when
+  `overall_status:` is still `in-progress` after `steps.ship: completed`
+  was written to the brief-side `autopilot-state.yaml`), `metric-only`
+  (emit the `[POST-SHIP-INTEGRITY] self-healing <dir>` warning to
+  stderr but skip the write — forensic mode), `off` (silent skip;
+  unknown values collapse here so a typo fails closed for the rewrite
+  path). The rewrite uses `yq -i` first then a `python3 + PyYAML`
+  tempfile + rename fallback; awk-tier rewriting is intentionally not
+  attempted (ticket Risk R3) so the original file is preserved on
+  failure. Companion helper `parse_yaml_scalar <file> <key>` lands in
+  `hooks/lib/parse-state-file.sh` with the canonical
+  `yq -> python3+PyYAML -> awk` three-tier fallback. New
+  mechanical assertions PSI AC-1..AC-7 in
+  `tests/test-skill-contracts.sh` pin the SKILL prose (Step 15a
+  idempotence + Step 16 ordering), the hook Gate 5.5 + kill-switch
+  literals, and the behavioural self-heal / kill-switch / metric-only /
+  idempotence behaviours against the
+  `tests/fixtures/post-ship-integrity/` fixtures.
+- **State-schema cross-version tests + canonical invariant doc + migration tool
+  (P2-4)** — new fixtures `tests/fixtures/state-schema/v7-shelftrack/` and
+  `tests/fixtures/state-schema/v8-shelftrack/` capture the v7 (legacy
+  `total_tickets:` + basename `ticket_mapping:`) and v8 (canonical
+  `processing_order:` + fullpath `ticket_mapping:` + `human_overrides: []` /
+  `kb_overrides: []` / `decisions_made: []`) shapes of `autopilot-state.yaml`
+  sanitised from test_simple_workflow33 / 34. New `tests/test-state-parsers.sh`
+  asserts the four `hooks/lib/parse-state-file.sh` helpers (`is_autopilot_context`,
+  `find_any_autopilot_state_file`, `parse_ticket_ship_dirs`,
+  `parse_ticket_statuses`) return semantically identical results across both
+  fixtures (≥8 PASS, run via the existing `tests/run-all.sh` glob). New
+  `docs/state-schema.md` documents the canonical v8 shape, the read-only v7
+  legacy fields, the three load-bearing invariants (`processing_order:` is
+  the SSoT for ticket count; `ticket_dir:` is always a fullpath; `tickets[]`
+  is list-canonical; forward-compatible additions only), and the migration
+  workflow. New `tools/migrate-state-schema.sh` performs a non-destructive
+  v7 -> v8 rewrite (`--in` / `--out` only; in-place edits unsupported by
+  design) using the project's standard `yq` -> `python3 + PyYAML` ->
+  fail-with-warning three-tier fallback, and is idempotent on already-v8
+  input.
+
+- `## Gate 6: Capability Mapping` in
+  `skills/create-ticket/references/ac-quality-criteria.md`. Defines when
+  an AC is runtime/visual (live rendering, console-error count, keyboard
+  focus/hover, WCAG contrast, network I/O, FS-state-dependent) and the
+  binding rule (every such AC MUST appear in the `Bound AC(s)` column of
+  at least one `### Capabilities` row OR be rewritten as a static AC).
+  Gate 6 evaluation activates only after this update ships;
+  pre-ship evaluations of this plan (including
+  `.docs/update_ticket/eval-report.md`) deliberately applied Gates 1-5
+  only and their PASS verdicts do not imply Gate 6 conformance.
+- `### Capabilities` section in
+  `skills/create-ticket/references/ticket-template.md`, placed between
+  `### Implementation Notes` and `### Claude Code Workflow`. Column
+  header sequence is `Name | Type | Purpose | Used by | Bound AC(s)`.
+  Optional `#### Capability Gaps` subsection records runtime/visual ACs
+  that could not be bound and the reason.
+- `Available MCP servers:` Pre-computed Context probe in
+  `skills/create-ticket/SKILL.md`. The `!`-prefixed bash pipeline reads
+  the `mcpServers` keys of `.mcp.json` (project-scope) and
+  `~/.claude.json` (user-scope), unions and de-duplicates them, and
+  serialises the result into the planner spawn prompt verbatim. Empty
+  probes return `(none)`.
+- MCP-server enumeration step in `skills/plan2doc/SKILL.md` Step 3 and a
+  `## Capabilities` section requirement in Step 4 — the planner copies
+  the ticket's `### Capabilities` table verbatim into the plan when
+  `ticket.md` exists, mirroring the existing AC SSoT verbatim-copy
+  discipline.
+- Planner Pre-emit Self-Audit step 6 in `agents/planner.md`. Cross-
+  checks every drafted AC against the Gate 6 runtime/visual classifier
+  and verifies each runtime/visual AC appears in at least one row's
+  `Bound AC(s)` column, OR is rewritten as a static AC, OR is recorded
+  under `#### Capability Gaps`.
+- `Capability Mapping` row in the `agents/ticket-evaluator.md` return
+  envelope `**Gate Results**` block (canonical criteria are inline-
+  injected; no rubric change inside the evaluator agent itself).
+- `tests/test-skill-contracts.sh` Category AM (CT-AM-1..7). Drift guards
+  lock the new template heading + column header, the canonical Gate 6
+  + Planner MUST bullet, the create-ticket MCP probe shape, the
+  plan2doc Step 3 / Step 4 wording, the spawn-prompt + planner self-
+  audit substrings, the impl-side per-AC handoff, the 8-skill handoff
+  propagation, and the AC-12 trivial-pass boundary against the
+  pre-existing Cat AH-7 AC-counting scanner.
+- Each Skill-bearing subagent body (`ac-evaluator`, `code-reviewer`,
+  `decomposer`, `implementer`, `researcher`, `test-writer`,
+  `tune-analyzer`) now carries a `## Bound Capabilities (Handoff from
+  Orchestrator)` section instructing the agent to treat the spawn
+  prompt's `## Bound capabilities (per AC)` block as upstream-
+  authoritative — no re-derivation of capability relevance from the AC
+  text, no independent scan of installed Skills for "plausible matches",
+  and explicit gap-reporting when a bound Skill is unavailable at
+  runtime. `agents/planner.md` carries the matching authoring-role
+  variant (`## Bound Capabilities (Authoring Role)`) clarifying that the
+  planner emits — rather than consumes — the binding, sourced from the
+  orchestrator's `Available capabilities` probe under Gate 6.
+- `tests/test-skill-contracts.sh` Category AM gains CT-AM-8 and
+  CT-AM-9. CT-AM-8 asserts every Skill-bearing agent body carries a
+  top-level `## Bound Capabilities` heading (sum across 8 agents `>= 8`).
+  CT-AM-9 asserts every Subagent Skill-Access Handoff in the 9 spawner
+  skills (audit, brief, create-ticket, impl, investigate, plan2doc,
+  refactor, test, tune) carries the upgraded deterministic-inlining
+  bullet (`inline the bound capabilities verbatim into every spawn
+  prompt`).
+
+- **Phase 6 — machine-enforced Advisory consultation (audit trail across the pipeline).** Building on the v8.0.0 Gate 6.5 "Recommending, not Permitting" semantics, every productive subagent now emits a REQUIRED `**Advisory consultation**:` field in its Result envelope, and the orchestrators gate on it. The field is `(none)` when no Advisory entry targets the agent, otherwise one `- <Name>: invoked (<evidence>)` / `- <Name>: not invoked (<rationale>)` bullet per applicable entry — so a probe-visible capability bound for the agent's use must result in either an invocation OR a documented skip, never silent inaction.
+  - **`agents/{implementer,researcher,test-writer}.md`**: REQUIRED `**Advisory consultation**:` field + `### How to invoke each Advisory entry` (deferred-tool resolution: `Type=skill` → `Skill` tool; `Type=MCP` → `ToolSearch query:"select:<Name>"` then invoke) + `### Consultation reporting format`. The procedure is **capability-name-agnostic by design** — a user-mounted Skill or MCP server flows through the identical path with no agent-file change. `agents/planner.md` is intentionally excluded (it AUTHORS the Advisory table, it does not consume it).
+  - **Orchestrator gates**: `/impl` Step 14b (FAIL the round on a missing field), `/brief` §1.5, `/catchup` Step 2.5, `/create-ticket` Phase 1.5 (explicit-Agent-tool researcher spawners; FAIL or surface), and `/scout` Step 4a (the gate-able caller of the declarative `/investigate`; surface-don't-fail since `investigation.md` is already on disk).
+  - **Declarative-spawner enforcement**: `/investigate` Step 6 and `/test` Step 7 return contracts now require the Advisory field, because a `context: fork` spawn runs the SKILL.md body AS the agent's task prompt with no post-fork orchestrator turn to gate inline. Dogfood (TW41) measured `/investigate`-spawned researchers emitting the field in 9/9 returns, up from 0/7 before the return-contract fix.
+
+### Changed
+
+- **`/brief` and `/create-ticket` Phase 2 enforce args-aware shrinkage**:
+  before issuing any `AskUserQuestion`, both skills now scan the active
+  input (`$ARGUMENTS` in bare mode; brief body in brief mode with
+  `interview_complete: false`) against the seven interview-template
+  categories and classify each candidate question as `args-resolved`
+  or `needs-question`. `args-resolved` items MUST NOT appear in any
+  payload (including paraphrased / "to confirm" variants); a fully
+  exhausted `needs-question` set is a new convergence trigger. Round /
+  question caps (10 rounds × 3/round × 30 total) are unchanged; the
+  `mode independence guard` body is unchanged. The orchestrator emits
+  `[args-aware shrinkage] args-resolved categories: <list>; needs-question
+  categories: <list>` once on round 1 so users can audit the
+  suppression decision. New mechanical assertions CT-AC-61..65 in
+  `tests/test-skill-contracts.sh` pin the contract grep, caps
+  invariance, and guard-body invariance.
+- **`/brief` introduces `chain={on,off}` as the canonical finalization
+  control argument (P3-2C, X.Y.0 deprecation phase)**. The new key
+  expresses what the argument actually controls — whether `/brief`
+  chains into `/create-ticket` + `/autopilot` at Finalization — instead
+  of the misleading `mode=auto|manual` framing that was repeatedly
+  read as "skip the Socratic interview" (it never did, per the
+  `mode independence guard`). Mapping: `chain=on` ≡ legacy
+  `mode=auto`; `chain=off` ≡ legacy `mode=manual`; default when
+  neither is supplied stays `chain=on` to preserve pre-vX.Y.0 user
+  habits. `skills/brief/SKILL.md` `argument-hint` is now
+  `<what-to-build> [chain=on|off] (legacy: mode=auto|manual)`; the
+  `## Argument Parsing` section parses `chain=` first and treats
+  `mode=` as a deprecated alias; the Phase 3 frontmatter writes
+  BOTH `chain:` and `mode:` during the deprecation window so legacy
+  readers continue to work; the Finalization section title is
+  `## Finalization: Output, \`chain=on\` handoff, and SW-CHECKPOINT`
+  with `### Step 2 — \`chain=on\` handoff` and `### Step 3 — \`chain=off\``;
+  the `mode independence guard` is preserved and explicitly extended
+  to mention `chain` alongside `mode` (independence-protection covers
+  both arguments during the deprecation window; the guard is slated
+  for removal in vX.(Y+1).0 once the alias is gone). `skills/create-ticket/SKILL.md`
+  Step W-8 + B-2 frontmatter row and
+  `skills/create-ticket/references/agent-spawn-prompts.md` Phase 4
+  `gates.ticket_quality_fail` fallback both document the precedence
+  rule `chain: precedes mode:` (chain takes precedence; mode read
+  as fallback; super-legacy briefs lacking both keys default to
+  `chain=on` / `mode: auto`). New mechanical assertions PCN-1..PCN-7
+  in `tests/test-skill-contracts.sh` Category PCN pin the literals
+  (`chain=on` / `chain=off` count, `argument-hint` substring,
+  deprecation warning + simultaneous-spec error, frontmatter dual-key
+  presence, cross-skill precedence marker, guard preservation +
+  `chain` mention). The `mode=` argument continues to work unchanged
+  for one minor and emits a stderr deprecation warning when supplied;
+  combining `chain=` and `mode=` simultaneously errors out (no silent
+  rewrite, mirroring the v6.0.0 `auto=true` defensive stance). The
+  removal of `mode=` is a future-minor BREAKING change — flagged here
+  via the `feat(P3-2C)!` commit subject so consumers can prepare.
+
+- `skills/create-ticket/references/agent-spawn-prompts.md` — v7.1.0
+  paragraph "The subagent does not inherit the main-thread harness skill
+  / MCP descriptions" replaced by "MCP inheritance under v8.0.0" with
+  the Group A / Group C split documented explicitly and the
+  `productive subagents` term introduced.
+- `skills/create-ticket/references/ac-quality-criteria.md` — v7.1.0
+  wording "Forked subagents are not guaranteed to inherit MCP tool
+  access" replaced by "Forked subagents inherit the parent session's
+  MCP tool access when their `tools:` field is omitted".
+- `skills/{impl,audit,test,tune,create-ticket}/SKILL.md` and
+  `skills/{brief,investigate,plan2doc,refactor}/SKILL.md` — the
+  `## Subagent Skill-Access Handoff` opening bullet is rewritten as a
+  three-bullet structure that distinguishes (a) truly hermetic agents
+  (`security-scanner`, `ticket-evaluator`) which carry no Skill tool,
+  (b) Skill-bearing verdict / read-only agents (`ac-evaluator`,
+  `code-reviewer`, `decomposer`, `tune-analyzer`) which receive
+  capability handoffs via deterministic per-AC binding only, and
+  (c) productive agents (`implementer`, `planner`, `researcher`,
+  `test-writer`) which inherit-all under v8.0.0 but are still bound to
+  the active-AC `## Bound capabilities (per AC)` block. The same
+  three-bullet structure is applied uniformly across all 9 spawner
+  SKILL.md so the v7.1.0 sibling-audit asymmetry that produced the
+  Round 1 finding does not recur.
+- `agents/planner.md` — body paragraph "Note on the `tools:` allowlist
+  above" rewritten as "Note on subagent permission model" reflecting
+  omit + prompt-level FS-search ban. Pre-emit Self-Audit step 6 also
+  gains a new sub-step (d) that rejects MCP-typed `### Capabilities`
+  rows whose `Used by` column lists a Group C agent — MCP servers are
+  unexecutable for those agents under v8.0.0, so the binding must
+  either split (productive agent invokes the MCP; verdict agent
+  verifies via a plain Skill) or move under `#### Capability Gaps`.
+- `skills/refactor/SKILL.md` — Phase 1 Step 1 (planner spawn) and
+  Phase 3 Step 6 (code-reviewer spawn) now inline the per-AC
+  `## Bound capabilities (per AC)` block from `{ticket-dir}/ticket.md`'s
+  `### Capabilities` section into each spawn prompt (parity with
+  `/impl` Steps 13/15). Pre-Gate-6 / `ticket-dir`-absent invocations
+  fall back to the prior advisory path. The `## Pre-computed Context`
+  block gains the `Available MCP servers:` probe (mirroring
+  `/create-ticket`) so the planner authoring a brand-new
+  `### Capabilities` table can see MCP servers from `.mcp.json` /
+  `~/.claude.json`. **Known gap, v8.0.x candidate**: explicit in-step
+  capability pre-load instructions (analogous to `/impl` Steps 13/15
+  and `/refactor` Phase 1 Step 1 / Phase 3 Step 6) are NOT yet present
+  in the remaining 7 spawner SKILL.md (`audit`, `brief`,
+  `create-ticket`, `investigate`, `plan2doc`, `test`, `tune`). Those
+  7 spawners received the v8.0.0 three-bullet `## Subagent
+  Skill-Access Handoff` doctrine update so the contract is stated
+  ("inline the bound capabilities verbatim into every spawn prompt"),
+  but the in-step pre-load wording is advisory only. Existing
+  consumers fall back to the agent body's in-house capability-
+  selection path when the orchestrator omits the explicit pre-load.
+  Tracked as a known gap for a future v8.0.x release; no backlog
+  ticket has been filed yet.
+- `tests/test-path-consistency.sh` Cat 6 + Cat 11 redesigned for v8.0.0.
+
+- `skills/impl/SKILL.md` Step 13 (`implementer`) and Step 15
+  (`ac-evaluator`) now `Read` `{ticket-dir}/ticket.md`'s
+  `### Capabilities` section and inline the per-AC bound-capability list
+  into the spawn prompt under `## Bound capabilities (per AC)`. The
+  v7.0.4 advisory bullet for `ac-evaluator` is replaced by a forward-
+  reference to this deterministic handoff. Pre-Gate-6 tickets fall back
+  to the prior ad-hoc path (`(none recorded — ticket pre-dates Gate 6)`)
+  so backwards compatibility is preserved.
+- Subagent Skill-Access Handoff in `skills/{audit,brief,create-ticket,
+  investigate,plan2doc,refactor,test,tune}/SKILL.md` gains a bullet
+  pointing spawners at the ticket's `### Capabilities` section as the
+  authoritative per-AC binding; spawners stop re-deriving relevance from
+  the raw `Available user skills:` probe when a ticket records the
+  binding upstream.
+- Subagent Skill-Access Handoff bullet in the 9 spawner skills
+  (`audit`, `brief`, `create-ticket`, `impl`, `investigate`, `plan2doc`,
+  `refactor`, `test`, `tune`) is upgraded from "prefer the section" to
+  **deterministic inlining**: orchestrators MUST `Read` the ticket's
+  `### Capabilities` section (resolved via `{ticket-dir}/ticket.md` or
+  the autopilot state file's `paths.ticket`) and inline the bound
+  capabilities verbatim under `## Bound capabilities (per AC)` in every
+  spawn prompt. Per-AC spawns include only the rows whose
+  `Bound AC(s)` column lists the active AC; tip / whole-deliverable
+  spawns include the full table. Older tickets without the section
+  trigger a `(none recorded — ticket pre-dates Gate 6)` placeholder.
+  `/impl` Steps 13/15 retain their in-step per-AC deterministic
+  handoff; the Subagent Skill-Access Handoff upgrade is cross-skill
+  uniformity at the file's guardrails footer — both surfaces coexist.
+- `skills/create-ticket/references/agent-spawn-prompts.md` Phase 3
+  "Additional context for the planner" list now serialises the
+  `Available user skills:` and `Available MCP servers:` probes
+  verbatim into the planner spawn prompt and carries explicit
+  Gate 6 / `### Capabilities` emission instructions, because subagents
+  do not inherit the main-thread harness skill / MCP descriptions.
+- `tests/test-skill-contracts.sh` CT-AL-5 updated to assert the new
+  deterministic-handoff prose ("the capability handoff is no longer
+  ad-hoc"); the legacy "browser-automation utility skill" advisory
+  bullet is no longer checked because v7.1.0 supersedes it.
+- `agents/planner.md` Pre-emit Self-Audit is split into two `## `-level
+  sections — one for the numeric scope/AC cross-check (steps 1-5) and
+  one for the Gate 6 capability-binding cross-check (step 6). The
+  substantive procedure is unchanged; the split makes the documented
+  binding cross-check visible to the rubric's awk-range verifier whose
+  start/end patterns both match `## `, which would otherwise truncate
+  the range to the heading line alone.
+
+- **`agents/implementer.md` turn budget raised `maxTurns: 30 → 45`** and a new `## Turn-budget self-governance (envelope-priority)` section added to `implementer` / `researcher` / `test-writer`: the closing `## Result` envelope (with the Advisory field) is the highest-priority deliverable, so an agent stuck on the same failure across 3+ distinct fix attempts bails to `**Status**: partial` rather than risk a `maxTurns` truncation that returns no envelope (and loses the audit trail for capabilities it did invoke). Dogfood (TW38→TW41) reduced implementer truncation 30% → 25%.
+
+### Deprecated
+
+- **`/brief mode=auto|manual` argument alias (P3-2C, X.Y.0 deprecation
+  phase)**. The legacy `mode=auto|manual` argument is now a deprecated
+  alias for the canonical `chain=on|off` introduced in the
+  `### Changed` entry above (`mode=auto` ≡ `chain=on`,
+  `mode=manual` ≡ `chain=off`). Supplying `mode=` continues to work
+  for one minor (vX.Y.0) and emits a one-line stderr warning
+  `WARNING: 'mode=' is deprecated and will be removed in vX.(Y+1).0.
+  Use 'chain=on' instead of 'mode=auto', 'chain=off' instead of
+  'mode=manual'.` (verbatim). The Phase 3 frontmatter continues to
+  write the `mode:` field alongside the new `chain:` field during
+  this window so legacy `/create-ticket brief=<path>` readers keep
+  working; downstream readers (notably `/create-ticket`) implement
+  the precedence rule `chain: precedes mode:` (read `chain:` first
+  if present, fall back to `mode:`, default to `chain=on` when both
+  keys are absent). The `mode=` argument, the `mode:` frontmatter
+  field, and the `mode independence guard` defensive prose are
+  scheduled for removal in vX.(Y+1).0. Migration: replace
+  `/brief "X" mode=auto` with `/brief "X" chain=on` (or drop the
+  argument entirely — `chain=on` remains the default) and
+  `/brief "X" mode=manual` with `/brief "X" chain=off`. Combining
+  both keys (`/brief "X" chain=on mode=auto`) is rejected with
+  `ERROR: 'chain=' and 'mode=' cannot be combined. Use 'chain='
+  (preferred).` and exits non-zero without writing any artifacts.
+
+### Removed
+
+- `permissionMode: acceptEdits` line from
+  `agents/{implementer,planner,researcher,test-writer}.md` and from
+  `agents/decomposer.md`. Per CC docs and the 2026-05-24 spike this
+  field is silently ignored for plugin subagents — removal is a no-op
+  cleanup that aligns all five agents to omit the field. Behaviorally
+  equivalent settings can be set per-user via
+  `~/.claude/settings.local.json` if needed.
+
+### Fixed
+
+- **`/ship` Step 15a is now idempotent and the post-ship integrity hook
+  self-heals stale `phase-state.yaml` (P3-5)**. Field evidence
+  (`test_simple_workflow34`) showed 4/5 tickets shipped with
+  `overall_status: in-progress` paired with `phases.ship.status:
+  in-progress` while the brief-side `autopilot-state.yaml` recorded
+  every ticket as `steps.ship: completed` — the per-ticket `/ship`
+  Step 15a write was systematically dropped under autopilot chaining.
+  `skills/ship/SKILL.md` Step 15a now carries an explicit **PSI
+  contract** paragraph (`Step 15a MUST run on every successful pass
+  through Phase 2`, including the no-remote / no-commits-ahead /
+  pre-existing-PR branches) and an **Ordering with Step 16** paragraph
+  (`Step 15a MUST complete its write to disk BEFORE Step 16`'s
+  `print PR URL and stop` early-exit). The companion safety net lives
+  in `hooks/post-ship-state-auto-compact.sh` as new Gate 5.5
+  (post-ship integrity self-heal), gated by
+  `SW_POST_SHIP_INTEGRITY` (see `### Added` above for kill-switch
+  semantics): for every ticket whose `steps.ship` just flipped to
+  `completed`, the hook reads
+  `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` and,
+  when `overall_status: in-progress`, rewrites the four canonical
+  scalars (`overall_status: done`, `current_phase: done`,
+  `last_completed_phase: ship`, `phases.ship.status: completed`).
+- **`hooks/post-ship-state-auto-compact.sh` Gate 5 + Gate 5.5 now read
+  the on-disk brief-side `autopilot-state.yaml` instead of the
+  Edit-tool payload fragment**. Field evidence
+  (`test_simple_workflow35`) showed P3-5's Gate 5.5 self-heal never
+  fired for the 5 ticket boundaries it was meant to cover, leaving
+  ticket 001 with `overall_status: in-progress` despite the hook
+  running 5 times — the exact `test_simple_workflow34` regression
+  P3-5 was supposed to prevent. Root cause: both gates piped the
+  Edit's `new_string` (a single-ticket YAML fragment lacking the
+  top-level `tickets:` key) through `parse_ticket_ship_dirs`, whose
+  yq query `.tickets | .[]` returns zero entries from such a
+  fragment; the loops silently never iterated any ticket. The fix
+  is a one-line source swap in each gate
+  (`parse_ticket_ship_dirs "$TOOL_FILE_PATH"`) plus removal of the
+  now-unneeded `mktemp + printf` payload-to-tempfile plumbing. The
+  brief-side state file on disk already reflects the PostToolUse
+  write at the time the hook fires, so the parse is always
+  well-formed regardless of payload shape. Side effect: Gate 5
+  (state-lie protection) now actually detects state-lies for the
+  fragment-payload code path that has been the production norm
+  since v6 (previously fail-open). Regression-guarded by new
+  `tests/test-skill-contracts.sh` PSI AC-8 (fragment payload still
+  triggers self-heal) and by hardening the existing CT-AC-12 /
+  CT-AC-24 / CT-AC-25 fixtures to write the YAML into the state
+  file instead of relying on the now-discarded payload-fragment
+  parse path.
+
+- **`hooks/scout-checkpoint-guard.sh` Step 2a (autopilot-completion gate)**: a new gate inserted between the kill switch (Step 2) and the phase-state.yaml short-circuit (Step 3) silent-exits the hook when no active autopilot is running, a fresh `briefs/done/<parent>/autopilot-state.yaml` exists (mtime within `SW_AUTOPILOT_DONE_GATE_TTL_SEC` seconds), and every `tickets[].status` is `completed`. The 3-AND (a)(b)(c) signature on the transcript tail (`plan2doc: ac-source=ticket.md verbatim=true` ssot-line + no `## [SW-CHECKPOINT]` + a `Skill(simple-workflow:scout)` invocation in the 5000-line window) is no longer evaluated under that condition, so post-autopilot Stop ticks stop emitting `decision: block` on stale transcript artifacts. Observability: the gate writes a one-line `[SCOUT-AUTOPILOT-DONE-GATE] silent exit (state=<path>, age=<seconds>)` diagnostic to stderr. Kill switch and TTL override:
+  - `SW_AUTOPILOT_DONE_GATE_TTL_SEC` (new, default `86400`): TTL window in seconds; set `0` to disable the bound (gate fires on any all-completed done state); non-numeric values fall back to `86400` with a one-line stderr warning.
+  - `SW_SCOUT_CHECKPOINT_MODE=off` (existing, unchanged): short-circuits Step 2 before Step 2a runs, preserving the v8.0.0 disable behaviour.
+
+- **`hooks/lib/parse-state-file.sh` `find_done_autopilot_state_file [ttl_seconds] [start_dir]`**: new public helper that scans `briefs/done/**/autopilot-state.yaml`, returns the mtime-newest match whose mtime is within `ttl_seconds` (strict `<` comparison), and exits 1 on empty / aged-out / no-done-dir. Symlink resolution mirrors `find_state_file` (canonical absolute path via `cd ... && pwd -P`). Used by `scout-checkpoint-guard.sh` Step 2a. Exported alongside the existing public helpers so children that re-enter via `bash -c` pick it up without re-sourcing.
+
+- **`hooks/autopilot-continue.sh` + post-ship hooks: missing git remote is a local-only ship, not a Phase 1 hard-stop.** Autopilot on a repository with no configured git remote (`origin` absent) now completes the ship phase locally (commit only, no push/PR) instead of hard-stopping at Phase 1. Greenfield local dogfoods (e.g. a fresh `colorforge` brief with no remote) run end-to-end.
+- **The three autopilot Stop hooks now honour a model-declared `policy_gate_stop`.** When the orchestrator records a policy-gate stop in `autopilot-state.yaml`, the Stop hooks respect it instead of re-deriving continuation from transcript heuristics, so an intentional policy halt is not overridden by the loop guard.
+
+### Verification
+
+- **Release pre-flight (v8.0.0 consolidation, 2026-05-30)**: `bash tests/test-skill-contracts.sh` → 753 / 753 PASS and `bash tests/test-path-consistency.sh` → 140 / 140 PASS at the consolidated HEAD. The skill-contract Total includes the Phase 6 Advisory category (Cat AR: AR-1..10 implementer, AR-RES-1..9 researcher, AR-TW-1..6 test-writer, AR-PLN-1 negative, plus AR-INV-1/2, AR-TST-1, AR-SCT-1, AR-TRN-1/2/3 for the declarative-spawner gates and truncation mitigation). The full `tests/run-all.sh` suite runs green under ShellCheck (`--severity=warning` on `hooks/*.sh` and `tests/*.sh`) per `.github/workflows/ci.yml`.
+- `bash tests/test-skill-contracts.sh` exit 0 with Total >= 598 (baseline
+  580 + 8 new for Cat AN CT-AN-1..CT-AN-8 + 9 new for Cat AQ
+  CT-AQ-1..CT-AQ-9 + 1 new for PSI AC-8 TW35 regression guard);
+  current run reports 719 / 719 PASS. The Total above the 598 floor
+  reflects Cat D's dynamic per-skill agent-name assertions growing as
+  the v8.0.0 doctrine update referenced more agent names in the
+  spawner SKILL.md bodies (Cat AL v7.0.4, Cat AM v7.1.0, Cat AQ
+  Gate 6.5, and PSI Gate 5.5 fragment-payload invariants all intact).
+- `bash tests/test-path-consistency.sh` exit 0 with the redesigned Cat 6
+  (Group A omit + Group C retention) and Cat 11 (positive enumeration —
+  zero `Bash(*)` declarations and exactly the 6 Group C agents carrying
+  `^tools:`).
+- `bash tests/test-pre-bash-safety.sh` exit 0 with Total 195 / 195 PASS.
+  Every existing destructive / sensitive-staging / bulk-staging case
+  still blocks; the new Category J adds 69 v8.0.0 assertions split
+  into BLOCK (4 categories: network egress / identity spoofing /
+  privilege escalation / branch-commit subversion) including bypass
+  coverage (full-path and relative-path invocation, env-var prefix,
+  `exec`/`time`/`nice`/`nohup` wrappers, `git push --no-verify` at any
+  argument position with quoted-arg variants) and ALLOW (24 package-
+  manager installs across all common languages plus `git remote add`,
+  plus 12 false-positive sanity negatives for legitimate operations).
+- Spike basis: 2026-05-24 CC 2.1.149 four-probe spike (user scope) plus
+  `--plugin-dir` invocation (plugin scope) confirmed (a) omit-`tools:`
+  inherits all including MCP, (b) exact-name `disallowedTools` blocks
+  tools, (c) `mcp__*` glob in `disallowedTools` is NOT honored, and
+  (d) `permissionMode` is a silent no-op for plugin subagents.
+- Pre-flight: spawning 5 parallel general-purpose evaluator subagents on
+  2026-05-24 found 9 unique problems in the original 7-agent transition
+  plan; this release addresses all 9 (decomposer / code-reviewer /
+  tune-analyzer moved to Group C, side-effect ban added, doctrine
+  updated, `pre-bash-safety.sh` extended, Cat 6 + Cat 11 redesigned).
+
+- `bash tests/test-hooks-lib.sh` → exit 0 (153/153 cases pass). New section `find_done_autopilot_state_file (v8.0.1)` adds 11 assertions across cases (a)–(f) covering: no `briefs/done/` (a), empty `briefs/done/` (b), single fresh match (c), multi-match newest-wins (d), aged-out TTL=60 (e), TTL=0 disables bound (e-bis), and non-numeric TTL coerces to 0 (f).
+- `bash tests/test-scout-checkpoint-guard.sh` → exit 0 (14/14 cases pass). New fixtures **C9** (fresh done all-completed → gate silent-exits, stderr token visible), **C10** (active + done both fresh → `is_autopilot_context()` blocks the gate, 3-AND blocks decision), **C11** (year-2020 done state → stale, gate yields, decision=block), **C12** (`SW_SCOUT_CHECKPOINT_MODE=off` → kill switch wins before Step 2a, no gate token), **C13** (one `tickets[].status: failed` → gate fails closed, decision=block), **C14** (custom `SW_AUTOPILOT_DONE_GATE_TTL_SEC=60` + 120-second-old state → gate yields, decision=block). Existing C1–C8 continue to pass without modification. Case count 8 → 14.
+- `bash tests/test-skill-contracts.sh` baseline → exit 0 (no skill contract surface touched).
+- `bash tests/test-path-consistency.sh` baseline → exit 0 (no path invariant surface touched).
+
+- `bash tests/test-skill-contracts.sh` exit 0 with Total 580
+  (baseline 570 + 8 new for Cat AM CT-AM-1..7 plus the AC-12 trivial-
+  pass assertion, + 2 more for the gap-closure follow-up:
+  CT-AM-8 / CT-AM-9).
+- `bash tests/test-path-consistency.sh` exit 0 with Total 139 unchanged
+  (no path-consistency surface was touched).
+- AC-13 backwards compatibility: existing pre-Gate-6 tickets in
+  `.simple-workflow/backlog/done/` continue to drive `/impl`, `/audit`,
+  `/ship` without parse failure — the deterministic handoff falls back
+  to the prior ad-hoc path when `### Capabilities` is absent.
+
 ## [7.0.4] — 2026-05-23
 
 Extend `ac-evaluator` with scoped Skill access so the verdict agent can

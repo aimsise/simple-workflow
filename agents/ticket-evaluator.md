@@ -54,6 +54,8 @@ Return format:
 - [x] Completeness: description
 - [ ] Implementability: — FAILED: reason
 - [x] Size Fit: description
+- [x] Capability Mapping: description (Gate 6 — applies only when at least one AC is runtime/visual per the canonical classifier; mark `n/a` when no AC triggers the classifier)
+- [x] Probe Completeness: description (Gate 6.5 — verifies every entry in the planner's `Available user skills:` / `Available MCP servers:` probe is classified Bound / Advisory / Skipped in the ticket; mark `n/a` when both probes report `(none)` or when the ticket pre-dates Gate 6.5)
 **Issues**: [gate] description (one per line)
 **Feedback**: [specific, actionable improvements for the planner]
 ```

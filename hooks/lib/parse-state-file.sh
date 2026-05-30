@@ -2,6 +2,8 @@
 # parse-state-file.sh — shared YAML parse + autopilot-context detection
 # helpers used by hook scripts and tests.
 #
+# Schema reference: docs/state-schema.md
+#
 # Sourced by:
 #   - hooks/pre-bash-contract-guard.sh (PreToolUse:Bash guard, PX-02a)
 #   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)
@@ -78,6 +80,32 @@
 #       YAML document. Prints the value to stdout (empty when null / unset).
 #       Thin wrapper that re-uses the same three-tier strategy as
 #       `parse_phase_status`. Exits non-zero only on file-not-found.
+#
+#   parse_yaml_scalar <file_path> <key>
+#     - Generic top-level YAML scalar reader. Walks the same three-tier
+#       fallback (yq -> python3+PyYAML -> awk) as the phase-state /
+#       autopilot-state helpers above. Prints the literal scalar value
+#       for `<key>:` at the document root (no dotted traversal — for
+#       nested keys callers should use a more specific helper). Empty
+#       output when the key is absent, the value is null/`~`, or the
+#       file is unreadable. Exit non-zero only on file-not-found /
+#       missing-key arguments. Used by
+#       `hooks/post-ship-state-auto-compact.sh` Gate 5.5 (post-ship
+#       integrity self-heal) to read `overall_status:` from each
+#       done-ticket's `phase-state.yaml` without re-implementing the
+#       three-tier strategy.
+#
+#   get_risk_tolerance <state_dir>
+#     - Reads `risk_tolerance:` from <state_dir>/autopilot-policy.yaml.
+#       Prints one of "aggressive" / "moderate" / "conservative" to stdout.
+#       Fallback (file missing / key absent / unparsable / unknown value)
+#       is the literal "conservative" -- the most permissive tier on the
+#       policy-gate axis, chosen so that an absent or malformed policy
+#       file does NOT silently flip every header to deny and break the
+#       recovery paths that the SKILL prose still expects to remain open
+#       (e.g. `audit-fail` / `ac-eval` AskUserQuestion). Uses the same
+#       three-tier strategy as the other helpers in this lib (yq ->
+#       python3+PyYAML -> awk).
 #
 # Implementation strategy: prefer `yq` (mikefarah v4), fall back to
 # `python3 + PyYAML`, and finally to a portable `awk` shell parser. This
@@ -393,6 +421,90 @@ find_any_autopilot_state_file() {
 }
 
 # ---------------------------------------------------------------------------
+# Public function: find_done_autopilot_state_file
+# Usage: find_done_autopilot_state_file [ttl_seconds] [start_dir]
+#
+# Counterpart to `find_any_autopilot_state_file` that scans
+# `.simple-workflow/backlog/briefs/done/` instead of briefs/active +
+# product_backlog. Used by `hooks/scout-checkpoint-guard.sh` Step 2a
+# (autopilot-completion gate) to detect the "autopilot just finished"
+# state independently of phase-state.yaml location.
+#
+# Returns the absolute path of the most-recently-modified
+# `autopilot-state.yaml` under briefs/done/. When the first positional
+# argument is a positive integer, the helper additionally requires the
+# match's mtime to be strictly newer than (now - ttl_seconds); matches
+# at exactly the TTL boundary fall through to a return-1 (defensive
+# strict-less-than). A zero or empty ttl_seconds disables the TTL
+# check; the helper then returns the newest match unconditionally
+# (useful for the SW_AUTOPILOT_DONE_GATE_TTL_SEC=0 kill switch).
+#
+# Returns 1 (no stdout) when briefs/done/ is absent, empty, or the
+# newest match is older than the TTL. Symlink resolution mirrors the
+# pattern in find_state_file / find_any_autopilot_state_file: the
+# emitted path is the canonical absolute path resolved via
+# `cd ... && pwd -P`.
+# ---------------------------------------------------------------------------
+find_done_autopilot_state_file() {
+  local ttl_seconds="${1:-0}"
+  local start_dir="${2:-$PWD}"
+
+  # Defensive coercion: only positive integers are honored. A non-numeric
+  # value collapses to 0 (disabled TTL check) so a typo in the caller's
+  # env-var passthrough cannot accidentally silent-exit the gate by
+  # treating an arbitrary string as a giant TTL.
+  case "$ttl_seconds" in
+    ''|*[!0-9]*) ttl_seconds=0 ;;
+  esac
+
+  local root
+  root="$(_psf_repo_root "$start_dir")"
+  [ -d "$root/.simple-workflow" ] || return 1
+
+  local done_dir="$root/.simple-workflow/backlog/briefs/done"
+  [ -d "$done_dir" ] || return 1
+
+  local match=""
+  while IFS= read -r _f; do
+    [ -f "$_f" ] || continue
+    if [ -z "$match" ] || [ "$_f" -nt "$match" ]; then
+      match="$_f"
+    fi
+  done < <(find "$done_dir" -type f -name 'autopilot-state.yaml' 2>/dev/null)
+  unset _f
+
+  [ -n "$match" ] || return 1
+
+  # TTL check: when ttl_seconds > 0, the file mtime must satisfy
+  # (now - mtime) < ttl_seconds. POSIX `stat -c %Y` is GNU; on BSD/macOS
+  # it is `stat -f %m`. Use the portable awk-on-find combination to
+  # avoid OS-specific stat invocations.
+  if [ "$ttl_seconds" -gt 0 ] 2>/dev/null; then
+    local now mtime age
+    now="$(date +%s)"
+    # find with -printf is GNU-only; use a portable two-step instead.
+    if mtime="$(stat -f %m "$match" 2>/dev/null)" && [ -n "$mtime" ]; then
+      :
+    elif mtime="$(stat -c %Y "$match" 2>/dev/null)" && [ -n "$mtime" ]; then
+      :
+    else
+      # stat unavailable in both forms — fail closed (do not silently
+      # accept the match; the gate should fall through to existing
+      # logic rather than silent-exit on unknown freshness).
+      return 1
+    fi
+    age=$((now - mtime))
+    [ "$age" -lt "$ttl_seconds" ] || return 1
+  fi
+
+  local d b
+  d="$(cd "$(dirname "$match")" && pwd -P)"
+  b="$(basename "$match")"
+  printf '%s/%s\n' "$d" "$b"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Public function: parse_ticket_ship_dirs
 # Usage: parse_ticket_ship_dirs <file_path>
 #
@@ -651,7 +763,138 @@ PY
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# Public function: parse_yaml_scalar
+# Usage: parse_yaml_scalar <file_path> <key>
+#
+# Generic top-level YAML scalar reader. Mirrors the three-tier strategy of
+# parse_phase_status / parse_impl_next_action so a new top-level invariant
+# (e.g. `overall_status:` for the post-ship integrity self-heal) does not
+# need its own bespoke parser. The contract is intentionally narrow:
+#   - Only top-level keys are supported (no `.phases.ship.status` dotted
+#     paths — callers needing nested traversal should use a dedicated
+#     helper such as parse_phase_status).
+#   - `null` / `~` / missing key all normalise to an empty string on
+#     stdout so consumers can test `[ -n "$out" ]` uniformly.
+#   - File-not-found returns rc 1 with no stdout; missing-args returns rc 2.
+# ---------------------------------------------------------------------------
+parse_yaml_scalar() {
+  local file="$1"
+  local key="$2"
+  if [ -z "$file" ] || [ -z "$key" ]; then
+    return 2
+  fi
+  if [ ! -f "$file" ]; then
+    return 1
+  fi
+
+  if _psf_have yq; then
+    local out
+    out="$(yq -r ".${key} // \"\"" "$file" 2>/dev/null || true)"
+    [ "$out" = "null" ] && out=""
+    printf '%s\n' "$out"
+    return 0
+  fi
+
+  # Tier 2: python3 + PyYAML. Gated on `import yaml` probe so a stock
+  # macOS without PyYAML falls through to the awk tier rather than
+  # silently short-circuiting empty on ImportError.
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$file" "$key" <<'PY' 2>/dev/null || return 1
+import sys
+import yaml
+path, key = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+val = doc.get(key, "") if isinstance(doc, dict) else ""
+if val is None:
+    val = ""
+print(val)
+PY
+    return 0
+  fi
+
+  # awk fallback: locate `<key>:` at column 0 (top-level scalar) and emit
+  # the value with the same normalisation as the other awk fallbacks in
+  # this lib (strip quotes, strip trailing comments, treat `null`/`~`
+  # as empty). POSIX awk only — uses `sub()` strip-by-prefix instead of
+  # the gawk-specific 3-arg `match()` form so macOS BSD awk works.
+  awk -v key="$key" '
+    $0 ~ "^"key":[[:space:]]" {
+      val = $0
+      sub("^"key":[[:space:]]+", "", val)
+      gsub(/^"|"$/, "", val)
+      gsub(/^'\''|'\''$/, "", val)
+      sub(/[[:space:]]+#.*$/, "", val)
+      if (val == "null" || val == "~") val = ""
+      print val
+      exit 0
+    }
+  ' "$file"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Public function: get_risk_tolerance
+# Usage: get_risk_tolerance <state_dir>
+#
+# Reads `risk_tolerance:` from <state_dir>/autopilot-policy.yaml and prints
+# one of "aggressive" / "moderate" / "conservative" to stdout. Fallback for
+# file-missing / key-absent / unparsable / unknown-value is the literal
+# "conservative" -- see header doc comment for rationale.
+#
+# Three-tier strategy matches the other helpers in this lib:
+#   1. yq -r '.risk_tolerance // ""' <file>
+#   2. python3 + PyYAML (gated on `import yaml` probe so macOS without
+#      PyYAML falls through to tier 3 rather than short-circuiting empty)
+#   3. POSIX awk fallback walking `^risk_tolerance:[[:space:]]+(\S+)`
+#
+# The trailing case validator normalises unknown values (NAC-5 evidence
+# in P1-3B): an `aggressive` fallback would gridlock recovery paths so
+# `conservative` is the deliberate fail-open choice.
+# ---------------------------------------------------------------------------
+get_risk_tolerance() {
+  local state_dir="$1"
+  local file="${state_dir%/}/autopilot-policy.yaml"
+  local out=""
+  if [ -f "$file" ]; then
+    if _psf_have yq; then
+      out="$(yq -r '.risk_tolerance // ""' "$file" 2>/dev/null || true)"
+      [ "$out" = "null" ] && out=""
+    fi
+    if [ -z "$out" ] && _psf_have python3 \
+        && python3 -c 'import yaml' >/dev/null 2>&1; then
+      out="$(python3 - "$file" <<'PY' 2>/dev/null
+import sys, yaml
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+val = doc.get("risk_tolerance", "")
+print(val if val is not None else "")
+PY
+)"
+    fi
+    if [ -z "$out" ]; then
+      out="$(awk '
+        /^risk_tolerance:[[:space:]]+/ {
+          val=$0
+          sub(/^risk_tolerance:[[:space:]]+/, "", val)
+          gsub(/^"|"$/, "", val)
+          gsub(/^'\''|'\''$/, "", val)
+          sub(/[[:space:]]+#.*$/, "", val)
+          if (val == "null" || val == "~") val = ""
+          print val
+          exit 0
+        }
+      ' "$file" 2>/dev/null || true)"
+    fi
+  fi
+  case "$out" in
+    aggressive|moderate|conservative) printf '%s\n' "$out" ;;
+    *) printf '%s\n' "conservative" ;;
+  esac
+}
+
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file find_done_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance 2>/dev/null || true

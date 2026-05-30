@@ -5071,8 +5071,13 @@ mkdir -p "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC12_TMP/.simple-workflow/backlog/active/dummy/001-fakery"
 # done/ deliberately NOT created (parent dir for the rewritten done/ path
 # also absent, so the active→done rewriter must fail to find the dir).
-touch "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC12_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/active/dummy/001-fakery\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+# test_simple_workflow35 fix: Gate 5 now reads $TOOL_FILE_PATH (the
+# brief-side state file on disk), not the Edit-tool $TOOL_PAYLOAD
+# fragment. Write the YAML payload INTO the state file so the hook
+# can iterate it (matches the post-Edit on-disk reality the
+# PostToolUse hook observes in production).
+printf '%s' "$AC12_NEW" > "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC12_INPUT=$(jq -n --arg fp "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC12_OUT=$(cd "$AC12_TMP" && INPUT="$AC12_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 if echo "$AC12_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
@@ -5651,8 +5656,10 @@ AC24_TMP=$(mktemp -d)
 mkdir -p "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC24_TMP/.simple-workflow/backlog/done/dummy/001-real"
 # T-002's done/ counterpart deliberately NOT created.
-touch "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC24_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-real\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n  - logical_id: T-002\n    ticket_dir: .simple-workflow/backlog/active/dummy/002-fake\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+# test_simple_workflow35 fix (see CT-AC-12): state-lie protection
+# now reads the on-disk state file via $TOOL_FILE_PATH.
+printf '%s' "$AC24_NEW" > "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC24_INPUT=$(jq -n --arg fp "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC24_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC24_OUT=$(cd "$AC24_TMP" && INPUT="$AC24_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC24_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 if echo "$AC24_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC24_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
@@ -5683,10 +5690,12 @@ AC25_TMP=$(mktemp -d)
 mkdir -p "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy"
 mkdir -p "$AC25_TMP/.simple-workflow/backlog/done/dummy/001-real"
 # T-002's done/ counterpart deliberately NOT created.
-touch "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 # Note the atypical key ordering within each element: ship: completed
 # appears BEFORE ticket_dir:. Both elements use the same ordering.
 AC25_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    steps:\n      ship: completed\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-real\n    status: completed\n  - logical_id: T-002\n    steps:\n      ship: completed\n    ticket_dir: .simple-workflow/backlog/active/dummy/002-fake\n    status: completed\n')
+# test_simple_workflow35 fix (see CT-AC-12): state-lie protection
+# now reads the on-disk state file via $TOOL_FILE_PATH.
+printf '%s' "$AC25_NEW" > "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC25_INPUT=$(jq -n --arg fp "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC25_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC25_OUT=$(cd "$AC25_TMP" && INPUT="$AC25_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC25_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 if echo "$AC25_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC25_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
@@ -6333,7 +6342,14 @@ AC42_STUB
 chmod +x "$AC42_STUB_DIR/tmux"
 
 # Path A: DRY_RUN=1 alone (NO SW_TEST_HARNESS) → real backend invoked.
-AC42_OUT_A=$(env -u SW_TEST_HARNESS TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
+# P1-1 note: `SW_INJECT_KEYS_VERIFY=0` disables the post-inject
+# capture-pane verify so the stubbed `tmux` (which exits 0 for every
+# subcommand and produces no real pane output) does not flip rc to 1
+# via the verify-missed branch. The H11 contract this test pins is
+# about DRY_RUN short-circuit semantics, not about verify exit codes;
+# disabling verify keeps the inner inject_keys rc=0 so the outer
+# `set -e` does not abort the script before the assertions run.
+AC42_OUT_A=$(env -u SW_TEST_HARNESS SW_INJECT_KEYS_VERIFY=0 TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 if echo "$AC42_OUT_A" | grep -qE 'DRY_RUN backend='; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} dry_run-short-circuited-without-harness-env"
 fi
@@ -6342,7 +6358,9 @@ if ! echo "$AC42_OUT_A" | grep -qE 'real-tmux-stub'; then
 fi
 
 # Path B: DRY_RUN=1 + SW_TEST_HARNESS=1 → short-circuit (existing
-# fixtures depend on this).
+# fixtures depend on this). The DRY_RUN early-return precedes the
+# P1-1 verify block, so `SW_INJECT_KEYS_VERIFY` is irrelevant here —
+# but we keep the env minimal to mirror real DRY_RUN call sites.
 AC42_OUT_B=$(SW_TEST_HARNESS=1 TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 if ! echo "$AC42_OUT_B" | grep -qE 'DRY_RUN backend=tmux'; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} dry_run-not-short-circuited-with-harness"
@@ -7064,6 +7082,74 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# --- P0-3C: [AUTOPILOT-CONTEXT] self-doc contract (CT-AC-52..60) ---------
+# Plan P0-3C adds a Phase 1 step 0.5 to skills/autopilot/SKILL.md that emits
+# EXACTLY ONE `[AUTOPILOT-CONTEXT]` block per pipeline run, with three
+# verbatim branches (on / metric-only / off) kept in a new reference file
+# so the model can recognise the active auto-compact-on-ship mode and
+# never preventively asks the user about auto-compaction. The assertions
+# pin the SKILL.md anchor tokens (env-var name, prefix, single-emit /
+# unknown-fallback / hook-sync norms) and the verbatim branch lines in
+# references/autopilot-context-self-doc.md.
+
+# CT-AC-52 (P0-3C AC-1): [AUTOPILOT-CONTEXT] prefix appears in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-52 (P0-3C AC-1): autopilot SKILL.md mentions [AUTOPILOT-CONTEXT] prefix" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  '\[AUTOPILOT-CONTEXT\]'
+
+# CT-AC-53 (P0-3C AC-2): the new reference file exists.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ -f "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md exists"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-53 (P0-3C AC-2): skills/autopilot/references/autopilot-context-self-doc.md missing" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-AC-54 (P0-3C AC-3): Branch A verbatim sentinel.
+assert_file_contains \
+  "CT-AC-54 (P0-3C AC-3): autopilot-context-self-doc.md carries Branch A (mode=on) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is enabled \(mode=on\)'
+
+# CT-AC-55 (P0-3C AC-4): Branch B verbatim sentinel.
+assert_file_contains \
+  "CT-AC-55 (P0-3C AC-4): autopilot-context-self-doc.md carries Branch B (metric-only) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is in metric-only mode'
+
+# CT-AC-56 (P0-3C AC-5): Branch C verbatim sentinel.
+assert_file_contains \
+  "CT-AC-56 (P0-3C AC-5): autopilot-context-self-doc.md carries Branch C (mode=off) verbatim" \
+  "$REPO_DIR/skills/autopilot/references/autopilot-context-self-doc.md" \
+  'auto-compact-on-ship is disabled \(mode=off\)'
+
+# CT-AC-57 (P0-3C AC-6): env var name surfaced in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-57 (P0-3C AC-6): autopilot SKILL.md names SW_AUTO_COMPACT_ON_SHIP_MODE in step 0.5" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'SW_AUTO_COMPACT_ON_SHIP_MODE'
+
+# CT-AC-58 (P0-3C AC-7): unknown-value fallback norm in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-58 (P0-3C AC-7): autopilot SKILL.md codifies the unknown-value -> off fallback" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'unknown values are treated as `off`'
+
+# CT-AC-59 (P0-3C AC-8): hook-sync anchor in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-59 (P0-3C AC-8): autopilot SKILL.md cross-references hooks/pre-next-scout-auto-compact.sh as the resolution-logic SSoT" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'matches `hooks/pre-next-scout-auto-compact.sh`'
+
+# CT-AC-60 (P0-3C AC-9): single-emit / idempotency norm in autopilot SKILL.md.
+assert_file_contains \
+  "CT-AC-60 (P0-3C AC-9): autopilot SKILL.md mandates EXACTLY ONE [AUTOPILOT-CONTEXT] emission per run" \
+  "$REPO_DIR/skills/autopilot/SKILL.md" \
+  'Emit EXACTLY ONE'
+
 echo ""
 
 # =============================================================================
@@ -7135,15 +7221,1866 @@ assert_true \
   "CT-AL-4: no skill excludes ac-evaluator in its handoff line (found $al4_hits still excluding; expected 0)" \
   "$([ "$al4_hits" = "0" ] && echo true || echo false)"
 
-# CT-AL-5: skills/impl/SKILL.md (the sole caller) carries the positive
-# browser-automation handoff bullet for ac-evaluator.
+# CT-AL-5: skills/impl/SKILL.md (the sole caller) carries the deterministic
+# per-AC capability handoff for ac-evaluator. The legacy advisory bullet
+# ("For `ac-evaluator`, hand off a browser-automation utility skill ...")
+# was superseded in v7.1.0 by a forward-reference to Step 13 / Step 15
+# that Read `{ticket-dir}/ticket.md`'s `### Capabilities` section and
+# inline the bound per-AC capability list into the spawn prompt. This
+# assertion locks the new shape: the handoff bullet for ac-evaluator must
+# point at the deterministic per-AC handoff (Step 13/Step 15) and must
+# preserve the evidence-only firewall ("never a skill that authors or
+# modifies the code under review").
 al5_result="false"
-if grep -qF 'For `ac-evaluator`, hand off a browser-automation' "$REPO_DIR/skills/impl/SKILL.md"; then
+if grep -qF 'For `ac-evaluator`, the capability handoff is no longer ad-hoc' "$REPO_DIR/skills/impl/SKILL.md" \
+   && grep -qF '### Capabilities' "$REPO_DIR/skills/impl/SKILL.md" \
+   && grep -qF 'never a skill that authors or modifies the code under review' "$REPO_DIR/skills/impl/SKILL.md"; then
   al5_result="true"
 fi
 assert_true \
-  "CT-AL-5: skills/impl/SKILL.md hands ac-evaluator a browser-automation utility for runtime/visual ACs" \
+  "CT-AL-5: skills/impl/SKILL.md ac-evaluator handoff points at the deterministic per-AC Capabilities binding (Step 13 / Step 15) with the evidence-only firewall preserved" \
   "$al5_result"
+
+echo ""
+
+# =============================================================================
+# Category AM: capability-detection wiring (T-CAP / v7.1.0)
+# Diff: locks the upstream-detection -> per-AC binding -> downstream verifier
+#        contract introduced in v7.1.0. Each assertion pins one of the
+#        invariants from the plan's Acceptance Criteria (AC-1 .. AC-10).
+# =============================================================================
+echo "--- Cat AM: capability-detection wiring (T-CAP / v7.1.0) ---"
+
+# CT-AM-1: ticket-template.md has the new `### Capabilities` block between
+# `### Implementation Notes` and `### Claude Code Workflow`, and the column
+# header sequence two lines below the heading is the canonical
+# `Name | Type | Purpose | Used by | Bound AC(s)`. Pins AC-1.
+TEMPLATE_MD="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+am1_result="false"
+if [ -f "$TEMPLATE_MD" ]; then
+  am1_order=$(grep -nE '^### (Capabilities|Implementation Notes|Claude Code Workflow)' "$TEMPLATE_MD" \
+              | awk -F: '{print $2}' \
+              | tr '\n' '|' | sed 's/|$//')
+  am1_expected='### Implementation Notes|### Capabilities|### Claude Code Workflow'
+  am1_cap_line=$(grep -nE '^### Capabilities$' "$TEMPLATE_MD" | head -1 | cut -d: -f1)
+  am1_col_line=""
+  if [ -n "$am1_cap_line" ]; then
+    am1_col_line=$(awk -v ln="$am1_cap_line" 'NR==ln+2' "$TEMPLATE_MD")
+  fi
+  if [ "$am1_order" = "$am1_expected" ] \
+     && echo "$am1_col_line" | grep -qE '^\| *Name *\| *Type *\| *Purpose *\| *Used by *\| *Bound AC\(s\) *\|'; then
+    am1_result="true"
+  fi
+fi
+assert_true \
+  "CT-AM-1: ticket-template.md has '### Capabilities' between '### Implementation Notes' and '### Claude Code Workflow' with column header 'Name | Type | Purpose | Used by | Bound AC(s)' (pins AC-1)" \
+  "$am1_result"
+
+# CT-AM-2: ac-quality-criteria.md gains the `## Gate 6: Capability Mapping`
+# section AND the `## Planner MUST` bullet starting with the literal
+# `**MUST** emit a \`### Capabilities\``. Pins AC-2 and AC-3.
+ACQC_MD="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+am2_g6=$(grep -cE '^## Gate 6: Capability Mapping$' "$ACQC_MD" || true)
+am2_must=$(grep -cF '**MUST** emit a `### Capabilities`' "$ACQC_MD" || true)
+am2_result="false"
+if [ "$am2_g6" -eq 1 ] && [ "$am2_must" -ge 1 ]; then
+  am2_result="true"
+fi
+assert_true \
+  "CT-AM-2: ac-quality-criteria.md carries '## Gate 6: Capability Mapping' (count=$am2_g6, expected 1) and the literal '**MUST** emit a \`### Capabilities\`' Planner MUST bullet (count=$am2_must, expected >=1) (pins AC-2, AC-3)" \
+  "$am2_result"
+
+# CT-AM-3: create-ticket/SKILL.md Pre-computed Context contains exactly one
+# `Available MCP servers: !` probe line, AND that line's substring includes
+# both `.mcp.json` and `mcpServers` (the user-scope + project-scope sources
+# enumerated by the probe). Pins AC-4.
+CT_SKILL_MD="$REPO_DIR/skills/create-ticket/SKILL.md"
+am3_count=$(grep -cE '^Available MCP servers: !`' "$CT_SKILL_MD" || true)
+am3_probe_line=$(grep -E '^Available MCP servers: !`' "$CT_SKILL_MD" | head -1)
+am3_result="false"
+if [ "$am3_count" -eq 1 ] \
+   && echo "$am3_probe_line" | grep -qF '.mcp.json' \
+   && echo "$am3_probe_line" | grep -qF 'mcpServers'; then
+  am3_result="true"
+fi
+assert_true \
+  "CT-AM-3: create-ticket/SKILL.md has exactly 1 'Available MCP servers: !\`' probe (got $am3_count) whose pipeline references both .mcp.json and mcpServers (pins AC-4)" \
+  "$am3_result"
+
+# CT-AM-4: plan2doc/SKILL.md Step 3 mentions MCP (at least one MCP token
+# within the awk range `/^3. **Scan available tooling/,/^4. /`), AND
+# Step 4 spawn-prompt section includes both `Capabilities` and `verbatim`
+# (count >= 2). Pins AC-5 and AC-7.
+PD_SKILL_MD="$REPO_DIR/skills/plan2doc/SKILL.md"
+am4_step3=$(awk '/^3\. \*\*Scan available tooling/,/^4\. /' "$PD_SKILL_MD" | grep -c -F MCP || true)
+am4_step4=$(awk '/^4\. \*\*MUST invoke the .planner. agent/,/^5\. \*\*Return summary/' "$PD_SKILL_MD" | grep -c -E 'Capabilities|verbatim' || true)
+am4_result="false"
+if [ "$am4_step3" -ge 1 ] && [ "$am4_step4" -ge 2 ]; then
+  am4_result="true"
+fi
+assert_true \
+  "CT-AM-4: plan2doc/SKILL.md Step 3 mentions MCP ($am4_step3 hits, expected >=1) and Step 4 spawn prompt mentions Capabilities|verbatim ($am4_step4 hits, expected >=2) (pins AC-5, AC-7)" \
+  "$am4_result"
+
+# CT-AM-5: agent-spawn-prompts.md Phase 3 'Additional context for the
+# planner' list mentions all three substrings 'Available capabilities',
+# '### Capabilities', and 'Gate 6' (>= 3 line hits across them). Plus
+# planner.md Pre-emit Self-Audit gains binding cross-check prose mentioning
+# both '### Capabilities' and 'bind|bound|binding' (text-based check, since
+# the AC's awk-range verify is brittle under same-line range semantics).
+# Pins AC-6 and AC-8.
+ASP_MD="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+am5_spawn=$(awk '/^Additional context for the planner:/,/^### Partition/' "$ASP_MD" \
+            | grep -c -E 'Available capabilities|### Capabilities|Gate 6' || true)
+# Planner.md Pre-emit Self-Audit: scan the documented section using a
+# delimiter-aware sed (start at heading, stop at the next H2). awk's
+# range expression is unreliable here because the start line itself
+# matches `^## `; sed with explicit start/stop avoids the same-line
+# truncation. Pins the substantive intent of AC-8.
+PLANNER_MD="$REPO_DIR/agents/planner.md"
+am5_planner_section=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_MD" \
+                       | grep -c -E '### Capabilities|bind' || true)
+am5_result="false"
+if [ "$am5_spawn" -ge 3 ] && [ "$am5_planner_section" -ge 2 ]; then
+  am5_result="true"
+fi
+assert_true \
+  "CT-AM-5: agent-spawn-prompts.md Phase 3 inlines all three (Available capabilities | ### Capabilities | Gate 6) — $am5_spawn line-hits (>=3); planner.md Pre-emit Self-Audit names '### Capabilities' AND 'bind*' — $am5_planner_section hits (>=2) (pins AC-6, AC-8)" \
+  "$am5_result"
+
+# CT-AM-6: impl/SKILL.md Step 13 and Step 15 each reference the
+# `### Capabilities` table (>= 2 total) AND every spawner-skill SKILL.md
+# in the 8-skill propagation list carries the new handoff bullet whose
+# body contains the literal '`### Capabilities`'. Pins AC-9 and AC-10.
+IMPL_MD="$REPO_DIR/skills/impl/SKILL.md"
+am6_impl_caps=$(grep -cE '### Capabilities' "$IMPL_MD" || true)
+am6_propagation_zero=0
+for f in \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "$REPO_DIR/skills/investigate/SKILL.md" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "$REPO_DIR/skills/refactor/SKILL.md" \
+  "$REPO_DIR/skills/test/SKILL.md" \
+  "$REPO_DIR/skills/tune/SKILL.md"; do
+  am6_one_hit=$(grep -cF '### Capabilities' "$f" || true)
+  if [ "$am6_one_hit" -eq 0 ]; then
+    am6_propagation_zero=$((am6_propagation_zero + 1))
+  fi
+done
+am6_result="false"
+if [ "$am6_impl_caps" -ge 2 ] && [ "$am6_propagation_zero" -eq 0 ]; then
+  am6_result="true"
+fi
+assert_true \
+  "CT-AM-6: impl/SKILL.md Steps 13/15 reference '### Capabilities' ($am6_impl_caps total, expected >=2); each of the 8 spawner SKILL.md files has the handoff propagation bullet (zero-hit count=$am6_propagation_zero, expected 0) (pins AC-9, AC-10)" \
+  "$am6_result"
+
+# CT-AM-7 (AC-12 trivial-pass branch): the AC-counting scanner in Cat AH-7
+# (test-skill-contracts.sh near line 4406) terminates at
+# `#### Negative Acceptance Criteria`. The new `### Capabilities` block
+# lives BETWEEN `### Implementation Notes` and `### Claude Code Workflow`
+# in ticket-template.md, which is OUTSIDE the
+# `### Acceptance Criteria` -> next-`###`-heading window the AH-7 scanner
+# consumes (the scanner stops at the negative-AC heading, and the
+# Capabilities block carries no `AC-N`-formatted list items in any case).
+# Therefore the scanner boundary is preserved trivially: no AC-pattern
+# line appears under `### Capabilities`. This is the trivial-pass branch
+# explicitly committed to by the implementation (see plan's polish note 1).
+am12_template="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+am12_cap_block=$(awk '/^### Capabilities$/,/^### Claude Code Workflow$/' "$am12_template")
+am12_ac_hits=$(echo "$am12_cap_block" | grep -cE '^([0-9]+\.[[:space:]]+\*\*AC-|- AC-|AC-[0-9])' || true)
+am12_result="false"
+if [ "$am12_ac_hits" -eq 0 ]; then
+  am12_result="true"
+fi
+assert_true \
+  "CT-AM-7 (AC-12 boundary, trivial-pass branch): ticket-template.md '### Capabilities' block contains zero AC-pattern lines ($am12_ac_hits hits) — AH-7 scanner stops at '#### Negative Acceptance Criteria' and '### Capabilities' sits outside its window, so the boundary holds without a runtime-fixture diff" \
+  "$am12_result"
+
+# CT-AM-8 (gap-closure follow-up): every Skill-bearing agent body in the
+# 8-agent set (ac-evaluator, code-reviewer, decomposer, implementer,
+# planner, researcher, test-writer, tune-analyzer) carries a top-level
+# `## Bound Capabilities` heading. The planner authors the section and
+# uses a different role-specific subheading wording, but the heading
+# regex `^## Bound Capabilities` matches both the receiver-role
+# "## Bound Capabilities (Handoff from Orchestrator)" and the
+# author-role "## Bound Capabilities (Authoring Role)" variants. The
+# sum across the 8 files MUST be >= 8 (one heading per agent).
+am8_sum=0
+for a in ac-evaluator code-reviewer decomposer implementer planner researcher test-writer tune-analyzer; do
+  am8_one_hit=$(grep -c -E '^## Bound Capabilities' "$REPO_DIR/agents/$a.md" || true)
+  am8_sum=$((am8_sum + am8_one_hit))
+done
+am8_result="false"
+if [ "$am8_sum" -ge 8 ]; then
+  am8_result="true"
+fi
+assert_true \
+  "CT-AM-8 (gap-closure follow-up): every Skill-bearing agent body has a top-level '## Bound Capabilities' heading (sum=$am8_sum across 8 agents, expected >=8)" \
+  "$am8_result"
+
+# CT-AM-9 (gap-closure follow-up): every Subagent Skill-Access Handoff
+# in the 9 spawner skills (audit, brief, create-ticket, impl, investigate,
+# plan2doc, refactor, test, tune) contains the upgraded literal
+# "inline the bound capabilities verbatim into every spawn prompt". The
+# upgrade replaces the legacy "prefer it over re-deriving relevance on
+# the fly" wording with a deterministic-inlining requirement. The check
+# counts how many of the 9 files have ZERO hits — that count MUST be 0
+# (every file MUST carry the upgraded bullet).
+am9_zero=0
+for f in \
+  "$REPO_DIR/skills/audit/SKILL.md" \
+  "$REPO_DIR/skills/brief/SKILL.md" \
+  "$REPO_DIR/skills/create-ticket/SKILL.md" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "$REPO_DIR/skills/investigate/SKILL.md" \
+  "$REPO_DIR/skills/plan2doc/SKILL.md" \
+  "$REPO_DIR/skills/refactor/SKILL.md" \
+  "$REPO_DIR/skills/test/SKILL.md" \
+  "$REPO_DIR/skills/tune/SKILL.md"; do
+  am9_one_hit=$(grep -cF 'inline the bound capabilities verbatim into every spawn prompt' "$f" || true)
+  if [ "$am9_one_hit" -eq 0 ]; then
+    am9_zero=$((am9_zero + 1))
+  fi
+done
+am9_result="false"
+if [ "$am9_zero" -eq 0 ]; then
+  am9_result="true"
+fi
+assert_true \
+  "CT-AM-9 (gap-closure follow-up): every spawner SKILL.md (audit, brief, create-ticket, impl, investigate, plan2doc, refactor, test, tune) carries the upgraded deterministic-inlining bullet ('inline the bound capabilities verbatim into every spawn prompt'); zero-hit count=$am9_zero, expected 0" \
+  "$am9_result"
+
+echo ""
+
+# =============================================================================
+# Category AN: v8.0.0 omit-tools invariants (MCP inherit-all for productive
+#              subagents)
+# Rationale: v8.0.0 removes the `tools:` allowlist from the four productive
+#   subagents (implementer, planner, researcher, test-writer) so they inherit
+#   the parent session's full tool inventory, including every user-configured
+#   MCP server. The remaining six agents (ac-evaluator, code-reviewer,
+#   decomposer, security-scanner, ticket-evaluator, tune-analyzer) keep their
+#   explicit allowlists for verdict independence / read-only invariants. This
+#   category drift-guards seven facets of that contract:
+#     1. Group A frontmatter omits `^tools:`
+#     2. Group C frontmatter retains `^tools:`
+#     3. Group A frontmatter omits `^permissionMode:`
+#     4. planner.md / researcher.md ship a `## Side-effect ban` body section
+#        with the three canonical forbidden tokens
+#     5. Group A bodies carry the Bound Capabilities MCP-extension bullet
+#        ('Skills **or MCP servers**')
+#     6. agent-spawn-prompts.md and ac-quality-criteria.md doctrine is updated
+#        and the legacy "subagents do not inherit MCP" wording is gone
+#     7. hooks/pre-bash-safety.sh denylist gains the seven new tokens
+#        (curl, wget, git remote add, npm install, pip install,
+#         git config user.email, git commit --amend)
+# =============================================================================
+echo "--- Cat AN: v8.0.0 omit-tools invariants ---"
+
+GROUP_A=(
+  "implementer"
+  "planner"
+  "researcher"
+  "test-writer"
+)
+GROUP_C=(
+  "ac-evaluator"
+  "code-reviewer"
+  "decomposer"
+  "security-scanner"
+  "ticket-evaluator"
+  "tune-analyzer"
+)
+
+# CT-AN-1: Group A frontmatter has zero `^tools:` lines across the 4 files.
+an1_hits=0
+for slug in "${GROUP_A[@]}"; do
+  fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
+  one=$(echo "$fm" | { grep -cE '^tools:' 2>/dev/null || true; })
+  one=${one:-0}
+  an1_hits=$((an1_hits + one))
+done
+an1_result="false"
+if [ "$an1_hits" -eq 0 ]; then
+  an1_result="true"
+fi
+assert_true \
+  "CT-AN-1 (Group A frontmatter omit): agents/{implementer,planner,researcher,test-writer}.md frontmatter has zero '^tools:' lines (got $an1_hits, expected 0)" \
+  "$an1_result"
+
+# CT-AN-2: Group C frontmatter retains `^tools:` (6 hits across the 6 files).
+an2_hits=0
+for slug in "${GROUP_C[@]}"; do
+  fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
+  if echo "$fm" | grep -qE '^tools:'; then
+    an2_hits=$((an2_hits + 1))
+  fi
+done
+an2_result="false"
+if [ "$an2_hits" -eq 6 ]; then
+  an2_result="true"
+fi
+assert_true \
+  "CT-AN-2 (Group C frontmatter tools: retained): agents/{ac-evaluator,code-reviewer,decomposer,security-scanner,ticket-evaluator,tune-analyzer}.md frontmatter has '^tools:' (got $an2_hits, expected 6)" \
+  "$an2_result"
+
+# CT-AN-3: Group A frontmatter has zero `^permissionMode:` lines (the silently
+# ignored field is removed per CC docs).
+an3_hits=0
+for slug in "${GROUP_A[@]}"; do
+  fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
+  one=$(echo "$fm" | { grep -cE '^permissionMode:' 2>/dev/null || true; })
+  one=${one:-0}
+  an3_hits=$((an3_hits + one))
+done
+an3_result="false"
+if [ "$an3_hits" -eq 0 ]; then
+  an3_result="true"
+fi
+assert_true \
+  "CT-AN-3 (Group A permissionMode removed): agents/{implementer,planner,researcher,test-writer}.md frontmatter has zero '^permissionMode:' lines (got $an3_hits, expected 0)" \
+  "$an3_result"
+
+# CT-AN-4: planner.md and researcher.md ship a top-level `## Side-effect ban`
+# heading; the section body MUST contain three canonical forbidden tokens:
+#   - `git commit`            (destructive Bash example)
+#   - `curl`                  (network egress example)
+#   - `mcp__Gmail__send`      (unbound MCP invocation example)
+# The section body is the prose between `^## Side-effect ban$` and the next
+# top-level `^## ` heading.
+an4_files_ok=0
+for slug in planner researcher; do
+  agent_md="$REPO_DIR/agents/$slug.md"
+  has_heading=$(grep -cE '^## Side-effect ban$' "$agent_md" || true)
+  if [ "$has_heading" -lt 1 ]; then
+    continue
+  fi
+  section=$(sed -n '/^## Side-effect ban$/,/^## /{/^## Side-effect ban$/!{/^## /!p;};}' "$agent_md")
+  tokens_present=1
+  for t in 'git commit' 'curl' 'mcp__Gmail__send'; do
+    if ! echo "$section" | grep -qF "$t"; then
+      tokens_present=0
+      break
+    fi
+  done
+  if [ "$tokens_present" -eq 1 ]; then
+    an4_files_ok=$((an4_files_ok + 1))
+  fi
+done
+an4_result="false"
+if [ "$an4_files_ok" -eq 2 ]; then
+  an4_result="true"
+fi
+assert_true \
+  "CT-AN-4 (Side-effect ban section exists): agents/{planner,researcher}.md body has '^## Side-effect ban$' heading and the section contains tokens {git commit, curl, mcp__Gmail__send} ($an4_files_ok / 2 files pass)" \
+  "$an4_result"
+
+# CT-AN-5: each of the 4 Group A agents carries the literal string
+# `Skills **or MCP servers**` (the Bound Capabilities MCP-extension bullet).
+an5_hits=0
+for slug in "${GROUP_A[@]}"; do
+  if grep -qF 'Skills **or MCP servers**' "$REPO_DIR/agents/$slug.md"; then
+    an5_hits=$((an5_hits + 1))
+  fi
+done
+an5_result="false"
+if [ "$an5_hits" -eq 4 ]; then
+  an5_result="true"
+fi
+assert_true \
+  "CT-AN-5 (Bound Capabilities MCP-extension bullet): agents/{implementer,planner,researcher,test-writer}.md contain the literal 'Skills **or MCP servers**' (got $an5_hits, expected 4)" \
+  "$an5_result"
+
+# CT-AN-6: doctrine update — agent-spawn-prompts.md and ac-quality-criteria.md
+# reflect the v8.0.0 reality (productive agents inherit MCP) and the legacy
+# v7.1.0 "subagents do not inherit MCP" wording is gone.
+ASP_AN6="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+ACQC_AN6="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+an6_asp_new1=$(grep -cF 'MCP inheritance under v8.0.0' "$ASP_AN6" || true)
+an6_asp_new2=$(grep -cF 'productive subagents' "$ASP_AN6" || true)
+an6_asp_legacy=$(grep -cF 'The subagent does not inherit the main-thread harness skill / MCP descriptions' "$ASP_AN6" || true)
+an6_acqc_new=$(grep -cF 'Forked subagents inherit the parent session' "$ACQC_AN6" || true)
+an6_acqc_legacy=$(grep -cF 'not guaranteed to inherit MCP tool access' "$ACQC_AN6" || true)
+an6_result="false"
+if [ "$an6_asp_new1" -ge 1 ] \
+   && [ "$an6_asp_new2" -ge 1 ] \
+   && [ "$an6_asp_legacy" -eq 0 ] \
+   && [ "$an6_acqc_new" -ge 1 ] \
+   && [ "$an6_acqc_legacy" -eq 0 ]; then
+  an6_result="true"
+fi
+assert_true \
+  "CT-AN-6 (doctrine update confirmed): agent-spawn-prompts.md contains 'MCP inheritance under v8.0.0' ($an6_asp_new1>=1) and 'productive subagents' ($an6_asp_new2>=1); legacy 'The subagent does not inherit ...' is gone ($an6_asp_legacy=0). ac-quality-criteria.md contains 'Forked subagents inherit the parent session' ($an6_acqc_new>=1); legacy 'not guaranteed to inherit MCP tool access' is gone ($an6_acqc_legacy=0)" \
+  "$an6_result"
+
+# CT-AN-7: hooks/pre-bash-safety.sh contains the 4 v8.0.0 denylist token
+# anchors that remain after the supply-chain category was removed
+# (npm/pnpm/yarn/pip/gem/cargo/brew/apt-get/apk/go/composer/bundle/mix/
+# dart pub/conda/nuget/dotnet + git remote add are intentionally NOT
+# blocked — see hook header for rationale). Existing destructive patterns
+# remain untouched.
+PBS_AN7="$REPO_DIR/hooks/pre-bash-safety.sh"
+an7_missing=""
+for t in 'curl' 'wget' 'git config user\.email' 'git commit --amend'; do
+  if ! grep -qE "$t" "$PBS_AN7"; then
+    an7_missing="$an7_missing $t"
+  fi
+done
+an7_result="false"
+if [ -z "$an7_missing" ]; then
+  an7_result="true"
+fi
+assert_true \
+  "CT-AN-7 (pre-bash-safety.sh new patterns): hooks/pre-bash-safety.sh contains all 4 remaining tokens (curl, wget, git config user.email, git commit --amend); missing:'${an7_missing:- (none)}'" \
+  "$an7_result"
+
+# CT-AN-8: hooks/pre-bash-safety.sh behaviorally blocks one representative
+# command per v8.0.0 category. Mechanical guard against the "tokens in
+# comments but regex broken" silent-regression class detected by Round 1
+# evaluator review of v8.0.0.
+PBS_AN8="$REPO_DIR/hooks/pre-bash-safety.sh"
+an8_missing=""
+# (label : exemplar command) — each must yield hook exit 2 (Blocked)
+declare -a an8_specs=(
+  "NETWORK_EGRESS|curl https://example.com"
+  "IDENTITY_SPOOF|git config user.email evil@x.com"
+  "PRIVILEGE_ESC|sudo apt-get install vim"
+  "COMMIT_SUBVERT|git commit --amend"
+)
+for spec in "${an8_specs[@]}"; do
+  label="${spec%%|*}"
+  cmd="${spec#*|}"
+  set +e
+  echo "{\"tool_input\":{\"command\":\"$cmd\"}}" | bash "$PBS_AN8" >/dev/null 2>&1
+  rc=$?
+  set -e
+  if [ "$rc" != "2" ]; then
+    an8_missing="$an8_missing ${label}(rc=$rc)"
+  fi
+done
+an8_result="false"
+if [ -z "$an8_missing" ]; then
+  an8_result="true"
+fi
+assert_true \
+  "CT-AN-8 (pre-bash-safety.sh behavioral block): each of the 4 v8.0.0 categories (NETWORK_EGRESS, IDENTITY_SPOOF, PRIVILEGE_ESC, COMMIT_SUBVERT) actually exits 2 for a representative command; failed:'${an8_missing:- (none)}'" \
+  "$an8_result"
+
+echo ""
+
+# =============================================================================
+# Category AQ: Gate 6.5 probe completeness + Advisory pathway (v8.0.0+)
+# Rationale: v8.0.0 ships MCP inheritance for productive subagents; this
+#   category drift-guards the Gate 6.5 + Advisory Capabilities + speculative-
+#   invocation-exception contract that closes the "probe-visible capability
+#   silently dropped" failure mode (dogfood-observed in TW33/TW34: 4 of 5
+#   TW34 tickets carried `mcp__context7__query-docs` as `(advisory; no AC
+#   binding)` but the orchestrator did not propagate Advisory to spawn prompts,
+#   so context7 was never invoked even though planner had classified it
+#   useful; ui-ux-pro-max was never classified at all in 12 tickets across
+#   both dogfood directories despite being probe-visible).
+# Invariants drift-guarded by this category:
+#     1. ac-quality-criteria.md ships `## Gate 6.5: Probe Completeness`
+#        section + the three-bucket vocabulary (Bound / Advisory / Skipped).
+#     2. agents/planner.md ships Pre-emit Self-Audit step 7 (Gate 6.5
+#        probe completeness cross-check) with the three bucket markers.
+#     3. agents/ticket-evaluator.md Gate Results template lists Probe
+#        Completeness (Gate 6.5) row.
+#     4. ticket-template.md ships `### Advisory Capabilities` block AND
+#        `#### Capability Skip Rationale` block.
+#     5. The three productive subagents that consume Advisory (implementer,
+#        researcher, test-writer) ship `## Advisory Capabilities` body
+#        section with the speculative-invocation exception wording.
+#     6. The four probe-emitting skills that previously lacked the MCP
+#        probe (impl, brief, plan2doc, investigate) now emit the
+#        `Available MCP servers:` probe in their `## Pre-computed Context`.
+#     7. The orchestrator skills that spawn productive subagents (impl,
+#        refactor) carry the `Advisory capabilities (per ticket)` handoff
+#        instruction so the Advisory block reaches the subagent verbatim.
+# =============================================================================
+echo "--- Cat AQ: Gate 6.5 probe completeness + Advisory pathway ---"
+
+ACQC_AQ="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+PLANNER_AQ="$REPO_DIR/agents/planner.md"
+TEV_AQ="$REPO_DIR/agents/ticket-evaluator.md"
+TT_AQ="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+
+# CT-AQ-1: ac-quality-criteria.md ships `## Gate 6.5: Probe Completeness`
+# section and the three bucket vocabulary tokens (Bound, Advisory, Skipped
+# with rationale).
+aq1_section=$(grep -cE '^## Gate 6\.5: Probe Completeness$' "$ACQC_AQ" || true)
+aq1_bound=$(grep -cF '**Bound**' "$ACQC_AQ" || true)
+aq1_advisory=$(grep -cF '**Advisory**' "$ACQC_AQ" || true)
+aq1_skipped=$(grep -cF '**Skipped with rationale**' "$ACQC_AQ" || true)
+aq1_result="false"
+if [ "$aq1_section" -ge 1 ] \
+   && [ "$aq1_bound" -ge 1 ] \
+   && [ "$aq1_advisory" -ge 1 ] \
+   && [ "$aq1_skipped" -ge 1 ]; then
+  aq1_result="true"
+fi
+assert_true \
+  "CT-AQ-1 (canonical Gate 6.5 section): ac-quality-criteria.md has '## Gate 6.5: Probe Completeness' (section=$aq1_section>=1) and the three buckets (Bound=$aq1_bound>=1, Advisory=$aq1_advisory>=1, Skipped=$aq1_skipped>=1)" \
+  "$aq1_result"
+
+# CT-AQ-2: planner.md ships Pre-emit Self-Audit step 7 (Gate 6.5 probe
+# completeness cross-check). Look for the literal step-7 marker AND the
+# three-bucket vocabulary in the planner's body.
+aq2_step7=$(grep -cF '7. **Gate 6.5 probe completeness cross-check**' "$PLANNER_AQ" || true)
+aq2_bound_bucket=$(grep -cE '\*\*Bound\*\*:' "$PLANNER_AQ" || true)
+aq2_advisory_bucket=$(grep -cE '\*\*Advisory\*\*:' "$PLANNER_AQ" || true)
+aq2_skipped_bucket=$(grep -cE '\*\*Skipped\*\*:' "$PLANNER_AQ" || true)
+aq2_result="false"
+if [ "$aq2_step7" -ge 1 ] \
+   && [ "$aq2_bound_bucket" -ge 1 ] \
+   && [ "$aq2_advisory_bucket" -ge 1 ] \
+   && [ "$aq2_skipped_bucket" -ge 1 ]; then
+  aq2_result="true"
+fi
+assert_true \
+  "CT-AQ-2 (planner Pre-emit step 7): agents/planner.md has step 7 marker (got=$aq2_step7>=1) and three-bucket vocabulary (Bound=$aq2_bound_bucket>=1, Advisory=$aq2_advisory_bucket>=1, Skipped=$aq2_skipped_bucket>=1)" \
+  "$aq2_result"
+
+# CT-AQ-3: ticket-evaluator.md Result template lists Probe Completeness
+# (Gate 6.5) row in the Gate Results checklist.
+aq3_hit=$(grep -cF 'Probe Completeness:' "$TEV_AQ" || true)
+aq3_gate65=$(grep -cF 'Gate 6.5' "$TEV_AQ" || true)
+aq3_result="false"
+if [ "$aq3_hit" -ge 1 ] && [ "$aq3_gate65" -ge 1 ]; then
+  aq3_result="true"
+fi
+assert_true \
+  "CT-AQ-3 (ticket-evaluator Gate 6.5 row): agents/ticket-evaluator.md has 'Probe Completeness:' (got=$aq3_hit>=1) and 'Gate 6.5' (got=$aq3_gate65>=1) in the Result template" \
+  "$aq3_result"
+
+# CT-AQ-4: ticket-template.md ships `### Advisory Capabilities` heading
+# AND `#### Capability Skip Rationale` heading.
+aq4_adv_heading=$(grep -cE '^### Advisory Capabilities$' "$TT_AQ" || true)
+aq4_skip_heading=$(grep -cE '^#### Capability Skip Rationale$' "$TT_AQ" || true)
+aq4_result="false"
+if [ "$aq4_adv_heading" -ge 1 ] && [ "$aq4_skip_heading" -ge 1 ]; then
+  aq4_result="true"
+fi
+assert_true \
+  "CT-AQ-4 (ticket template Advisory + Skip Rationale): ticket-template.md has '### Advisory Capabilities' (got=$aq4_adv_heading>=1) and '#### Capability Skip Rationale' (got=$aq4_skip_heading>=1)" \
+  "$aq4_result"
+
+# CT-AQ-5: the 3 Productive subagents that consume Advisory (implementer,
+# researcher, test-writer) ship the `## Advisory Capabilities` body section
+# AND the speculative-invocation-exception wording.
+# Note: planner is also a productive subagent but AUTHORS the Advisory
+# section rather than consuming it, so it is intentionally excluded.
+PRODUCTIVE_CONSUMERS=(
+  "implementer"
+  "researcher"
+  "test-writer"
+)
+aq5_hits=0
+for slug in "${PRODUCTIVE_CONSUMERS[@]}"; do
+  agent_md="$REPO_DIR/agents/$slug.md"
+  has_heading=$(grep -cE '^## Advisory Capabilities' "$agent_md" || true)
+  has_exception=$(grep -cF 'speculative-invocation ban' "$agent_md" || true)
+  has_block_marker=$(grep -cF 'Advisory capabilities (per ticket)' "$agent_md" || true)
+  if [ "$has_heading" -ge 1 ] \
+     && [ "$has_exception" -ge 1 ] \
+     && [ "$has_block_marker" -ge 1 ]; then
+    aq5_hits=$((aq5_hits + 1))
+  fi
+done
+aq5_result="false"
+if [ "$aq5_hits" -eq 3 ]; then
+  aq5_result="true"
+fi
+assert_true \
+  "CT-AQ-5 (Productive consumer Advisory section): agents/{implementer,researcher,test-writer}.md ship '## Advisory Capabilities' heading + 'speculative-invocation ban' exception + '## Advisory capabilities (per ticket)' marker ($aq5_hits / 3 files pass)" \
+  "$aq5_result"
+
+# CT-AQ-6: the four probe-emitting skills that previously lacked the MCP
+# probe (impl, brief, plan2doc, investigate) now emit the
+# `Available MCP servers:` probe in their Pre-computed Context block.
+MCP_PROBE_SKILLS=(
+  "impl"
+  "brief"
+  "plan2doc"
+  "investigate"
+)
+aq6_hits=0
+for slug in "${MCP_PROBE_SKILLS[@]}"; do
+  skill_md="$REPO_DIR/skills/$slug/SKILL.md"
+  if grep -qF 'Available MCP servers:' "$skill_md" 2>/dev/null; then
+    aq6_hits=$((aq6_hits + 1))
+  fi
+done
+aq6_result="false"
+if [ "$aq6_hits" -eq 4 ]; then
+  aq6_result="true"
+fi
+assert_true \
+  "CT-AQ-6 (MCP probe coverage): skills/{impl,brief,plan2doc,investigate}/SKILL.md emit 'Available MCP servers:' probe in Pre-computed Context ($aq6_hits / 4 files pass)" \
+  "$aq6_result"
+
+# CT-AQ-7: orchestrator skills that spawn productive subagents (impl,
+# refactor) carry an `Advisory capabilities (per ticket)` handoff
+# instruction so the planner-authored Advisory table reaches the
+# downstream subagent verbatim.
+ADVISORY_ORCHESTRATORS=(
+  "impl"
+  "refactor"
+)
+aq7_hits=0
+for slug in "${ADVISORY_ORCHESTRATORS[@]}"; do
+  skill_md="$REPO_DIR/skills/$slug/SKILL.md"
+  if grep -qF 'Advisory capabilities (per ticket)' "$skill_md" 2>/dev/null; then
+    aq7_hits=$((aq7_hits + 1))
+  fi
+done
+aq7_result="false"
+if [ "$aq7_hits" -eq 2 ]; then
+  aq7_result="true"
+fi
+assert_true \
+  "CT-AQ-7 (Advisory handoff in orchestrators): skills/{impl,refactor}/SKILL.md carry 'Advisory capabilities (per ticket)' handoff instruction ($aq7_hits / 2 files pass)" \
+  "$aq7_result"
+
+# CT-AQ-8: ac-quality-criteria.md Gate 6.5 section AND planner.md step 7
+# both reference the `(none)` exception wording so the vacuous-pass path
+# is documented in both authoring sites.
+aq8_acqc_none=$(grep -cF '`(none)` exception' "$ACQC_AQ" || true)
+aq8_planner_none=$(grep -cF '`(none)` exception' "$PLANNER_AQ" || true)
+aq8_result="false"
+if [ "$aq8_acqc_none" -ge 1 ] && [ "$aq8_planner_none" -ge 1 ]; then
+  aq8_result="true"
+fi
+assert_true \
+  "CT-AQ-8 (probe '(none)' exception documented): ac-quality-criteria.md (got=$aq8_acqc_none>=1) AND agents/planner.md (got=$aq8_planner_none>=1) both reference the '(none) exception' for empty probes" \
+  "$aq8_result"
+
+# CT-AQ-9 (Advisory consultation discipline — Recommending, not just Permitting):
+# the 3 productive consumer agents AND ac-quality-criteria.md must carry the
+# Recommending-semantics wording so silent omission of Advisory entries
+# (invoke=0 AND no skip rationale) is a documented contract violation. This
+# closes the TW35 dogfood-observed gap where ui-ux-pro-max was Advisory-bound
+# in 4 tickets but invoked 0 times with no recorded skip rationale.
+aq9_consumer_hits=0
+for slug in implementer researcher test-writer; do
+  agent_md="$REPO_DIR/agents/$slug.md"
+  has_discipline_heading=$(grep -cF '### Consultation discipline' "$agent_md" || true)
+  has_silent_omission=$(grep -cF 'Silent omission' "$agent_md" || true)
+  has_skip_rationale=$(grep -cF 'skip rationale' "$agent_md" || true)
+  if [ "$has_discipline_heading" -ge 1 ] \
+     && [ "$has_silent_omission" -ge 1 ] \
+     && [ "$has_skip_rationale" -ge 1 ]; then
+    aq9_consumer_hits=$((aq9_consumer_hits + 1))
+  fi
+done
+aq9_acqc_hit=$(grep -cF 'Consumer-side consultation discipline' "$ACQC_AQ" || true)
+aq9_result="false"
+if [ "$aq9_consumer_hits" -eq 3 ] && [ "$aq9_acqc_hit" -ge 1 ]; then
+  aq9_result="true"
+fi
+assert_true \
+  "CT-AQ-9 (Advisory Recommending semantics): agents/{implementer,researcher,test-writer}.md carry '### Consultation discipline' + 'Silent omission' + 'skip rationale' ($aq9_consumer_hits / 3 files pass) AND ac-quality-criteria.md carries 'Consumer-side consultation discipline' (got=$aq9_acqc_hit>=1)" \
+  "$aq9_result"
+
+echo ""
+
+# =============================================================================
+# Category AO: args-aware shrinkage spec wiring (P0-2A)
+# Diff: pins the four mechanically-detectable invariants from P0-2A's AC-1
+#        .. AC-5. AC-6 is dogfood-observable only and asserted indirectly via
+#        AC-1 (the orchestrator's `[args-aware shrinkage] args-resolved
+#        categories:` literal MUST appear in skills/brief/SKILL.md so the
+#        orchestrator emits it). The Caps-invariance assertion (AC-4) uses a
+#        hard-coded expected count of 3 — the v7.x baseline immediately
+#        before this plan landed — so any future bullet that adds, removes,
+#        or paraphrases one of the three Caps phrases trips the test.
+# =============================================================================
+echo "--- Cat AO: args-aware shrinkage spec wiring (P0-2A) ---"
+
+BRIEF_SKILL_AO="$REPO_DIR/skills/brief/SKILL.md"
+ASP_AO="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+CT_SKILL_AO="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# CT-AC-61 (P0-2A AC-1): skills/brief/SKILL.md carries the 'args-aware
+# shrinkage' literal, AND the `#### args-aware shrinkage` subsection body
+# contains both `$ARGUMENTS` and `args-resolved` tokens. The orchestrator's
+# AC-6 console-trace literal (`[args-aware shrinkage] args-resolved
+# categories:`) lives inside that same subsection, so its presence is
+# verified transitively here.
+ao1_main_hit=$(grep -cF 'args-aware shrinkage' "$BRIEF_SKILL_AO" || true)
+ao1_section=$(awk '/^#### args-aware shrinkage/,/^#### Dynamic Phase 2 shrinkage/' "$BRIEF_SKILL_AO")
+ao1_arguments=$(echo "$ao1_section" | grep -cF '$ARGUMENTS' || true)
+ao1_resolved=$(echo "$ao1_section" | grep -cF 'args-resolved' || true)
+ao1_trace=$(echo "$ao1_section" | grep -cF '[args-aware shrinkage] args-resolved categories:' || true)
+ao1_result="false"
+if [ "$ao1_main_hit" -ge 1 ] \
+   && [ "$ao1_arguments" -ge 1 ] \
+   && [ "$ao1_resolved" -ge 1 ] \
+   && [ "$ao1_trace" -ge 1 ]; then
+  ao1_result="true"
+fi
+assert_true \
+  "CT-AC-61 (P0-2A AC-1): skills/brief/SKILL.md mentions 'args-aware shrinkage' (count=$ao1_main_hit, expected >=1); the '#### args-aware shrinkage' subsection contains \$ARGUMENTS (count=$ao1_arguments, expected >=1), 'args-resolved' (count=$ao1_resolved, expected >=1), and the orchestrator console-trace literal '[args-aware shrinkage] args-resolved categories:' (count=$ao1_trace, expected >=1; transitively pins AC-6)" \
+  "$ao1_result"
+
+# CT-AC-62 (P0-2A AC-2): skills/create-ticket/references/agent-spawn-prompts.md
+# carries the 'args-aware shrinkage' literal in its Phase 2 section.
+ao2_hit=$(grep -cF 'args-aware shrinkage' "$ASP_AO" || true)
+ao2_result="false"
+if [ "$ao2_hit" -ge 1 ]; then
+  ao2_result="true"
+fi
+assert_true \
+  "CT-AC-62 (P0-2A AC-2): skills/create-ticket/references/agent-spawn-prompts.md mentions 'args-aware shrinkage' (count=$ao2_hit, expected >=1)" \
+  "$ao2_result"
+
+# CT-AC-63 (P0-2A AC-3): skills/create-ticket/SKILL.md Phase 2 section
+# carries the 'args-aware shrinkage' literal at least once AND the same
+# line (the references-pointer line) contains the substring
+# 'references/agent-spawn-prompts.md'. The literal pointer is enforced
+# directly with a one-line grep that demands both tokens on the same
+# line — the ticket spec requires the transition link to live "同行内"
+# (on the same line) with the literal.
+ao3_line=$(grep -nF 'args-aware shrinkage' "$CT_SKILL_AO" | head -1 | cut -d: -f2-)
+ao3_result="false"
+if [ -n "$ao3_line" ] \
+   && echo "$ao3_line" | grep -qF 'references/agent-spawn-prompts.md'; then
+  ao3_result="true"
+fi
+assert_true \
+  "CT-AC-63 (P0-2A AC-3): skills/create-ticket/SKILL.md has at least one 'args-aware shrinkage' line whose text also contains the references/agent-spawn-prompts.md pointer on the SAME line (intra-line link required by ticket spec)" \
+  "$ao3_result"
+
+# CT-AC-64 (P0-2A AC-4): the three Caps phrases retain their pre-P0-2A
+# count. Pre-P0-2A baseline = 3 hits total (one per phrase). This
+# assertion guards against a future shrinkage-style change that
+# silently drops or paraphrases one of the three load-bearing Caps
+# bullets in skills/brief/SKILL.md.
+ao4_caps=$(grep -cE 'At most \*\*10 rounds\*\*|At most \*\*3 questions per round\*\*|at most \*\*30 questions total\*\*' "$BRIEF_SKILL_AO" || true)
+ao4_result="false"
+if [ "$ao4_caps" -eq 3 ]; then
+  ao4_result="true"
+fi
+assert_true \
+  "CT-AC-64 (P0-2A AC-4): skills/brief/SKILL.md retains exactly 3 Caps-phrase hits ('At most **10 rounds**' + 'At most **3 questions per round**' + 'at most **30 questions total**') — got $ao4_caps, expected 3" \
+  "$ao4_result"
+
+# CT-AC-65 (P0-2A AC-5): the 'mode independence guard' literal remains
+# present in skills/brief/SKILL.md AND its body content (the prose
+# immediately after the load-bearing label) is unchanged from the
+# v7.1.0 baseline. Body equivalence is asserted by grepping for the
+# verbatim opening clause that has been present in the guard's prose
+# since v6.0.0 and that the P0-2A change MUST NOT touch. If a future
+# edit rewrites that clause (e.g. weakens "MUST" to "should" or drops
+# the parenthetical), the assertion trips.
+ao5_label=$(grep -cF 'mode independence guard' "$BRIEF_SKILL_AO" || true)
+ao5_body=$(grep -cF 'MUST** run regardless of the parsed `mode` value' "$BRIEF_SKILL_AO" || true)
+ao5_no_skip=$(grep -cF 'MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2' "$BRIEF_SKILL_AO" || true)
+ao5_result="false"
+if [ "$ao5_label" -ge 1 ] && [ "$ao5_body" -ge 1 ] && [ "$ao5_no_skip" -ge 1 ]; then
+  ao5_result="true"
+fi
+assert_true \
+  "CT-AC-65 (P0-2A AC-5): skills/brief/SKILL.md retains the 'mode independence guard' literal (count=$ao5_label, expected >=1) AND its body's two load-bearing clauses ('MUST run regardless of the parsed mode value' count=$ao5_body, expected >=1; 'MUST NOT be interpreted as a signal to skip, shorten, or bypass Phase 2' count=$ao5_no_skip, expected >=1) are byte-identical to the v7.1.0 baseline (P0-2A MUST NOT rewrite the guard body)" \
+  "$ao5_result"
+
+echo ""
+
+# =============================================================================
+# Category AP: /autopilot 3-tier risk_tolerance-aware non-interactive contract (P0-3A)
+# Diff: Cat CP already pins the two canonical context-pressure responses and Cat LT
+#        pins the loop-tail end_turn prohibition; neither covers the 3-tier
+#        risk_tolerance allow-list, header naming, or the per-callee header
+#        annotations introduced by P0-3A. This category is the structural
+#        regression guard for the new prose contract. AC-26/27/28 from the
+#        plan are NOT pinned here (27/28 are the test runner itself; 26 is a
+#        meta check that becomes mechanically verifiable only once
+#        hooks/pre-askuserquestion-guard.sh lands via P1-3B).
+# =============================================================================
+echo "--- Cat AP: /autopilot 3-tier risk_tolerance-aware non-interactive contract (P0-3A) ---"
+
+AUTOPILOT_SKILL_AP="$REPO_DIR/skills/autopilot/SKILL.md"
+IMPL_SKILL_AP="$REPO_DIR/skills/impl/SKILL.md"
+SHIP_SKILL_AP="$REPO_DIR/skills/ship/SKILL.md"
+REFACTOR_SKILL_AP="$REPO_DIR/skills/refactor/SKILL.md"
+
+# AP-1 (P0-3A AC-1): new section header is present in skills/autopilot/SKILL.md.
+ap1_result="false"
+if grep -q '^## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)' "$AUTOPILOT_SKILL_AP"; then
+  ap1_result="true"
+fi
+assert_true \
+  "AP-1 (P0-3A AC-1): skills/autopilot/SKILL.md carries the '## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)' section heading" \
+  "$ap1_result"
+
+# AP-2 (P0-3A AC-2): contract start-point literal.
+ap2_result="false"
+if grep -q 'Phase 1 step 1 confirms `SPLIT_PLAN` exists' "$AUTOPILOT_SKILL_AP"; then
+  ap2_result="true"
+fi
+assert_true \
+  "AP-2 (P0-3A AC-2): skills/autopilot/SKILL.md states the contract starts when 'Phase 1 step 1 confirms \`SPLIT_PLAN\` exists'" \
+  "$ap2_result"
+
+# AP-3 (P0-3A AC-3): the '3-tier allow-list matrix' phrase is present.
+ap3_result="false"
+if grep -q '3-tier allow-list matrix' "$AUTOPILOT_SKILL_AP"; then
+  ap3_result="true"
+fi
+assert_true \
+  "AP-3 (P0-3A AC-3): skills/autopilot/SKILL.md mentions the '3-tier allow-list matrix'" \
+  "$ap3_result"
+
+# AP-4 (P0-3A AC-4): the matrix is keyed on `risk_tolerance`.
+ap4_result="false"
+if grep -q 'keyed on `risk_tolerance`' "$AUTOPILOT_SKILL_AP"; then
+  ap4_result="true"
+fi
+assert_true \
+  "AP-4 (P0-3A AC-4): skills/autopilot/SKILL.md declares the matrix is 'keyed on \`risk_tolerance\`'" \
+  "$ap4_result"
+
+# AP-5..AP-11 (P0-3A AC-5..AC-11): allow-list matrix cells (deny/allow per tier).
+ap5_result="false"
+if grep -qE 'audit-fail.*\|.*deny.*\|.*allow.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap5_result="true"
+fi
+assert_true \
+  "AP-5 (P0-3A AC-5): skills/autopilot/SKILL.md matrix row 'audit-fail | deny | allow | allow' present" \
+  "$ap5_result"
+
+ap6_result="false"
+if grep -qE 'ac-eval.*\|.*deny.*\|.*allow.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap6_result="true"
+fi
+assert_true \
+  "AP-6 (P0-3A AC-6): skills/autopilot/SKILL.md matrix row 'ac-eval | deny | allow | allow' present" \
+  "$ap6_result"
+
+ap7_result="false"
+if grep -qE 'ship-review.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap7_result="true"
+fi
+assert_true \
+  "AP-7 (P0-3A AC-7): skills/autopilot/SKILL.md matrix row 'ship-review | deny | deny | allow' present" \
+  "$ap7_result"
+
+ap8_result="false"
+if grep -qE 'ship-ci.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap8_result="true"
+fi
+assert_true \
+  "AP-8 (P0-3A AC-8): skills/autopilot/SKILL.md matrix row 'ship-ci | deny | deny | allow' present" \
+  "$ap8_result"
+
+ap9_result="false"
+if grep -qE 'eval-dry.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap9_result="true"
+fi
+assert_true \
+  "AP-9 (P0-3A AC-9): skills/autopilot/SKILL.md matrix row 'eval-dry | deny | deny | allow' present" \
+  "$ap9_result"
+
+ap10_result="false"
+if grep -qE 'tkt-quality.*\|.*deny.*\|.*deny.*\|.*allow' "$AUTOPILOT_SKILL_AP"; then
+  ap10_result="true"
+fi
+assert_true \
+  "AP-10 (P0-3A AC-10): skills/autopilot/SKILL.md matrix row 'tkt-quality | deny | deny | allow' present" \
+  "$ap10_result"
+
+ap11_result="false"
+if grep -qE '\(any other\).*\|.*deny.*\|.*deny.*\|.*deny' "$AUTOPILOT_SKILL_AP"; then
+  ap11_result="true"
+fi
+assert_true \
+  "AP-11 (P0-3A AC-11): skills/autopilot/SKILL.md matrix fallback row '(any other) | deny | deny | deny' present" \
+  "$ap11_result"
+
+# AP-12..AP-14 (P0-3A AC-12..AC-14): header naming load-bearing literals.
+ap12_result="false"
+if grep -q 'Header naming is load-bearing' "$AUTOPILOT_SKILL_AP"; then
+  ap12_result="true"
+fi
+assert_true \
+  "AP-12 (P0-3A AC-12): skills/autopilot/SKILL.md declares 'Header naming is load-bearing'" \
+  "$ap12_result"
+
+ap13_result="false"
+if grep -q 'max 12 chars' "$AUTOPILOT_SKILL_AP"; then
+  ap13_result="true"
+fi
+assert_true \
+  "AP-13 (P0-3A AC-13): skills/autopilot/SKILL.md exposes the AskUserQuestion 'max 12 chars' header limit" \
+  "$ap13_result"
+
+ap14_result="false"
+if grep -q 'denied at every tier' "$AUTOPILOT_SKILL_AP"; then
+  ap14_result="true"
+fi
+assert_true \
+  "AP-14 (P0-3A AC-14): skills/autopilot/SKILL.md declares off-matrix headers are 'denied at every tier'" \
+  "$ap14_result"
+
+# AP-15..AP-17 (P0-3A AC-15..AC-17): /impl carries the three header annotations.
+ap15_result="false"
+if grep -q 'header:[[:space:]]*eval-dry' "$IMPL_SKILL_AP"; then
+  ap15_result="true"
+fi
+assert_true \
+  "AP-15 (P0-3A AC-15): skills/impl/SKILL.md annotates the evaluator-dry-run question with 'header: eval-dry'" \
+  "$ap15_result"
+
+ap16_result="false"
+if grep -q 'header:[[:space:]]*audit-fail' "$IMPL_SKILL_AP"; then
+  ap16_result="true"
+fi
+assert_true \
+  "AP-16 (P0-3A AC-16): skills/impl/SKILL.md annotates the audit-failure question with 'header: audit-fail'" \
+  "$ap16_result"
+
+ap17_result="false"
+if grep -q 'header:[[:space:]]*ac-eval' "$IMPL_SKILL_AP"; then
+  ap17_result="true"
+fi
+assert_true \
+  "AP-17 (P0-3A AC-17): skills/impl/SKILL.md annotates the AC-eval FAIL escalation with 'header: ac-eval'" \
+  "$ap17_result"
+
+# AP-18 (P0-3A AC-18): /ship carries at least one ship-review or ship-ci header.
+ap18_result="false"
+if grep -qE 'header:[[:space:]]*(ship-review|ship-ci)' "$SHIP_SKILL_AP"; then
+  ap18_result="true"
+fi
+assert_true \
+  "AP-18 (P0-3A AC-18): skills/ship/SKILL.md annotates at least one policy-gate question with 'header: ship-review' or 'header: ship-ci'" \
+  "$ap18_result"
+
+# AP-19 (P0-3A AC-19): /refactor carries header: audit-fail on the autopilot-mode path.
+ap19_result="false"
+if grep -q 'header:[[:space:]]*audit-fail' "$REFACTOR_SKILL_AP"; then
+  ap19_result="true"
+fi
+assert_true \
+  "AP-19 (P0-3A AC-19): skills/refactor/SKILL.md annotates the autopilot-mode code-reviewer failure question with 'header: audit-fail'" \
+  "$ap19_result"
+
+# AP-20 (P0-3A AC-20): policy_gate_stop literal present in autopilot SKILL.md.
+ap20_result="false"
+if grep -q '`policy_gate_stop`' "$AUTOPILOT_SKILL_AP"; then
+  ap20_result="true"
+fi
+assert_true \
+  "AP-20 (P0-3A AC-20): skills/autopilot/SKILL.md surfaces the '\`policy_gate_stop\`' tag in the new section" \
+  "$ap20_result"
+
+# AP-21 (P0-3A AC-21): >=2 occurrences of '[AUTOPILOT-POLICY] gate=unexpected_error action=stop'.
+ap21_count=$(grep -c 'AUTOPILOT-POLICY] gate=unexpected_error action=stop' "$AUTOPILOT_SKILL_AP" || true)
+ap21_result="false"
+if [ "$ap21_count" -ge 2 ]; then
+  ap21_result="true"
+fi
+assert_true \
+  "AP-21 (P0-3A AC-21): skills/autopilot/SKILL.md mentions '[AUTOPILOT-POLICY] gate=unexpected_error action=stop' at least twice (got $ap21_count, expected >=2)" \
+  "$ap21_result"
+
+# AP-22 (P0-3A AC-22): legacy ERROR literal preserved.
+ap22_result="false"
+if grep -q 'ERROR: split-plan not found at' "$AUTOPILOT_SKILL_AP"; then
+  ap22_result="true"
+fi
+assert_true \
+  "AP-22 (P0-3A AC-22): skills/autopilot/SKILL.md retains the verbatim 'ERROR: split-plan not found at' literal (backwards compatibility with existing contract tests)" \
+  "$ap22_result"
+
+# AP-23..AP-25 (P0-3A AC-23..AC-25): forbidden self-rationalisation patterns.
+ap23_result="false"
+if grep -q 'The per-ticket pipeline has not started yet, so the contract is not' "$AUTOPILOT_SKILL_AP"; then
+  ap23_result="true"
+fi
+assert_true \
+  "AP-23 (P0-3A AC-23): skills/autopilot/SKILL.md enumerates the 'pipeline has not started yet' forbidden self-rationalisation" \
+  "$ap23_result"
+
+ap24_result="false"
+if grep -q 'Context budget is running low' "$AUTOPILOT_SKILL_AP"; then
+  ap24_result="true"
+fi
+assert_true \
+  "AP-24 (P0-3A AC-24): skills/autopilot/SKILL.md enumerates the 'Context budget is running low' forbidden self-rationalisation" \
+  "$ap24_result"
+
+ap25_result="false"
+if grep -q 'phrase my question as `header: audit-fail`' "$AUTOPILOT_SKILL_AP"; then
+  ap25_result="true"
+fi
+assert_true \
+  "AP-25 (P0-3A AC-25): skills/autopilot/SKILL.md enumerates the 'phrase my question as \`header: audit-fail\`' header-misuse forbidden self-rationalisation" \
+  "$ap25_result"
+
+# AP-26 partial (P0-3A AC-26): the six gate-id header tokens all appear at least
+# once in the autopilot SKILL.md so the matrix is well-formed. Full meta check
+# vs hooks/pre-askuserquestion-guard.sh lands in P1-3B once the hook exists.
+ap26_count=$(grep -c 'audit-fail\|ac-eval\|ship-review\|ship-ci\|eval-dry\|tkt-quality' "$AUTOPILOT_SKILL_AP" || true)
+ap26_result="false"
+if [ "$ap26_count" -ge 6 ]; then
+  ap26_result="true"
+fi
+assert_true \
+  "AP-26 (P0-3A AC-26, partial — matrix well-formed; full P1-3B parity check deferred): skills/autopilot/SKILL.md mentions each of the six gate-id headers (audit-fail / ac-eval / ship-review / ship-ci / eval-dry / tkt-quality); count=$ap26_count, expected >=6" \
+  "$ap26_result"
+
+echo ""
+
+# =============================================================================
+# Category P1-3B: pre-askuserquestion-guard.sh <-> SKILL.md matrix parity
+# Diff: AP-26 above asserts presence of the six headers in SKILL.md only.
+#        This block adds the structural parity assertions required by P1-3B
+#        AC-9 / AC-10 / AC-6: 6 header literals present in BOTH the hook
+#        script AND skills/autopilot/SKILL.md, the moderate row of the
+#        SKILL.md matrix lists exactly {audit-fail, ac-eval}, and
+#        hooks.json registers a single PreToolUse:AskUserQuestion matcher
+#        pointing at the new hook.
+# =============================================================================
+echo "--- Cat P1-3B: pre-askuserquestion-guard.sh matrix parity ---"
+
+ASK_GUARD_HOOK="$REPO_DIR/hooks/pre-askuserquestion-guard.sh"
+HOOKS_JSON="$REPO_DIR/hooks/hooks.json"
+
+# P1-3B AC-9 (6 assertions): each of the six known gate-id header
+# literals MUST appear at least once in BOTH the hook script and the
+# autopilot SKILL.md. Per-header presence parity prevents a future hook
+# matrix edit from drifting away from the SKILL prose table (or vice
+# versa). We deliberately do NOT require exact count equality — the
+# hook references each header inside two case statements plus the reason
+# literal, while the SKILL.md mentions each inside the matrix table plus
+# the gate-id mapping prose — so the natural multiplicities differ.
+for h in audit-fail ac-eval ship-review ship-ci eval-dry tkt-quality; do
+  hook_hit="false"; skill_hit="false"
+  grep -qF -- "$h" "$ASK_GUARD_HOOK" && hook_hit="true"
+  grep -qF -- "$h" "$AUTOPILOT_SKILL_AP" && skill_hit="true"
+  parity_result="false"
+  if [ "$hook_hit" = "true" ] && [ "$skill_hit" = "true" ]; then
+    parity_result="true"
+  fi
+  assert_true \
+    "P1-3B AC-9: header literal '$h' present in BOTH hooks/pre-askuserquestion-guard.sh and skills/autopilot/SKILL.md (hook=$hook_hit, skill=$skill_hit)" \
+    "$parity_result"
+done
+
+# P1-3B AC-10 (2 assertions): the moderate column of the SKILL.md
+# Non-interactive-contract matrix table allows exactly the pair
+# {audit-fail, ac-eval} and denies the four other known headers
+# (ship-review / ship-ci / eval-dry / tkt-quality). The matrix is
+# rendered as a Markdown table whose column order is
+# `| header | aggressive | moderate | conservative |`, so the moderate
+# cell is the third pipe-delimited field after the header label
+# (positions: 0=label, 1=aggressive, 2=moderate, 3=conservative).
+#
+# AC-10a: every audit-fail / ac-eval row has `allow` in the moderate
+# column (i.e. their row contains `| deny | allow | allow |` after the
+# header literal -- the 2-pair that defines the moderate allow-list).
+# AC-10b: every ship-review / ship-ci / eval-dry / tkt-quality row has
+# `deny` in the moderate column (i.e. `| deny | deny | allow |`), so
+# no extra header has been smuggled into the moderate allow-list.
+ac10_audit_result="false"
+audit_allow_count=0
+for h in 'audit-fail' 'ac-eval'; do
+  if grep -qE "^\|[[:space:]]*\`$h\`[[:space:]]*\|[[:space:]]*deny[[:space:]]*\|[[:space:]]*allow[[:space:]]*\|[[:space:]]*allow" "$AUTOPILOT_SKILL_AP"; then
+    audit_allow_count=$((audit_allow_count + 1))
+  fi
+done
+if [ "$audit_allow_count" -eq 2 ]; then
+  ac10_audit_result="true"
+fi
+assert_true \
+  "P1-3B AC-10a: skills/autopilot/SKILL.md moderate column allows exactly {audit-fail, ac-eval} via 'deny | allow | allow' row shape (matched=$audit_allow_count, expected 2)" \
+  "$ac10_audit_result"
+
+ac10_other_result="false"
+other_deny_count=0
+for h in 'ship-review' 'ship-ci' 'eval-dry' 'tkt-quality'; do
+  if grep -qE "^\|[[:space:]]*\`$h\`[[:space:]]*\|[[:space:]]*deny[[:space:]]*\|[[:space:]]*deny[[:space:]]*\|[[:space:]]*allow" "$AUTOPILOT_SKILL_AP"; then
+    other_deny_count=$((other_deny_count + 1))
+  fi
+done
+if [ "$other_deny_count" -eq 4 ]; then
+  ac10_other_result="true"
+fi
+assert_true \
+  "P1-3B AC-10b: skills/autopilot/SKILL.md moderate column denies the four non-pair headers (ship-review / ship-ci / eval-dry / tkt-quality) via 'deny | deny | allow' row shape (matched=$other_deny_count, expected 4)" \
+  "$ac10_other_result"
+
+# P1-3B AC-6 (1 assertion): hooks.json registers exactly one
+# PreToolUse matcher entry for AskUserQuestion AND that entry points at
+# hooks/pre-askuserquestion-guard.sh.
+ac6_matcher_count=$(grep -cE '"matcher":[[:space:]]*"AskUserQuestion"' "$HOOKS_JSON" || true)
+ac6_hook_ref_count=$(grep -c 'pre-askuserquestion-guard.sh' "$HOOKS_JSON" || true)
+ac6_result="false"
+if [ "$ac6_matcher_count" -eq 1 ] && [ "$ac6_hook_ref_count" -eq 1 ]; then
+  ac6_result="true"
+fi
+assert_true \
+  "P1-3B AC-6: hooks/hooks.json registers exactly one PreToolUse:AskUserQuestion matcher pointing at pre-askuserquestion-guard.sh (matcher_count=$ac6_matcher_count, hook_ref_count=$ac6_hook_ref_count, both expected 1)" \
+  "$ac6_result"
+
+echo ""
+
+# =============================================================================
+# Category PSI: Post-Ship Integrity self-heal contract (P3-5)
+# Diff: pins the SKILL prose (Step 15a idempotence + Step 16 ordering),
+#        the hook Gate 5.5 + SW_POST_SHIP_INTEGRITY kill-switch literals,
+#        and the behavioral self-heal / kill-switch / metric-only /
+#        idempotence behaviours required by
+#        .docs/dogfooding/33-34/P3-5-post-ship-phase-state-integrity.md.
+# =============================================================================
+echo "--- Cat PSI: post-ship integrity self-heal contract (P3-5) ---"
+
+SHIP_SKILL_PSI="$REPO_DIR/skills/ship/SKILL.md"
+PSI_HOOK="$REPO_DIR/hooks/post-ship-state-auto-compact.sh"
+PSI_FIXTURE_DIR="$REPO_DIR/tests/fixtures/post-ship-integrity"
+
+# PSI AC-1a: skills/ship/SKILL.md carries the literal `PSI contract` token.
+psi_ac1a_count=$(grep -cF 'PSI contract' "$SHIP_SKILL_PSI" || true)
+psi_ac1a_result="false"
+[ "$psi_ac1a_count" -ge 1 ] && psi_ac1a_result="true"
+assert_true \
+  "PSI AC-1a: skills/ship/SKILL.md contains 'PSI contract' literal (count=$psi_ac1a_count, expected >=1)" \
+  "$psi_ac1a_result"
+
+# PSI AC-1b: Step 15a MUST run literal appears in SKILL.md (idempotence rule).
+psi_ac1b_count=$(grep -cF 'Step 15a MUST run on every successful pass through Phase 2' "$SHIP_SKILL_PSI" || true)
+psi_ac1b_result="false"
+[ "$psi_ac1b_count" -ge 1 ] && psi_ac1b_result="true"
+assert_true \
+  "PSI AC-1b: skills/ship/SKILL.md contains 'Step 15a MUST run on every successful pass through Phase 2' (count=$psi_ac1b_count, expected >=1)" \
+  "$psi_ac1b_result"
+
+# PSI AC-2a: 'Ordering with Step 16' literal appears in SKILL.md.
+psi_ac2a_count=$(grep -cF 'Ordering with Step 16' "$SHIP_SKILL_PSI" || true)
+psi_ac2a_result="false"
+[ "$psi_ac2a_count" -ge 1 ] && psi_ac2a_result="true"
+assert_true \
+  "PSI AC-2a: skills/ship/SKILL.md contains 'Ordering with Step 16' (count=$psi_ac2a_count, expected >=1)" \
+  "$psi_ac2a_result"
+
+# PSI AC-2b: Step 15a MUST complete its write to disk BEFORE Step 16 literal.
+psi_ac2b_count=$(grep -cF 'Step 15a MUST complete its write to disk BEFORE Step 16' "$SHIP_SKILL_PSI" || true)
+psi_ac2b_result="false"
+[ "$psi_ac2b_count" -ge 1 ] && psi_ac2b_result="true"
+assert_true \
+  "PSI AC-2b: skills/ship/SKILL.md contains 'Step 15a MUST complete its write to disk BEFORE Step 16' (count=$psi_ac2b_count, expected >=1)" \
+  "$psi_ac2b_result"
+
+# PSI AC-3a: Gate 5.5 literal appears in post-ship-state-auto-compact.sh.
+psi_ac3a_count=$(grep -cF 'Gate 5.5' "$PSI_HOOK" || true)
+psi_ac3a_result="false"
+[ "$psi_ac3a_count" -ge 1 ] && psi_ac3a_result="true"
+assert_true \
+  "PSI AC-3a: hooks/post-ship-state-auto-compact.sh contains 'Gate 5.5' (count=$psi_ac3a_count, expected >=1)" \
+  "$psi_ac3a_result"
+
+# PSI AC-3b: SW_POST_SHIP_INTEGRITY appears >=2 times in the hook
+# (kill-switch interpretation + metric-only branch).
+psi_ac3b_count=$(grep -cF 'SW_POST_SHIP_INTEGRITY' "$PSI_HOOK" || true)
+psi_ac3b_result="false"
+[ "$psi_ac3b_count" -ge 2 ] && psi_ac3b_result="true"
+assert_true \
+  "PSI AC-3b: hooks/post-ship-state-auto-compact.sh contains 'SW_POST_SHIP_INTEGRITY' (count=$psi_ac3b_count, expected >=2)" \
+  "$psi_ac3b_result"
+
+# Behavioural assertions (AC-4 / AC-5 / AC-6 / AC-7) require yq or
+# python3+PyYAML for the hook self-heal write tier. If neither is
+# available the rewrite tier is a no-op (ticket Risk R3): skip the
+# behavioural block in that case but still emit a single sentinel
+# assertion so test totals are stable.
+psi_has_writer="false"
+if command -v yq >/dev/null 2>&1; then
+  psi_has_writer="true"
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+  psi_has_writer="true"
+fi
+
+if [ "$psi_has_writer" = "true" ]; then
+  # Helper: prepare a temp repo root containing a fake ticket-done dir
+  # and a brief-side autopilot-state.yaml, then return the stdin payload
+  # the hook expects (PostToolUse Edit/Write tool input).
+  _psi_setup_tmproot() {
+    local fixture_phase_state="$1"   # absolute path to fixture phase-state.yaml
+    local tmproot
+    tmproot="$(mktemp -d)"
+    mkdir -p "$tmproot/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold"
+    mkdir -p "$tmproot/.simple-workflow/backlog/done/shelftrack/005-e2e-hardening-and-accessibility"
+    mkdir -p "$tmproot/.simple-workflow/backlog/briefs/active/shelftrack"
+    cp "$fixture_phase_state" "$tmproot/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+    cp "$PSI_FIXTURE_DIR/clean-ticket-005/phase-state.yaml" "$tmproot/.simple-workflow/backlog/done/shelftrack/005-e2e-hardening-and-accessibility/phase-state.yaml"
+    cp "$PSI_FIXTURE_DIR/briefs/active/shelftrack/autopilot-state.yaml" "$tmproot/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+    printf '%s\n' "$tmproot"
+  }
+  _psi_payload_for() {
+    local state_file="$1"
+    local content
+    content="$(cat "$state_file")"
+    jq -n \
+      --arg fp "$state_file" \
+      --arg content "$content" \
+      '{tool_input: {file_path: $fp, new_string: $content}}'
+  }
+
+  # PSI AC-4: self-heal rewrites overall_status -> done AND emits the
+  # canonical '[POST-SHIP-INTEGRITY] self-healing' warning to stderr.
+  PSI_TMP1="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET1="$PSI_TMP1/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE1="$PSI_TMP1/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_STDERR1="$(mktemp)"
+  PSI_PAYLOAD1="$(_psi_payload_for "$PSI_STATE1")"
+  ( cd "$PSI_TMP1" && printf '%s' "$PSI_PAYLOAD1" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=on \
+      bash "$PSI_HOOK" >/dev/null 2>"$PSI_STDERR1" ) || true
+  psi_ac4_overall="$(grep -E '^overall_status:' "$PSI_TARGET1" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac4_stderr_hit="false"
+  grep -qF '[POST-SHIP-INTEGRITY] self-healing' "$PSI_STDERR1" && psi_ac4_stderr_hit="true"
+  psi_ac4_result="false"
+  if [ "$psi_ac4_overall" = "done" ] && [ "$psi_ac4_stderr_hit" = "true" ]; then
+    psi_ac4_result="true"
+  fi
+  assert_true \
+    "PSI AC-4: hook self-heals drift fixture (overall_status='$psi_ac4_overall', expected 'done'; stderr contains '[POST-SHIP-INTEGRITY] self-healing'=$psi_ac4_stderr_hit)" \
+    "$psi_ac4_result"
+  rm -rf "$PSI_TMP1" "$PSI_STDERR1" 2>/dev/null || true
+
+  # PSI AC-5: SW_POST_SHIP_INTEGRITY=off leaves overall_status untouched.
+  PSI_TMP2="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET2="$PSI_TMP2/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE2="$PSI_TMP2/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_PAYLOAD2="$(_psi_payload_for "$PSI_STATE2")"
+  ( cd "$PSI_TMP2" && printf '%s' "$PSI_PAYLOAD2" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=off \
+      bash "$PSI_HOOK" >/dev/null 2>/dev/null ) || true
+  psi_ac5_overall="$(grep -E '^overall_status:' "$PSI_TARGET2" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac5_result="false"
+  [ "$psi_ac5_overall" = "in-progress" ] && psi_ac5_result="true"
+  assert_true \
+    "PSI AC-5: SW_POST_SHIP_INTEGRITY=off preserves drift overall_status (got '$psi_ac5_overall', expected 'in-progress')" \
+    "$psi_ac5_result"
+  rm -rf "$PSI_TMP2" 2>/dev/null || true
+
+  # PSI AC-6: SW_POST_SHIP_INTEGRITY=metric-only emits warning log but
+  # leaves the file unchanged.
+  PSI_TMP3="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET3="$PSI_TMP3/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE3="$PSI_TMP3/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_STDERR3="$(mktemp)"
+  PSI_PAYLOAD3="$(_psi_payload_for "$PSI_STATE3")"
+  ( cd "$PSI_TMP3" && printf '%s' "$PSI_PAYLOAD3" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=metric-only \
+      bash "$PSI_HOOK" >/dev/null 2>"$PSI_STDERR3" ) || true
+  psi_ac6_overall="$(grep -E '^overall_status:' "$PSI_TARGET3" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac6_stderr_hit="false"
+  grep -qF '[POST-SHIP-INTEGRITY] self-healing' "$PSI_STDERR3" && psi_ac6_stderr_hit="true"
+  psi_ac6_result="false"
+  if [ "$psi_ac6_overall" = "in-progress" ] && [ "$psi_ac6_stderr_hit" = "true" ]; then
+    psi_ac6_result="true"
+  fi
+  assert_true \
+    "PSI AC-6: SW_POST_SHIP_INTEGRITY=metric-only logs without writing (overall_status='$psi_ac6_overall' expected 'in-progress'; stderr hit=$psi_ac6_stderr_hit expected true)" \
+    "$psi_ac6_result"
+  rm -rf "$PSI_TMP3" "$PSI_STDERR3" 2>/dev/null || true
+
+  # PSI AC-7: on a clean fixture (overall_status: done) the hook leaves
+  # the file byte-identical (diff zero).
+  PSI_TMP4="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/clean-ticket-005/phase-state.yaml")"
+  PSI_TARGET4="$PSI_TMP4/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE4="$PSI_TMP4/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_PAYLOAD4="$(_psi_payload_for "$PSI_STATE4")"
+  PSI_PRE4="$(mktemp)"
+  cp "$PSI_TARGET4" "$PSI_PRE4"
+  ( cd "$PSI_TMP4" && printf '%s' "$PSI_PAYLOAD4" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=on \
+      bash "$PSI_HOOK" >/dev/null 2>/dev/null ) || true
+  psi_ac7_result="false"
+  if diff -q "$PSI_PRE4" "$PSI_TARGET4" >/dev/null 2>&1; then
+    psi_ac7_result="true"
+  fi
+  assert_true \
+    "PSI AC-7: clean fixture (overall_status: done) is unchanged by the hook (diff zero)" \
+    "$psi_ac7_result"
+  rm -rf "$PSI_TMP4" "$PSI_PRE4" 2>/dev/null || true
+
+  # PSI AC-8 (test_simple_workflow35 regression guard): production hook
+  # scenario — the Edit's `new_string` carries a SINGLE-ticket fragment
+  # (no top-level `tickets:` key) rather than the full autopilot-state.yaml
+  # content. Pre-fix, Gate 5.5 piped this fragment through
+  # `parse_ticket_ship_dirs`, which requires a `.tickets` root and so
+  # returned zero entries; the self-heal loop body never ran and
+  # `phase-state.yaml` drift persisted (TW35 ticket 001:
+  # `overall_status: in-progress` despite 5 successful hook fires).
+  # The fix iterates `$TOOL_FILE_PATH` (the brief-side state file on
+  # disk, which already reflects the PostToolUse write) so the parse is
+  # always well-formed regardless of the payload shape. This assertion
+  # locks the regression by passing the realistic fragment payload and
+  # asserting the self-heal still fires.
+  PSI_TMP5="$(_psi_setup_tmproot "$PSI_FIXTURE_DIR/drift-ticket-001/phase-state.yaml")"
+  PSI_TARGET5="$PSI_TMP5/.simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/phase-state.yaml"
+  PSI_STATE5="$PSI_TMP5/.simple-workflow/backlog/briefs/active/shelftrack/autopilot-state.yaml"
+  PSI_STDERR5="$(mktemp)"
+  # Realistic Edit-tool fragment: only the changed ticket block, no
+  # `tickets:` root, no other tickets — matches what the harness
+  # actually delivers on Edit/PostToolUse for `steps.ship: completed`
+  # transitions (verified via test_simple_workflow35 JSONL replay).
+  PSI_FRAGMENT5=$(printf '  - logical_id: shelftrack-part-1\n    ticket_dir: .simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+  PSI_PAYLOAD5=$(jq -n --arg fp "$PSI_STATE5" --arg ns "$PSI_FRAGMENT5" '{tool_input: {file_path: $fp, new_string: $ns}}')
+  ( cd "$PSI_TMP5" && printf '%s' "$PSI_PAYLOAD5" \
+    | SW_TEST_HARNESS=1 \
+      INJECT_KEYS_DRY_RUN=1 \
+      SW_POST_SHIP_INTEGRITY=on \
+      bash "$PSI_HOOK" >/dev/null 2>"$PSI_STDERR5" ) || true
+  psi_ac8_overall="$(grep -E '^overall_status:' "$PSI_TARGET5" | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1)"
+  psi_ac8_stderr_hit="false"
+  grep -qF '[POST-SHIP-INTEGRITY] self-healing' "$PSI_STDERR5" && psi_ac8_stderr_hit="true"
+  psi_ac8_result="false"
+  if [ "$psi_ac8_overall" = "done" ] && [ "$psi_ac8_stderr_hit" = "true" ]; then
+    psi_ac8_result="true"
+  fi
+  assert_true \
+    "PSI AC-8 (TW35 regression guard): Gate 5.5 self-heals when payload is an Edit-tool fragment (single ticket block, no 'tickets:' root); overall_status='$psi_ac8_overall' expected 'done'; stderr hit=$psi_ac8_stderr_hit expected true" \
+    "$psi_ac8_result"
+  rm -rf "$PSI_TMP5" "$PSI_STDERR5" 2>/dev/null || true
+
+  unset PSI_TMP1 PSI_TARGET1 PSI_STATE1 PSI_STDERR1 PSI_PAYLOAD1
+  unset PSI_TMP2 PSI_TARGET2 PSI_STATE2 PSI_PAYLOAD2
+  unset PSI_TMP3 PSI_TARGET3 PSI_STATE3 PSI_STDERR3 PSI_PAYLOAD3
+  unset PSI_TMP4 PSI_TARGET4 PSI_STATE4 PSI_PAYLOAD4 PSI_PRE4
+  unset PSI_TMP5 PSI_TARGET5 PSI_STATE5 PSI_STDERR5 PSI_PAYLOAD5 PSI_FRAGMENT5
+  unset -f _psi_setup_tmproot _psi_payload_for
+else
+  assert_true \
+    "PSI behavioural skipped: neither yq nor python3+PyYAML available; self-heal write tier is a no-op (ticket Risk R3)" \
+    "true"
+fi
+
+echo ""
+
+# =============================================================================
+# Category PCN: P3-2C /brief chain={on,off} naming redesign (X.Y.0 deprecation
+#               phase — mode=auto|manual retained as deprecated alias)
+# Diff: Cat AC (CT-MODE-1..14) already pins the legacy mode={auto|manual}
+#        contract and the argument-hint substring `mode=auto|manual`. PCN
+#        layers the new `chain=on|off` canonical key on top without removing
+#        any AC literal — argument-hint is rewritten to keep
+#        `mode=auto|manual` (as `(legacy: mode=auto|manual)`) while gaining
+#        `chain=on|off`; the deprecated-warning + simultaneous-spec error
+#        literals; the frontmatter template carrying both `chain:` and
+#        `mode:`; the cross-skill precedence marker `chain: precedes mode:`
+#        in create-ticket SKILL.md and agent-spawn-prompts.md; and the
+#        mode-independence-guard preservation with explicit `chain` mention.
+# Maps to ticket .docs/dogfooding/33-34/P3-2C-brief-mode-naming-redesign.md
+# AC-1..AC-8 (X.Y.0 phase). Future minor will drop the alias (AC-9, AC-10)
+# in a separate Cat.
+# =============================================================================
+echo "--- Cat PCN: /brief chain={on,off} naming (P3-2C X.Y.0 phase) ---"
+
+PCN_BRIEF_SKILL="$REPO_DIR/skills/brief/SKILL.md"
+PCN_CT_SKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+PCN_CT_SPAWN="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+
+# PCN-1a (AC-1): brief SKILL.md has >=1 hit of literal `chain=on`.
+pcn_1a_count=$(grep -cF 'chain=on' "$PCN_BRIEF_SKILL" || true)
+pcn_1a_result="false"
+[ "$pcn_1a_count" -ge 1 ] && pcn_1a_result="true"
+assert_true \
+  "PCN-1a (AC-1): skills/brief/SKILL.md contains 'chain=on' literal (count=$pcn_1a_count, expected >=1)" \
+  "$pcn_1a_result"
+
+# PCN-1b (AC-1): brief SKILL.md has >=1 hit of literal `chain=off`.
+pcn_1b_count=$(grep -cF 'chain=off' "$PCN_BRIEF_SKILL" || true)
+pcn_1b_result="false"
+[ "$pcn_1b_count" -ge 1 ] && pcn_1b_result="true"
+assert_true \
+  "PCN-1b (AC-1): skills/brief/SKILL.md contains 'chain=off' literal (count=$pcn_1b_count, expected >=1)" \
+  "$pcn_1b_result"
+
+# PCN-2 (AC-2): brief SKILL.md argument-hint value contains the substring
+# `chain=on|off`.
+pcn_2_hint=$(extract_frontmatter_field "$PCN_BRIEF_SKILL" "argument-hint")
+pcn_2_result="false"
+printf '%s' "$pcn_2_hint" | grep -qF 'chain=on|off' && pcn_2_result="true"
+assert_true \
+  "PCN-2 (AC-2): skills/brief/SKILL.md argument-hint contains 'chain=on|off' (value: '$pcn_2_hint')" \
+  "$pcn_2_result"
+
+# PCN-3 (AC-3): brief SKILL.md carries the verbatim deprecation warning
+# literal `WARNING: 'mode=' is deprecated` (the inline-parser would emit
+# this on stderr when the alias is supplied).
+pcn_3_count=$(grep -cF "WARNING: 'mode=' is deprecated" "$PCN_BRIEF_SKILL" || true)
+pcn_3_result="false"
+[ "$pcn_3_count" -ge 1 ] && pcn_3_result="true"
+assert_true \
+  "PCN-3 (AC-3): skills/brief/SKILL.md contains \"WARNING: 'mode=' is deprecated\" literal (count=$pcn_3_count, expected >=1)" \
+  "$pcn_3_result"
+
+# PCN-4 (AC-4): brief SKILL.md carries the verbatim simultaneous-specification
+# error literal `ERROR: 'chain=' and 'mode=' cannot be combined`.
+pcn_4_count=$(grep -cF "ERROR: 'chain=' and 'mode=' cannot be combined" "$PCN_BRIEF_SKILL" || true)
+pcn_4_result="false"
+[ "$pcn_4_count" -ge 1 ] && pcn_4_result="true"
+assert_true \
+  "PCN-4 (AC-4): skills/brief/SKILL.md contains \"ERROR: 'chain=' and 'mode=' cannot be combined\" literal (count=$pcn_4_count, expected >=1)" \
+  "$pcn_4_result"
+
+# PCN-5 (AC-5/AC-6): the cross-skill precedence marker `chain: precedes mode:`
+# is documented in BOTH skills/create-ticket/SKILL.md AND
+# skills/create-ticket/references/agent-spawn-prompts.md (one hit each at
+# minimum). AC-5 covers the frontmatter dual-key persistence; AC-6 covers
+# the precedence rule that downstream readers (this marker) apply. The
+# frontmatter template carrying both `chain:` and `mode:` is asserted by
+# PCN-6 below (separate assertion so a frontmatter-only regression is
+# diagnosable on its own).
+pcn_5_ct_count=$(grep -cF 'chain: precedes mode:' "$PCN_CT_SKILL" || true)
+pcn_5_spawn_count=$(grep -cF 'chain: precedes mode:' "$PCN_CT_SPAWN" || true)
+pcn_5_result="false"
+if [ "$pcn_5_ct_count" -ge 1 ] && [ "$pcn_5_spawn_count" -ge 1 ]; then
+  pcn_5_result="true"
+fi
+assert_true \
+  "PCN-5 (AC-5/AC-6): 'chain: precedes mode:' marker present in create-ticket SKILL.md (count=$pcn_5_ct_count) AND agent-spawn-prompts.md (count=$pcn_5_spawn_count); both expected >=1" \
+  "$pcn_5_result"
+
+# PCN-6 (AC-5): the brief Phase 3 frontmatter template carries BOTH the new
+# `chain:` field AND the legacy `mode:` field during the deprecation period.
+# Use loose patterns so any of the canonical forms (`chain: on`, `chain: off`,
+# `chain: {on|off}`, `chain: (on|off)`) is accepted; mode similarly. This
+# preserves Cat AC CT-MODE-2's assertion of `mode: {auto|manual}` while
+# adding the new `chain:` line.
+pcn_6_chain=$(grep -cE '^chain: (\{on\|off\}|\(on\|off\)|on|off)$' "$PCN_BRIEF_SKILL" || true)
+pcn_6_mode=$(grep -cE '^mode: (\{auto\|manual\}|\(auto\|manual\)|auto|manual)$' "$PCN_BRIEF_SKILL" || true)
+pcn_6_result="false"
+if [ "$pcn_6_chain" -ge 1 ] && [ "$pcn_6_mode" -ge 1 ]; then
+  pcn_6_result="true"
+fi
+assert_true \
+  "PCN-6 (AC-5): brief SKILL.md frontmatter template carries both 'chain:' (count=$pcn_6_chain) and 'mode:' (count=$pcn_6_mode) lines; both expected >=1" \
+  "$pcn_6_result"
+
+# PCN-7 (AC-8): the `mode independence guard` section is preserved during the
+# deprecation period AND its prose explicitly mentions `chain` alongside
+# `mode`. The guard heading literal `mode independence guard` MUST still
+# appear in the file (preservation); and the same paragraph (or section)
+# MUST mention the new `chain` argument so the defensive prose covers both
+# keys. We measure preservation by the heading literal count and chain-
+# mention by counting `chain` occurrences in the lines from the guard
+# heading up to the next blank line (the guard paragraph).
+pcn_8_guard_count=$(grep -cF 'mode independence guard' "$PCN_BRIEF_SKILL" || true)
+PCN_8_PARA=$(awk '/mode independence guard/{flag=1} flag{print; if(NR>1 && $0 ~ /^$/) exit}' "$PCN_BRIEF_SKILL")
+pcn_8_chain_in_para=$(printf '%s' "$PCN_8_PARA" | grep -cF 'chain' || true)
+pcn_8_result="false"
+if [ "$pcn_8_guard_count" -ge 1 ] && [ "$pcn_8_chain_in_para" -ge 1 ]; then
+  pcn_8_result="true"
+fi
+assert_true \
+  "PCN-7 (AC-8): brief SKILL.md preserves 'mode independence guard' heading (count=$pcn_8_guard_count) AND its paragraph mentions 'chain' (count=$pcn_8_chain_in_para); both expected >=1" \
+  "$pcn_8_result"
+unset PCN_BRIEF_SKILL PCN_CT_SKILL PCN_CT_SPAWN PCN_8_PARA
+
+echo ""
+
+# --- Cat AR: Advisory Consultation reporting field + Step 14b orchestrator gate ---
+# (a)(b) of the Phase 6 PoC follow-up: the implementer's Result envelope grows
+# a `**Advisory consultation**:` REQUIRED field, the implementer.md body
+# documents its `(none)` / bullet-list shapes, and `/impl` Step 14b reads the
+# field by regex and FAILs the round when it is absent — without breaking
+# the ac-evaluator firewall (Generator return value never enters Step 15's
+# spawn prompt). Verifies the contract is wired end-to-end across both files.
+echo "--- Cat AR: Advisory Consultation reporting field + Step 14b orchestrator gate ---"
+
+AR_IMPL=agents/implementer.md
+AR_IMPL_SKILL=skills/impl/SKILL.md
+
+# AR-1: Result template lists the `**Advisory consultation**:` field as REQUIRED.
+ar_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' "$AR_IMPL" || true)
+ar_1_result="false"
+if [ "$ar_1_count" -ge 1 ]; then ar_1_result="true"; fi
+assert_true \
+  "AR-1: agents/implementer.md Result template contains '**Advisory consultation**:' line (count=$ar_1_count, expected >=1)" \
+  "$ar_1_result"
+
+# AR-2: implementer.md carries a dedicated '### Consultation reporting format'
+# subsection that defines the field shape (so the requirement is enforceable,
+# not just stated).
+ar_2_count=$(grep -cF '### Consultation reporting format' "$AR_IMPL" || true)
+ar_2_result="false"
+if [ "$ar_2_count" -ge 1 ]; then ar_2_result="true"; fi
+assert_true \
+  "AR-2: agents/implementer.md contains '### Consultation reporting format' subsection (count=$ar_2_count, expected >=1)" \
+  "$ar_2_result"
+
+# AR-3: Reporting-format subsection documents the literal '(none)' value for
+# the no-applicable-entries case.
+AR_3_BODY=$(awk '/^### Consultation reporting format/{flag=1; next} flag && /^### |^## /{exit} flag' "$AR_IMPL")
+ar_3_count=$(printf '%s' "$AR_3_BODY" | grep -cF '(none)' || true)
+ar_3_result="false"
+if [ "$ar_3_count" -ge 1 ]; then ar_3_result="true"; fi
+assert_true \
+  "AR-3: '### Consultation reporting format' documents '(none)' literal for no-applicable-entries case (count=$ar_3_count, expected >=1)" \
+  "$ar_3_result"
+
+# AR-4: Reporting-format subsection documents both ': invoked' and ': not
+# invoked' bullet shapes (the two consultation outcomes).
+ar_4_inv=$(printf '%s' "$AR_3_BODY" | grep -cE ': invoked' || true)
+ar_4_not=$(printf '%s' "$AR_3_BODY" | grep -cE ': not invoked' || true)
+ar_4_result="false"
+if [ "$ar_4_inv" -ge 1 ] && [ "$ar_4_not" -ge 1 ]; then ar_4_result="true"; fi
+assert_true \
+  "AR-4: '### Consultation reporting format' documents both ': invoked' and ': not invoked' bullet shapes (invoked=$ar_4_inv, not_invoked=$ar_4_not, both expected >=1)" \
+  "$ar_4_result"
+
+# AR-5: implementer.md Result template forward-references Step 14b — without
+# this pointer the agent has no signal that the field is gated.
+ar_5_count=$(grep -cE 'Step 14b' "$AR_IMPL" || true)
+ar_5_result="false"
+if [ "$ar_5_count" -ge 1 ]; then ar_5_result="true"; fi
+assert_true \
+  "AR-5: agents/implementer.md references 'Step 14b' (orchestrator-side gate forward-pointer) (count=$ar_5_count, expected >=1)" \
+  "$ar_5_result"
+
+# AR-6: /impl SKILL.md carries the '§14b — Advisory Consultation Pre-Check'
+# subsection that owns the gate.
+ar_6_count=$(grep -cF '§14b — Advisory Consultation Pre-Check' "$AR_IMPL_SKILL" || true)
+ar_6_result="false"
+if [ "$ar_6_count" -ge 1 ]; then ar_6_result="true"; fi
+assert_true \
+  "AR-6: skills/impl/SKILL.md contains '§14b — Advisory Consultation Pre-Check' subsection (count=$ar_6_count, expected >=1)" \
+  "$ar_6_result"
+
+# AR-7: §14b emits the canonical pipeline-failure literal so downstream
+# log scrapers (audit-round / autopilot-log) can detect it.
+ar_7_count=$(grep -cF '[PIPELINE] impl: ADVISORY-MISSING' "$AR_IMPL_SKILL" || true)
+ar_7_result="false"
+if [ "$ar_7_count" -ge 1 ]; then ar_7_result="true"; fi
+assert_true \
+  "AR-7: skills/impl/SKILL.md emits '[PIPELINE] impl: ADVISORY-MISSING' literal on Step 14b violation (count=$ar_7_count, expected >=1)" \
+  "$ar_7_result"
+
+# AR-8: §14b also emits the success/skip-trace literal so the happy path is
+# observable (the field being present is itself an audit signal).
+ar_8_count=$(grep -cF '[ADVISORY-CONSULT]' "$AR_IMPL_SKILL" || true)
+ar_8_result="false"
+if [ "$ar_8_count" -ge 1 ]; then ar_8_result="true"; fi
+assert_true \
+  "AR-8: skills/impl/SKILL.md emits '[ADVISORY-CONSULT]' trace literal (count=$ar_8_count, expected >=1)" \
+  "$ar_8_result"
+
+# AR-9: §14b documents the FAIL state-write — without this the next round
+# would silently retry and the contract violation would be masked.
+ar_9_status=$(awk '/§14b — Advisory Consultation Pre-Check/{flag=1; next} flag && /CHECKPOINT/{exit} flag' "$AR_IMPL_SKILL" | grep -cF 'phases.impl.status: failed' || true)
+ar_9_substatus=$(awk '/§14b — Advisory Consultation Pre-Check/{flag=1; next} flag && /CHECKPOINT/{exit} flag' "$AR_IMPL_SKILL" | grep -cF 'advisory-missing' || true)
+ar_9_result="false"
+if [ "$ar_9_status" -ge 1 ] && [ "$ar_9_substatus" -ge 1 ]; then ar_9_result="true"; fi
+assert_true \
+  "AR-9: skills/impl/SKILL.md §14b documents 'phases.impl.status: failed' + 'advisory-missing' phase_sub on violation (status_in_14b=$ar_9_status, phase_sub_in_14b=$ar_9_substatus, both expected >=1)" \
+  "$ar_9_result"
+
+# AR-10: implementer.md also documents the '### How to invoke each Advisory
+# entry' deferred-tool resolution procedure (added in the Phase 6 PoC commit
+# 7aa2ba4 but never asserted; cover the gap so the procedure cannot drift).
+ar_10_count=$(grep -cF '### How to invoke each Advisory entry' "$AR_IMPL" || true)
+ar_10_result="false"
+if [ "$ar_10_count" -ge 1 ]; then ar_10_result="true"; fi
+assert_true \
+  "AR-10: agents/implementer.md contains '### How to invoke each Advisory entry' subsection (count=$ar_10_count, expected >=1)" \
+  "$ar_10_result"
+
+unset AR_IMPL AR_IMPL_SKILL AR_3_BODY
+
+# Cat AR (Phase 1 expansion): apply the same Advisory consultation field
+# + Consultation reporting format + How-to-invoke subsection to the other
+# productive subagents (researcher, test-writer). planner is excluded by
+# design — it AUTHORS the Advisory table inside the ticket draft, it does
+# not CONSUME it, so no consumer-side reporting field applies. The matrix
+# below uses one helper per agent to keep the assertions readable.
+
+# Helper-style block: researcher.md
+AR_RES=agents/researcher.md
+AR_RES_BODY=$(awk '/^### Consultation reporting format/{flag=1; next} flag && /^### |^## /{exit} flag' "$AR_RES")
+
+ar_res_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' "$AR_RES" || true)
+ar_res_1_result="false"
+if [ "$ar_res_1_count" -ge 1 ]; then ar_res_1_result="true"; fi
+assert_true \
+  "AR-RES-1: agents/researcher.md Result template contains '**Advisory consultation**:' line (count=$ar_res_1_count, expected >=1)" \
+  "$ar_res_1_result"
+
+ar_res_2_count=$(grep -cF '### Consultation reporting format' "$AR_RES" || true)
+ar_res_2_result="false"
+if [ "$ar_res_2_count" -ge 1 ]; then ar_res_2_result="true"; fi
+assert_true \
+  "AR-RES-2: agents/researcher.md contains '### Consultation reporting format' subsection (count=$ar_res_2_count, expected >=1)" \
+  "$ar_res_2_result"
+
+ar_res_3_count=$(printf '%s' "$AR_RES_BODY" | grep -cF '(none)' || true)
+ar_res_3_result="false"
+if [ "$ar_res_3_count" -ge 1 ]; then ar_res_3_result="true"; fi
+assert_true \
+  "AR-RES-3: researcher '### Consultation reporting format' documents '(none)' literal (count=$ar_res_3_count, expected >=1)" \
+  "$ar_res_3_result"
+
+ar_res_4_inv=$(printf '%s' "$AR_RES_BODY" | grep -cE ': invoked' || true)
+ar_res_4_not=$(printf '%s' "$AR_RES_BODY" | grep -cE ': not invoked' || true)
+ar_res_4_result="false"
+if [ "$ar_res_4_inv" -ge 1 ] && [ "$ar_res_4_not" -ge 1 ]; then ar_res_4_result="true"; fi
+assert_true \
+  "AR-RES-4: researcher '### Consultation reporting format' documents both ': invoked' and ': not invoked' shapes (invoked=$ar_res_4_inv, not_invoked=$ar_res_4_not, both expected >=1)" \
+  "$ar_res_4_result"
+
+ar_res_5_count=$(grep -cF '### How to invoke each Advisory entry' "$AR_RES" || true)
+ar_res_5_result="false"
+if [ "$ar_res_5_count" -ge 1 ]; then ar_res_5_result="true"; fi
+assert_true \
+  "AR-RES-5: agents/researcher.md contains '### How to invoke each Advisory entry' subsection (count=$ar_res_5_count, expected >=1)" \
+  "$ar_res_5_result"
+
+# AR-RES-6: researcher.md MUST name each of the four direct researcher
+# spawners somewhere in the agent body. Phase 2a re-aligned this list from
+# the speculative /scout|/investigate|/refactor placeholder (incorrect:
+# /refactor does not spawn researcher and /scout calls /investigate
+# transitively) to the real direct spawners: the three explicit-Agent-tool
+# spawners /brief, /catchup, /create-ticket and the declarative spawner
+# /investigate. The check is per-spawner (grep -c counts lines, so a single
+# line with all four names would otherwise look like count=1, hiding a
+# missing entry).
+ar_res_6_brief=$(grep -cF '/brief' "$AR_RES" || true)
+ar_res_6_catchup=$(grep -cF '/catchup' "$AR_RES" || true)
+ar_res_6_ct=$(grep -cF '/create-ticket' "$AR_RES" || true)
+ar_res_6_inv=$(grep -cF '/investigate' "$AR_RES" || true)
+ar_res_6_result="false"
+if [ "$ar_res_6_brief" -ge 1 ] && [ "$ar_res_6_catchup" -ge 1 ] && [ "$ar_res_6_ct" -ge 1 ] && [ "$ar_res_6_inv" -ge 1 ]; then
+  ar_res_6_result="true"
+fi
+assert_true \
+  "AR-RES-6: agents/researcher.md names all four direct researcher spawners (/brief count=$ar_res_6_brief, /catchup count=$ar_res_6_catchup, /create-ticket count=$ar_res_6_ct, /investigate count=$ar_res_6_inv; all expected >=1)" \
+  "$ar_res_6_result"
+
+unset AR_RES AR_RES_BODY
+
+# AR-RES-7..9: Phase 2a orchestrator gates. Each explicit-Agent-tool researcher
+# spawner (/brief, /catchup, /create-ticket) MUST carry a regex-based Advisory
+# Consultation Pre-Check that mirrors /impl Step 14b. We verify three things
+# per skill: (1) the canonical pipeline-failure literal `[PIPELINE] <skill>:
+# ADVISORY-MISSING (agent=researcher)` is emitted on absence, (2) the success
+# trace literal `[ADVISORY-CONSULT] <skill> researcher` is emitted on
+# presence, (3) the section that owns the check uses the per-skill numbering
+# convention (§1.5 / §2.5 / Phase 1.5) so the gate is locatable by humans
+# auditing the SKILL.md by section number.
+
+# AR-RES-7: /brief Phase 1 §1.5
+AR_BRIEF=skills/brief/SKILL.md
+ar_res_7_fail=$(grep -cF '[PIPELINE] brief: ADVISORY-MISSING (agent=researcher)' "$AR_BRIEF" || true)
+ar_res_7_trace=$(grep -cF '[ADVISORY-CONSULT] brief researcher' "$AR_BRIEF" || true)
+ar_res_7_section=$(grep -cF '§1.5 — Advisory Consultation Pre-Check' "$AR_BRIEF" || true)
+ar_res_7_result="false"
+if [ "$ar_res_7_fail" -ge 1 ] && [ "$ar_res_7_trace" -ge 1 ] && [ "$ar_res_7_section" -ge 1 ]; then
+  ar_res_7_result="true"
+fi
+assert_true \
+  "AR-RES-7: /brief SKILL.md wires Phase 6 gate ('[PIPELINE] brief: ADVISORY-MISSING (agent=researcher)' count=$ar_res_7_fail, '[ADVISORY-CONSULT] brief researcher' count=$ar_res_7_trace, '§1.5' section count=$ar_res_7_section; all expected >=1)" \
+  "$ar_res_7_result"
+
+# AR-RES-8: /catchup Step 2.5 (conditional — researcher is spawned only on the
+# Otherwise branch, so the trace literal must distinguish skipped from present)
+AR_CATCHUP=skills/catchup/SKILL.md
+ar_res_8_fail=$(grep -cF '[PIPELINE] catchup: ADVISORY-MISSING (agent=researcher)' "$AR_CATCHUP" || true)
+ar_res_8_trace=$(grep -cF '[ADVISORY-CONSULT] catchup researcher' "$AR_CATCHUP" || true)
+ar_res_8_section=$(grep -cF '### 2.5 Advisory Consultation Pre-Check' "$AR_CATCHUP" || true)
+ar_res_8_skip=$(grep -cF 'catchup researcher skipped' "$AR_CATCHUP" || true)
+ar_res_8_result="false"
+if [ "$ar_res_8_fail" -ge 1 ] && [ "$ar_res_8_trace" -ge 1 ] && [ "$ar_res_8_section" -ge 1 ] && [ "$ar_res_8_skip" -ge 1 ]; then
+  ar_res_8_result="true"
+fi
+assert_true \
+  "AR-RES-8: /catchup SKILL.md wires Phase 6 gate ('[PIPELINE] catchup: ADVISORY-MISSING' count=$ar_res_8_fail, '[ADVISORY-CONSULT] catchup researcher' count=$ar_res_8_trace, '### 2.5' section count=$ar_res_8_section, 'catchup researcher skipped' trace count=$ar_res_8_skip; all expected >=1)" \
+  "$ar_res_8_result"
+
+# AR-RES-9: /create-ticket Phase 1.5 (also has a skip path when cached
+# investigation is reused per brief-mode freshness validation)
+AR_CT=skills/create-ticket/SKILL.md
+ar_res_9_fail=$(grep -cF '[PIPELINE] create-ticket: ADVISORY-MISSING (agent=researcher)' "$AR_CT" || true)
+ar_res_9_trace=$(grep -cF '[ADVISORY-CONSULT] create-ticket researcher' "$AR_CT" || true)
+ar_res_9_section=$(grep -cF '### Phase 1.5: Advisory Consultation Pre-Check' "$AR_CT" || true)
+ar_res_9_skip=$(grep -cF 'create-ticket researcher skipped (cached investigation reused)' "$AR_CT" || true)
+ar_res_9_result="false"
+if [ "$ar_res_9_fail" -ge 1 ] && [ "$ar_res_9_trace" -ge 1 ] && [ "$ar_res_9_section" -ge 1 ] && [ "$ar_res_9_skip" -ge 1 ]; then
+  ar_res_9_result="true"
+fi
+assert_true \
+  "AR-RES-9: /create-ticket SKILL.md wires Phase 6 gate ('[PIPELINE] create-ticket: ADVISORY-MISSING' count=$ar_res_9_fail, '[ADVISORY-CONSULT] create-ticket researcher' count=$ar_res_9_trace, 'Phase 1.5' section count=$ar_res_9_section, 'cached investigation reused' skip count=$ar_res_9_skip; all expected >=1)" \
+  "$ar_res_9_result"
+
+unset AR_BRIEF AR_CATCHUP AR_CT
+
+# Helper-style block: test-writer.md
+AR_TW=agents/test-writer.md
+AR_TW_BODY=$(awk '/^### Consultation reporting format/{flag=1; next} flag && /^### |^## /{exit} flag' "$AR_TW")
+
+ar_tw_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' "$AR_TW" || true)
+ar_tw_1_result="false"
+if [ "$ar_tw_1_count" -ge 1 ]; then ar_tw_1_result="true"; fi
+assert_true \
+  "AR-TW-1: agents/test-writer.md Result template contains '**Advisory consultation**:' line (count=$ar_tw_1_count, expected >=1)" \
+  "$ar_tw_1_result"
+
+ar_tw_2_count=$(grep -cF '### Consultation reporting format' "$AR_TW" || true)
+ar_tw_2_result="false"
+if [ "$ar_tw_2_count" -ge 1 ]; then ar_tw_2_result="true"; fi
+assert_true \
+  "AR-TW-2: agents/test-writer.md contains '### Consultation reporting format' subsection (count=$ar_tw_2_count, expected >=1)" \
+  "$ar_tw_2_result"
+
+ar_tw_3_count=$(printf '%s' "$AR_TW_BODY" | grep -cF '(none)' || true)
+ar_tw_3_result="false"
+if [ "$ar_tw_3_count" -ge 1 ]; then ar_tw_3_result="true"; fi
+assert_true \
+  "AR-TW-3: test-writer '### Consultation reporting format' documents '(none)' literal (count=$ar_tw_3_count, expected >=1)" \
+  "$ar_tw_3_result"
+
+ar_tw_4_inv=$(printf '%s' "$AR_TW_BODY" | grep -cE ': invoked' || true)
+ar_tw_4_not=$(printf '%s' "$AR_TW_BODY" | grep -cE ': not invoked' || true)
+ar_tw_4_result="false"
+if [ "$ar_tw_4_inv" -ge 1 ] && [ "$ar_tw_4_not" -ge 1 ]; then ar_tw_4_result="true"; fi
+assert_true \
+  "AR-TW-4: test-writer '### Consultation reporting format' documents both ': invoked' and ': not invoked' shapes (invoked=$ar_tw_4_inv, not_invoked=$ar_tw_4_not, both expected >=1)" \
+  "$ar_tw_4_result"
+
+ar_tw_5_count=$(grep -cF '### How to invoke each Advisory entry' "$AR_TW" || true)
+ar_tw_5_result="false"
+if [ "$ar_tw_5_count" -ge 1 ]; then ar_tw_5_result="true"; fi
+assert_true \
+  "AR-TW-5: agents/test-writer.md contains '### How to invoke each Advisory entry' subsection (count=$ar_tw_5_count, expected >=1)" \
+  "$ar_tw_5_result"
+
+# AR-TW-6: test-writer Result template field references the gating spawner.
+# /test is the canonical owner; other spawners may be added in Phase 2.
+ar_tw_6_orch=$(awk '/\*\*Advisory consultation\*\*:/,/\*\*Next Steps\*\*:/' "$AR_TW" | grep -cE '/test' || true)
+ar_tw_6_result="false"
+if [ "$ar_tw_6_orch" -ge 1 ]; then ar_tw_6_result="true"; fi
+assert_true \
+  "AR-TW-6: test-writer Result-template field references the gating spawner (/test) (count=$ar_tw_6_orch, expected >=1)" \
+  "$ar_tw_6_result"
+
+unset AR_TW AR_TW_BODY
+
+# AR-PLN-1 (negative assertion): planner.md MUST NOT carry the consumer-side
+# Result-template field, because planner AUTHORS the Advisory block inside
+# the ticket draft and does not CONSUME it. Adding the field to planner
+# would be a category error (planner's Result reports the draft path, not
+# its own Advisory consultations). If a future PR ever puts the field on
+# planner, this assertion forces a re-think.
+ar_pln_1_count=$(grep -cE '^\*\*Advisory consultation\*\*:' agents/planner.md || true)
+ar_pln_1_result="false"
+if [ "$ar_pln_1_count" -eq 0 ]; then ar_pln_1_result="true"; fi
+assert_true \
+  "AR-PLN-1 (negative): agents/planner.md MUST NOT carry '**Advisory consultation**:' in its Result template (planner is the AUTHOR, not consumer) (count=$ar_pln_1_count, expected =0)" \
+  "$ar_pln_1_result"
+
+# --- Cat AR (Phase 2b + truncation mitigation, v8.0.0): declarative-spawner
+# Advisory enforcement + implementer turn-budget self-governance. TW38 dogfood
+# showed (a) /investigate-spawned researchers emitted 0/7 Advisory fields because
+# the skill-body return contract omitted the field (the forked researcher follows
+# the immediate task prompt's return spec over the persona's REQUIRED field), and
+# (b) 6/20 implementer rounds truncated (maxTurns) before the closing envelope —
+# and the rounds that DID invoke Advisory MCP tools were exactly the ones that
+# truncated, losing the audit trail. These assertions lock both fixes in. ---
+echo "--- Cat AR (Phase 2b): declarative-spawner Advisory enforcement + truncation mitigation ---"
+
+# AR-INV-1: /investigate skill-body return contract names the Advisory field
+# (the root-cause fix — the forked researcher reads this skill body as its task
+# prompt, so the field must be enumerated here, not just in the agent persona).
+AR_INV=skills/investigate/SKILL.md
+ar_inv_1_count=$(grep -cF '**Advisory consultation**' "$AR_INV" || true)
+ar_inv_1_result="false"
+if [ "$ar_inv_1_count" -ge 1 ]; then ar_inv_1_result="true"; fi
+assert_true \
+  "AR-INV-1: skills/investigate/SKILL.md return contract names '**Advisory consultation**' (count=$ar_inv_1_count, expected >=1)" \
+  "$ar_inv_1_result"
+
+# AR-INV-2: /investigate documents the /scout-mediated path is gated at Step 4a
+# (the gate-able caller), distinguishing it from the ungate-able standalone fork.
+ar_inv_2_count=$(grep -cF 'Step 4a' "$AR_INV" || true)
+ar_inv_2_result="false"
+if [ "$ar_inv_2_count" -ge 1 ]; then ar_inv_2_result="true"; fi
+assert_true \
+  "AR-INV-2: skills/investigate/SKILL.md references the '/scout Step 4a' gate-able caller (count=$ar_inv_2_count, expected >=1)" \
+  "$ar_inv_2_result"
+unset AR_INV
+
+# AR-TST-1: /test skill-body return contract names the Advisory field (it
+# previously enumerated only four fields, omitting Advisory).
+AR_TST=skills/test/SKILL.md
+ar_tst_1_count=$(grep -cF '**Advisory consultation**' "$AR_TST" || true)
+ar_tst_1_result="false"
+if [ "$ar_tst_1_count" -ge 1 ]; then ar_tst_1_result="true"; fi
+assert_true \
+  "AR-TST-1: skills/test/SKILL.md return contract names '**Advisory consultation**' (count=$ar_tst_1_count, expected >=1)" \
+  "$ar_tst_1_result"
+unset AR_TST
+
+# AR-SCT-1: /scout Step 4a wires the researcher Advisory gate (surface-don't-fail).
+# /scout is the gate-able caller of declarative /investigate — it resumes after
+# the Skill-tool invocation returns, so it verifies the field the fork cannot gate.
+AR_SCT=skills/scout/SKILL.md
+ar_sct_1_fail=$(grep -cF '[PIPELINE] scout: ADVISORY-MISSING (agent=researcher)' "$AR_SCT" || true)
+ar_sct_1_trace=$(grep -cF '[ADVISORY-CONSULT] scout researcher present' "$AR_SCT" || true)
+ar_sct_1_section=$(grep -cF '4a. **Advisory Consultation Pre-Check**' "$AR_SCT" || true)
+ar_sct_1_result="false"
+if [ "$ar_sct_1_fail" -ge 1 ] && [ "$ar_sct_1_trace" -ge 1 ] && [ "$ar_sct_1_section" -ge 1 ]; then
+  ar_sct_1_result="true"
+fi
+assert_true \
+  "AR-SCT-1: /scout SKILL.md wires Phase 6 gate ('[PIPELINE] scout: ADVISORY-MISSING (agent=researcher)' count=$ar_sct_1_fail, '[ADVISORY-CONSULT] scout researcher present' count=$ar_sct_1_trace, '4a.' section count=$ar_sct_1_section; all expected >=1)" \
+  "$ar_sct_1_result"
+unset AR_SCT
+
+# AR-TRN-1: implementer maxTurns raised to >=45 (was 30; TW38 truncated at ~39
+# tool uses). Numeric compare so a future bump to 50+ still passes.
+ar_trn_1_val=$(grep -E '^maxTurns:' agents/implementer.md | grep -oE '[0-9]+' | head -1)
+ar_trn_1_result="false"
+if [ -n "$ar_trn_1_val" ] && [ "$ar_trn_1_val" -ge 45 ]; then ar_trn_1_result="true"; fi
+assert_true \
+  "AR-TRN-1: agents/implementer.md maxTurns >= 45 (value=$ar_trn_1_val, expected >=45)" \
+  "$ar_trn_1_result"
+
+# AR-TRN-2: all three productive agents carry the '## Turn-budget self-governance'
+# envelope-priority section (sibling-symmetry per CLAUDE.md ## Modifications).
+ar_trn_2_impl=$(grep -cF '## Turn-budget self-governance' agents/implementer.md || true)
+ar_trn_2_res=$(grep -cF '## Turn-budget self-governance' agents/researcher.md || true)
+ar_trn_2_tw=$(grep -cF '## Turn-budget self-governance' agents/test-writer.md || true)
+ar_trn_2_result="false"
+if [ "$ar_trn_2_impl" -ge 1 ] && [ "$ar_trn_2_res" -ge 1 ] && [ "$ar_trn_2_tw" -ge 1 ]; then
+  ar_trn_2_result="true"
+fi
+assert_true \
+  "AR-TRN-2: implementer + researcher + test-writer carry '## Turn-budget self-governance' section (impl=$ar_trn_2_impl, researcher=$ar_trn_2_res, test-writer=$ar_trn_2_tw; all expected >=1)" \
+  "$ar_trn_2_result"
+
+# AR-TRN-3: implementer self-governance documents the bail-to-partial rule that
+# preserves the Advisory audit trail through truncation (the TW38 inversion fix).
+ar_trn_3_bail=$(grep -ciF 'bail to' agents/implementer.md || true)
+ar_trn_3_partial=$(grep -cF 'Status**: partial' agents/implementer.md || true)
+ar_trn_3_result="false"
+if [ "$ar_trn_3_bail" -ge 1 ] && [ "$ar_trn_3_partial" -ge 1 ]; then ar_trn_3_result="true"; fi
+assert_true \
+  "AR-TRN-3: implementer self-governance documents bail-to-partial ('bail to' count=$ar_trn_3_bail, 'Status**: partial' count=$ar_trn_3_partial; both expected >=1)" \
+  "$ar_trn_3_result"
 
 echo ""
 

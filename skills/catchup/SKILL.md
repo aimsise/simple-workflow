@@ -86,6 +86,15 @@ Determine whether the **researcher** agent is needed:
   - Current state of work (complete, in-progress, blocked)
   - Check `.simple-workflow/backlog/active/` for any active tickets and their artifacts (investigation.md, plan.md, eval-round-*.md)
 
+### 2.5 Advisory Consultation Pre-Check (conditional, only when researcher was spawned)
+
+If the researcher was spawned in Step 2 (Otherwise branch), the return value MUST contain a `**Advisory consultation**:` field per the format in `agents/researcher.md` `## Advisory Capabilities` → `### Consultation reporting format`. Match by regex `^\*\*Advisory consultation\*\*:` on the return value (case-sensitive, line-anchored). Two outcomes:
+
+- **Field present** → emit `[ADVISORY-CONSULT] catchup researcher present` to stderr and proceed to Step 3.
+- **Field absent** → emit `[PIPELINE] catchup: ADVISORY-MISSING (agent=researcher)` to stderr; surface the violation in the final session-snapshot summary returned to the user (`/catchup` is read-only and has no phase-state to FAIL, so surfacing is the canonical degradation path); proceed to Step 3 with the partial researcher findings. Do NOT silently re-spawn the researcher — silent omission is a contract violation and re-rolling would mask it.
+
+If the researcher was skipped (any of the three Skip conditions in Step 2 held), §2.5 is a no-op; emit `[ADVISORY-CONSULT] catchup researcher skipped (researcher not spawned)` to stderr for trace symmetry with the gated path and proceed to Step 3.
+
 ### 3. Artifact Discovery
 
 Check for existing docs (regardless of whether researcher was spawned):

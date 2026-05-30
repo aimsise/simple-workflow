@@ -1102,5 +1102,225 @@ else
 fi
 cleanup_test_repo
 
+# ============================================================
+# Policy-gate-stop honour gate (SW_AUTOPILOT_POLICY_STOP_HONOR)
+# ============================================================
+echo ""
+echo "=== Policy-gate-stop honour gate ==="
+echo ""
+
+# Helper: run the hook with an in-tree autopilot-state.yaml, a transcript
+# path, and an explicit SW_AUTOPILOT_POLICY_STOP_HONOR value. Captures the
+# state-file content AFTER the run so the runtime_metrics emit can be
+# asserted. The state file carries an in_progress step so that, ABSENT the
+# honour gate, the hook would block (the regression baseline).
+# Args: $1=session_id, $2=transcript (rel to fixtures dir), $3=honor_value
+#       ("" leaves the var unset), $4=cwd (test repo root)
+PGS_STATE_AFTER=""
+run_pgs_hook() {
+  local sid="$1"; local transcript="$2"; local honor="$3"; local cwd="${4:-.}"
+  local mtime_file="/tmp/.autopilot-continue-${sid}"
+  local notool_file="/tmp/.autopilot-notool-${sid}"
+  rm -f "$mtime_file" "$notool_file"
+
+  local input
+  input=$(jq -n --arg sid "$sid" --arg tp "$P02_FIXTURES_DIR/$transcript" \
+    '{session_id:$sid, transcript_path:$tp}')
+
+  local stdout_file stderr_file
+  stdout_file=$(mktemp); stderr_file=$(mktemp)
+  set +e
+  if [ -n "$honor" ]; then
+    echo "$input" | (cd "$cwd" && env SW_AUTOPILOT_POLICY_STOP_HONOR="$honor" bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  else
+    echo "$input" | (cd "$cwd" && bash "$HOOK") >"$stdout_file" 2>"$stderr_file"
+  fi
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
+  rm -f "$stdout_file" "$stderr_file"
+  PGS_STATE_AFTER=$(cat "$cwd/.simple-workflow/backlog/briefs/active/${sid}/autopilot-state.yaml" 2>/dev/null || echo "")
+  rm -f "$mtime_file" "$notool_file"
+}
+
+# ------------------------------------------------------------
+# AC-2: honour on declaration → allow stop (no block) + session_end /
+#       policy_gate_stop runtime_metrics entry.
+# ------------------------------------------------------------
+echo "--- AC-2: honour on declaration (allow stop + metric) ---"
+setup_test_repo
+p02_create_state "pgs-honor"
+run_pgs_hook "pgs-honor" "policy_gate_stop_last_turn.jsonl" "on" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DEC" != "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} honour: exit 0, no decision=block (allows stop)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} honour: expected exit 0 + no block"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC' stdout: ${LAST_STDOUT:0:160}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if echo "$PGS_STATE_AFTER" | grep -qF 'stop_reason: policy_gate_stop' \
+   && echo "$PGS_STATE_AFTER" | grep -qF 'boundary: session_end'; then
+  echo -e "  ${GREEN}PASS${NC} honour: runtime_metrics session_end / policy_gate_stop appended"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} honour: expected session_end / policy_gate_stop metric entry"
+  echo -e "       state tail: $(printf '%s' "$PGS_STATE_AFTER" | tail -8)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC-2 regression: same state file but transcript WITHOUT the marker →
+#       the hook still blocks.
+# ------------------------------------------------------------
+echo "--- AC-2 regression: no marker → still blocks ---"
+setup_test_repo
+p02_create_state "pgs-nomarker"
+# read_only_turns.jsonl: last assistant turn has no [AUTOPILOT-POLICY] marker.
+run_pgs_hook "pgs-nomarker" "read_only_turns.jsonl" "on" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} no marker: decision=block (loop guard backstop intact)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} no marker: expected decision=block"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC-5: kill switch off → ignore the declaration (block as before).
+# ------------------------------------------------------------
+echo "--- AC-5: kill switch off → block despite marker ---"
+setup_test_repo
+p02_create_state "pgs-off"
+run_pgs_hook "pgs-off" "policy_gate_stop_last_turn.jsonl" "off" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} off: decision=block (declaration ignored)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} off: expected decision=block"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC-5: unknown value → fail-closed to off semantics (block).
+# ------------------------------------------------------------
+echo "--- AC-5: unknown value → fail-closed (block) ---"
+setup_test_repo
+p02_create_state "pgs-unknown"
+run_pgs_hook "pgs-unknown" "policy_gate_stop_last_turn.jsonl" "garbage-value" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} unknown: decision=block (fail-closed to off)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} unknown: expected decision=block"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# AC-5: metric-only → still blocks AND emits a [POLICY-GATE-STOP] "would
+#       honour" stderr line.
+# ------------------------------------------------------------
+echo "--- AC-5: metric-only → block + [POLICY-GATE-STOP] stderr ---"
+setup_test_repo
+p02_create_state "pgs-metric"
+run_pgs_hook "pgs-metric" "policy_gate_stop_last_turn.jsonl" "metric-only" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$DEC" = "block" ] && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]' \
+   && echo "$LAST_STDERR" | grep -qiF 'would honour'; then
+  echo -e "  ${GREEN}PASS${NC} metric-only: decision=block + [POLICY-GATE-STOP] would-honour stderr"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} metric-only: expected block + would-honour stderr line"
+  echo -e "       decision='$DEC' stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# No false stop: marker only in an EARLIER assistant turn → still blocks
+# (honour on).
+# ------------------------------------------------------------
+echo "--- no false stop: marker in earlier turn only → block ---"
+setup_test_repo
+p02_create_state "pgs-earlier"
+run_pgs_hook "pgs-earlier" "policy_gate_stop_earlier_turn_only.jsonl" "on" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} earlier-turn marker: decision=block (last turn governs)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} earlier-turn marker: expected decision=block"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# No false stop: marker only inside a tool_use input → still blocks.
+# ------------------------------------------------------------
+echo "--- no false stop: marker in tool_use input only → block ---"
+setup_test_repo
+p02_create_state "pgs-tooluse"
+run_pgs_hook "pgs-tooluse" "policy_gate_stop_tool_use_only.jsonl" "on" "$TEST_REPO"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$DEC" = "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} tool_use-only marker: decision=block (text blocks only)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} tool_use-only marker: expected decision=block"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# Honour works under AUTOPILOT_LEGACY_LOOPGUARD=1 (TRANSCRIPT_PATH hoist).
+# ------------------------------------------------------------
+echo "--- honour under AUTOPILOT_LEGACY_LOOPGUARD=1 ---"
+setup_test_repo
+p02_create_state "pgs-legacy"
+LEGACY_SID="pgs-legacy"
+rm -f "/tmp/.autopilot-continue-${LEGACY_SID}" "/tmp/.autopilot-notool-${LEGACY_SID}"
+LEGACY_INPUT=$(jq -n --arg sid "$LEGACY_SID" --arg tp "$P02_FIXTURES_DIR/policy_gate_stop_last_turn.jsonl" \
+  '{session_id:$sid, transcript_path:$tp}')
+LEGACY_STDOUT=$(mktemp); LEGACY_STDERR=$(mktemp)
+set +e
+echo "$LEGACY_INPUT" | (cd "$TEST_REPO" && env AUTOPILOT_LEGACY_LOOPGUARD=1 SW_AUTOPILOT_POLICY_STOP_HONOR=on bash "$HOOK") >"$LEGACY_STDOUT" 2>"$LEGACY_STDERR"
+LAST_EXIT_CODE=$?
+set -e
+LAST_STDOUT=$(cat "$LEGACY_STDOUT"); LAST_STDERR=$(cat "$LEGACY_STDERR")
+rm -f "$LEGACY_STDOUT" "$LEGACY_STDERR" "/tmp/.autopilot-continue-${LEGACY_SID}" "/tmp/.autopilot-notool-${LEGACY_SID}"
+DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DEC" != "block" ] \
+   && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]'; then
+  echo -e "  ${GREEN}PASS${NC} legacy loopguard: honour still fires (exit 0, no block)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} legacy loopguard: expected honour (exit 0, no block)"
+  echo -e "       exit=$LAST_EXIT_CODE decision='$DEC' stderr: ${LAST_STDERR:0:160}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_test_repo
+
 echo ""
 print_summary

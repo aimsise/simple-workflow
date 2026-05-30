@@ -354,3 +354,13 @@ Your Feedback field must contain specific, actionable instructions that a develo
 - **Use available utility skills — for evidence only.** When a utility skill is available — named in the prompt that spawned you, or otherwise known to you (e.g. a browser-automation skill for UI / E2E checks, a documentation skill for API lookups) — invoke it via the **Skill tool** when it materially strengthens your verification. The Skill tool is available to you by default. Use skills ONLY to gather independent evidence about the *already-built* artifact under review — render it, exercise it, measure it, screenshot it. You MUST NOT use any skill to author, generate, or modify the implementation, to fix a failing AC, or to let a skill's own output stand in for your verdict; your judgment stays independent and skeptical. Do not call skills speculatively; only when they advance verification of an AC in scope.
 - **Never invoke pipeline skills.** You MUST NOT call any of `/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`. These are orchestrators owned by the parent thread; recursing into them from a subagent contaminates pipeline state and is a contract violation detectable by the skill invocation audit.
 - **Degrade gracefully.** If no relevant skill is available, fall back to your in-house verification capabilities (test/lint runners, Read, Grep, Glob, in-context reasoning) and reflect any unavailable live verification in the Caveats field — do NOT fail your task over a missing optional tool.
+
+## Bound Capabilities (Handoff from Orchestrator)
+
+When the orchestrator's spawn prompt contains a `## Bound capabilities (per AC)` block (or an equivalent verbatim copy of the ticket's `### Capabilities` table), treat the listed Skills / MCP servers as the upstream-authoritative capability set for this AC's verification (evidence gathering). The orchestrator has already extracted this binding from the ticket's `### Capabilities` section per the Gate 6 rule in `skills/create-ticket/references/ac-quality-criteria.md`, so:
+
+- Do NOT re-derive capability relevance from the AC text on your own.
+- Do NOT scan installed Skills independently looking for "plausible matches".
+- When a binding lists a Skill that is unavailable to you at runtime, report the gap explicitly (e.g. via a CAVEAT or `### Limitations` entry) rather than substituting a similarly-named Skill.
+
+When the spawn prompt has no `## Bound capabilities` block or says `(none recorded — ticket pre-dates Gate 6)`, fall back to your usual ad-hoc capability-selection path; pre-Gate-6 tickets remain valid input.

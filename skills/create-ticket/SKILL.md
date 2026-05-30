@@ -35,6 +35,8 @@ UTC time: !`date -u +%Y-%m-%dT%H:%M:%SZ`
 
 Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/skills 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
 
+Available MCP servers: !`( jq -r '.mcpServers // {} | keys[]' .mcp.json 2>/dev/null ; jq -r '.mcpServers // {} | keys[]' ~/.claude.json 2>/dev/null ) | sort -u | grep . | tr "\n" "," | sed "s/,$//" | grep . || echo "(none)"`
+
 ## phase-state.yaml write ownership
 
 Writes the **whole** `phase-state.yaml` template at creation, transitions `phases.create_ticket: in-progress -> completed` in the same invocation. Never writes other phase sections. Top-level `current_phase` / `last_completed_phase` / `overall_status` are owned on initial write; later writers update them. **Do NOT serialize a top-level `ticket_dir:` field** — path encodes location. Schema: [references/phase-state-schema.md](references/phase-state-schema.md).
@@ -77,7 +79,7 @@ Per-mode deltas:
 | Step | F (findings) | B (brief) | D (bare) |
 |---|---|---|---|
 | 1 Input | findings file exists | brief file exists | derive `{parent-slug}` |
-| 2 Frontmatter | `findings_version`, `title`, `slug_hint` | `slug`, `mode`, `interview_complete`; `brief_mode == auto` gates W-8 + `gates.ticket_quality_fail` brief-parent fallback | (n/a) |
+| 2 Frontmatter | `findings_version`, `title`, `slug_hint` | `slug`, `chain` (canonical, vX.Y.0+) **and** `mode` (legacy alias, retained one minor for backward read compatibility), `interview_complete`; `brief_mode == auto` gates W-8 + `gates.ticket_quality_fail` brief-parent fallback. **Precedence rule (marker literal: chain: precedes mode:)**: `chain:` is read first if present (`on` → `brief_mode == auto`, `off` → `brief_mode == manual`); when `chain:` is absent, `mode:` is read for backward compatibility; super-legacy briefs lacking both keys default to `brief_mode == auto` (≡ `chain=on`). | (n/a) |
 | 3 Phase 1 | enumerates `## Required Work Units` | researcher (reuse path) | researcher (no reuse) |
 | 4 Phase 2 | skip on upstream `interview_complete: true` | skip on `interview_complete: true`, else capped | always capped |
 | 5 Decomposer | F-5 `findings_doc` | B-5 `scope_context` | D-4 `scope_context` |
@@ -107,11 +109,21 @@ Prose: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md). E
 
 Modes: findings — satisfied by findings doc. Brief — reuse `{ticket-dir}/investigation.md` only when freshness-valid (`phase-state.yaml` provenance, mtime ≤ 24 h, or matching `investigation_sha256:`; see [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md)). Bare — always invoked. Fresh runs write `.simple-workflow/.tmp/create-ticket-{parent-slug}/investigation.md`.
 
+### Phase 1.5: Advisory Consultation Pre-Check (gating, v8.0.0+ Phase 6 enforcement; mirrors `/impl` Step 14b)
+
+After Phase 1 completes with a fresh researcher spawn and before Phase 2 (Socratic Refinement), the researcher return value MUST contain a `**Advisory consultation**:` field per the format in `agents/researcher.md` `## Advisory Capabilities` → `### Consultation reporting format`. Match by regex `^\*\*Advisory consultation\*\*:` on the return value (case-sensitive, line-anchored). Three outcomes:
+
+- **Field present** → emit `[ADVISORY-CONSULT] create-ticket researcher present` to stderr and proceed to Phase 2.
+- **Field absent** (fresh-spawn path) → contract violation. Emit `[PIPELINE] create-ticket: ADVISORY-MISSING (agent=researcher)` to stderr; `Fail the task` (same severity as a missing researcher invocation per Phase 1's binding rules — silent omission of the Phase 6 audit trail is treated like missing the researcher entirely); do NOT silently re-spawn. Re-rolling the same researcher without surfacing the contract violation would mask the regression.
+- **Skip (cached investigation reuse path)** → when Phase 1 took the brief-mode freshness-validated reuse path (existing `{ticket-dir}/investigation.md` was reused instead of a fresh researcher spawn), there is no return envelope to inspect. Emit `[ADVISORY-CONSULT] create-ticket researcher skipped (cached investigation reused)` to stderr for trace symmetry and proceed to Phase 2. The Phase 6 audit trail responsibility lies with the original fresh spawn that produced the cached `investigation.md`.
+
 ### Phase 2: Socratic Refinement
 
 Brief with `interview_complete: true` skips Phase 2 (no `AskUserQuestion`, no stdin block; ticket file under `.simple-workflow/backlog/` within 10 s on closed stdin). Findings mirrors upstream brief's `interview_complete`. Bare always runs the capped interview unless non-interactive fallback fires.
 
 Caps (load-bearing): max **3 questions/round**, **10 rounds**, **30 total**. Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors. Do NOT hang.
+
+**args-aware shrinkage**: Phase 2 MUST suppress questions whose answers are already in `$ARGUMENTS` (bare) or brief body (brief mode, `interview_complete: false`). Full rule: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md) Phase 2.
 
 ### Phase 3: Ticket Draft (planner agent)
 
@@ -180,7 +192,7 @@ Write per [references/write-path-templates.md](references/write-path-templates.m
 
 ### Step W-8: autopilot-policy.yaml propagation
 
-Runs only when ALL hold: `brief=<path>` passed; `brief_mode == auto` (per B-2; legacy `mode:`-less briefs treated as `auto`); `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists.
+Runs only when ALL hold: `brief=<path>` passed; `brief_mode == auto` (per B-2; resolved via the precedence rule **chain: precedes mode:** — `chain: on` → `brief_mode == auto`, `chain: off` → `brief_mode == manual`; when `chain:` is absent the legacy `mode:` is read; super-legacy briefs lacking both keys are treated as `auto` ≡ `chain=on`); `.simple-workflow/backlog/briefs/active/{brief_slug}/autopilot-policy.yaml` exists.
 
 `brief_mode == manual` (v6.0.0+) **skips** even if source exists; emit one audit line: `[POLICY-PROPAGATION] skipped: brief mode=manual`. Per-ticket dirs receive no policy — indistinguishable from bare tickets to `/impl`'s FIFO selector.
 
@@ -236,6 +248,9 @@ Every `ERROR:` path is atomic: no directories created, `.ticket-counter` unchang
 
 When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
 
-- Do NOT hand skill references to `security-scanner` or `ticket-evaluator`. These subagents are intentionally hermetic and do not carry the Skill tool; referencing skills to them only adds noise.
+- **Truly hermetic agents** (`security-scanner`, `ticket-evaluator`) carry no Skill tool, no MCP, no `Bash(*)`. If you spawn one, hand off nothing — speculative references only add noise.
+- **Skill-bearing verdict / read-only agents** (`ac-evaluator`, `code-reviewer`, `decomposer`, `tune-analyzer`) retain explicit `tools:` allowlists and do NOT inherit MCP / `Bash(*)`. They DO carry the Skill tool and receive capability handoffs, but only via **deterministic per-AC binding** (the `## Bound capabilities (per AC)` block extracted from `{ticket-dir}/ticket.md`'s `### Capabilities` section) — never via ad-hoc speculation from the `Available user skills:` probe.
+- **Productive agents** (`implementer`, `planner`, `researcher`, `test-writer`) inherit-all under v8.0.0 — every parent-session MCP server and `Bash(*)` is in their tool inventory. Only `mcp__*` and Skills bound to an active AC via `## Bound capabilities (per AC)` may be invoked (per the agent body's `## Bound Capabilities (Handoff from Orchestrator)` section).
 - Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.
+- When a ticket's `### Capabilities` section exists (resolve via `{ticket-dir}/ticket.md` or the autopilot state file's `paths.ticket`), `Read` it before constructing any subagent spawn prompt and inline the bound capabilities verbatim into every spawn prompt under the heading `## Bound capabilities (per AC)`. For per-AC spawns (one spawn per AC, e.g. `/impl` Steps 13/15), include only the rows whose `Bound AC(s)` column lists the active AC. For tip / whole-deliverable spawns (the rest), include the full table. The upstream binding is authoritative — do NOT re-derive relevance from the AC text or re-scan `Available user skills:` for plausible matches. When the ticket lacks `### Capabilities` (older ticket pre-dating Gate 6), emit `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)` in the spawn prompt and let the subagent fall back to its in-house capability-selection path.
 - If the `Available user skills:` probe reports `(none)`, hand off nothing and let the subagent proceed with its in-house capabilities.

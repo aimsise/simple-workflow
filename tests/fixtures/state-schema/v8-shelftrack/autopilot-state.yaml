@@ -1,0 +1,88 @@
+# Source: test_simple_workflow34 (sanitised verbatim)
+version: 1
+parent_slug: shelftrack
+started: 2026-05-25T03:25:00Z
+execution_mode: split
+risk_tolerance: aggressive
+ticket_mapping:
+  shelftrack-part-1: .simple-workflow/backlog/product_backlog/shelftrack/001-bootstrap-and-scaffold
+  shelftrack-part-2: .simple-workflow/backlog/product_backlog/shelftrack/002-domain-and-database-schema
+  shelftrack-part-3: .simple-workflow/backlog/product_backlog/shelftrack/003-rest-api-and-validation
+  shelftrack-part-4: .simple-workflow/backlog/product_backlog/shelftrack/004-stock-events-and-projection
+  shelftrack-part-5: .simple-workflow/backlog/product_backlog/shelftrack/005-openapi-and-integration-tests
+processing_order:
+  - shelftrack-part-1
+  - shelftrack-part-2
+  - shelftrack-part-3
+  - shelftrack-part-4
+  - shelftrack-part-5
+human_overrides: []
+kb_overrides: []
+decisions_made: []
+manual_bash_fallbacks: []
+tickets:
+  - logical_id: shelftrack-part-1
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold/
+    status: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    pr_url: null
+    failure_reason: null
+  - logical_id: shelftrack-part-2
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/002-domain-and-database-schema/
+    status: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    pr_url: null
+    failure_reason: null
+  - logical_id: shelftrack-part-3
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/003-rest-api-and-validation/
+    status: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    pr_url: null
+    failure_reason: null
+  - logical_id: shelftrack-part-4
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/004-stock-events-and-projection/
+    status: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    pr_url: null
+    failure_reason: null
+  - logical_id: shelftrack-part-5
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/005-openapi-and-integration-tests/
+    status: completed
+    invocation_method:
+      scout: skill
+      impl: skill
+      ship: skill
+    steps:
+      scout: completed
+      impl: completed
+      ship: completed
+    pr_url: null
+    failure_reason: null

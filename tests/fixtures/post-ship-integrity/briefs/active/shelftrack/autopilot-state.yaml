@@ -1,0 +1,29 @@
+# Source: test_simple_workflow34 brief autopilot-state.yaml (minimal trigger payload).
+# Drives the post-ship-state-auto-compact.sh hook Gate 1/2/3/5/5.5
+# flow during Cat PSI: each tickets[] element carries
+# `steps.ship: completed` so parse_ticket_ship_dirs returns the
+# ticket_dir whose phase-state.yaml the integrity Gate inspects.
+version: 1
+parent_slug: shelftrack
+plan_id: 33-34
+status: in-progress
+
+tickets:
+  - logical_id: 001-bootstrap-and-scaffold
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/001-bootstrap-and-scaffold
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      audit: completed
+      ship: completed
+      tune: completed
+  - logical_id: 005-e2e-hardening-and-accessibility
+    ticket_dir: .simple-workflow/backlog/done/shelftrack/005-e2e-hardening-and-accessibility
+    status: completed
+    steps:
+      scout: completed
+      impl: completed
+      audit: completed
+      ship: completed
+      tune: completed

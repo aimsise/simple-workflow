@@ -84,6 +84,21 @@ The Stop hook (`hooks/autopilot-continue.sh`) determines `stop_reason` for an
 outgoing `boundary: session_end` entry by applying these rules in order. The
 first rule that matches wins.
 
+0. **(Highest precedence) Model-declared policy-gate stop.** The LAST
+   assistant turn of the transcript contains a `[AUTOPILOT-POLICY] ...
+   action=stop` declaration (within a `text` content block) →
+   `policy_gate_stop`, and the stop is **honoured**: the Stop hook allows
+   `end_turn` (it does NOT emit `decision: block`) and records the
+   `session_end` / `policy_gate_stop` entry. Detection is shared across all
+   three autopilot Stop hooks via `hooks/lib/detect-policy-gate-stop.sh`
+   (`last_turn_declares_policy_gate_stop`); the two checkpoint guards
+   (`hooks/impl-checkpoint-guard.sh`, `hooks/scout-checkpoint-guard.sh`)
+   honour the same declaration by standing down without blocking but do not
+   write the metric (that is `autopilot-continue.sh`'s axis). The kill
+   switch `SW_AUTOPILOT_POLICY_STOP_HONOR` (`on` default / `metric-only` /
+   `off`, unknown fails closed to `off`) gates this rule; with the switch
+   off or no marker present, evaluation falls through to rules 1-5 below and
+   the loop guards remain the backstop.
 1. The hook is exiting via the `[AUTOPILOT-STALL]` loop-guard release path
    (counter threshold reached) → `loop_guard_release`.
 2. A future progress-indicator (Plan 02) reports `NOTOOL_COUNT` saturation
@@ -95,8 +110,29 @@ first rule that matches wins.
    none of the above applies → `partial_completion`.
 5. None of the above matched → `harness_terminated` (fallback).
 
-Policy-gate stops (`policy_gate_stop`) are emitted by the orchestrator skill
-itself; the Stop hook does not synthesise them.
+The orchestrator skill is still the AUTHORITY that decides to hard-stop and
+emits the `[AUTOPILOT-POLICY] ... action=stop` marker plus the `## Stop
+Reason` `tag: policy_gate_stop`. What changed (rule 0 above) is that the Stop
+hooks now **recognise and honour** that model-declared stop instead of
+ignoring it and forcing the loop to continue — they read the marker from the
+last assistant turn rather than synthesising the reason from policy
+configuration. The orchestrator-side sources of a `policy_gate_stop`
+declaration include:
+
+- A configured policy gate firing `action: stop` mid-pipeline (the original
+  v6.x path documented above) -- e.g. `gates.unexpected_error.action: stop`,
+  `gates.audit_infrastructure_fail.action: stop`,
+  `gates.ship_review_gate.action: stop`, etc.
+- **Phase 1 hard-stop conditions** discovered during pre-flight checks
+  before the per-ticket loop starts -- missing split-plan (step 1), brief
+  `status: draft` (step 3), unrecoverable state-file corruption or hostile
+  working tree detected during state recovery (step 5), and any other
+  Phase 1 precondition that cannot be papered over by automatic fallback.
+  These hard-stops MUST surface as `policy_gate_stop` (with the verbatim
+  `ERROR:` literals retained for downstream contract tests) rather than as
+  interactive `AskUserQuestion` prompts; the resume hint
+  `Resume after fixing X with: /autopilot {parent-slug}` accompanies each
+  hard-stop so the user can continue after fixing the upstream issue.
 
 ## Discrimination heuristic (PreCompact hook)
 

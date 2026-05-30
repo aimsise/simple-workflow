@@ -1,7 +1,7 @@
 {
   "name": "simple-workflow",
   "description": "The Claude Code plugin for an end-to-end AI development workflow — ticket management, multi-agent code review, security audit, and automated PR creation — built on a Harness for long-running AI agents with strict context management and cross-session learning.",
-  "version": "7.0.4",
+  "version": "8.0.0",
   "author": {
     "name": "aimsise",
     "url": "https://github.com/aimsise"

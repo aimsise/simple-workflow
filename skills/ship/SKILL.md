@@ -269,7 +269,7 @@ Proceed to Phase 2.
           - PASS / PASS-WITH-CAVEATS → proceed. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=proceed_if_eval_passed eval_status={status}`. Append "[shipped without /audit, autopilot policy applied]" to PR body.
           - FAIL or no eval-round → stop (safety valve; never ship code that failed AC). Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop reason=eval_status_not_pass`.
         - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_review_gate action=stop`.
-      - Else interactive flow: Print "No recent code review found. Recommended: run /audit before shipping." Ask "Proceed without review? (yes/no)". "no" → stop; "yes" → proceed and append "[shipped without /audit]" to the PR body in step 14.
+      - Else interactive flow: Print "No recent code review found. Recommended: run /audit before shipping." Ask "Proceed without review? (yes/no)" via `AskUserQuestion` with `header: ship-review`; the `header` value is load-bearing under the autopilot 3-tier `risk_tolerance` matrix (see `skills/autopilot/SKILL.md` `## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`) — any other header (or an empty one) is denied at every tier when invoked under `/autopilot`. "no" → stop; "yes" → proceed and append "[shipped without /audit]" to the PR body in step 14.
 
 10. Determine target branch from arguments (default `<default-branch>` from pre-computed context). If target ≠ `<default-branch>`, re-run `git log` / `git diff` against the actual target (pre-computed context is always vs `<default-branch>`).
 11. `git log origin/<target>..HEAD --oneline`. If no commits ahead, print "No commits ahead of target branch." and stop.
@@ -279,13 +279,17 @@ Proceed to Phase 2.
 15. `gh pr create --base <target-branch> --head <current-branch> --title "<title>" --body "<body>"`.
 15a. **Complete ship phase (state update — only when a ticket was moved in step 5 AND `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` exists)**: Read `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` and update ONLY (read-modify-write):
      - `phases.ship.status: completed`
-     - `phases.ship.completed_at: {now}` (ISO-8601 UTC, recomputed)
-     - `phases.ship.artifacts.pr_url: <pr-url>` (URL from step 15, or existing PR URL captured in step 12)
+     - `phases.ship.completed_at: {now}` (ISO-8601 UTC, recomputed; preserve the existing value when already non-null)
+     - `phases.ship.artifacts.pr_url: <pr-url>` (URL from step 15, or existing PR URL captured in step 12; pass through `null` when neither is available, e.g. no-remote / push-failure paths)
      - `last_completed_phase: ship`
      - `current_phase: done`
      - `overall_status: done`
 
      Do NOT modify `phases.create_ticket` / `phases.scout` / `phases.impl`. The state file stays at `.simple-workflow/backlog/done/{ticket-dir}/phase-state.yaml` as the permanent record — NEVER delete.
+
+     **Idempotence (PSI contract)**: Step 15a MUST run on every successful pass through Phase 2, regardless of whether the PR was newly created in Step 15 OR pre-existing (captured in Step 12) OR the no-remote / no-commits-ahead early-stop branch was taken. If `phases.ship.status` is already `completed` on read, still recompute and write the three top-level scalars (`last_completed_phase`, `current_phase`, `overall_status`) to ensure they match — a prior interrupted run may have left `phases.ship.status: completed` paired with stale top-level scalars (`current_phase: ship`, `overall_status: in-progress`). The post-ship integrity hook (`hooks/post-ship-state-auto-compact.sh`) reads this invariant as ground truth and self-heals when it fails; Step 15a is the primary writer, the hook is the safety net.
+
+     **Ordering with Step 16**: Step 15a MUST complete its write to disk BEFORE Step 16's "print PR URL and stop" early-exit. The "stop" in Step 16 refers to ending the `/ship` skill's body, not to ending the turn; Step 15a's `Write`/`Edit` Tool call still counts as part of `/ship`'s body even when no merge is requested.
 
      If an existing PR was captured in step 12, run this state update there too, so re-runs finalize correctly.
 16. Print the PR URL. If merge is not enabled, stop. Note: on squash-merge the PR title becomes the commit message on the target branch.
@@ -298,7 +302,7 @@ Proceed to Phase 2.
       - `wait`: `gh pr checks <pr-number> --watch` with `timeout_minutes`. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=wait timeout={timeout_minutes}m`.
         - Pass within timeout → retry merge. Timeout → `on_timeout` (`stop` by default). Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=on_timeout`.
       - `stop`: stop. Print `[AUTOPILOT-POLICY] gate=ship_ci_pending action=stop`.
-    - Else interactive, ask the user:
+    - Else interactive, ask the user via `AskUserQuestion` with `header: ship-ci`; the `header` value is load-bearing under the autopilot 3-tier `risk_tolerance` matrix (see `skills/autopilot/SKILL.md` `## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`) — any other header (or an empty one) is denied at every tier when invoked under `/autopilot`. Options:
       - **Wait**: `gh pr checks <pr-number> --watch`, then retry merge.
       - **Force**: `gh pr merge <pr-url> --squash --delete-branch --admin`. **WARNING: bypasses CI; risks merging untested code. Confirm before proceeding.** Requires admin permissions.
       - **Skip**: Stop without merging. Print PR URL for manual follow-up.

@@ -72,21 +72,71 @@ Target parent-slug: $ARGUMENTS
 
 Parse `$ARGUMENTS`: extract `{parent-slug}` (first arg). `{parent-slug}` is the dir basename under `.simple-workflow/backlog/product_backlog/` (or brief slug under `briefs/active/`); legacy `{slug}` is interchangeable. Empty → see `## Error Handling`.
 
+## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)
+
+From the moment `/autopilot` resolves `{parent-slug}` and Phase 1 step 1 confirms `SPLIT_PLAN` exists, until ALL of the following are complete -- every ticket is terminal (`completed`/`failed`/`skipped`), Split Autopilot Log is written, Completion Report is printed, Brief Lifecycle runs, State File Cleanup runs, and the final `## [SW-CHECKPOINT]` is emitted -- `AskUserQuestion` invocations are governed by the 3-tier allow-list matrix below, keyed on `risk_tolerance` from `<state-dir>/autopilot-policy.yaml` (already read by Phase 1 step 4 during Human override detection, so no additional I/O is required):
+
+| header (AskUserQuestion `header` field, max 12 chars) | aggressive | moderate | conservative |
+|---|---|---|---|
+| `audit-fail`   | deny | allow | allow |
+| `ac-eval`      | deny | allow | allow |
+| `ship-review`  | deny | deny  | allow |
+| `ship-ci`      | deny | deny  | allow |
+| `eval-dry`     | deny | deny  | allow |
+| `tkt-quality`  | deny | deny  | allow |
+| (any other)    | deny | deny  | deny  |
+
+The six headers above correspond 1:1 to the autopilot policy gates: `audit-fail` -> `audit_infrastructure_fail`, `ac-eval` -> `ac_eval_fail`, `ship-review` -> `ship_review_gate`, `ship-ci` -> `ship_ci_pending`, `eval-dry` -> `evaluator_dry_run_fail`, `tkt-quality` -> `ticket_quality_fail`. The `unexpected_error` gate is NEVER a user prompt -- it MUST surface as `policy_gate_stop` (see below).
+
+Header naming is load-bearing -- every `AskUserQuestion` emitted inside the autopilot pipeline MUST use one of the six gate IDs above as its `header` field (max 12 chars). Headers outside this set are treated as phase-gate or ad-hoc and **denied at every tier**, including conservative. This includes (non-exhaustive): `phase-gate`, `backend?`, empty header, free-form prose headers, and any prefix-matched bypass attempts. The naming rule is what makes the matrix structurally enforceable; it removes the "reason-wording bypass" attack surface observed in field-test Q6 (where a phase-gate question was disguised as a context-budget concern).
+
+When `risk_tolerance` is absent or unreadable from `autopilot-policy.yaml`, fall through to the Phase 1 step 4 defaults logic and assume `conservative` -- this is the most-conservative tier on the policy-gate axis but still rejects every off-matrix header, so a malformed policy file cannot widen the allow-list.
+
+Hard-stop conditions discovered during Phase 1 (hostile working tree, absent ticket dir, malformed split-plan, brief status `draft`, etc.) MUST surface as `policy_gate_stop` (the state-file mechanism), NOT as user prompts. Concretely: emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop reason=<...>`, write `## Stop Reason` with `tag: policy_gate_stop`, and append a one-line resume hint of the form `Resume after fixing X with: /autopilot {parent-slug}`. The autopilot session then ends gracefully so the user can resume after fixing the upstream issue. The existing verbatim `ERROR: ...` literals from Phase 1 step 1 / step 3 / step 5 continue to be emitted (downstream contract tests depend on them), alongside the new `policy_gate_stop` exit path.
+
+**A missing git remote is explicitly NOT a hard-stop, and MUST NOT be treated as one.** A remote is not required to build, verify, and locally land a ticket. Proceed with the full pipeline: `/ship` detects the absent remote, commits locally, and skips push + PR creation (see `/ship` Phase 2 step 7 and Error Handling "No remote"), reaching `steps.ship: completed` exactly as a remote-backed ship would — the ticket lands as `completed-with-warnings`, not `failed`. This is load-bearing for context management: a completed `/ship` is precisely what fires the per-ticket auto-compact (`hooks/post-ship-state-auto-compact.sh` keys on `steps.ship: completed`), so hard-stopping before ship over an absent remote would starve auto-compaction and pressure the context window across the remaining tickets. Do NOT emit `policy_gate_stop`, do NOT raise an `AskUserQuestion`, and do NOT defer a "remote blocker" to ship time for an absent remote — there is no blocker; push is simply skipped.
+
+The ONLY legitimate exits, in any tier, are:
+
+1. A policy gate evaluating to `action: stop` (incl. the Phase 1 hard-stop path above, tagged `policy_gate_stop`).
+2. The auto-compact exception documented in Phase 2 step e, which is `end_turn` (NOT an interactive prompt) and is the ONE documented place mid-pipeline `end_turn` is permitted.
+3. An `AskUserQuestion` whose `header` is on the matrix above AND whose row resolves to **allow** for the current `risk_tolerance`. This third exit replaces the unconditional ban of the prior two-valued contract.
+
+Stop hooks cannot intercept `AskUserQuestion`; this SKILL-level prose is the sole prose-layer enforcement. A structural-layer enforcement (`hooks/pre-askuserquestion-guard.sh`) is provided by plan P1-3B and applies the same matrix at the PreToolUse hook face. The two layers MUST stay synchronized -- changing the matrix here REQUIRES the same change in the hook (and vice versa). The structural enforcement carries its own kill-switch (`SW_AUTOPILOT_ASK_GUARD`) documented under P1-3B; the prose layer has no kill-switch by design.
+
+Forbidden self-rationalisations (each has been observed in the field and produced a contract breach; enumeration is normative, not exhaustive):
+
+- "The per-ticket pipeline has not started yet, so the contract is not yet in effect." -- WRONG. The contract starts at Phase 1 step 1 confirmation of `SPLIT_PLAN`, not at the first `/scout` call.
+- "Context budget is running low, so I should ask whether to continue." -- WRONG. Context pressure is handled by `hooks/pre-compact-save.sh` and the auto-compact-on-ship mechanism; this is a phase-gate question, denied at every tier.
+- "A precondition is unmet (untracked files, etc.), so I should ask the user to confirm before proceeding." -- WRONG. Treat the unmet precondition as `unexpected_error.action: stop`, emit the policy line + `## Stop Reason`, and exit. (Note: an absent git remote is NOT such a precondition -- it is handled by a local-only `/ship`; see the hard-stop carve-out above.)
+- "I am between two phases (Phase 1 just ended, Phase 2 about to begin), so the prohibition does not apply at this seam." -- WRONG. Seams are inside the prohibition window, not at its edges.
+- "I will phrase my question as `header: audit-fail` even though it is actually a phase-gate concern, so it slips through the matrix." -- WRONG. The header MUST correspond truthfully to the policy gate whose failure path is currently being evaluated. Mis-labelling is a contract breach equivalent to bypassing the matrix.
+
 ## Phase 1: Pre-flight Checks
 
 Pre-flight gate decides whether `/autopilot` has a runnable input. SSoT is `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`; the legacy `briefs/active/.../split-plan.md` path is NOT read.
 
 0. **Auto-kick cleanup**: delete `.simple-workflow/backlog/briefs/active/{parent-slug}/auto-kick.yaml` if present (idempotent). Do NOT touch `brief.md`, `autopilot-policy.yaml`, `autopilot-state.yaml`. `hooks/post-skill-cleanup.sh` (PostToolUse) removes stale `auto-kick.yaml` as defense-in-depth.
 
-1. **Split-plan discovery**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`. Exists → parse Phase 2. Missing + brief exists → print exactly `ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and exit non-zero (no stdout matches `^/create-ticket`). Neither → print exactly `ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and exit non-zero. Never create/modify `active/`.
+0.5. **Emit `[AUTOPILOT-CONTEXT]` self-doc**: Read
+`SW_AUTO_COMPACT_ON_SHIP_MODE` from the environment (default `on` in
+autopilot context; matches `hooks/pre-next-scout-auto-compact.sh` L81).
+Emit EXACTLY ONE `[AUTOPILOT-CONTEXT]` block to stdout per the
+branch matching the resolved mode (`on` / `metric-only` / `off`;
+unknown values are treated as `off`). The verbatim text of each
+branch is fixed and lives in `references/autopilot-context-self-doc.md`.
+This step is read-only and idempotent: re-runs after `/compact`
+re-emit the same block.
+
+1. **Split-plan discovery**: `SPLIT_PLAN = .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md`. Exists → parse Phase 2. Missing + brief exists → print exactly `ERROR: split-plan not found at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md. Run /create-ticket brief=.simple-workflow/backlog/briefs/active/{parent-slug}/brief.md first to produce the ticket set, then re-run /autopilot {parent-slug}.` and exit non-zero (no stdout matches `^/create-ticket`). Neither → print exactly `ERROR: no split-plan at .simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md and no brief at .simple-workflow/backlog/briefs/active/{parent-slug}/brief.md. Nothing to autopilot.` and exit non-zero. Never create/modify `active/`. Additionally, emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop reason=missing_split_plan` and write `## Stop Reason` with `tag: policy_gate_stop` plus a resume hint of the form `Resume after fixing X with: /autopilot {parent-slug}`; the verbatim `ERROR: ...` literals above are retained for downstream contract tests and surface alongside the new `policy_gate_stop` exit path — never escalate to `AskUserQuestion`.
 
 2. **Brief optionality**: brief not required; runs whenever `SPLIT_PLAN` exists. Policy propagation is upstream (`/create-ticket brief=<path>` copies `autopilot-policy.yaml` into each ticket dir). No policy → Policy guard aborts. Brief-level `autopilot-policy.yaml` at `briefs/active/{parent-slug}/` is read for decision logging; else per-ticket policy serves the same role.
 
-3. Brief `status`: `confirmed` proceeds; `draft` → print `ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with mode=auto.` and stop. Read brief `mode` (default `auto`); if `mode: manual` + `/autopilot` invoked, emit `[WARN] brief mode=manual but /autopilot was invoked; per-ticket autopilot-policy.yaml is absent (only brief-level policy is in effect).` and continue.
+3. Brief `status`: `confirmed` proceeds; `draft` → print `ERROR: Brief status is 'draft'. Update to 'confirmed' or run /brief with mode=auto.` and stop. Read brief `mode` (default `auto`); if `mode: manual` + `/autopilot` invoked, emit `[WARN] brief mode=manual but /autopilot was invoked; per-ticket autopilot-policy.yaml is absent (only brief-level policy is in effect).` and continue. On the `draft` hard-stop path, additionally emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop reason=brief_status_draft` and write `## Stop Reason` with `tag: policy_gate_stop` plus a resume hint of the form `Resume after fixing X with: /autopilot {parent-slug}`; the verbatim `ERROR:` literal above is retained for downstream contract tests and surfaces alongside the new `policy_gate_stop` exit path — never escalate to `AskUserQuestion`.
 
 4. **Human override detection**: compare each gate in `autopilot-policy.yaml` to defaults for `risk_tolerance`. `conservative` defaults + `moderate` defaults: in [references/state-file.md](references/state-file.md). `aggressive` defaults: moderate + `aggressive ship_ci_pending.timeout_minutes: 60`, `aggressive constraints.max_total_rounds: 12`, `aggressive constraints.allow_breaking_changes: true`. Gate differs + `# kb-suggested` → `kb_override` else `human_override`. Render to `## Human Overrides` / `## KB Overrides`; `## Decisions Made` distinguishes `human_override` from `kb_override`. **Exclude `kb_override`** from `## Human Overrides`. No diff → "No human overrides detected."
 
-5. **State recovery**: absent `autopilot-state.yaml` → `resume_mode = false`. Else `resume_mode = true`; emit `[RESUME] ...` summary (resume msg, execution mode, progress N/total, per-ticket status). If `started` is older than 7 days, emit `[RESUME] WARNING` to delete `autopilot-state.yaml` and re-run. Carry `ticket_mapping`. Per-ticket: `completed` → skip (`[RESUME] Skipping {logical_id}: already completed`); `failed`/`skipped` → retry first non-completed; `in_progress` → re-run; `pending` → normal.
+5. **State recovery**: absent `autopilot-state.yaml` → `resume_mode = false`. Else `resume_mode = true`; emit `[RESUME] ...` summary (resume msg, execution mode, progress N/total, per-ticket status). If `started` is older than 7 days, emit `[RESUME] WARNING` to delete `autopilot-state.yaml` and re-run. Carry `ticket_mapping`. Per-ticket: `completed` → skip (`[RESUME] Skipping {logical_id}: already completed`); `failed`/`skipped` → retry first non-completed; `in_progress` → re-run; `pending` → normal. If state recovery cannot continue (e.g. unparseable `autopilot-state.yaml`, hostile working tree detected during this step, or any other Phase 1 precondition that newly fails here), emit `[AUTOPILOT-POLICY] gate=unexpected_error action=stop reason=state_recovery_hard_stop` and write `## Stop Reason` with `tag: policy_gate_stop` plus a resume hint of the form `Resume after fixing X with: /autopilot {parent-slug}`; never escalate to `AskUserQuestion`. Any existing verbatim `ERROR:` / `[RESUME] WARNING` literal continues to be emitted alongside the new `policy_gate_stop` exit path.
 
 ## Phase 2: Pipeline Execution
 
@@ -100,7 +150,7 @@ Parse `SPLIT_PLAN` frontmatter + tickets, build dependency graph, run topologica
 
 #### Per-ticket pipeline
 
-> **Non-interactive orchestrator contract**: `/autopilot` MUST NOT call `AskUserQuestion` from per-ticket pipeline start until every ticket is terminal (`completed`/`failed`/`skipped`). Only legitimate stop is a gate with `action: stop`. Stop hooks cannot intercept `AskUserQuestion`, so this SKILL-level prohibition is the sole enforcement.
+> **Non-interactive orchestrator contract**: see `## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)` above. Per-ticket pipeline inherits the same 3-tier matrix; the only mid-pipeline `end_turn` is the auto-compact exception in step e.
 
 For each ticket in `PROCESSING_ORDER` (`i` = 0-based):
 

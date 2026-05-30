@@ -127,6 +127,61 @@ When the two axes point to different sizes (e.g., file count suggests S but AC c
 
 A minimum-AC-count floor of 2 ACs per ticket applies regardless of size.
 
+## Gate 6: Capability Mapping
+
+**Scope**: ticket-wide.
+
+**Definition**: when a ticket contains one or more **runtime/visual** ACs, each such AC MUST be bound to an upstream-detected capability (utility skill, MCP server, test runner, etc.) that the downstream verifier (`/impl` → `ac-evaluator`) can pick up from the ticket itself, so that live evidence — not static code inspection — drives the PASS/FAIL verdict.
+
+An AC is **runtime/visual** when its PASS/FAIL hinges on at least one of the following observation points (non-exhaustive minimum list):
+
+- Live rendering of the artifact (the AC names a UI surface, page, screenshot, or pixel-level outcome that only materialises when the built code runs).
+- Console-error count or any other browser-runtime log invariant.
+- Keyboard focus or hover state (the AC names focus order, focus ring visibility, hover style, or any interactive state).
+- WCAG contrast or any accessibility ratio measured against a rendered DOM.
+- Network I/O (the AC asserts a request/response shape, a status code, or a wire-level payload).
+- FS-state-dependent behaviour (the AC asserts a file is written/read/created/deleted, or that the program reacts to a specific on-disk state).
+
+If none of these apply, the AC is **static** (file-grep / counter / exit-code verifiable) and no binding is required.
+
+**Binding rule** (per-AC): each runtime/visual AC MUST appear in the `Bound AC(s)` column of at least one row of the ticket's `### Capabilities` section, OR the AC MUST be rewritten as a static AC (e.g. assert a build-artifact byte sequence with `grep` rather than a rendered pixel). A runtime/visual AC with no binding and no static rewrite is a Gate 6 FAIL.
+
+**Capability shape** (per row): each `### Capabilities` row carries `Name | Type | Purpose | Used by | Bound AC(s)`. `Type` is one of `skill`, `agent`, `MCP server`, `test runner`, or a similarly recognisable label. `Used by` names the consumer phase / agent (e.g. `ac-evaluator`, `/impl`, main-thread orchestrator). `Bound AC(s)` lists the AC identifiers the capability is responsible for; an empty value is allowed only for demonstrative rows that bind no AC.
+
+**Subagent / main-thread asymmetry**: Forked subagents inherit the parent session's MCP tool access when their `tools:` field is omitted (v8.0.0 productive agents: `implementer`, `planner`, `researcher`, `test-writer`). Verdict / read-only agents (`ac-evaluator`, `code-reviewer`, `decomposer`, `security-scanner`, `ticket-evaluator`, `tune-analyzer`) carry explicit `tools:` allowlists and do NOT inherit MCP — when binding a runtime / visual AC to one of these agents, the `### Capabilities` row's `Used by` column MUST NOT reference an `mcp__<server>__*` capability for them. Cross-check this during the Gate 6 binding self-audit.
+
+A `#### Capability Gaps` subsection MAY follow the table to record runtime/visual ACs that could not be bound and the reason. A non-empty Gaps list does NOT automatically PASS Gate 6 — every entry MUST also flow into the AC list as a static rewrite OR be acknowledged by the planner's rationale.
+
+**Evaluator note**: Gate 6 activates only after `skills/create-ticket/references/ac-quality-criteria.md` ships this section. Evaluations performed against earlier versions of this file deliberately applied Gates 1-5 only; their PASS verdicts do not imply Gate 6 conformance.
+
+## Gate 6.5: Probe Completeness
+
+**Scope**: ticket-wide. Applies to every ticket drafted by a `planner` invocation whose spawn prompt carried a non-empty `Available user skills:` line and/or `Available MCP servers:` line (as supplied by `/create-ticket`, `/plan2doc`, or `/refactor` in their `## Pre-computed Context` block).
+
+**Motivation**: Gate 6 binds **runtime/visual** ACs to a verification capability. It does NOT speak about **authoring-reference** capabilities — utility skills that an implementer / researcher / test-writer would consult during code authoring (UI/UX design guidance, library API documentation lookup, accessibility heuristics, etc.). Without Gate 6.5, a probe-visible capability that does not fit the Gate 6 runtime/visual classifier is silently dropped by the planner, leaving the implementer with no executable pathway to invoke it (the productive subagents' `## Side-effect ban` forbids speculative invocation of unbound `mcp__*` and unbound utility skills). Gate 6.5 closes that hole by requiring the planner to **classify every probe entry** into one of three buckets — making "the planner forgot about `ui-ux-pro-max`" mechanically detectable rather than a silent omission.
+
+**Definition**: every entry in the orchestrator's `Available user skills:` probe AND every entry in the `Available MCP servers:` probe MUST be classified by the planner into exactly one of three buckets in the emitted ticket:
+
+1. **Bound** — the entry appears as a `Name` cell in at least one row of `### Capabilities` whose `Bound AC(s)` column lists one or more AC IDs. The capability is contractually invoked by the named consumer (`Used by` column) during AC verification.
+
+2. **Advisory** — the entry appears as a `Name` cell in at least one row of `### Advisory Capabilities` (a section emitted between `### Capabilities` and `#### Capability Gaps`). The capability is recommended for the named consumer (`Used by` column) to consult during authoring (implementation reference, library docs, design guidance, etc.). Advisory rows carry **no `Bound AC(s)` column** because they do not drive PASS/FAIL verdicts. The Advisory pathway is read by `/impl`, `/scout`, `/investigate`, and `/refactor` and propagated to productive subagents (`implementer`, `researcher`, `test-writer`) under a `## Advisory capabilities (per ticket)` block in the spawn prompt; the productive subagents' `## Side-effect ban` carries an explicit advisory-invocation exception so listed Advisory skills / MCP tools MAY be invoked during authoring without speculative-invocation violation.
+
+3. **Skipped with rationale** — the entry appears as a bullet in `#### Capability Skip Rationale` (a third subsection following `### Advisory Capabilities` and `#### Capability Gaps`). Each bullet carries the capability name and a one-line reason for non-applicability (e.g. "domain mismatch — entry targets mobile UI; this ticket is backend-only").
+
+A probe entry that appears in none of the three buckets is a Gate 6.5 FAIL — the planner MUST NOT silently drop a probe-visible capability.
+
+**`(none)` exception**: when both probes report `(none)` in the spawn prompt, Gate 6.5 is vacuously satisfied — there is nothing to classify.
+
+**Self-skip exception**: pipeline orchestrator skills (`scout`, `impl`, `audit`, `ship`, `autopilot`, `brief`, `catchup`, `create-ticket`, `investigate`, `plan2doc`, `refactor`, `test`, `tune`) MAY be classified as Skipped with the fixed rationale `pipeline orchestrator; not subagent-invocable per External Tool Integration Policy`. These names appear in the `Available user skills:` probe because they live under `~/.claude/skills/` or the plugin's `skills/` tree, but they are never invocable from a subagent (see `agents/<name>.md` External Tool Integration Policy). The fixed-rationale path is automatic — the planner does NOT need to interrogate AC-relevance for these names.
+
+**Evaluator MUST** verify each probe entry is classified into one of the three buckets when the spawn-prompt probe is reproducible (the universal-probe form — `ls ~/.claude/skills/`, `jq .mcpServers .mcp.json ~/.claude.json` — is the same shell the orchestrator runs, so the evaluator runs it again at evaluation time). When the probe at evaluation time differs from the probe at draft time (a skill was installed or uninstalled between drafting and evaluation), evaluate against the **draft-time** probe if recoverable from `{ticket-dir}/` artifacts; otherwise grade Gate 6.5 as `n/a` with a one-line note. Wording-only objections (e.g. "I would have phrased the skip rationale differently") MUST NOT FAIL Gate 6.5.
+
+**Planner MUST** classify every probe entry on first emit and on every retry re-emit. The planner MUST NOT emit a ticket where a probe-visible skill or MCP server is silently absent from all three buckets. The planner self-audit step for Gate 6.5 lives in `agents/planner.md` (Pre-emit Self-Audit step 7).
+
+**Consumer-side consultation discipline (v8.0.0+ Recommending semantics)**: Advisory binding is **not merely permitting** — the productive consumer subagents (`implementer`, `researcher`, `test-writer`) MUST, for every Advisory entry whose `Used by` column lists them, either (a) **invoke** the listed Skill / `mcp__*` tool at least once during their work, OR (b) **record a one-line skip rationale** under `### Limitations` (or `Next Steps` when no `### Limitations` heading exists in the consumer's return envelope) explaining why the Advisory entry was not consulted. Silent omission is a contract violation enforced by the agent body's `## Advisory Capabilities ## Consultation discipline` section. The motivation: dogfood (TW33-TW35) showed Advisory bindings without consultation discipline collapse into permitting-only — `ui-ux-pro-max` was Advisory-bound in 4/5 TW35 tickets but invoked 0 times, with no skip rationale recorded anywhere; the planner did its part (classification was correct per Gate 6.5), but the consumer side silently skipped without explanation, hiding the design decision from the audit trail. Recommending semantics close that hole.
+
+**Evaluator note**: Gate 6.5 activates only after this section ships. Tickets drafted before Gate 6.5 are pre-Gate-6.5 and are graded `n/a` for Gate 6.5 (PASS verdicts on those tickets do not imply Gate 6.5 conformance).
+
 ## Evaluator MUST NOT (drift-prevention list)
 
 These rules bind the `ticket-evaluator` specifically and are intended to stop the pedantic-drift failure mode where successive rounds invent new objections.
@@ -136,6 +191,8 @@ These rules bind the `ticket-evaluator` specifically and are intended to stop th
 - **MUST NOT** treat a concrete API name that appears as a test-assertion observation point (Gate 4 carve-out above — e.g., `process.stdout.write`, `vi.spyOn(console, 'log')`, `fs.writeFileSync`) as HOW. Such names are part of the PASS/FAIL contract, not prescribed implementation.
 - **MUST NOT** invent edge cases outside the ticket's declared scope and then FAIL Gate 3 for their absence.
 - **MUST NOT** FAIL Gate 5 when a rationale is present that justifies a single-axis judgement per the tiebreak rule above.
+- **MUST NOT** FAIL Gate 6.5 solely because the planner chose Advisory over Bound (or vice versa) for an entry whose classification is judgement-debatable — Gate 6.5 enforces **completeness** (every probe entry is classified somewhere), not the **correctness** of the chosen bucket. Bucket choice may be feedback in the Issues / Feedback section but is not a FAIL trigger unless the entry was a runtime/visual capability that Gate 6 required as Bound (in which case Gate 6 FAILs, not Gate 6.5).
+- **MUST NOT** FAIL Gate 6.5 when both probes reported `(none)` in the planner's spawn prompt — vacuous satisfaction is PASS.
 
 ## Planner MUST
 
@@ -143,6 +200,8 @@ These rules bind the `ticket-evaluator` specifically and are intended to stop th
 - **MUST** ensure Scope + Implementation Notes name file paths and public contracts (Gate 4 WHAT).
 - **MUST NOT** embed code snippets that prescribe internal algorithms (Gate 4 HOW).
 - **MUST** write a one-line rationale when file-count and AC-count axes disagree on size (Gate 5 tiebreak enablement).
+- **MUST** emit a `### Capabilities` section between `### Implementation Notes` and `### Claude Code Workflow` whenever Gate 6 applies — that is, whenever at least one AC is runtime/visual per the Gate 6 classifier list. Each row carries `Name | Type | Purpose | Used by | Bound AC(s)`, and every runtime/visual AC MUST appear in at least one row's `Bound AC(s)` column OR be rewritten as a static AC. When no AC is runtime/visual, the section is optional but a one-line note ("All ACs are static; no runtime binding required.") is encouraged for clarity.
+- **MUST** classify every probe entry (from `Available user skills:` AND `Available MCP servers:` in the spawn prompt) into one of three buckets — Bound (in `### Capabilities`), Advisory (in `### Advisory Capabilities`), or Skipped (in `#### Capability Skip Rationale`) — per Gate 6.5. Silent omission of a probe-visible capability is FORBIDDEN.
 
 ## Output Contract (Evaluator)
 

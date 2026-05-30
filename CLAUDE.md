@@ -9,13 +9,7 @@ The plugin assumes the following CLIs are available on `PATH`:
 - `jq` — JSON parsing inside hooks and shell helpers.
 - `yq` (mikefarah/yq v4) — YAML mutation used by hooks that append to `autopilot-state.yaml` (e.g. `runtime_metrics:`). Hooks degrade gracefully to a `python3 + PyYAML` fallback, then to a pure-shell append, when `yq` is missing.
 
-The `hooks/lib/` directory contains shared helpers that are sourced by multiple hooks. Each helper is a standalone Bash file with no top-level side effects, exported functions only, and a three-tier fallback strategy (yq → python3+PyYAML → pure-shell) where applicable. The five current libraries are:
-
-- `forbidden-rationale-patterns.sh` — array of ERE patterns that classify forbidden stop-reason rationales.
-- `parse-state-file.sh` — YAML parse and autopilot-context detection helpers (`is_autopilot_context`, `parse_phase_status`, `parse_ticket_statuses`, `find_state_file`).
-- `jsonl-tail-audit.sh` — JSONL transcript tail reader for tool-use detection.
-- `state-authority.sh` — registry-driven field-ownership enforcement (`is_hook_owned_field`, `state_field_change_blocked`).
-- `runtime-metrics.sh` — shared `append_runtime_metrics_entry` helper for writing `runtime_metrics:` entries to autopilot-state.yaml files.
+`hooks/lib/*.sh` holds shared helpers sourced by multiple hooks. Each helper MUST be a standalone Bash file with no top-level side effects, exported functions only, and (where it manipulates YAML) a three-tier fallback strategy (`yq` → `python3 + PyYAML` → pure-shell). Enumerate the current set via `ls hooks/lib/`; per-helper purpose lives in each file's leading comment block.
 
 ## Hooks
 
@@ -31,16 +25,20 @@ This rule was distilled from a v6.7.0 dogfood incident in which a verify hook ne
 
 - `SW_AUTO_COMPACT_ON_SHIP_MODE` — controls the v7 auto-`/compact` between autopilot tickets. Values: `on` (default inside autopilot context, off outside), `metric-only` (log intent without injecting), `off` (disable both `hooks/pre-next-scout-auto-compact.sh` and `hooks/post-ship-state-auto-compact.sh`). Set in the shell before launching `claude`.
 - `INJECT_KEYS_DRY_RUN=1` — test-only knob for `hooks/lib/inject-keys.sh`; logs the would-be backend + target + text instead of invoking. Do NOT export in user shell profiles or every auto-`/compact` becomes a silent no-op.
+- `SW_INJECT_KEYS_VERIFY` — default `1`. Controls the P1-1 post-inject verify step inside `hooks/lib/inject-keys.sh` (tmux backend only): after `tmux send-keys` returns rc=0, run `tmux capture-pane -p -S -3 -E -` on `$TMUX_PANE` to confirm the injected text echoed back to the TUI; if not, set rc=1 and emit `[INJECT-VERIFY] missed: ...` to stderr so the calling hook (`pre-next-scout-auto-compact.sh` / `post-ship-state-auto-compact.sh`) skips the `.auto-compact-pending` sentinel and the `runtime_metrics` write. Set `0` to disable the verify block entirely and restore pre-P1-1 behaviour where `inject_keys` rc matches `tmux send-keys` rc verbatim (useful when capture-pane is unreliable on the host).
+- `SW_INJECT_KEYS_VERIFY_SLEEP_MS` — default `150`. Sleep (milliseconds) between `tmux send-keys` and `tmux capture-pane` inside the P1-1 verify block. Raise (e.g. `300`) for high-latency SSH or loaded hosts where TUI echo-back exceeds 150ms; lower (e.g. `50`) only when the host is known fast and you want to minimise auto-compact latency at ticket boundaries. Honoured only when `SW_INJECT_KEYS_VERIFY` is not `0`.
+- `SW_NEXT_COMPACT_PENDING_TTL_SEC` — default `21600` (6 hours). Lifetime (seconds) of the `<state_dir>/.next-compact-pending` sentinel written by the P2-1 auto-compact retry path. The sentinel is dropped before every `inject_keys '/compact'` call by `hooks/pre-next-scout-auto-compact.sh` and `hooks/post-ship-state-auto-compact.sh`; on rc=1 it survives the turn so `hooks/session-start.sh` can replay the `/compact` injection on the next `source=startup` / `source=resume` boot (with the timestamp refreshed before the replay). Sentinels older than this TTL are deleted without retry — stale attempts (>6h) likely belong to an abandoned context, and re-injecting `/compact` 24 hours later would land in unrelated work. Shorten (e.g. `600`) during dogfood / debugging to force-expire test sentinels; lengthen with caution. Honoured only when `SW_AUTO_COMPACT_ON_SHIP_MODE` is not `off` — the kill-switch path short-circuits the entire P2-1 block.
 - `AUTOPILOT_LEGACY_LOOPGUARD=1` — restore the pre-Plan-02 loop-guard semantics in `hooks/autopilot-continue.sh` (FILE_COUNT alone gates release, NOTOOL_COUNT is forced to threshold).
+- `SW_POST_SHIP_INTEGRITY` — controls `hooks/post-ship-state-auto-compact.sh` Gate 5.5 (post-ship integrity self-heal, P3-5). Values: `on` (default — when the brief-side `autopilot-state.yaml` write flips a ticket's `steps.ship` to `completed`, the hook reads the per-ticket `phase-state.yaml` and rewrites `overall_status` / `current_phase` / `last_completed_phase` / `phases.ship.status` to their terminal values whenever `overall_status: in-progress` is left behind by a skipped or interrupted `/ship` Step 15a write), `metric-only` (emit the `[POST-SHIP-INTEGRITY] self-healing <dir>` warning to stderr only, no write — forensic mode), `off` (silent skip; unknown values collapse here so a typo fails closed for the rewrite). The rewrite tries `yq -i` first then a `python3 + PyYAML` tempfile + rename; the awk tier is intentionally not exercised for YAML mutation (ticket Risk R3) so the original file is preserved on writer-absence.
+- `SW_AUTOPILOT_ASK_GUARD` — controls `hooks/pre-askuserquestion-guard.sh`. Values: `on` (default; matrix active), `metric-only` (compute the matrix and log `[ASK-GUARD] metric-only: would deny ...` to stderr without denying), `off` (disable the guard; unknown values collapse here so a typo fails open). The hook implements the 3-tier `risk_tolerance` allow-list documented in `skills/autopilot/SKILL.md ## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`; when `autopilot-policy.yaml` is absent or carries an unknown `risk_tolerance:` value, `hooks/lib/parse-state-file.sh::get_risk_tolerance` returns `conservative` (deliberate fail-open so the six known gate-id headers remain answerable).
+- `SW_AUTOPILOT_DONE_GATE_TTL_SEC` — default `86400` (24 hours). TTL window for `hooks/scout-checkpoint-guard.sh` Step 2a (the autopilot-completion gate added in v8.0.1). The gate silent-exits the hook when (1) no `autopilot-state.yaml` exists under `briefs/active/` or `product_backlog/` (no active autopilot), (2) `briefs/done/<parent>/autopilot-state.yaml` exists with mtime within this TTL, AND (3) every `tickets[].status` equals `completed`. Required because the existing Step 3 phase-state.yaml lookup uses `find_phase_state_file` which scans `active/` only — after `/ship` moves the brief to `briefs/done/`, the moved `phase-state.yaml` becomes invisible and the 3-AND (a)(b)(c) would otherwise false-block on stale transcript artifacts. Set `0` to disable the TTL bound (the gate fires on any all-completed `briefs/done/` state regardless of age — useful for replay scenarios where a session is resumed long after autopilot finished). Shorten (e.g. `600`) during dogfood / regression debugging when you want stale done state to fall through immediately. Non-numeric values fall back to `86400` with a one-line `[SCOUT-AUTOPILOT-DONE-GATE]` stderr warning. Honoured only when `SW_SCOUT_CHECKPOINT_MODE` is not `off` — the kill switch in Step 2 short-circuits the entire hook including Step 2a.
+- `SW_AUTOPILOT_POLICY_STOP_HONOR` — default `on`. Controls whether the three autopilot Stop hooks (`hooks/autopilot-continue.sh`, `hooks/impl-checkpoint-guard.sh`, `hooks/scout-checkpoint-guard.sh`) HONOUR a model-declared hard-stop instead of forcing the loop to continue. When the orchestrator legitimately hard-stops it emits `[AUTOPILOT-POLICY] gate=<name> action=stop reason=<...>` in its last assistant turn (mandated by `skills/autopilot/SKILL.md`); the shared detector `hooks/lib/detect-policy-gate-stop.sh::last_turn_declares_policy_gate_stop` scans only that LAST assistant turn's `text` content blocks for the marker. Values: `on` (default — honour: `autopilot-continue.sh` allows `end_turn` and appends a `boundary: session_end` / `stop_reason: policy_gate_stop` `runtime_metrics` entry, the two checkpoint guards stand down without blocking and clear their own counter, none of the three re-injects "Do NOT stop"), `metric-only` (detect and log a `[POLICY-GATE-STOP]`-prefixed stderr line stating it WOULD honour, but still emit `decision: block` — forensic mode), `off` (ignore the declaration entirely; block exactly as before). Unknown values fail **closed** to `off` semantics so a typo never silently widens the honour behaviour. This knob is purely additive: with it `off` OR no marker present, the existing loop guards (autopilot-continue's `FILE_COUNT>=5 && NOTOOL_COUNT>=5`; the checkpoint guards' 3× counters) remain the sole backstop and every hook behaves exactly as before. Detection is independent of `AUTOPILOT_LEGACY_LOOPGUARD`. Fixes a dogfood thrash where a hard-stop was re-injected 11× because the hooks ignored the model's declared `policy_gate_stop`.
 
 ## Language
 
-The following MUST be written in English:
+**IMPORTANT**: every tracked file (anything not matched by `.gitignore`) AND every Git / GitHub artifact (commit messages, branch names, tag names and annotations, PR titles and bodies, PR review comments, Issue titles and bodies, Issue comments, Discussions posts, GitHub Release notes) MUST be written in English. Translate before writing if the conversation is in another language.
 
-- **Git / GitHub artifacts**: commit messages, branch names, tag names and annotations, PR titles and bodies, PR review comments, Issue titles and bodies, Issue comments, Discussions posts, GitHub Release notes.
-- **Every tracked file** (anything not matched by `.gitignore`): documentation, code, code comments, skill / agent prompts, hooks, tests, CHANGELOG, this file, and any other committed artifact.
-
-Conversations with the user may be in any language — translate before writing to any of the above. Non-English content is allowed only in gitignored paths: `.simple-workflow/`, `.docs/`, `CLAUDE.local.md`, `.claude/settings.local.json`, `.claude/worktrees/`, `.env*`.
+Non-English content is allowed only in gitignored paths: `.simple-workflow/`, `.docs/`, `CLAUDE.local.md`, `.claude/settings.local.json`, `.claude/worktrees/`, `.env*`.
 
 ## Releases
 
@@ -77,9 +75,33 @@ Conversations with the user may be in any language — translate before writing 
 
 When in doubt about whether a change is breaking, treat it as breaking.
 
+## Plans
+
+### Cross-agent contracts MUST enumerate every Skill-bearing subagent and its caller
+
+When a ticket introduces a contract that crosses agent boundaries — a new section in `ticket.md` / `plan.md`, a new spawn-prompt block, a new return-envelope row, or any other shared protocol between an orchestrator skill and a subagent (or between two subagents) — the Scope table MUST enumerate **every** `Skill`-bearing subagent AND the caller that spawns it, not only the agents on the motivating regression path. Scoping from the motivating path alone produces asymmetric wiring where one path is deterministic and every other path silently bypasses the new contract via the prior fallback.
+
+This rule was distilled from a v7.1.0 partial-wiring incident: the original plan fully wired `/impl` → `ac-evaluator` (the motivating `### Capabilities` regression path) with per-AC deterministic handoff, but 6 of 8 `Skill`-bearing subagents and 7 of 9 spawner skills received only a generic "prefer the section" preference bullet. The asymmetry was detected during post-commit review and required an immediate amend to add `## Bound Capabilities` body sections to the 7 consumer agents and to upgrade the handoff bullet across all 9 spawners to require deterministic inlining under `## Bound capabilities (per AC)`.
+
+Audit Scope before drafting: `grep -l '^[[:space:]]*-[[:space:]]Skill[[:space:]]*$' agents/*.md` lists every `Skill`-bearing agent; cross-reference each against `grep -rln '<agent-name>' skills/*/SKILL.md` to find its callers. The full caller↔callee matrix should appear in the Scope table; whichever cells are intentionally left out should carry a one-line rationale in `### Implementation Notes` so the asymmetry is deliberate rather than incidental.
+
+## Modifications
+
+### Any change to `skills/`, `agents/`, or `hooks/` MUST audit sibling artifacts before commit
+
+Before declaring a change to any file under `skills/`, `agents/`, or `hooks/` complete, audit whether sibling artifacts in the same tree that play an analogous role need the same change. The asymmetry that the `## Plans` rule catches at Scope-authoring time also manifests at implementation time: a bullet added to one SKILL.md, a tool added to one agent's `tools:` field, or a contract added to one hook may need to flow to 3-9 siblings that weren't part of the immediate ticket.
+
+Concrete audits to run before commit:
+
+- **skills/***: `ls skills/*/SKILL.md` then grep for shared section headings (`## Subagent Skill-Access Handoff`, `## Pre-computed Context`, `## Guardrails`, etc.) — changes to one usually apply to all peers carrying the same heading.
+- **agents/***: `ls agents/*.md` and compare `tools:` fields and shared body sections — agents in the same role (generator / evaluator / author / hermetic) should evolve symmetrically.
+- **hooks/***: `ls hooks/*.sh` and `ls hooks/lib/*.sh` — related lifecycle hooks (pre-write/pre-edit, pre-tool/post-tool, Stop/SubagentStop) often need parallel changes; library helpers in `hooks/lib/` are sourced by multiple hooks, so a contract change there ripples to every caller.
+
+For any intentional omission, record a one-line rationale in the commit message (or in the ticket's `### Implementation Notes` if the omission is plan-authored). This rule complements the planning-side `## Plans` rule above by enforcing the same uniformity at implementation time.
+
 ## PII
 
-Never write personally identifying machine paths into tracked files. Specifically, an **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout, and is rejected by the `pre-write-safety.sh` and `pre-edit-safety.sh` hooks.
+**IMPORTANT**: never write personally identifying machine paths into tracked files. An **absolute home path** of the form `/Users/<username>/...` (macOS) or `/home/<username>/...` (Linux) leaks the contributor's local username and directory layout and is rejected by `pre-write-safety.sh` / `pre-edit-safety.sh`.
 
 - Use the `<repo>` placeholder for repository-relative documentation paths (e.g. `<repo>/.simple-workflow/backlog/active/...`).
 - Use `~`, `$HOME`, or relative paths inside code and shell snippets where a literal home prefix would otherwise appear.

@@ -28,9 +28,27 @@
 # Testing hook (M3): set `INJECT_KEYS_DRY_RUN=1` to detect-and-log the
 # would-be backend without invoking it. Useful for CT-AC-06 fixtures.
 #
+# Post-inject verify (P1-1): after `tmux send-keys` returns rc=0, this
+# library performs a `capture-pane -p -S -3` check on the TMUX_PANE to
+# confirm the injected text actually echoed back to the TUI. If the
+# text is not visible within `SW_INJECT_KEYS_VERIFY_SLEEP_MS` (default
+# 150ms), inject_keys returns rc=1 even though send-keys itself
+# succeeded. This catches the failure mode where the TUI input loop is
+# paused (e.g. raw-mode subagent execution) and the queued keystroke
+# would be discarded at the next turn boundary.
+#
+# Opt-out: `SW_INJECT_KEYS_VERIFY=0` disables the verify step (legacy
+# behaviour — rc reflects send-keys exit code only). Currently
+# implemented for the tmux backend only; screen / kitty / wezterm /
+# iterm2 fall through unchanged. The DRY_RUN early-return runs before
+# the verify block, so `INJECT_KEYS_DRY_RUN=1 + SW_TEST_HARNESS=1`
+# fixtures never exercise capture-pane.
+#
 # Return codes: 0 = injected (or dry-run logged), 1 = no supported
-# backend OR backend command failed (S5 fix), 2 = bad args.
-# Stdout: empty. Stderr: single status line "[inject-keys] ...".
+# backend OR backend command failed (S5 fix) OR verify missed (P1-1),
+# 2 = bad args.
+# Stdout: empty. Stderr: single status line "[inject-keys] ..."; on
+# verify miss also "[INJECT-VERIFY] missed: ..." preceding the status.
 
 # Internal: detect backend name. Echoes one of: tmux / screen / kitty /
 # wezterm / iterm2 / none. Returns 0 if a backend was detected, 1 if
@@ -116,6 +134,38 @@ inject_keys() {
         fi
       fi
       rc=$?
+
+      # P1-1 post-inject verify: `tmux send-keys` returning rc=0 means
+      # the command was queued, NOT that the Claude Code TUI input loop
+      # consumed it. When the TUI is mid-subagent execution it may park
+      # in raw mode and drop keystrokes at the next turn boundary,
+      # leaving autopilot frozen with no surface signal. Capture the
+      # pane after a short sleep and check that the injected text
+      # echoed back; if not, downgrade rc to 1 so the caller skips the
+      # `.auto-compact-pending` sentinel / `runtime_metrics` write and
+      # surfaces a verify-missed hint via inject_keys_failure_hint.
+      # Guards: only run when send-keys itself succeeded
+      # (`rc=0`), the verify knob is on (`SW_INJECT_KEYS_VERIFY` != "0";
+      # default 1), and `TMUX_PANE` is non-empty (without a target we
+      # cannot scope capture-pane reliably). Sleep is configurable via
+      # `SW_INJECT_KEYS_VERIFY_SLEEP_MS` (default 150ms); ms→s
+      # conversion goes through POSIX awk so BSD / GNU sleep both
+      # accept the resulting decimal.
+      if [ "$rc" = "0" ] \
+         && [ "${SW_INJECT_KEYS_VERIFY:-1}" != "0" ] \
+         && [ -n "${TMUX_PANE:-}" ]; then
+        local _verify_sleep_ms="${SW_INJECT_KEYS_VERIFY_SLEEP_MS:-150}"
+        local _verify_sleep_s
+        _verify_sleep_s=$(awk -v ms="$_verify_sleep_ms" 'BEGIN { printf "%.3f", ms / 1000 }' 2>/dev/null || echo "0.150")
+        sleep "$_verify_sleep_s" 2>/dev/null || sleep 1 2>/dev/null || true
+        local _capture
+        _capture=$(tmux capture-pane -t "$TMUX_PANE" -p -S -3 -E - 2>/dev/null || printf '%s' "")
+        if ! printf '%s' "$_capture" | grep -qF -- "$text"; then
+          echo "[INJECT-VERIFY] missed: text=${text} not in capture-pane after ${_verify_sleep_ms}ms (TMUX_PANE=${TMUX_PANE})" >&2
+          rc=1
+        fi
+        unset _verify_sleep_ms _verify_sleep_s _capture
+      fi
       ;;
 
     screen)
@@ -336,6 +386,17 @@ inject_keys_failure_hint() {
   fi
   if printf '%s' "$log" | grep -qE 'backend=screen.*failed'; then
     printf '%s\n' 'GNU screen backend failed — verify $STY is set and the session window accepts the `stuff` command'
+    return 0
+  fi
+  # P1-1: verify-missed branch. Detected when the tmux send-keys path
+  # returned rc=0 but capture-pane did not show the injected text
+  # within the verify window. Must precede the generic `backend=tmux`
+  # branch because verify-missed logs do NOT include the
+  # `backend=tmux ... failed` literal — `inject_keys` overwrites rc to
+  # 1 after the verify check, and the trailing status line emits
+  # `backend=tmux failed (rc=1)` only when send-keys itself errored.
+  if printf '%s' "$log" | grep -qE '\[INJECT-VERIFY\] missed'; then
+    printf '%s\n' 'inject keys reached tmux but the TUI input loop did not echo the text within the verify window — Claude Code may be in raw-mode subagent execution; the queued operation will be retried on the next ship boundary or on the next session start (see SW_INJECT_KEYS_VERIFY in CLAUDE.md)'
     return 0
   fi
   if printf '%s' "$log" | grep -qE 'backend=tmux.*failed'; then
