@@ -104,9 +104,17 @@ fi
 #   - parenthesised subshell `(cmd)` token-start
 #   - brace group `{ cmd; }` token-start
 PREFIX='(([A-Za-z_][A-Za-z0-9_]*=\S*|env|command|exec|time|nice|ionice|nohup)\s+)*(\.{0,2}/)?(\S+/)*'
+# The four denylist patterns below are consumed via indirect expansion
+# (${!pattern_name}) in the loop that follows; ShellCheck SC2034 cannot trace
+# indirect references and false-flags them as unused, so each carries an
+# explicit disable. test-pre-bash-safety.sh exercises all four at runtime.
+# shellcheck disable=SC2034
 NETWORK_EGRESS="(^|[|;&]|\\\$\\(|\`)\\s*${PREFIX}(curl|wget|scp|rsync\\s+.*ssh)\\b"
+# shellcheck disable=SC2034
 IDENTITY_SPOOF="(^|[|;&]|\\\$\\(|\`)\\s*${PREFIX}git\\s+config\\s+(--global\\s+)?(user\\.email|user\\.name|core\\.hooksPath)\\b"
+# shellcheck disable=SC2034
 PRIVILEGE_ESC="(^|[|;&]|\\\$\\(|\`)\\s*${PREFIX}(sudo\\b|chmod\\s+777\\b|chown\\s+root\\b)"
+# shellcheck disable=SC2034
 COMMIT_SUBVERT="(^|[|;&]|\\\$\\(|\`)\\s*${PREFIX}git\\s+(commit\\s+--amend\\b|stash\\s+drop\\b|reflog\\s+expire\\b|push(\\s+.+)*\\s+--no-verify\\b)"
 
 for pattern_name in NETWORK_EGRESS IDENTITY_SPOOF PRIVILEGE_ESC COMMIT_SUBVERT; do

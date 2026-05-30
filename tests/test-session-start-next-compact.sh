@@ -197,6 +197,7 @@ run_session_start() {
     bash -c "cd \"$sandbox\" && bash \"$HOOK\"" >"$stdout_file" 2>"$stderr_file"
   LAST_EXIT_CODE=$?
   set -e
+  # shellcheck disable=SC2034  # captured for symmetry with LAST_STDERR; available for stdout assertions
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"

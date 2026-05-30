@@ -97,7 +97,7 @@ fi
 # Build a hermetic bin/ that contains ONLY a `tmux` symlink pointing
 # at the stub, and prepend it to PATH for every invocation below.
 INJ_BIN="$(mktemp -d)"
-trap "rm -rf '$INJ_BIN'" EXIT
+trap 'rm -rf "$INJ_BIN"' EXIT
 ln -sf "$TMUX_STUB" "$INJ_BIN/tmux"
 
 # Common harness: run inject_keys under the stubbed PATH with a fake
