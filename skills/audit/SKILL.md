@@ -16,7 +16,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>] [branch or commit range (optional)]"
+argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>] [depth=standard|thorough|exhaustive] [branch or commit range (optional)]"
 ---
 
 Audit current code changes. Args: $ARGUMENTS
@@ -68,6 +68,7 @@ Parse `$ARGUMENTS` for the following:
 - `round=N` (case-insensitive, N is a positive integer): explicit round number for output filenames. When provided, the skill MUST write to `quality-round-{N}.md`, `security-scan-{N}.md`, and `audit-round-{N}.md` using this number instead of auto-incrementing. This lets the calling skill (e.g. `/impl`) synchronize audit round numbers with its own Generator-Evaluator loop counter. If N is ≤ 0 or not an integer, print a warning and fall back to auto-increment.
 - If `round=` is absent, use the current behavior (auto-increment: max existing round + 1).
 - `ticket-dir=<dir-name>` (case-insensitive key): ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). When provided, this value is used in Step 1 to construct the full path `.simple-workflow/backlog/active/{dir-name}` instead of inferring the ticket directory from the branch name. This token is consumed by argument parsing and is NOT passed through as a commit/branch range hint.
+- `depth=<tier>` (case-insensitive key; v8.1.0+): the verification-depth tier resolved upstream by `/impl` Step 3a. Recognized values: `standard`, `thorough`, `exhaustive`. When `depth=thorough` or `depth=exhaustive`, trigger **T-F** fires in Step 3.5 (forces the skeptical third-pass). `depth=standard`, an absent `depth=`, or any unrecognized value (e.g. `depth=off`) does NOT fire T-F and leaves the conditional T-A..T-E behaviour unchanged. This token is consumed by argument parsing and is NOT passed through as a commit/branch range hint.
 - Any other tokens are treated as an optional commit/branch range hint, passed through to the agents as additional context.
 
 ### 1. Determine Output Destinations
@@ -233,7 +234,7 @@ The third-pass fires **at most once per `/audit` run**, regardless of how many t
 
 If the `general-purpose` Agent call itself fails (timeout, infrastructure error), treat the failure as `Critical += 1` (failed review infrastructure), consistent with the existing aggregation behaviour for failed contractual reviewers.
 
-The five trigger labels (`T-A`, `T-B`, `T-C`, `T-D`, `T-E`) and the verbatim prompt template are documented in [references/skeptical-pass.md](references/skeptical-pass.md); load that file when Step 3.5 fires. The prompt template instructs the third-pass agent to skip the T-4 Pre-existing Failure Attribution scope already covered by `agents/ac-evaluator.md`.
+The six trigger labels (`T-A`, `T-B`, `T-C`, `T-D`, `T-E`, `T-F`) and the verbatim prompt template are documented in [references/skeptical-pass.md](references/skeptical-pass.md); load that file when Step 3.5 fires. `T-F` is the explicit upstream signal: the caller passed `depth=thorough` or `depth=exhaustive` (the verification-depth tier from `/impl` Step 3a), which forces the third-pass regardless of the diff heuristics `T-A`..`T-E`; include `T-F` in `{trigger_list}` when it fired. The prompt template instructs the third-pass agent to skip the T-4 Pre-existing Failure Attribution scope already covered by `agents/ac-evaluator.md`.
 
 ### 4. Return Structured Result
 

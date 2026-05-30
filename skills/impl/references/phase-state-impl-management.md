@@ -27,7 +27,8 @@ phases:
     status: in-progress
     started_at: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
     current_round: 1
-    max_rounds: {resolved at runtime per Phase 1 step 1a precedence — see prose above; integer literal at write time, e.g. 9}  # precedence: arg > policy > default 9; soft cap 24 warning, no clamp
+    max_rounds: {resolved at runtime; integer literal at write time, e.g. 9}  # precedence: arg > policy > default 9; THEN + depth-tier bonus (+0/+3/+6 for standard/thorough/exhaustive from Step 3a) unless rounds=N supplied or verification_depth=off; soft cap 24 warning applies to the explicit arg only, not the derived value. See round-cap-parser.md + verification-depth.md
+    verification_depth: {resolved in Step 3a; literal off|standard|thorough|exhaustive; advisory metadata — see verification-depth.md}
     phase_sub: generator-pending
     last_ac_status: null
     last_audit_status: null

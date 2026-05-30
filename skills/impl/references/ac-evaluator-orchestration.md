@@ -78,8 +78,82 @@ through AC-⌊AC_COUNT/2⌋ and part 2 cover the remainder.
   to Step 16.
 
 When `AC_COUNT < 30`, invoke `ac-evaluator` exactly once (no partition)
-with `eval-round-{n}.md` as the report path. Negative AC-1: a 29-AC
-plan MUST NOT trigger the partition branch.
+with `eval-round-{n}.md` as the report path — **unless** the
+high-assurance multi-verifier branch below is active. Negative AC-1: a
+29-AC plan MUST NOT trigger the partition branch.
+
+## High-assurance multi-verifier branch (`verification_depth: exhaustive`)
+
+When `/impl` Step 3a resolved `VERIFICATION_DEPTH == exhaustive` **and**
+`AC_COUNT < 30` (partition takes precedence over multi-verifier — see
+[verification-depth.md](verification-depth.md) "Composition with the
+`AC_COUNT >= 30` partition branch"), Step 15 spawns **three independent
+`ac-evaluator` invocations** over the SAME rubric (field `b`) and the SAME
+`git diff` instead of one. The three runs are independent — each forms its
+own verdict with no visibility into the others (the firewall in
+`skills/impl/SKILL.md` line 141 — "Prompt must NOT include Generator's
+return value" — applies unchanged, and no verifier sees a sibling's
+return).
+
+### Lens directives (field `l`)
+
+Each invocation appends exactly one lens directive so the three runs probe
+different failure modes (perspective-diverse verification beats three
+identical refuters). Substitute `{i}` ∈ {1,2,3} and persist to
+`eval-round-{n}-v{i}.md`:
+
+- **V1 — correctness lens**: `--- lens: 1/3 correctness --- Verify each AC strictly against the existing tests, type checker, and observable behaviour. Treat a green suite as necessary but not sufficient: confirm the test actually exercises the AC.`
+- **V2 — adversarial-refute lens**: `--- lens: 2/3 adversarial-refute --- Your goal is to REFUTE each PASS. For every AC, actively search for an input, ordering, or state that breaks it. Default to FAIL when the evidence for PASS is not conclusive.`
+- **V3 — reproduction-edge lens**: `--- lens: 3/3 reproduction-edge --- Probe boundary conditions, error paths, empty/null inputs, and concurrency. FAIL an AC whose required behaviour you cannot reproduce, or whose test coverage is insufficient to demonstrate it.`
+
+The lens header mirrors the `--- partition: <i>/2 ---` convention so the
+agent recognises its role; the `ac-evaluator` body documents the three
+lenses under `## Verification Lens (high-assurance handoff)`. All other
+fields (`a`-`h`, `j`) are identical across the three spawns; field `k`
+(partition) is absent here. The soft turn budget (field `j`) is computed
+once from the full `AC_COUNT` and passed to all three.
+
+### Majority merge (after all three return)
+
+Run the Step 16 four-way output-envelope check (empty / file+IN_PROGRESS /
+ERROR- / non-empty) on **each** of the three returns independently —
+including the single-shot IN_PROGRESS recovery (at most one recovery
+invocation per `-v{i}.md` file per round; see
+[ac-gate-decision.md](ac-gate-decision.md)
+`## Multi-verifier × IN_PROGRESS recovery`). Drop any verifier whose
+**final** envelope is a hard `[CONTRACT-VIOLATION]` (empty + no file,
+`Output` begins `ERROR-`, or still `IN_PROGRESS` after its one recovery
+attempt — a per-verifier soft failure, not a whole-round stop). Let
+`valid` = the surviving verifiers.
+
+- **Quorum**: if `valid < 2`, the merged result is **FAIL-CRITICAL**
+  (insufficient independent verification — never silently pass on a single
+  surviving verifier). Record which verifiers were dropped and why.
+- **Per-AC verdict** over the `valid` set:
+  - **CRITICAL is not voted away**: if **any one** valid verifier marks an
+    AC `FAIL-CRITICAL` (a [CRITICAL] issue — security, data-loss, auth
+    bypass), the merged AC is `FAIL-CRITICAL`. Security findings survive a
+    minority.
+  - **Non-critical FAIL needs a majority**: an AC is merged `FAIL` when
+    **≥2** valid verifiers fail it (non-critically). A lone non-critical
+    FAIL against ≥2 PASS is merged `PASS` but its Issues/Feedback are
+    retained for the round's feedback trail.
+  - Else the AC is `PASS` (or `PASS-WITH-CAVEATS` when ≥2 valid verifiers
+    are `PASS-WITH-CAVEATS`; a single caveat is recorded but does not
+    downgrade a majority `PASS`).
+- **Overall Status**: the worst merged per-AC verdict on the severity
+  ladder `FAIL-CRITICAL > FAIL > PASS-WITH-CAVEATS > PASS`.
+- **Issues / Feedback**: concatenate across the three reports, tagging each
+  line with its source verifier (`[v1]` / `[v2]` / `[v3]`) so the next
+  round's Generator sees which lens flagged what.
+
+Emit the merged verdict as the effective Step 15 result and proceed to
+Step 16. `[AC-EVAL-MAJORITY] acs={AC_COUNT} valid={valid}/3 merged={Status}`
+is logged to stderr for auditability. The three `eval-round-{n}-v{i}.md`
+files satisfy the `eval-round-*.md` artifact-presence glob exactly as the
+partition `-part-{i}.md` files do; no combined `eval-round-{n}.md` is
+written (the orchestrator renders no AC verdict to disk — see
+`skills/impl/SKILL.md` line 40).
 
 ## Prompt template field additions under Strategy B
 
@@ -91,6 +165,13 @@ plan MUST NOT trigger the partition branch.
 - **Field `k`** (partition header, only when partition branch is
   active): prepend `--- partition: {i}/2 ---` to the prompt body so
   the agent recognises it is evaluating a subset.
+- **Field `l`** (lens directive, only when the high-assurance
+  multi-verifier branch is active — `verification_depth: exhaustive` and
+  `AC_COUNT < 30`): prepend the `--- lens: {i}/3 {name} ---` directive for
+  verifier `i` (the three verbatim directives are listed under
+  `## High-assurance multi-verifier branch` above) so the agent applies
+  the assigned correctness / adversarial-refute / reproduction-edge lens.
+  Fields `k` and `l` are mutually exclusive (partition wins).
 
 ## Copy-pasteable Evaluator prompt template
 

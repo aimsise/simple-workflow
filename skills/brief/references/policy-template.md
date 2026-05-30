@@ -30,4 +30,5 @@ gates:
 constraints:
   max_total_rounds: {9|12}  # conservative/moderate=9, aggressive=12
   allow_breaking_changes: {false|true}  # conservative/moderate=false, aggressive=true
+  verification_depth: auto  # auto (default, all tiers) derives a depth tier from ticket Size x risk_tolerance; standard|thorough|exhaustive force a tier; off restores pre-v8.1.0 behaviour (base rounds, single evaluator, no forced third-pass). See skills/impl/references/verification-depth.md
 ```

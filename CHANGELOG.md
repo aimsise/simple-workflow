@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] — 2026-05-31
+
+**TL;DR.** Two composable verification-depth features, both gated by the existing ticket Size × `risk_tolerance` signals and a no-op for the common case. (1) **Size/risk-aware depth scaling**: a new `constraints.verification_depth` policy knob (`auto` default) derives a depth tier (`standard` / `thorough` / `exhaustive`) that scales the Generator→Evaluator round cap (`+0` / `+3` / `+6`) and forces `/audit`'s skeptical third-pass at `thorough`+. (2) **High-assurance multi-verifier majority**: at the `exhaustive` tier, `/impl` Step 15 spawns three independent `ac-evaluator`s with diverse lenses (correctness / adversarial-refute / reproduction-edge) and majority-merges their verdicts (a CRITICAL finding survives a minority; a non-critical FAIL needs ≥2). For the common S/M conservative/moderate ticket the resolved tier is `standard`, so behaviour is byte-identical to `v8.0.0`.
+
+**Migration / kill switch (non-breaking).** Default `constraints.verification_depth: auto` only deepens L/XL or `aggressive` tickets; S/M conservative/moderate tickets are unchanged. Set `constraints.verification_depth: off` in a brief's `autopilot-policy.yaml` to restore the exact pre-`v8.1.0` contract (base `max_total_rounds`, single evaluator, conditional-only third-pass). An explicit `rounds=N` argument to `/impl` remains authoritative and suppresses the depth bonus.
+
+### Added
+
+- `constraints.verification_depth` policy knob (`auto` / `standard` / `thorough` / `exhaustive` / `off`) with a Size × `risk_tolerance` derivation matrix, documented in `skills/impl/references/verification-depth.md` and consumed by `/impl` (round-cap Step 1a, evaluator-mode dispatch Step 15, `/audit` handoff Step 17). Default `auto` at every tier; the `auto` derivation folds `risk_tolerance` into the matrix rather than carrying a per-tier literal.
+- High-assurance multi-verifier majority at `/impl` Step 15 (`exhaustive` tier, `AC_COUNT < 30`): three diverse-lens `ac-evaluator` spawns (`eval-round-{n}-v1.md` … `-v3.md`) merged by per-AC majority with a 2-of-3 quorum, documented in `skills/impl/references/ac-evaluator-orchestration.md` (`## High-assurance multi-verifier branch`) and `agents/ac-evaluator.md` (`## Verification Lens (high-assurance handoff)`). The `AC_COUNT >= 30` partition branch takes precedence, capping per-round evaluator spawns at 3.
+- `/audit` `depth=<tier>` argument and skeptical-pass trigger **T-F**: `depth=thorough|exhaustive` forces the existing Step 3.5 third-pass regardless of the diff heuristics `T-A`..`T-E`.
+
+### Changed
+
+- `/impl` Phase 1 adds Step 3a (verification-depth tier resolution after Size detection) and records the resolved tier in `phases.impl.verification_depth`. The round-cap precedence (`skills/impl/references/round-cap-parser.md`) folds the tier bonus in after the base resolves, unless a valid `rounds=N` was supplied or `verification_depth: off`.
+- The per-tier policy defaults (`skills/autopilot/references/state-file.md`) and the emitted policy template (`skills/brief/references/policy-template.md`) now document `verification_depth: auto`.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` and `bash tests/test-path-consistency.sh` exit 0, including the new `CT-DEPTH-*` assertions and the CHANGELOG ↔ `plugin.json` version-equality check.
+- Scoping confirmed: S/M conservative/moderate tickets resolve to tier `standard` (no-op vs `v8.0.0`); `verification_depth: off` restores the pre-`v8.1.0` path verbatim; an explicit `rounds=N` suppresses the depth bonus.
+
 ## [8.0.0] — 2026-05-30
 
 **TL;DR.** First `8.x` major release. It consolidates the entire capability-detection feature line developed since `v7.0.4` (the prior `v7.1.0` / `v8.0.0` / `v8.0.1` milestones were never tagged and are merged here): per-AC capability binding (`### Capabilities` table in `ticket.md` / `plan.md`, Gate 6), the Advisory-capability tier (Gate 6.5, "Recommending, not Permitting"), MCP-server inheritance for the four productive subagents, **Phase 6 machine-enforcement** of Advisory consultation as an audit trail across `/impl`, `/brief`, `/catchup`, `/create-ticket`, `/scout`, `/investigate`, and `/test`, the autopilot 3-tier non-interactive contract, and the `brief` mode rename. Everything is **capability-name-agnostic**: any Skill or MCP server the user mounts into their harness flows through the same detection → binding → invocation → audit path with no plugin-file change.

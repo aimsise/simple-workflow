@@ -278,6 +278,7 @@ when a `# kb-suggested` comment sits at the same indentation, otherwise
 - `ship_ci_pending.timeout_minutes: 30`
 - `constraints.max_total_rounds: 9`
 - `constraints.allow_breaking_changes: false`
+- `constraints.verification_depth: auto`
 - `unexpected_error.action: stop`
 
 `moderate` defaults: conservative except
@@ -289,6 +290,20 @@ when a `# kb-suggested` comment sits at the same indentation, otherwise
 `aggressive ship_ci_pending.timeout_minutes: 60`,
 `aggressive constraints.max_total_rounds: 12`,
 `aggressive constraints.allow_breaking_changes: true`.
+
+`constraints.verification_depth: auto` is the default at **every** tier — the
+`auto` derivation already folds `risk_tolerance` into the depth-tier matrix
+(it is NOT a per-tier literal like `max_total_rounds`), so the same `auto`
+value at conservative / moderate / aggressive resolves to different effective
+depth tiers. The derivation matrix (Size x risk_tolerance -> tier), the
+per-tier effects ladder (max-rounds bonus, forced audit third-pass,
+multi-verifier majority), the `rounds=N` precedence interaction, and the
+`off` kill switch live in
+[`skills/impl/references/verification-depth.md`](../../impl/references/verification-depth.md).
+A policy that pins `verification_depth` to a literal tier
+(`standard` / `thorough` / `exhaustive` / `off`) is a `human_override`
+relative to the `auto` default and is rendered under `## Human Overrides`
+exactly like any other gate divergence.
 
 ## Skip-transition invariant (per-ticket pipeline)
 
