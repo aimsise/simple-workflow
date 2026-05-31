@@ -27,7 +27,7 @@ file):
 Print
 `[IN_PROGRESS] ac-evaluator persisted partial state at <path>; attempting single-shot recovery`.
 
-Invoke `ac-evaluator` exactly once more via the Agent tool using the
+Invoke `simple-workflow:ac-evaluator` exactly once more via the Agent tool using the
 resumption prompt template below. This is a single-shot recovery —
 do NOT retry more than once, and do NOT use a loop.
 
@@ -69,6 +69,25 @@ single-shot cap is per file, not per round globally. Recovery paths
 for `eval-round-{n}-part-1.md` and `eval-round-{n}-part-2.md` are
 evaluated in sequence; the merged verdict from Step 15 is used only
 after both partition files reach terminal status.
+
+**Multi-verifier × IN_PROGRESS recovery (v8.1.0+)**: when the Step 15
+high-assurance multi-verifier branch is active
+(`verification_depth: exhaustive` and `AC_COUNT < 30`), each of the three
+verifier reports (`eval-round-{n}-v1.md`, `-v2.md`, `-v3.md`) is an
+independent file. The single-shot IN_PROGRESS recovery applies
+independently to each `-v{i}.md` — at most 1 recovery invocation per
+verifier file per round (worst case 6 total: 3 verifiers × 2 invocations
+each). The per-file rules of branch (ii) above apply unchanged to each
+`-v{i}.md`, with ONE difference in the terminal disposition: a `-v{i}.md`
+that is still `IN_PROGRESS` after its single recovery attempt (or whose
+recovery Output is empty) is **dropped from the `valid` set** as a
+per-verifier soft failure — it does NOT stop the whole round the way a
+single-evaluator `[CONTRACT-VIOLATION]` does. The quorum rule then
+governs: if fewer than 2 verifiers reach a terminal verdict, the merged
+result is `FAIL-CRITICAL` (insufficient independent verification). See
+[ac-evaluator-orchestration.md](ac-evaluator-orchestration.md)
+`## High-assurance multi-verifier branch` for the majority merge and the
+`valid < 2` quorum.
 
 ### (iii) Output begins with `ERROR-` (e.g. `ERROR-WRITE-FAILED`)
 

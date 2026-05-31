@@ -9084,5 +9084,97 @@ assert_true \
 
 echo ""
 
+# =============================================================================
+# Category DEPTH: verification-depth tier (v8.1.0) — size/risk depth scaling
+# (feature 1) + high-assurance multi-verifier majority (feature 2).
+# Locks the new cross-file contract and guards against asymmetric drift
+# (CLAUDE.md ## Plans / ## Modifications: a verdict-agent contract must be
+# wired symmetrically in BOTH the spawner and the agent).
+# =============================================================================
+echo "--- Cat DEPTH: verification-depth tier + multi-verifier majority ---"
+
+# DEPTH-1: /impl Phase 1 resolves the tier (Step 3a wiring present).
+assert_file_contains \
+  "DEPTH-1: skills/impl/SKILL.md wires verification_depth (Step 3a)" \
+  "$REPO_DIR/skills/impl/SKILL.md" \
+  "verification_depth"
+
+# DEPTH-2: canonical tier reference exists with the matrix + all three tiers.
+assert_file_contains \
+  "DEPTH-2: verification-depth.md documents the standard/thorough/exhaustive ladder" \
+  "$REPO_DIR/skills/impl/references/verification-depth.md" \
+  "exhaustive"
+
+# DEPTH-3: per-skill knob doc records the new constraint.
+assert_file_contains \
+  "DEPTH-3: autopilot-policy-reference.md documents constraints.verification_depth" \
+  "$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md" \
+  "constraints.verification_depth"
+
+# DEPTH-4: emitted policy template carries the field.
+assert_file_contains \
+  "DEPTH-4: policy-template.md emits verification_depth" \
+  "$REPO_DIR/skills/brief/references/policy-template.md" \
+  "verification_depth"
+
+# DEPTH-5: per-tier defaults table documents the field (state-file SSoT).
+assert_file_contains \
+  "DEPTH-5: state-file.md per-tier defaults document constraints.verification_depth" \
+  "$REPO_DIR/skills/autopilot/references/state-file.md" \
+  "constraints.verification_depth"
+
+# DEPTH-6: round-cap precedence folds in the depth bonus.
+assert_file_contains \
+  "DEPTH-6: round-cap-parser.md documents the verification-depth bonus" \
+  "$REPO_DIR/skills/impl/references/round-cap-parser.md" \
+  "[Vv]erification-depth bonus"
+
+# DEPTH-7: /audit threads the depth= handoff and trigger T-F.
+depth7_audit_arg=$(grep -cE 'depth=<tier>|depth=thorough' "$REPO_DIR/skills/audit/SKILL.md" || true)
+depth7_tf=$(grep -cE '\*\*T-F\*\*' "$REPO_DIR/skills/audit/references/skeptical-pass.md" || true)
+depth7_result="false"
+if [ "$depth7_audit_arg" -ge 1 ] && [ "$depth7_tf" -ge 1 ]; then depth7_result="true"; fi
+assert_true \
+  "DEPTH-7: /audit parses depth= (count=$depth7_audit_arg) AND skeptical-pass.md defines T-F (count=$depth7_tf); both expected >=1" \
+  "$depth7_result"
+
+# DEPTH-8 (SYMMETRY GUARD): the multi-verifier majority contract is wired in
+# BOTH the spawner (/impl Step 15) AND the verdict agent (ac-evaluator), so the
+# feature cannot regress to the asymmetric-wiring failure mode CLAUDE.md warns
+# about. ac-evaluator is spawned ONLY by /impl, so this pair is the full matrix.
+depth8_spawner=$(grep -ciE 'multi-verifier' "$REPO_DIR/skills/impl/SKILL.md" || true)
+depth8_orch=$(grep -ciE 'High-assurance multi-verifier' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+depth8_agent=$(grep -cF '## Verification Lens (high-assurance handoff)' "$REPO_DIR/agents/ac-evaluator.md" || true)
+depth8_result="false"
+if [ "$depth8_spawner" -ge 1 ] && [ "$depth8_orch" -ge 1 ] && [ "$depth8_agent" -ge 1 ]; then depth8_result="true"; fi
+assert_true \
+  "DEPTH-8: multi-verifier wired symmetrically (impl=$depth8_spawner, orchestration=$depth8_orch, ac-evaluator=$depth8_agent; all expected >=1)" \
+  "$depth8_result"
+
+# DEPTH-9: the merge contract documents the quorum + CRITICAL-not-voted-away rule.
+assert_file_contains \
+  "DEPTH-9: ac-evaluator-orchestration.md documents the majority merge + quorum" \
+  "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" \
+  "Quorum"
+
+# DEPTH-10: the AC-gate recovery doc covers the multi-verifier branch (so the
+# 3x -v{i}.md envelope/IN_PROGRESS-recovery behaviour is specified, not implicit).
+assert_file_contains \
+  "DEPTH-10: ac-gate-decision.md documents Multi-verifier IN_PROGRESS recovery" \
+  "$REPO_DIR/skills/impl/references/ac-gate-decision.md" \
+  "Multi-verifier"
+
+# DEPTH-11: phase-state schema + impl init template both carry verification_depth
+# (sibling-artifact symmetry per CLAUDE.md ## Modifications).
+depth11_schema=$(grep -cE 'verification_depth' "$REPO_DIR/skills/create-ticket/references/phase-state-schema.md" || true)
+depth11_init=$(grep -cE 'verification_depth' "$REPO_DIR/skills/impl/references/phase-state-impl-management.md" || true)
+depth11_result="false"
+if [ "$depth11_schema" -ge 1 ] && [ "$depth11_init" -ge 1 ]; then depth11_result="true"; fi
+assert_true \
+  "DEPTH-11: verification_depth in phase-state-schema.md (count=$depth11_schema) AND phase-state-impl-management.md (count=$depth11_init); both expected >=1" \
+  "$depth11_result"
+
+echo ""
+
 # --- Summary ---
 print_summary

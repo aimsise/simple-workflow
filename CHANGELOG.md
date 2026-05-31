@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.1] — 2026-05-31
+
+**TL;DR.** Three backward-compatible correctness/clarity fixes surfaced by a dogfood `/brief chain=on` run. (1) The two auto-compact hooks no longer overload `consecutive_stop_blocks` with the cumulative shipped-ticket count — it moves to a dedicated OPTIONAL `shipped_count` field on `auto_compact_inject` entries. (2) Every skill's in-body subagent spawn instruction and `subagent_type:` literal is now plugin-qualified (`simple-workflow:<agent>`) so a resumed orchestrator cannot pass a bare name that fails with "Agent type not found". (3) The two auto-compact hook header comments are corrected to match observed runtime (the post-ship state-write hook is the de-facto primary; the pre-next-scout hook is a dedup fallback). No migration needed — every existing `runtime_metrics` writer and the `agent:` frontmatter / Mandatory-table contracts are byte-identical.
+
+### Fixed
+
+- **`runtime_metrics` field pollution**: `hooks/pre-next-scout-auto-compact.sh` and `hooks/post-ship-state-auto-compact.sh` passed the shipped-ticket count into `append_runtime_metrics_entry`'s 8th argument, writing it to `consecutive_stop_blocks` — a field documented as meaningful only for `boundary: session_end`. The count now flows to a new OPTIONAL 9th argument and is emitted as a dedicated `shipped_count` field on `auto_compact_inject` entries (with `consecutive_stop_blocks: null`). The field is emitted only when provided, so the five unchanged 8-arg callers (`autopilot-continue.sh`, `pre-compact-save.sh`, the two checkpoint guards) produce byte-identical entries. The numeric guard `_rm_numeric_or_null` is applied to the 9th arg in all three write tiers (yq / python+PyYAML / pure-shell).
+- **Bare subagent spawn names**: every skill's in-body "MUST invoke X via the Agent tool" instruction and `subagent_type:` literal now uses the plugin-qualified `simple-workflow:<agent>` form (notably `skills/plan2doc/SKILL.md` `subagent_type: simple-workflow:planner` and `skills/impl/SKILL.md` `subagent_type: simple-workflow:implementer` — the literals a resumed orchestrator copies verbatim). A bare name could otherwise raise "Agent type 'planner' not found". Mandatory-table cells (`| \`X\` agent (Agent tool) |`) and the YAML `agent:` frontmatter stay bare — they are agents/ file-name references and Cat D / Cat X contract identifiers that Claude Code resolves in plugin scope.
+
+### Changed
+
+- **auto-compact hook header comments corrected**: `pre-next-scout-auto-compact.sh` is now documented as the de-facto DEDUP FALLBACK and `post-ship-state-auto-compact.sh` as the de-facto PRIMARY trigger, matching observed runtime (a 7-ticket autopilot run produced 7/7 `auto_compact_inject` entries with `stop_reason: safety_net`, 0/7 `primary`): the state-write hook fires first and injects `/compact`; the next-scout hook dedup-skips on resume via its Gate 5. No runtime logic changed — only the header/coordination comments.
+- **`auto_compact_inject` boundary documented**: added to the boundary table in `skills/autopilot/references/stop-reason-taxonomy.md` (previously omitted despite both hooks writing it), and the new `shipped_count` field documented there and in `references/state-file.md` (8th optional key).
+
+### Verification
+
+- `tests/test-skill-contracts.sh` 764/764, `tests/test-path-consistency.sh` 140/140, `tests/test-hooks-lib.sh` 159/159 — the last includes new **AC-5**: the 9th-arg `shipped_count` is emitted only when provided, the 8-arg form stays byte-identical, and a literal `null` arg9 omits the field (verified in both the yq and pure-shell tiers).
+- runtime / checkpoint suites green: test-autopilot-runtime-metrics 16/16, test-runtime-metrics-write-window 23/23, test-per-phase-metrics 38/38, test-precompact-end-to-end 9/9, test-impl-checkpoint-guard 13/13, test-autopilot-continue 52/52, test-scout-checkpoint-guard 19/19. A python-tier live check confirmed `shipped_count: 9` emission with `consecutive_stop_blocks: null`, and zero `shipped_count` leakage on the 8-arg path.
+
+## [8.1.0] — 2026-05-31
+
+**TL;DR.** Two composable verification-depth features, both gated by the existing ticket Size × `risk_tolerance` signals and a no-op for the common case. (1) **Size/risk-aware depth scaling**: a new `constraints.verification_depth` policy knob (`auto` default) derives a depth tier (`standard` / `thorough` / `exhaustive`) that scales the Generator→Evaluator round cap (`+0` / `+3` / `+6`) and forces `/audit`'s skeptical third-pass at `thorough`+. (2) **High-assurance multi-verifier majority**: at the `exhaustive` tier, `/impl` Step 15 spawns three independent `ac-evaluator`s with diverse lenses (correctness / adversarial-refute / reproduction-edge) and majority-merges their verdicts (a CRITICAL finding survives a minority; a non-critical FAIL needs ≥2). For the common S/M conservative/moderate ticket the resolved tier is `standard`, so behaviour is byte-identical to `v8.0.0`.
+
+**Migration / kill switch (non-breaking).** Default `constraints.verification_depth: auto` only deepens L/XL or `aggressive` tickets; S/M conservative/moderate tickets are unchanged. Set `constraints.verification_depth: off` in a brief's `autopilot-policy.yaml` to restore the exact pre-`v8.1.0` contract (base `max_total_rounds`, single evaluator, conditional-only third-pass). An explicit `rounds=N` argument to `/impl` remains authoritative and suppresses the depth bonus.
+
+### Added
+
+- `constraints.verification_depth` policy knob (`auto` / `standard` / `thorough` / `exhaustive` / `off`) with a Size × `risk_tolerance` derivation matrix, documented in `skills/impl/references/verification-depth.md` and consumed by `/impl` (round-cap Step 1a, evaluator-mode dispatch Step 15, `/audit` handoff Step 17). Default `auto` at every tier; the `auto` derivation folds `risk_tolerance` into the matrix rather than carrying a per-tier literal.
+- High-assurance multi-verifier majority at `/impl` Step 15 (`exhaustive` tier, `AC_COUNT < 30`): three diverse-lens `ac-evaluator` spawns (`eval-round-{n}-v1.md` … `-v3.md`) merged by per-AC majority with a 2-of-3 quorum, documented in `skills/impl/references/ac-evaluator-orchestration.md` (`## High-assurance multi-verifier branch`) and `agents/ac-evaluator.md` (`## Verification Lens (high-assurance handoff)`). The `AC_COUNT >= 30` partition branch takes precedence, capping per-round evaluator spawns at 3.
+- `/audit` `depth=<tier>` argument and skeptical-pass trigger **T-F**: `depth=thorough|exhaustive` forces the existing Step 3.5 third-pass regardless of the diff heuristics `T-A`..`T-E`.
+
+### Changed
+
+- `/impl` Phase 1 adds Step 3a (verification-depth tier resolution after Size detection) and records the resolved tier in `phases.impl.verification_depth`. The round-cap precedence (`skills/impl/references/round-cap-parser.md`) folds the tier bonus in after the base resolves, unless a valid `rounds=N` was supplied or `verification_depth: off`.
+- The per-tier policy defaults (`skills/autopilot/references/state-file.md`) and the emitted policy template (`skills/brief/references/policy-template.md`) now document `verification_depth: auto`.
+
+### Verification
+
+- `bash tests/test-skill-contracts.sh` and `bash tests/test-path-consistency.sh` exit 0, including the new `CT-DEPTH-*` assertions and the CHANGELOG ↔ `plugin.json` version-equality check.
+- Scoping confirmed: S/M conservative/moderate tickets resolve to tier `standard` (no-op vs `v8.0.0`); `verification_depth: off` restores the pre-`v8.1.0` path verbatim; an explicit `rounds=N` suppresses the depth bonus.
+
 ## [8.0.0] — 2026-05-30
 
 **TL;DR.** First `8.x` major release. It consolidates the entire capability-detection feature line developed since `v7.0.4` (the prior `v7.1.0` / `v8.0.0` / `v8.0.1` milestones were never tagged and are merged here): per-AC capability binding (`### Capabilities` table in `ticket.md` / `plan.md`, Gate 6), the Advisory-capability tier (Gate 6.5, "Recommending, not Permitting"), MCP-server inheritance for the four productive subagents, **Phase 6 machine-enforcement** of Advisory consultation as an audit trail across `/impl`, `/brief`, `/catchup`, `/create-ticket`, `/scout`, `/investigate`, and `/test`, the autopilot 3-tier non-interactive contract, and the `brief` mode rename. Everything is **capability-name-agnostic**: any Skill or MCP server the user mounts into their harness flows through the same detection → binding → invocation → audit path with no plugin-file change.

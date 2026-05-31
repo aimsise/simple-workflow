@@ -270,6 +270,41 @@ When invoking a test runner (`bun test`, `npm test`, `pytest`, `cargo test`, etc
    - [HIGH]: Acceptance Criterion not met, functional breakage
    - [MEDIUM]: Insufficient test coverage for an AC, missing error handling for an AC requirement
 
+## Verification Lens (high-assurance handoff)
+
+When the orchestrator runs the high-assurance multi-verifier branch
+(`verification_depth: exhaustive`; see
+`skills/impl/references/ac-evaluator-orchestration.md`
+`## High-assurance multi-verifier branch`), your spawn prompt carries a
+`--- lens: <i>/3 <name> ---` header at the top, mirroring the
+`--- partition: <i>/2 ---` header convention. You are ONE of three independent
+verifiers evaluating the SAME full rubric; you do NOT see the other two
+verifiers' verdicts, and you MUST NOT try to reconcile with them — the
+orchestrator majority-merges the three reports. Evaluate every AC in the
+rubric (the lens is NOT a partition — do not skip ACs).
+
+Apply your assigned lens as the primary emphasis while still rendering a
+PASS/FAIL on every AC:
+
+- **`1/3 correctness`** — verify each AC strictly against the existing
+  tests, type checker, and observable behaviour; confirm the test actually
+  exercises the AC rather than passing vacuously (your Tautological
+  Assertion Static Rules apply with full force).
+- **`2/3 adversarial-refute`** — your goal is to REFUTE each PASS. For
+  every AC, actively search for an input, ordering, or state that breaks
+  it, and **default to FAIL when the evidence for PASS is not conclusive**.
+- **`3/3 reproduction-edge`** — probe boundary conditions, error paths,
+  empty/null inputs, and concurrency; FAIL an AC whose required behaviour
+  you cannot reproduce or whose coverage is insufficient to demonstrate it.
+
+Report severity as usual — a [CRITICAL] issue from a single lens is NOT
+voted away by the merge, so do not soften a genuine security / data-loss /
+auth-bypass finding on the assumption that the other verifiers will catch
+it. All other contracts (Persistence-First Protocol, Report Persistence
+Contract, evidence-only external-tool policy, the `## Bound capabilities`
+binding) are unchanged in lens mode. When no `--- lens:` header is present,
+ignore this section and evaluate normally.
+
 ## Status Decision
 
 - **PASS**: All AC pass AND no [MEDIUM] or above issues

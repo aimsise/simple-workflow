@@ -17,6 +17,7 @@ Any single trigger fires Step 3.5:
 - **T-C** The PR adds or modifies a `tools:` permission entry in any `agents/*.md` file. Agent permission changes have orchestration consequences outside the categorical security rubric.
 - **T-D** The prior `ac-evaluator` round returned `PASS-WITH-CAVEATS` due to missing tooling. Heuristic: any `eval-round-{n}.md` file in `{ticket-dir}` contains both `PASS-WITH-CAVEATS` and `skipped` within the same AC entry. This indicates the evaluator accepted code inspection as evidence when a live execution tier was unavailable.
 - **T-E** The PR diff touches more than 3 files in total, with at least one file in each of `hooks/`, `agents/`, and `skills/` simultaneously. Cross-cutting changes are by definition outside any single rubric. A PR that only touches `tests/` does NOT fire T-E, regardless of file count.
+- **T-F** The caller passed `depth=thorough` or `depth=exhaustive` (the verification-depth tier resolved by `/impl` Step 3a from the ticket Size × `risk_tolerance`; see `skills/impl/references/verification-depth.md`). Unlike T-A..T-E, which are heuristics over the diff, T-F is an explicit upstream signal that this ticket was classified high-stakes (large blast-radius and/or an autonomous `aggressive` run that denies the human `audit-fail` gate), so the completeness-critic third-pass is forced regardless of whether any diff heuristic fired. `depth=standard`, an absent `depth=` argument, or `depth=off` does NOT fire T-F.
 
 ## Prompt Template
 

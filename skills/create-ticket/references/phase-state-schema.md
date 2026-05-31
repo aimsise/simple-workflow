@@ -17,7 +17,7 @@ phases:
   create_ticket: { status, started_at, completed_at, artifacts: { ticket } }
   scout:         { status, started_at, completed_at, artifacts: { investigation, plan } }
   impl:          { status, started_at, completed_at,
-                   current_round, max_rounds, phase_sub,
+                   current_round, max_rounds, verification_depth, phase_sub,
                    last_ac_status, last_audit_status, last_audit_critical,
                    last_round, next_action,
                    feedback_files: { eval, quality } }
@@ -29,6 +29,7 @@ Enums: `status ∈ {pending,in-progress,completed,failed}`;
 `last_ac_status ∈ {PASS,FAIL,FAIL-CRITICAL,null}`;
 `last_audit_status ∈ {PASS,PASS_WITH_CONCERNS,FAIL,null}`;
 `next_action ∈ {start-round-{N}-generator,start-evaluator,start-audit,proceed-to-phase-3,stop-critical,null}`;
+`verification_depth ∈ {standard,thorough,exhaustive,off}` — the effective tier `/impl` resolves in Phase 1 Step 3a from `size × autopilot-policy.yaml risk_tolerance` (or a forced literal / `off`); written by `/impl` at Phase 2 init; advisory metadata that drives the round-cap bonus, the Step 15 evaluator-mode dispatch, and the `/audit` `depth=` handoff (see `skills/impl/references/verification-depth.md`);
 `last_round` is a scalar round number set at impl completion.
 
 File path encodes location — no top-level `ticket_dir:` is serialized.

@@ -53,7 +53,7 @@ The following agent invocation is **contractual** — `/plan2doc` MUST delegate 
 | `planner` agent (Agent tool) | Step 4 — always, after Size detection and output-path resolution | No structured plan written to the output path; `/impl` has no `### Acceptance Criteria` section to drive the Generator → Evaluator loop and will stop at Phase 1 step 6 with "ERROR: Plan has no Acceptance Criteria". Detected by absence of `plan.md` in the ticket dir (or `.simple-workflow/docs/plans/`) and absence of planner trace in skill invocation audit |
 
 **Binding rules**:
-- `MUST invoke the planner agent via the Agent tool` with the correct `model` parameter (`sonnet` for Size S, `opus` otherwise). Never substitute by writing `plan.md` directly from `/plan2doc`.
+- `MUST invoke the simple-workflow:planner agent via the Agent tool` with the correct `model` parameter (`sonnet` for Size S, `opus` otherwise). Never substitute by writing `plan.md` directly from `/plan2doc`.
 - `NEVER bypass the planner via direct file operations` — `/plan2doc` must NOT write the plan content itself; the planner agent is the sole author.
 - `Fail the task immediately if the planner agent cannot be invoked via the Agent tool` — print the failure reason and the resolved output path so the user can retry.
 
@@ -95,7 +95,7 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
 3. **Scan available tooling**. Identify available skills and agents by scanning `.claude/skills/` and `.claude/agents/` (if present), and listing installed plugin skills/agents. Read frontmatter only (not full file contents). Additionally enumerate available **MCP servers** by reading the `mcpServers` keys of `.mcp.json` (project-scope, when present) and `~/.claude.json` (user-scope, when present); union the two sets and de-duplicate. The combined skill + agent + MCP list will be passed to the planner agent so it can reference them in the `### Claude Code Workflow` section and bind any runtime/visual AC to a concrete capability in the plan's `## Capabilities` section (Gate 6).
 
 4. **MUST invoke the `planner` agent via the Agent tool** (see `## Mandatory Skill Invocations` above for the binding rules). Set the `Agent` tool call as follows:
-   - `subagent_type`: `planner`
+   - `subagent_type`: `simple-workflow:planner`
    - `model`:
      - If `Size == S` → `"sonnet"`
      - If `Size` is `M`, `L`, `XL`, or unknown → `"opus"`

@@ -84,15 +84,15 @@ Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is inten
 | `code-reviewer` agent (Agent tool) | Phase 3 Step 6 — each iteration of the implement → verify → review loop, up to 3 iterations | Quality review SKIPPED; Critical and Warning findings cannot be detected; loop exit condition `Critical = 0 AND Warning = 0` cannot be evaluated, so Critical bugs may slip through unverified. Detected by absence of the configured output file (`{ticket-dir}/quality-refactor-{n}.md` or the default `.simple-workflow/docs/reviews/{topic}.md`). |
 
 **Binding rules**:
-- `MUST invoke the planner agent` in Phase 1 Step 1 before presenting any plan summary to the user. The orchestrator MUST NOT fabricate a plan in lieu of the planner return value.
-- `MUST invoke the code-reviewer agent` in every iteration of Phase 3 Step 6 (up to the 3-iteration ceiling). The orchestrator MUST NOT skip review by self-judging "no issues".
+- `MUST invoke the simple-workflow:planner agent` in Phase 1 Step 1 before presenting any plan summary to the user. The orchestrator MUST NOT fabricate a plan in lieu of the planner return value.
+- `MUST invoke the simple-workflow:code-reviewer agent` in every iteration of Phase 3 Step 6 (up to the 3-iteration ceiling). The orchestrator MUST NOT skip review by self-judging "no issues".
 - `NEVER bypass the code-reviewer` by treating an Agent-tool infrastructure failure as a clean review — Phase 3 Step 7 defines the explicit `AskUserQuestion` fallback (`stop` / `continue without review`) and the non-interactive default-to-stop; bypass is allowed only via that documented path.
 - `Fail the task immediately` when the planner agent cannot be invoked at all (no fallback exists — Phase 2 backup branch creation cannot proceed without a plan). Print the failure reason and stop.
 
 ## Instructions
 
 ### Phase 1: Planning
-1. Spawn the **planner** agent to create a refactoring plan. Before constructing the spawn prompt:
+1. Spawn the **simple-workflow:planner** agent to create a refactoring plan. Before constructing the spawn prompt:
    - **Resolve `ticket-dir`** by running the ticket-detection logic from Step 1b below (it is referenced here as well as later in Phase 3 Step 6). Set `ticket-dir` to either the resolved path or `(none)` when no match is found.
    - **Capability binding pre-load** (v8.0.0): when `ticket-dir` resolves and `{ticket-dir}/ticket.md` exists with a `### Capabilities` section, `Read` it and inline the full table verbatim into the planner spawn prompt under the heading `## Bound capabilities (per AC)`. When the ticket lacks `### Capabilities` (older ticket pre-dating Gate 6), inline `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)`. When `ticket-dir` is `(none)`, skip the binding block — the planner authors from scratch using the `Available capabilities` probe.
    - **Advisory capability pre-load** (v8.0.0+, Gate 6.5): also extract the `### Advisory Capabilities` table from the same `ticket.md` (if present per `skills/create-ticket/references/ac-quality-criteria.md` Gate 6.5). Inline the full Advisory table verbatim into the planner spawn prompt under `## Advisory capabilities (per ticket)`. When the section is absent or empty, inline `## Advisory capabilities (per ticket): (none)`. The Advisory block primes the planner to preserve / refine the prior advisory classification on retry re-emits; when `ticket-dir` is `(none)` the planner authors the Advisory section from scratch using the `Available capabilities` probe per Gate 6.5 step 7.
@@ -114,7 +114,7 @@ Invocation policy: Do not auto-invoke. `disable-model-invocation: true` is inten
 5. Run verification:
    - Run the project's test command (as defined in CLAUDE.md or project conventions)
    - Run the project's lint command (as defined in CLAUDE.md or project conventions)
-6. Spawn the **code-reviewer** agent to review all changes:
+6. Spawn the **simple-workflow:code-reviewer** agent to review all changes:
    - **Capability binding pre-load** (v8.0.0): when `ticket-dir` is set (resolved in Step 1 / Step 1b) and `{ticket-dir}/ticket.md` exists with a `### Capabilities` section, inline the full table verbatim into the code-reviewer spawn prompt under `## Bound capabilities (per AC)`. The code-reviewer is a Skill-bearing Group C agent that consumes the deterministic per-AC binding (never speculative — see `## Subagent Skill-Access Handoff` below). When the ticket lacks `### Capabilities`, inline `## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)`.
    - If `ticket-dir` is set: specify output path as `{ticket-dir}/quality-refactor-{n}.md` where {n} is the iteration number
    - If `ticket-dir` is not set: let the code-reviewer use its default (`.simple-workflow/docs/reviews/{topic}.md`)

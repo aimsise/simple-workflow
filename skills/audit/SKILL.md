@@ -16,7 +16,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>] [branch or commit range (optional)]"
+argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>] [depth=standard|thorough|exhaustive] [branch or commit range (optional)]"
 ---
 
 Audit current code changes. Args: $ARGUMENTS
@@ -37,8 +37,8 @@ The following agent invocations are **contractual** — `/audit` MUST delegate t
 | `code-reviewer` agent (Agent tool) | Step 2 — in parallel with security-scanner when `only_security_scan=false` (default) | No code quality review; `/impl`'s retry loop has no feedback on style/maintainability/correctness concerns. Detected by absence of `quality-round-{n}.md` in ticket dir |
 
 **Binding rules**:
-- `MUST invoke security-scanner via the Agent tool` every time `/audit` runs — never skip security review even when changes look "obviously safe".
-- `MUST invoke code-reviewer via the Agent tool` unless `only_security_scan=true` was explicitly passed. Never substitute by having `/audit` itself read files and render a verdict.
+- `MUST invoke simple-workflow:security-scanner via the Agent tool` every time `/audit` runs — never skip security review even when changes look "obviously safe".
+- `MUST invoke simple-workflow:code-reviewer via the Agent tool` unless `only_security_scan=true` was explicitly passed. Never substitute by having `/audit` itself read files and render a verdict.
 - `NEVER bypass these agents via direct file operations` — `/audit` must NOT read the changed files itself (Step 2 explicitly states: "Do NOT read files directly — delegate ALL review work to the agents").
 - `Fail this audit immediately if any required agent cannot be invoked via the Agent tool` — the Error Handling section treats agent failure as Critical = 1; **never silently treat a failed agent as PASS or PASS_WITH_CONCERNS**.
 
@@ -68,6 +68,7 @@ Parse `$ARGUMENTS` for the following:
 - `round=N` (case-insensitive, N is a positive integer): explicit round number for output filenames. When provided, the skill MUST write to `quality-round-{N}.md`, `security-scan-{N}.md`, and `audit-round-{N}.md` using this number instead of auto-incrementing. This lets the calling skill (e.g. `/impl`) synchronize audit round numbers with its own Generator-Evaluator loop counter. If N is ≤ 0 or not an integer, print a warning and fall back to auto-increment.
 - If `round=` is absent, use the current behavior (auto-increment: max existing round + 1).
 - `ticket-dir=<dir-name>` (case-insensitive key): ticket directory name (directory name only, not a full path — e.g., `003-fix-login`). When provided, this value is used in Step 1 to construct the full path `.simple-workflow/backlog/active/{dir-name}` instead of inferring the ticket directory from the branch name. This token is consumed by argument parsing and is NOT passed through as a commit/branch range hint.
+- `depth=<tier>` (case-insensitive key; v8.1.0+): the verification-depth tier resolved upstream by `/impl` Step 3a. Recognized values: `standard`, `thorough`, `exhaustive`. When `depth=thorough` or `depth=exhaustive`, trigger **T-F** fires in Step 3.5 (forces the skeptical third-pass). `depth=standard`, an absent `depth=`, or any unrecognized value (e.g. `depth=off`) does NOT fire T-F and leaves the conditional T-A..T-E behaviour unchanged. This token is consumed by argument parsing and is NOT passed through as a commit/branch range hint.
 - Any other tokens are treated as an optional commit/branch range hint, passed through to the agents as additional context.
 
 ### 1. Determine Output Destinations
@@ -179,7 +180,7 @@ When `ticket-dir` is NOT set, do NOT write a dispatch log.
 
 ### 2. Spawn Agents
 
-**MUST invoke the `security-scanner` agent via the Agent tool** (sonnet) — **NEVER bypass security-scanner** even when changes appear security-irrelevant; the agent itself decides what is in scope. Fail this audit immediately if security-scanner cannot be invoked.
+**MUST invoke the `simple-workflow:security-scanner` agent via the Agent tool** (sonnet) — **NEVER bypass security-scanner** even when changes appear security-irrelevant; the agent itself decides what is in scope. Fail this audit immediately if security-scanner cannot be invoked.
 - Pass the changed files list and the security-scan output path determined in step 1.
 - When a checklist body was selected in Step 1a, pass it verbatim as part
   of the agent prompt and instruct security-scanner to evaluate each
@@ -188,7 +189,7 @@ When `ticket-dir` is NOT set, do NOT write a dispatch log.
 - Receive Critical / Warnings / Suggestions counts and a summary.
 - Note: security-scanner is always invoked regardless of whether sensitive files appear to be touched. The agent itself decides what is security-relevant.
 
-**If** `only_security_scan` is `false` (default), you **MUST also invoke the `code-reviewer` agent via the Agent tool** (sonnet) **in parallel** with security-scanner. **NEVER bypass code-reviewer via direct file inspection** from within `/audit`. Fail this audit immediately if code-reviewer cannot be invoked (treat as Critical = 1 per the Error Handling section):
+**If** `only_security_scan` is `false` (default), you **MUST also invoke the `simple-workflow:code-reviewer` agent via the Agent tool** (sonnet) **in parallel** with security-scanner. **NEVER bypass code-reviewer via direct file inspection** from within `/audit`. Fail this audit immediately if code-reviewer cannot be invoked (treat as Critical = 1 per the Error Handling section):
 - Pass the changed files list and the quality-round output path determined in step 1.
 - When a checklist body was selected in Step 1a, pass it verbatim as part
   of the agent prompt and instruct code-reviewer to evaluate each
@@ -233,7 +234,7 @@ The third-pass fires **at most once per `/audit` run**, regardless of how many t
 
 If the `general-purpose` Agent call itself fails (timeout, infrastructure error), treat the failure as `Critical += 1` (failed review infrastructure), consistent with the existing aggregation behaviour for failed contractual reviewers.
 
-The five trigger labels (`T-A`, `T-B`, `T-C`, `T-D`, `T-E`) and the verbatim prompt template are documented in [references/skeptical-pass.md](references/skeptical-pass.md); load that file when Step 3.5 fires. The prompt template instructs the third-pass agent to skip the T-4 Pre-existing Failure Attribution scope already covered by `agents/ac-evaluator.md`.
+The six trigger labels (`T-A`, `T-B`, `T-C`, `T-D`, `T-E`, `T-F`) and the verbatim prompt template are documented in [references/skeptical-pass.md](references/skeptical-pass.md); load that file when Step 3.5 fires. `T-F` is the explicit upstream signal: the caller passed `depth=thorough` or `depth=exhaustive` (the verification-depth tier from `/impl` Step 3a), which forces the third-pass regardless of the diff heuristics `T-A`..`T-E`; include `T-F` in `{trigger_list}` when it fired. The prompt template instructs the third-pass agent to skip the T-4 Pre-existing Failure Attribution scope already covered by `agents/ac-evaluator.md`.
 
 ### 4. Return Structured Result
 

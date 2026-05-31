@@ -4,7 +4,7 @@ Verbose Phase 1 / 2 / 3 / 4 spawn-prompt construction details, the retry-with-fe
 
 ## Phase 1: Investigation (researcher agent)
 
-The orchestrator MUST invoke the `researcher` via the Agent tool. NEVER bypass via direct `Grep`/`Read`/`Glob` — independent findings are required for Phase 3. Fail the task immediately if the researcher cannot be invoked.
+The orchestrator MUST invoke the `simple-workflow:researcher` via the Agent tool. NEVER bypass via direct `Grep`/`Read`/`Glob` — independent findings are required for Phase 3. Fail the task immediately if the researcher cannot be invoked.
 
 **Return value cap**: per the Context Conservation Protocol in `agents/researcher.md`, the researcher's return value MUST stay under 500 tokens (status, executive summary, output path). The full investigation content lives at the canonical artifact path; the orchestrator reads it only when the planner needs it.
 
@@ -83,7 +83,7 @@ If investigation yields sufficient clarity (e.g., simple S-size with obvious sco
 
 ## Phase 3: Ticket Draft (planner agent)
 
-The orchestrator MUST invoke the `planner` via the Agent tool. NEVER draft inline — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft for Phase 4. Fail the task immediately if the planner cannot be invoked.
+The orchestrator MUST invoke the `simple-workflow:planner` via the Agent tool. NEVER draft inline — the planner's structured output (Background / Scope / Acceptance Criteria / Implementation Notes + category/size/workflow) is the canonical draft for Phase 4. Fail the task immediately if the planner cannot be invoked.
 
 **Return value cap**: per the Context Conservation Protocol in `agents/planner.md`, the planner's return value MUST stay under 500 tokens (status, output path, 1-2 line summary). The full draft is persisted to the artifact; the orchestrator and the Phase 4 evaluator read it from disk.
 
@@ -110,7 +110,7 @@ Partition (the decision of how many ticket skeletons to produce) is performed by
 
 ## Phase 4: Ticket Evaluation
 
-The orchestrator MUST invoke the `ticket-evaluator` via the Agent tool. NEVER self-assess — the ticket-evaluator is the independent gate verifying AC Testability/Unambiguity. Fail immediately if it cannot be invoked.
+The orchestrator MUST invoke the `simple-workflow:ticket-evaluator` via the Agent tool. NEVER self-assess — the ticket-evaluator is the independent gate verifying AC Testability/Unambiguity. Fail immediately if it cannot be invoked.
 
 **Return value cap**: per the Context Conservation Protocol in `agents/ticket-evaluator.md`, the evaluator's return value MUST stay under 500 tokens (PASS/FAIL verdict + per-AC findings). The full Feedback transcript is consumed by Phase 4's retry-with-feedback loop on FAIL; the orchestrator does not re-echo it.
 
@@ -125,7 +125,7 @@ For every `ticket-evaluator` spawn (both the initial evaluation and any retry re
 ### Per-ticket evaluation process
 
 1. Read the ticket content from Phase 3.
-2. Spawn the **ticket-evaluator** with the ticket content. Include the canonical AC Quality Criteria inline in the spawn prompt, delimited by `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` (using the rubric text just `Read` from `references/ac-quality-criteria.md`).
+2. Spawn the **simple-workflow:ticket-evaluator** with the ticket content. Include the canonical AC Quality Criteria inline in the spawn prompt, delimited by `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` (using the rubric text just `Read` from `references/ac-quality-criteria.md`).
 3. Output envelope: the evaluator returns a `Status: PASS|FAIL` line plus a per-AC findings list. Treat any other shape as ERROR.
 4. Decision:
    - **PASS** → proceed to Common Write Path.
@@ -135,7 +135,7 @@ For every `ticket-evaluator` spawn (both the initial evaluation and any retry re
 
 a. Save the evaluator's Feedback transcript.
 
-b. Re-spawn the **planner** with: original ticket content (inlined verbatim into the spawn prompt); evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
+b. Re-spawn the **simple-workflow:planner** with: original ticket content (inlined verbatim into the spawn prompt); evaluator Feedback (all FAIL items + improvement suggestions); instruction "For each FAIL item you revise, prepend a 'Change rationale: [why this addresses the feedback]' comment above the revised section. The evaluator reviews the rationale to verify intent."
 
 #### Retry planner FS-search ban (token-efficiency contract)
 
@@ -146,7 +146,7 @@ The planner MUST honor the retry-spawn FS-search ban. Under v8.0.0 the planner's
 - The retry planner MUST NOT shell out to look for ticket directories, `.simple-workflow/backlog/...`, or any `ticket.md` artifact under any path; the canonical input is the inlined draft text only.
 - These suppressions are **intentional** even when the underlying tool permission would allow the call. Treat the constraint as a hard contract: if the inlined draft is malformed or missing, fail-fast with `ERROR: retry spawn missing inlined prior draft` rather than reaching for the filesystem.
 
-c. Re-spawn the **ticket-evaluator** on the revised ticket. Again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair. Missing the marker block causes the evaluator to fail-fast with ERROR.
+c. Re-spawn the **simple-workflow:ticket-evaluator** on the revised ticket. Again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair. Missing the marker block causes the evaluator to fail-fast with ERROR.
 
 d. Max 2 rounds (initial + 1 revision). If still FAIL, run the autopilot-policy escalation below.
 

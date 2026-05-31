@@ -35,6 +35,9 @@ runtime_metrics: []                      # append-only, written by Stop / PreCom
 #     cache_read_input_tokens: 0               # integer or null (from hook payload)
 #     input_tokens: 0                          # integer or null (from hook payload, used by Plan 07)
 #     consecutive_stop_blocks: 5               # integer or null; meaningful only for boundary: session_end
+#   # `auto_compact_inject` entries (written by the auto-compact hooks) append an
+#   # OPTIONAL `shipped_count:` key AFTER consecutive_stop_blocks and leave
+#   # consecutive_stop_blocks null; their stop_reason is "primary" | "safety_net".
 ```
 
 Field summary (the 7 top-level fields plus `runtime_metrics:`):
@@ -206,7 +209,8 @@ discrimination heuristic, are defined in
 cite that file rather than the planning-phase document under `.docs/`
 (which is not shipped with the plugin).
 
-The seven canonical keys per `runtime_metrics:` entry:
+The seven canonical keys per `runtime_metrics:` entry (plus an optional eighth,
+`shipped_count`, present only on `auto_compact_inject` entries):
 
 - `boundary` — `session_compaction` | `session_end` (plus per-phase
   boundaries; see the taxonomy file).
@@ -221,6 +225,12 @@ The seven canonical keys per `runtime_metrics:` entry:
   signal).
 - `consecutive_stop_blocks` — integer or `null`. The Stop hook
   loop-guard counter; meaningful only for `boundary: session_end`.
+- `shipped_count` — integer, OPTIONAL. Present ONLY on `boundary:
+  auto_compact_inject` entries (written by the two auto-compact hooks); the
+  cumulative number of shipped tickets at that boundary. Omitted on every other
+  boundary. It is recorded in its own field rather than overloading
+  `consecutive_stop_blocks` (which the auto-compact hooks previously polluted),
+  so forensic readers are not misled.
 
 Append-only contract: hooks MUST NOT rewrite or remove existing entries.
 
@@ -278,6 +288,7 @@ when a `# kb-suggested` comment sits at the same indentation, otherwise
 - `ship_ci_pending.timeout_minutes: 30`
 - `constraints.max_total_rounds: 9`
 - `constraints.allow_breaking_changes: false`
+- `constraints.verification_depth: auto`
 - `unexpected_error.action: stop`
 
 `moderate` defaults: conservative except
@@ -289,6 +300,20 @@ when a `# kb-suggested` comment sits at the same indentation, otherwise
 `aggressive ship_ci_pending.timeout_minutes: 60`,
 `aggressive constraints.max_total_rounds: 12`,
 `aggressive constraints.allow_breaking_changes: true`.
+
+`constraints.verification_depth: auto` is the default at **every** tier — the
+`auto` derivation already folds `risk_tolerance` into the depth-tier matrix
+(it is NOT a per-tier literal like `max_total_rounds`), so the same `auto`
+value at conservative / moderate / aggressive resolves to different effective
+depth tiers. The derivation matrix (Size x risk_tolerance -> tier), the
+per-tier effects ladder (max-rounds bonus, forced audit third-pass,
+multi-verifier majority), the `rounds=N` precedence interaction, and the
+`off` kill switch live in
+[`skills/impl/references/verification-depth.md`](../../impl/references/verification-depth.md).
+A policy that pins `verification_depth` to a literal tier
+(`standard` / `thorough` / `exhaustive` / `off`) is a `human_override`
+relative to the `auto` default and is rendered under `## Human Overrides`
+exactly like any other gate divergence.
 
 ## Skip-transition invariant (per-ticket pipeline)
 

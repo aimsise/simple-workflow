@@ -94,14 +94,14 @@ Invocation policy: Do not auto-invoke. Only invoke when explicitly called by nam
 
 ## Mandatory Skill Invocations
 
-The following agent invocation is **contractual** — `/tune` MUST delegate to the `tune-analyzer` agent via the Agent tool. `/tune` itself extracts no patterns; its entire role is argument parsing, directory existence checks, log-path enumeration, candidate pruning, promotion judgment, and reading/writing the three knowledge-base YAML files. The `tune-analyzer` agent is the sole pattern-extraction author.
+The following agent invocation is **contractual** — `/tune` MUST delegate to the `simple-workflow:tune-analyzer` agent via the Agent tool. `/tune` itself extracts no patterns; its entire role is argument parsing, directory existence checks, log-path enumeration, candidate pruning, promotion judgment, and reading/writing the three knowledge-base YAML files. The `tune-analyzer` agent is the sole pattern-extraction author.
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
 | `tune-analyzer` agent (Agent tool) | Step 3 — always, after the evaluation log paths have been collected in Step 2 | No new candidates written to `.simple-workflow/kb/candidates.yaml`; Step 4..7 have nothing to prune or promote; downstream `/impl` Generator KB injection (`.simple-workflow/kb/index.yaml`) receives no fresh patterns. Detected by absence of `candidates.yaml` mtime change after a `/tune` run that found logs. |
 
 **Binding rules**:
-- `MUST invoke the tune-analyzer agent via the Agent tool` in Step 3 after the log paths are enumerated. The orchestrator MUST NOT extract patterns by reading the log files itself.
+- `MUST invoke the simple-workflow:tune-analyzer agent via the Agent tool` in Step 3 after the log paths are enumerated. The orchestrator MUST NOT extract patterns by reading the log files itself.
 - `NEVER bypass tune-analyzer` by writing directly to `.simple-workflow/kb/candidates.yaml` from `/tune` (orchestrator-side YAML writes are restricted to pruning in Step 5 and promotion bookkeeping in Step 7).
 - `Fail the /tune invocation immediately` when the tune-analyzer agent cannot be invoked at all. Print the failure reason and the resolved knowledge-base directory path. Do NOT touch any of the three KB YAML files.
 
@@ -137,7 +137,7 @@ Use Glob to find these files. If `autopilot-log.md` does not exist in the ticket
 
 ### Step 3: Spawn tune-analyzer Agent
 
-Invoke the `tune-analyzer` agent via the Agent tool. The agent owns the fork — the orchestrator does NOT read the evaluation log contents itself; only the file path list and the knowledge base directory are passed across the boundary, and the orchestrator resumes once the agent returns its 5-field envelope.
+Invoke the `simple-workflow:tune-analyzer` agent via the Agent tool. The agent owns the fork — the orchestrator does NOT read the evaluation log contents itself; only the file path list and the knowledge base directory are passed across the boundary, and the orchestrator resumes once the agent returns its 5-field envelope.
 
 - Provide the list of evaluation log file paths collected in Step 2
 - Provide the knowledge base path: `.simple-workflow/kb/`

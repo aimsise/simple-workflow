@@ -21,13 +21,14 @@ The planning-phase specification that drives this file lives at
 | -------------------- | ---------------------------------------- | ---------------------------------------------------------------- |
 | `session_compaction` | `pre-compact-save.sh` (PreCompact hook)  | Snapshot taken just before context compaction fires.             |
 | `session_end`        | `autopilot-continue.sh` (Stop hook)      | Snapshot taken at the moment Stop hook permits `end_turn`.       |
+| `auto_compact_inject` | `post-ship-state-auto-compact.sh` (de-facto primary) / `pre-next-scout-auto-compact.sh` (dedup fallback) | Recorded when a ticket-boundary `/compact` is injected (forensic trail of auto-compact fires). |
 | `phase_complete`     | `post-phase-checkpoint.sh` (PostToolUse:Write) | Recorded when `phase-state.yaml.phases.<name>.status` transitions to `completed`. |
 | `phase_failed`       | `post-phase-checkpoint.sh` (PostToolUse:Write) | Recorded when `phase-state.yaml.phases.<name>.status` transitions to `failed`.    |
 | `phase_skipped`      | `post-phase-checkpoint.sh` (PostToolUse:Write) | Recorded when `phase-state.yaml.phases.<name>.status` transitions to `skipped`.   |
 
-The two `session_*` boundaries cover session-level events; the three
-`phase_*` boundaries cover per-phase transitions inside a single session.
-Per-ticket boundaries (`ticket_completed`, `ticket_failed`,
+The two `session_*` boundaries plus `auto_compact_inject` cover session-level
+events; the three `phase_*` boundaries cover per-phase transitions inside a
+single session. Per-ticket boundaries (`ticket_completed`, `ticket_failed`,
 `ticket_skipped`) remain intentionally **out of scope** — a future plan
 may extend this taxonomy.
 
@@ -51,6 +52,22 @@ For per-phase entries `stop_reason` is always `null`. The `cache_*`,
 `input_tokens`, and `consecutive_stop_blocks` fields are best-effort —
 the PostToolUse:Write hook does not receive a token-usage payload, so
 they default to `null`.
+
+### `auto_compact_inject` entries (`shipped_count`)
+
+`boundary: auto_compact_inject` entries are written by the two auto-compact
+hooks each time a ticket-boundary `/compact` is injected —
+`post-ship-state-auto-compact.sh` (the de-facto primary, `stop_reason:
+safety_net`) and `pre-next-scout-auto-compact.sh` (the dedup fallback,
+`stop_reason: primary`). They carry one OPTIONAL extra field beyond the
+canonical keys:
+
+- `shipped_count` — integer; the cumulative number of shipped tickets at the
+  boundary. Emitted only when resolved (omitted otherwise). Recorded in its
+  OWN field — NOT in `consecutive_stop_blocks`, which is meaningful only for
+  `session_end` — so forensic readers of the audit trail are not misled.
+
+For these entries `consecutive_stop_blocks` is `null`.
 
 Idempotency: the writer hook checks the entire `runtime_metrics:` array
 for a pre-existing `(ticket_id, phase, boundary)` triple before

@@ -72,6 +72,20 @@ written into `phases.impl.max_rounds`: `rounds=N` argument (when valid)
 > `{ticket-dir}/autopilot-policy.yaml` `constraints.max_total_rounds`
 (when present) > **default 9**.
 
+**Verification-depth bonus (v8.1.0+)**: after the precedence above resolves
+the base, a depth-tier bonus is added **only when no valid `rounds=N`
+argument was supplied** — an explicit `rounds=N` is authoritative and
+final, so it suppresses the bonus. With no `rounds=N`:
+`max_rounds = base + bonus`, where `base` is the policy
+`constraints.max_total_rounds` (or default 9) and `bonus` is `+0` / `+3` /
+`+6` for the resolved tier `standard` / `thorough` / `exhaustive`. When
+`constraints.verification_depth: off`, `bonus = 0`. The tier is resolved
+from `Size x risk_tolerance` (or a forced literal) per
+[`verification-depth.md`](verification-depth.md). The derived value cannot
+exceed `aggressive` base `12` `+ 6 = 18`, which stays below the soft cap of
+24, so the depth bonus never raises an `[ARG-WARN]` (that warning is scoped
+to an explicit `rounds=N` argument only).
+
 ## Stderr placeholder convention
 
 - `<N>` = the parsed positive integer (used in the soft-cap warning,
