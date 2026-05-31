@@ -1441,6 +1441,61 @@ fi
 rm -f "$RM_PS_TMP"
 rm -rf "$RM_FAKE_BIN"
 
+# AC-5: shipped_count (optional 9th arg) — emitted only when provided, placed
+# AFTER consecutive_stop_blocks; the historical 8-arg form stays byte-identical
+# and a literal "null" arg9 is treated as "omit".
+if command -v yq >/dev/null 2>&1; then
+  RM_SC_TMP="$(mktemp)"; printf '%s\n' 'runtime_metrics: []' > "$RM_SC_TMP"
+  # shellcheck source=hooks/lib/runtime-metrics.sh
+  ( source "$RM_PATH" && append_runtime_metrics_entry "$RM_SC_TMP" "auto_compact_inject" "safety_net" "2026-05-06T12:00:00Z" "null" "null" "null" "null" "4" ) || true
+  assert_eq "AC-5: arg9 emits shipped_count = 4 (yq)" \
+    "4" "$(yq '.runtime_metrics[0].shipped_count' "$RM_SC_TMP")"
+  assert_eq "AC-5: arg8 null -> consecutive_stop_blocks null (yq)" \
+    "null" "$(yq '.runtime_metrics[0].consecutive_stop_blocks' "$RM_SC_TMP")"
+  RM_SC8_TMP="$(mktemp)"; printf '%s\n' 'runtime_metrics: []' > "$RM_SC8_TMP"
+  # shellcheck source=hooks/lib/runtime-metrics.sh
+  ( source "$RM_PATH" && append_runtime_metrics_entry "$RM_SC8_TMP" "session_end" "normal_completion" "2026-05-06T12:00:00Z" "1" "2" "3" "0" ) || true
+  assert_eq "AC-5: 8-arg form omits shipped_count (yq)" \
+    "null" "$(yq '.runtime_metrics[0].shipped_count' "$RM_SC8_TMP")"
+  RM_SCN_TMP="$(mktemp)"; printf '%s\n' 'runtime_metrics: []' > "$RM_SCN_TMP"
+  # shellcheck source=hooks/lib/runtime-metrics.sh
+  ( source "$RM_PATH" && append_runtime_metrics_entry "$RM_SCN_TMP" "auto_compact_inject" "safety_net" "2026-05-06T12:00:00Z" "null" "null" "null" "null" "null" ) || true
+  assert_eq "AC-5: literal 'null' arg9 omits shipped_count (yq)" \
+    "null" "$(yq '.runtime_metrics[0].shipped_count' "$RM_SCN_TMP")"
+  rm -f "$RM_SC_TMP" "$RM_SC8_TMP" "$RM_SCN_TMP"
+else
+  echo "  (skip) AC-5: yq not on PATH — yq-tier shipped_count test skipped"
+fi
+
+# AC-5 (pure-shell tier): shipped_count emitted only when arg9 provided.
+RM_SCPS_TMP="$(mktemp)"; printf '%s\n' 'runtime_metrics: []' > "$RM_SCPS_TMP"
+RM_SCPS_BIN="$(mktemp -d)"
+for _tool in bash grep sed tail uname cat date; do
+  _tp="$(command -v "$_tool" 2>/dev/null || true)"; [ -n "$_tp" ] && ln -sf "$_tp" "$RM_SCPS_BIN/$_tool" || true
+done; unset _tool _tp
+PATH="$RM_SCPS_BIN" bash -c "source '$RM_PATH' && append_runtime_metrics_entry '$RM_SCPS_TMP' 'auto_compact_inject' 'safety_net' '2026-05-06T12:00:00Z' 'null' 'null' 'null' 'null' '7'" || true
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'shipped_count: 7' "$RM_SCPS_TMP"; then
+  echo -e "  ${GREEN}PASS${NC} AC-5: arg9 emits 'shipped_count: 7' (pure-shell)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-5: 'shipped_count: 7' not found (pure-shell)"
+  echo "       file contents: $(cat "$RM_SCPS_TMP")"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+RM_SCPS8_TMP="$(mktemp)"; printf '%s\n' 'runtime_metrics: []' > "$RM_SCPS8_TMP"
+PATH="$RM_SCPS_BIN" bash -c "source '$RM_PATH' && append_runtime_metrics_entry '$RM_SCPS8_TMP' 'session_end' 'normal_completion' '2026-05-06T12:00:00Z' '1' '2' '3' '0'" || true
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'shipped_count' "$RM_SCPS8_TMP"; then
+  echo -e "  ${RED}FAIL${NC} AC-5: shipped_count leaked into 8-arg pure-shell entry"
+  echo "       file contents: $(cat "$RM_SCPS8_TMP")"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} AC-5: 8-arg pure-shell entry omits shipped_count (byte-compat)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+rm -f "$RM_SCPS_TMP" "$RM_SCPS8_TMP"; rm -rf "$RM_SCPS_BIN"
+
 # Negative AC-3: no new public API beyond append_runtime_metrics_entry
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 RM_BEFORE_FUNCS="$(declare -F | awk '{print $3}' | sort)"

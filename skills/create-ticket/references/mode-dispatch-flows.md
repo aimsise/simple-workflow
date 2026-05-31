@@ -46,7 +46,7 @@ If the findings file was supplied alongside (or was derived from) a brief with f
 
 ### Step F-5: Invoke `decomposer` agent
 
-The orchestrator MUST invoke the `decomposer` via the Agent tool with `Input form: findings_doc` per `references/spec-decomposer-input.md` Form A. Pass the findings document's full content (frontmatter included) plus any Socratic Refinement answers appended as `## Socratic Answers`.
+The orchestrator MUST invoke the `simple-workflow:decomposer` via the Agent tool with `Input form: findings_doc` per `references/spec-decomposer-input.md` Form A. Pass the findings document's full content (frontmatter included) plus any Socratic Refinement answers appended as `## Socratic Answers`.
 
 Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale). The decomposer's return value is bounded by the Context Conservation Protocol in `agents/decomposer.md` (under 500 tokens) — no file content is echoed back. Reconcile parent slug if decomposer disagrees with the derived value; decomposer wins if `slug_hint` was absent.
 
@@ -67,11 +67,11 @@ The literal word `circular` MUST appear in stdout. Exit non-zero. Do NOT touch `
 
 ### Step F-7: Per-ticket planner expansion
 
-For each ticket skeleton returned by the decomposer, in topological order, invoke the `planner` via the Agent tool with the skeleton (title, scope_summary, size, findings context). Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow). Bind the planner to the canonical AC Quality Criteria at `skills/create-ticket/references/ac-quality-criteria.md` (see SKILL.md Phase 3).
+For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size, findings context). Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow). Bind the planner to the canonical AC Quality Criteria at `skills/create-ticket/references/ac-quality-criteria.md` (see SKILL.md Phase 3).
 
 ### Step F-8: Per-ticket evaluation
 
-For each planner draft, invoke the `ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected between the marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (Read the rubric file at spawn time). Apply the retry/escalation policy described in SKILL.md Phase 4 (max 2 rounds, gate check on `gates.ticket_quality_fail` when `brief=` is present).
+For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected between the marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (Read the rubric file at spawn time). Apply the retry/escalation policy described in SKILL.md Phase 4 (max 2 rounds, gate check on `gates.ticket_quality_fail` when `brief=` is present).
 
 If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with **no** directories created and **no** counter change. This is the atomicity guarantee of findings mode.
 
@@ -126,17 +126,17 @@ Construct an inline `scope_context` spawn prompt per `references/spec-decomposer
 - Body section `## Investigation Summary`: full content of `investigation.md` from B-3
 - Body section `## Socratic Answers` (only if B-4 collected at least one answer): one bullet per answer
 
-Invoke the `decomposer` via the Agent tool with this spawn prompt. Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale).
+Invoke the `simple-workflow:decomposer` via the Agent tool with this spawn prompt. Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale).
 
 Failure paths (identical to Findings Mode F-5 / F-6): `Status: failed` → `ERROR: decomposer failed — <Rationale>`; agent unavailable → `ERROR: decomposer agent unavailable`; empty `Tickets` → `ERROR: decomposer returned zero tickets`; cycle in `depends_on` → `ERROR: circular dependency detected among tickets: <list>`. All failures exit non-zero with no directory writes and no counter change.
 
 ### Step B-6: Per-ticket planner expansion
 
-For each ticket skeleton returned by the decomposer, in topological order, invoke the `planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the brief content and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md` (see SKILL.md Phase 3). The planner does NOT re-partition — the decomposer already decided the ticket count in Step B-5.
+For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the brief content and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md` (see SKILL.md Phase 3). The planner does NOT re-partition — the decomposer already decided the ticket count in Step B-5.
 
 ### Step B-7: Per-ticket evaluation
 
-For each planner draft, invoke the `ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected per SKILL.md Phase 4. Apply the retry/escalation policy (max 2 rounds, `autopilot-policy.yaml` `gates.ticket_quality_fail` consulted when `brief_mode == auto`, non-interactive fallback to stop). If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with no directories created and no counter change (atomicity).
+For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected per SKILL.md Phase 4. Apply the retry/escalation policy (max 2 rounds, `autopilot-policy.yaml` `gates.ticket_quality_fail` consulted when `brief_mode == auto`, non-interactive fallback to stop). If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with no directories created and no counter change (atomicity).
 
 ### Step B-8: Dispatch to Common Write Path
 
@@ -172,17 +172,17 @@ Construct an inline `scope_context` spawn prompt per `references/spec-decomposer
 - Body section `## Investigation Summary`: full content of `investigation.md` from D-2
 - Body section `## Socratic Answers` (only if D-3 collected at least one answer): one bullet per answer
 
-Invoke the `decomposer` via the Agent tool with this spawn prompt. Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale).
+Invoke the `simple-workflow:decomposer` via the Agent tool with this spawn prompt. Receive the structured `## Result` block (Status / Parent slug / Tickets / Topological order / Rationale).
 
 Failure paths (identical to Findings Mode F-5 / F-6): `Status: failed` → `ERROR: decomposer failed — <Rationale>`; agent unavailable → `ERROR: decomposer agent unavailable`; empty `Tickets` → `ERROR: decomposer returned zero tickets`; cycle in `depends_on` → `ERROR: circular dependency detected among tickets: <list>`. All failures exit non-zero with no directory writes and no counter change.
 
 ### Step D-5: Per-ticket planner expansion
 
-For each ticket skeleton returned by the decomposer, in topological order, invoke the `planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the bare description and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md`. The planner does NOT re-partition — the decomposer already decided the ticket count in Step D-4.
+For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the bare description and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md`. The planner does NOT re-partition — the decomposer already decided the ticket count in Step D-4.
 
 ### Step D-6: Per-ticket evaluation
 
-For each planner draft, invoke the `ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected per SKILL.md Phase 4. Apply the retry/escalation policy (max 2 rounds, non-interactive fallback to stop). Bare description mode does NOT have an `autopilot-policy.yaml` brief-parent fallback (no brief is present). If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with no directories created and no counter change (atomicity).
+For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected per SKILL.md Phase 4. Apply the retry/escalation policy (max 2 rounds, non-interactive fallback to stop). Bare description mode does NOT have an `autopilot-policy.yaml` brief-parent fallback (no brief is present). If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with no directories created and no counter change (atomicity).
 
 ### Step D-7: Dispatch to Common Write Path
 

@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # pre-next-scout-auto-compact.sh — PreToolUse(Skill) hook.
 #
-# **Primary auto-compact trigger** (v7 redesign — Option B). Fires at the
-# **ticket boundary**: when the autopilot orchestrator is about to invoke
-# `/scout` for the NEXT ticket (i.e. at least one prior ticket already has
-# `steps.ship: completed`). At that moment the previous ticket's full
-# pipeline (scout → impl → audit → ship → tune) has finished and the model
-# is about to start a fresh ticket — exactly the cadence the user asked
-# for ("one /compact at the end of each ticket loop").
+# **De-facto DEDUP FALLBACK at the ticket boundary** (v7 redesign — Option B;
+# original design intent was "primary", see note below). Fires at PreToolUse
+# when the autopilot orchestrator is about to invoke `/scout` for the NEXT
+# ticket (i.e. at least one prior ticket already has `steps.ship: completed`).
+# In practice this hook almost always SKIPS: the post-ship state-write trigger
+# (post-ship-state-auto-compact.sh) fires earlier in the same boundary, injects
+# the `/compact`, and writes `.auto-compact-last-attempt` BEFORE the next
+# `/scout` is ever invoked — so this hook's Gate 5 (shipped_count unchanged
+# within 300s) finds the boundary already handled and short-circuits. Field
+# evidence (7-ticket run): 7/7 auto_compact_inject entries were stop_reason
+# "safety_net", 0/7 were "primary". Together the two hooks still yield exactly
+# one /compact at the end of each ticket loop — exactly the cadence the user
+# asked for — but the state-write hook is the one that injects it.
 #
 # Why this replaces the v6 `PostToolUse(Skill:simple-workflow:ship)` design:
 # `PostToolUse(Skill)` fires when the Skill tool is **invoked** (the
@@ -19,13 +25,16 @@
 #     hook's additionalContext — executed full ship body inline, never
 #     end_turned for /compact → no auto-compact between tickets
 #   - T-003 ship (10:40:25): same defiance pattern
-# Root cause: there is no "skill completed" hook event in Claude Code's
-# model. The skill body runs as subsequent model turns invoking Bash/Edit/
-# Read/etc. By contrast, by the time the orchestrator emits the NEXT
-# `Skill(simple-workflow:scout)` call, every prior step (commit, move to
-# done/, tune body, brief-level state write) has unambiguously completed.
-# PreToolUse on that next-scout invocation is the cleanest ticket-boundary
-# signal the hook surface provides.
+# Root cause / design caveat: there is no "skill completed" hook event in
+# Claude Code's model, so this hook hangs the boundary signal on the NEXT
+# `Skill(simple-workflow:scout)` invocation. But the brief-level state write
+# (`steps.ship: completed`) UNAMBIGUOUSLY PRECEDES that next /scout — which is
+# exactly why the post-ship-state PostToolUse(Write|Edit) hook fires first and
+# becomes the de-facto primary injection point. By the time this PreToolUse
+# next-scout signal arrives (after the compact/resume cycle), the boundary is
+# already handled and Gate 5 short-circuits. PreToolUse on next-scout is
+# retained as a dedup-coordinated FALLBACK that also covers any future
+# autopilot reorder, not as the primary trigger.
 #
 # Kill-switch (DEFAULT ON within autopilot context, shared with
 # post-ship-state-auto-compact.sh):
@@ -190,7 +199,12 @@ if [ "$INJECT_RC" = "0" ]; then
   # transitions (e.g. forensics after an unexpected context loss).
   # Uses the shared append helper from hooks/lib/runtime-metrics.sh.
   _AC_ISO_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
-  append_runtime_metrics_entry "$STATE_FILE_PATH" "auto_compact_inject" "primary" "$_AC_ISO_TS" "null" "null" "null" "$SHIPPED_COUNT" 2>/dev/null || true
+  # shipped_count goes to arg9 (the dedicated field), NOT arg8
+  # (consecutive_stop_blocks, which is meaningful only for session_end) — the
+  # latter is passed "null" here so this auto_compact_inject entry no longer
+  # pollutes consecutive_stop_blocks. stop_reason stays "primary" so a rare
+  # real fire from this hook is still distinguishable from the safety-net path.
+  append_runtime_metrics_entry "$STATE_FILE_PATH" "auto_compact_inject" "primary" "$_AC_ISO_TS" "null" "null" "null" "null" "$SHIPPED_COUNT" 2>/dev/null || true
   unset _AC_ISO_TS
   # additionalContext: tell the model to end the turn NOW so Claude Code's
   # input loop consumes the queued `/compact`. The autopilot orchestrator

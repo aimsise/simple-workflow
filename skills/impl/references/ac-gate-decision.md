@@ -27,7 +27,7 @@ file):
 Print
 `[IN_PROGRESS] ac-evaluator persisted partial state at <path>; attempting single-shot recovery`.
 
-Invoke `ac-evaluator` exactly once more via the Agent tool using the
+Invoke `simple-workflow:ac-evaluator` exactly once more via the Agent tool using the
 resumption prompt template below. This is a single-shot recovery —
 do NOT retry more than once, and do NOT use a loop.
 

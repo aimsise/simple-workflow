@@ -89,13 +89,13 @@ Per-mode deltas:
 
 ### Step D-4: Synthesize `scope_context` and invoke `decomposer` (Bare Description Mode)
 
-`MUST invoke the decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (kebab-case of description); `## Context` = description verbatim; `## Investigation Summary` = Phase 1 transient `investigation.md`; `## Socratic Answers` (if any) = one bullet per answer.
+`MUST invoke the simple-workflow:decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (kebab-case of description); `## Context` = description verbatim; `## Investigation Summary` = Phase 1 transient `investigation.md`; `## Socratic Answers` (if any) = one bullet per answer.
 
 Receive `## Result` (Status / Parent slug / Tickets / Topological order / Rationale). Failures: `Status: failed` → `ERROR: decomposer failed — <Rationale>`; unavailable → `ERROR: decomposer agent unavailable`; empty Tickets → `ERROR: decomposer returned zero tickets`; cycle → `ERROR: circular dependency detected among tickets: <list>`. All exit non-zero, atomic.
 
 ### Step B-5: Synthesize `scope_context` and invoke `decomposer` (Brief Mode)
 
-`MUST invoke the decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (`{brief_slug}`); `## Context` = brief.md `## Vision` + `## Business Context` verbatim; `## Investigation Summary` = Phase 1 `investigation.md` (reused when fresh); `## Socratic Answers` (if any) = one bullet per answer.
+`MUST invoke the simple-workflow:decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (`{brief_slug}`); `## Context` = brief.md `## Vision` + `## Business Context` verbatim; `## Investigation Summary` = Phase 1 `investigation.md` (reused when fresh); `## Socratic Answers` (if any) = one bullet per answer.
 
 Same failures as D-4 — atomic.
 
@@ -105,7 +105,7 @@ Prose: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md). E
 
 ### Phase 1: Investigation (researcher agent)
 
-`MUST invoke the researcher via the Agent tool`. `NEVER bypass` via direct `Grep`/`Read`/`Glob`. `Fail the task` if researcher cannot be invoked. Researcher return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/researcher.md`.
+`MUST invoke the simple-workflow:researcher via the Agent tool`. `NEVER bypass` via direct `Grep`/`Read`/`Glob`. `Fail the task` if researcher cannot be invoked. Researcher return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/researcher.md`.
 
 Modes: findings — satisfied by findings doc. Brief — reuse `{ticket-dir}/investigation.md` only when freshness-valid (`phase-state.yaml` provenance, mtime ≤ 24 h, or matching `investigation_sha256:`; see [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md)). Bare — always invoked. Fresh runs write `.simple-workflow/.tmp/create-ticket-{parent-slug}/investigation.md`.
 
@@ -127,7 +127,7 @@ Caps (load-bearing): max **3 questions/round**, **10 rounds**, **30 total**. Non
 
 ### Phase 3: Ticket Draft (planner agent)
 
-`MUST invoke the planner via the Agent tool`. `NEVER bypass` by drafting inline — planner output (Background / Scope / ACs / Implementation Notes + category/size/workflow) is the canonical draft. `Fail the task` if planner cannot be invoked. Planner return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/planner.md`.
+`MUST invoke the simple-workflow:planner via the Agent tool`. `NEVER bypass` by drafting inline — planner output (Background / Scope / ACs / Implementation Notes + category/size/workflow) is the canonical draft. `Fail the task` if planner cannot be invoked. Planner return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/planner.md`.
 
 Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Community); size (S/M/L/XL); workflow chain from [references/workflow-patterns.md](references/workflow-patterns.md). Context: Phase 2 answers, brief content (replaces Phase 2 in brief mode), or findings + decomposer skeleton.
 
@@ -141,7 +141,7 @@ By category: Security wraps with security-only audits, spec-first; CodeQuality u
 
 ### Phase 4: Ticket Evaluation
 
-`MUST invoke the ticket-evaluator via the Agent tool`. `NEVER bypass` by self-assessing. `Fail this ticket` if evaluator cannot be invoked. Evaluator return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/ticket-evaluator.md`.
+`MUST invoke the simple-workflow:ticket-evaluator via the Agent tool`. `NEVER bypass` by self-assessing. `Fail this ticket` if evaluator cannot be invoked. Evaluator return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/ticket-evaluator.md`.
 
 **Canonical AC Quality Criteria inline-injection (every spawn — initial AND retry)**: orchestrator MUST `Read` [references/ac-quality-criteria.md](references/ac-quality-criteria.md) at spawn time and inline-inject the content between the markers `<canonical_ac_criteria>` and `</canonical_ac_criteria>`. Evaluator reads only the marker block (not the file). Missing markers fail-fast with ERROR.
 

@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # post-ship-state-auto-compact.sh — PostToolUse(Write|Edit) hook.
 #
-# **Safety-net auto-compact trigger** (v7 redesign — Option A). Fires when
-# the autopilot orchestrator writes `steps.ship: completed` into the brief-
-# level `autopilot-state.yaml`. This is the canonical "ship + tune both
-# done" marker — but it fires DURING the same turn as the autopilot
-# orchestrator continues to the next ticket's preamble, so it cannot
-# replace the primary ticket-boundary trigger (pre-next-scout-auto-compact.sh).
-# Its job is to catch the corner cases the primary trigger misses:
+# **De-facto PRIMARY auto-compact trigger** (v7 redesign — Option A; labelled
+# "safety-net" by original design intent, see note below). Fires when the
+# autopilot orchestrator writes `steps.ship: completed` into the brief-level
+# `autopilot-state.yaml` (PostToolUse Write|Edit). This is the canonical "ship
+# + tune both done" marker, and because it PRECEDES the next /scout, it is the
+# trigger that actually injects `/compact` at every normal ticket boundary —
+# it emits an explicit "end the turn now" instruction so the queued /compact
+# can drain. Field evidence (7-ticket run): 7/7 auto_compact_inject entries
+# were stop_reason "safety_net" from this hook, 0/7 "primary". In addition to
+# being the de-facto primary, it covers:
 #
 #   1. **Last-ticket transition**: when the just-shipped ticket was the
 #      FINAL one, no `Skill(simple-workflow:scout)` follows and the
@@ -18,20 +21,27 @@
 #      primary trigger goes dark but this state-write trigger still
 #      catches the boundary.
 #
-# Why this is a safety-net and not the primary trigger:
-# By the time the orchestrator writes `steps.ship: completed`, the model
-# is mid-turn and about to continue into the next ticket's preamble
-# (Bash check → state-update before → Skill(scout)). End-of-turn does
-# not happen here; that is what the PreToolUse(Skill:scout) primary
-# trigger handles cleanly. Firing /compact at the state-write moment
-# would race with the orchestrator's next-ticket preamble.
+# Why this ends up being the de-facto primary (despite the "safety-net" name):
+# By the time the orchestrator writes `steps.ship: completed`, the full ticket
+# loop (scout → impl → audit → ship → tune) is complete and the model is about
+# to continue into the next ticket's preamble. This hook injects an explicit
+# "end the turn now, do not proceed to the next preamble" instruction at that
+# state-write moment, so the queued /compact drains here — it does NOT defer to
+# the next /scout. The PreToolUse(Skill:scout) hook only fires AFTER
+# compact/resume and by then dedups out, so in practice this state-write hook
+# is the one that actually triggers each boundary /compact.
 #
-# **Coordination with the primary trigger** (pre-next-scout-auto-compact.sh):
-# When both triggers would fire for the same ticket boundary, the primary
-# fires FIRST (the state write happens before the next /scout invocation
-# by ~tens of seconds) and touches `.auto-compact-pending`. This hook
-# checks for that sentinel and short-circuits — only one /compact per
-# ticket boundary.
+# **Coordination with the dedup-fallback trigger** (pre-next-scout-auto-compact.sh):
+# When both hooks see the same ticket boundary, THIS state-write hook fires
+# FIRST — the `steps.ship: completed` write happens before the next /scout
+# invocation (which only occurs after the compact/resume cycle). This hook
+# injects /compact, touches `.auto-compact-pending`, and (via Gate 7) writes
+# the `.auto-compact-last-attempt` marker. The sentinel is consumed by
+# autopilot-continue.sh during the Stop yield, but the last-attempt marker
+# survives compact/resume, so when the next /scout finally fires, the
+# pre-next-scout hook's Gate 5 sees shipped_count unchanged within 300s and
+# short-circuits. Result: exactly one /compact per ticket boundary, injected by
+# this hook.
 #
 # Kill-switch (DEFAULT ON within autopilot context, shared with the
 # primary):
@@ -476,7 +486,13 @@ if [ "$INJECT_RC" = "0" ]; then
     # M4: audit trail — one runtime_metrics entry per successful inject
     # so the user can correlate /compact fires with state transitions.
     _AC_ISO_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
-    append_runtime_metrics_entry "$STATE_FILE_PATH" "auto_compact_inject" "safety_net" "$_AC_ISO_TS" "null" "null" "null" "${SHIPPED_COUNT_FOR_AUDIT:-null}" 2>/dev/null || true
+    # shipped_count goes to arg9 (the dedicated field), NOT arg8
+    # (consecutive_stop_blocks, which is meaningful only for session_end) — the
+    # latter is passed "null" so this auto_compact_inject entry no longer
+    # pollutes consecutive_stop_blocks. ${SHIPPED_COUNT_FOR_AUDIT:-null} may be
+    # the literal "null" (no count resolved); runtime-metrics.sh treats "null"
+    # arg9 as "omit the field", so no shipped_count: null is emitted.
+    append_runtime_metrics_entry "$STATE_FILE_PATH" "auto_compact_inject" "safety_net" "$_AC_ISO_TS" "null" "null" "null" "null" "${SHIPPED_COUNT_FOR_AUDIT:-null}" 2>/dev/null || true
     unset _AC_ISO_TS
   fi
   # Safety-net additionalContext. This fires INSIDE the autopilot

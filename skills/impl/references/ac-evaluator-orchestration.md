@@ -53,7 +53,7 @@ When `AC_COUNT >= 30`, split the rubric into two contiguous halves by
 AC-ID order (never by file or topic boundaries). Let part 1 cover AC-1
 through AC-⌊AC_COUNT/2⌋ and part 2 cover the remainder.
 
-- Invoke `ac-evaluator` **twice** — once per partition.
+- Invoke `simple-workflow:ac-evaluator` **twice** — once per partition.
 - Persist reports as `eval-round-{n}-part-1.md` and
   `eval-round-{n}-part-2.md` (both paths under the same directory as
   the unpartitioned `eval-round-{n}.md` path would be, e.g.
@@ -77,7 +77,7 @@ through AC-⌊AC_COUNT/2⌋ and part 2 cover the remainder.
 - Emit the merged verdict as the effective Step 15 result and proceed
   to Step 16.
 
-When `AC_COUNT < 30`, invoke `ac-evaluator` exactly once (no partition)
+When `AC_COUNT < 30`, invoke `simple-workflow:ac-evaluator` exactly once (no partition)
 with `eval-round-{n}.md` as the report path — **unless** the
 high-assurance multi-verifier branch below is active. Negative AC-1: a
 29-AC plan MUST NOT trigger the partition branch.
@@ -88,7 +88,7 @@ When `/impl` Step 3a resolved `VERIFICATION_DEPTH == exhaustive` **and**
 `AC_COUNT < 30` (partition takes precedence over multi-verifier — see
 [verification-depth.md](verification-depth.md) "Composition with the
 `AC_COUNT >= 30` partition branch"), Step 15 spawns **three independent
-`ac-evaluator` invocations** over the SAME rubric (field `b`) and the SAME
+`simple-workflow:ac-evaluator` invocations** over the SAME rubric (field `b`) and the SAME
 `git diff` instead of one. The three runs are independent — each forms its
 own verdict with no visibility into the others (the firewall in
 `skills/impl/SKILL.md` line 141 — "Prompt must NOT include Generator's

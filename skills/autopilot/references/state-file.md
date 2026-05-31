@@ -35,6 +35,9 @@ runtime_metrics: []                      # append-only, written by Stop / PreCom
 #     cache_read_input_tokens: 0               # integer or null (from hook payload)
 #     input_tokens: 0                          # integer or null (from hook payload, used by Plan 07)
 #     consecutive_stop_blocks: 5               # integer or null; meaningful only for boundary: session_end
+#   # `auto_compact_inject` entries (written by the auto-compact hooks) append an
+#   # OPTIONAL `shipped_count:` key AFTER consecutive_stop_blocks and leave
+#   # consecutive_stop_blocks null; their stop_reason is "primary" | "safety_net".
 ```
 
 Field summary (the 7 top-level fields plus `runtime_metrics:`):
@@ -206,7 +209,8 @@ discrimination heuristic, are defined in
 cite that file rather than the planning-phase document under `.docs/`
 (which is not shipped with the plugin).
 
-The seven canonical keys per `runtime_metrics:` entry:
+The seven canonical keys per `runtime_metrics:` entry (plus an optional eighth,
+`shipped_count`, present only on `auto_compact_inject` entries):
 
 - `boundary` — `session_compaction` | `session_end` (plus per-phase
   boundaries; see the taxonomy file).
@@ -221,6 +225,12 @@ The seven canonical keys per `runtime_metrics:` entry:
   signal).
 - `consecutive_stop_blocks` — integer or `null`. The Stop hook
   loop-guard counter; meaningful only for `boundary: session_end`.
+- `shipped_count` — integer, OPTIONAL. Present ONLY on `boundary:
+  auto_compact_inject` entries (written by the two auto-compact hooks); the
+  cumulative number of shipped tickets at that boundary. Omitted on every other
+  boundary. It is recorded in its own field rather than overloading
+  `consecutive_stop_blocks` (which the auto-compact hooks previously polluted),
+  so forensic readers are not misled.
 
 Append-only contract: hooks MUST NOT rewrite or remove existing entries.
 

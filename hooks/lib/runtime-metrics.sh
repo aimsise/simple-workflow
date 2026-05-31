@@ -6,11 +6,17 @@
 #   - hooks/pre-compact-save.sh (session_compaction boundary writes)
 #   - hooks/impl-checkpoint-guard.sh (session_end boundary writes for the
 #     /audit-handoff guard; emits the four stop_reason values listed below)
+#   - hooks/scout-checkpoint-guard.sh (session_end boundary writes)
+#   - hooks/pre-next-scout-auto-compact.sh (auto_compact_inject boundary;
+#     passes the cumulative shipped-ticket count via the optional 9th arg)
+#   - hooks/post-ship-state-auto-compact.sh (auto_compact_inject boundary;
+#     passes the cumulative shipped-ticket count via the optional 9th arg)
 #
 # Public contract:
 #
 #   append_runtime_metrics_entry <state_file> <boundary> <stop_reason>
 #       <timestamp> <cache_creation> <cache_read> <input_tokens> <consecutive>
+#       [<shipped_count>]
 #     - Appends a single entry to the `runtime_metrics:` list in the given
 #       autopilot-state.yaml file.
 #     - Is a NO-OP when the state file is missing or unreadable.
@@ -22,6 +28,19 @@
 #            the SKILL.md template).
 #     - Pass literal "null" (string) for stop_reason or consecutive when those
 #       fields are not applicable to the boundary type.
+#     - <shipped_count> (arg9) is OPTIONAL ("only-when-provided" semantics).
+#       Omitted, empty, or the literal "null" -> NO `shipped_count:` field is
+#       emitted and the entry is byte-identical to the historical 8-arg form
+#       (so every session_end / session_compaction caller is unchanged). A
+#       non-negative integer -> a `shipped_count:` field is appended AFTER
+#       `consecutive_stop_blocks` in ALL THREE write tiers. This field carries
+#       the cumulative count of shipped tickets at an `auto_compact_inject`
+#       boundary and is semantically DISTINCT from `consecutive_stop_blocks`
+#       (which is meaningful only for `boundary: session_end`). The two
+#       auto_compact_inject callers pass it so they no longer pollute
+#       consecutive_stop_blocks. The per-boundary variable key set mirrors
+#       post-phase-checkpoint.sh, which already adds ticket_id/phase only to
+#       phase_* entries.
 #
 # stop_reason taxonomy (informative; the helper itself does no validation):
 #
@@ -90,7 +109,13 @@ _rm_numeric_or_null() {
 append_runtime_metrics_entry() {
   # $1 state_file, $2 boundary, $3 stop_reason ("null" or value),
   # $4 timestamp, $5 cache_creation, $6 cache_read, $7 input_tokens,
-  # $8 consecutive_stop ("null" or int)
+  # $8 consecutive_stop ("null" or int),
+  # $9 shipped_count (OPTIONAL; "", "null", or omitted -> field NOT emitted;
+  #    a non-negative int -> a `shipped_count:` field is appended after
+  #    consecutive_stop_blocks). Used by the two auto_compact_inject callers
+  #    (pre-next-scout-auto-compact.sh / post-ship-state-auto-compact.sh) to
+  #    record the cumulative shipped count WITHOUT polluting
+  #    consecutive_stop_blocks.
   local state_file="$1"
   local boundary="$2"
   local stop_reason="$3"
@@ -99,6 +124,7 @@ append_runtime_metrics_entry() {
   local cache_read="$6"
   local input_tokens="$7"
   local consecutive="$8"
+  local shipped_count="${9:-}"
 
   # Strip characters that could break the yq expression (`"` / `\`) or the
   # pure-shell heredoc YAML structure (`\n` / `\r`). All callers pass
@@ -111,20 +137,39 @@ append_runtime_metrics_entry() {
   timestamp=$(_rm_strip_unsafe "$timestamp")
   # Numeric fields are validated against `^([0-9]+|null)$` and any non-match
   # is coerced to the `null` literal. This closes the yq-expression
-  # injection vector for these four positional arguments, which flow from
+  # injection vector for these positional arguments, which flow from
   # `_runtime_metrics_payload_field`'s jq output and are spliced raw into
-  # the yq expression at line ~89.
+  # the yq expression below.
   cache_creation=$(_rm_numeric_or_null "$cache_creation")
   cache_read=$(_rm_numeric_or_null "$cache_read")
   input_tokens=$(_rm_numeric_or_null "$input_tokens")
   consecutive=$(_rm_numeric_or_null "$consecutive")
+
+  # arg9 (shipped_count): OPTIONAL, only-when-provided semantics. Empty,
+  # "null", or a value that does not survive the numeric guard -> emit no
+  # field (emit_shipped=0), keeping the 8-arg callers byte-identical (T3).
+  # A non-negative integer -> emit `shipped_count:` after consecutive_stop_blocks
+  # in every tier. Runs through the SAME numeric guard as the count fields so
+  # the yq-expression injection surface is closed identically (it flows from
+  # SHIPPED_COUNT). post-ship-state passes `${SHIPPED_COUNT_FOR_AUDIT:-null}`,
+  # so the literal "null" must also map to "omit" — handled here.
+  local emit_shipped=0
+  if [ -n "$shipped_count" ] && [ "$shipped_count" != "null" ]; then
+    shipped_count=$(_rm_numeric_or_null "$shipped_count")
+    [ "$shipped_count" != "null" ] && emit_shipped=1
+  fi
 
   [ -n "$state_file" ] && [ -f "$state_file" ] || return 0
 
   if command -v yq >/dev/null 2>&1; then
     local stop_value
     if [ "$stop_reason" = "null" ]; then stop_value="null"; else stop_value="\"$stop_reason\""; fi
-    if yq eval -i ".runtime_metrics = ((.runtime_metrics // []) + [{\"boundary\":\"$boundary\",\"stop_reason\":$stop_value,\"timestamp\":\"$timestamp\",\"cache_creation_input_tokens\":$cache_creation,\"cache_read_input_tokens\":$cache_read,\"input_tokens\":$input_tokens,\"consecutive_stop_blocks\":$consecutive}])" "$state_file" 2>/dev/null; then
+    # T1/T2: append shipped_count LAST (immediately after consecutive_stop_blocks)
+    # and ONLY when arg9 was provided, so all three tiers emit a parse-identical
+    # key order and the 8-arg form stays byte-identical.
+    local sc_frag=""
+    if [ "$emit_shipped" = "1" ]; then sc_frag=",\"shipped_count\":$shipped_count"; fi
+    if yq eval -i ".runtime_metrics = ((.runtime_metrics // []) + [{\"boundary\":\"$boundary\",\"stop_reason\":$stop_value,\"timestamp\":\"$timestamp\",\"cache_creation_input_tokens\":$cache_creation,\"cache_read_input_tokens\":$cache_read,\"input_tokens\":$input_tokens,\"consecutive_stop_blocks\":$consecutive$sc_frag}])" "$state_file" 2>/dev/null; then
       return 0
     fi
     echo "[runtime_metrics] yq write failed, attempting fallback" >&2
@@ -139,6 +184,8 @@ append_runtime_metrics_entry() {
     METRIC_CACHE_READ="$cache_read" \
     METRIC_INPUT_TOKENS="$input_tokens" \
     METRIC_CONSECUTIVE="$consecutive" \
+    METRIC_SHIPPED="$shipped_count" \
+    METRIC_EMIT_SHIPPED="$emit_shipped" \
     python3 - <<'PYEOF'
 import os, sys
 try:
@@ -168,6 +215,11 @@ try:
         'input_tokens': numeric_or_null(os.environ['METRIC_INPUT_TOKENS']),
         'consecutive_stop_blocks': numeric_or_null(os.environ['METRIC_CONSECUTIVE']),
     }
+    # T1/T2: shipped_count appended LAST, only when arg9 was provided.
+    # yaml.safe_dump(sort_keys=False) preserves insertion order, matching the
+    # yq object literal and the pure-shell heredoc.
+    if os.environ.get('METRIC_EMIT_SHIPPED') == '1':
+        entry['shipped_count'] = numeric_or_null(os.environ['METRIC_SHIPPED'])
     rm = data.get('runtime_metrics')
     if not isinstance(rm, list):
         rm = []
@@ -204,6 +256,14 @@ PYEOF
     input_tokens: $input_tokens
     consecutive_stop_blocks: $consecutive
 EOF
+  # T1: emit shipped_count INSIDE the just-written element (immediately after
+  # consecutive_stop_blocks, same 4-space indent) — NOT as a separate
+  # top-level write — so the pure-shell tier's "runtime_metrics is the last
+  # top-level key" invariant is preserved and the field lands within the array
+  # element. Only when arg9 was provided.
+  if [ "$emit_shipped" = "1" ]; then
+    printf '    shipped_count: %s\n' "$shipped_count" >> "$state_file"
+  fi
   return 0
 }
 

@@ -80,7 +80,7 @@ Determine whether the **researcher** agent is needed:
 
 - **Skip researcher** if `phase_state_fresh = true` (set in Step 1-pre — at least one valid `phase-state.yaml` record exists). The unified state file already carries the per-phase records forward, so there is nothing a deep research pass would add (AC 4.6).
 
-- **Otherwise**: Spawn the **researcher** agent to analyze:
+- **Otherwise**: Spawn the **researcher** agent (pass `simple-workflow:researcher` as the Agent tool `subagent_type`) to analyze:
   - What has changed on this branch vs `<default-branch>`
   - What the changes are trying to accomplish
   - Current state of work (complete, in-progress, blocked)

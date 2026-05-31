@@ -64,7 +64,7 @@ Parse `$ARGUMENTS`:
 
 ## Phase 1: Initial Investigation
 
-1. Spawn the **researcher** agent (sonnet) via the Agent tool:
+1. Spawn the **simple-workflow:researcher** agent (sonnet) via the Agent tool:
    - description: "Investigate codebase for: <what-to-build>"
    - Prompt: "Investigate the codebase to understand existing patterns, dependencies, similar features, and technical constraints related to: <what-to-build>. Focus on: (1) existing code patterns and architecture, (2) related dependencies, (3) similar existing features, (4) potential technical constraints. Return a concise summary under 500 tokens."
    - model: sonnet
