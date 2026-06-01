@@ -15,6 +15,10 @@ You are a test engineer. Write and run tests following existing project patterns
 4. Run the project's test command (as defined in CLAUDE.md or project conventions) to verify
 5. Fix any failing tests before returning
 
+## Test Design Rubric
+
+Follow `skills/impl/references/test-authoring-guidance.md` (resolve the path relative to the repository root) as the positive rubric for test authoring. For any **computational** target (a computed numeric/algorithmic value — ratio, threshold, hash, conversion, round-trip, metric), assert against an **independent oracle** (reference library / published formula / hand-computed truth table — never the code's own output) on the **raw, pre-rounding** value with an explicit tolerance; add property / invariant tests (monotonicity, symmetry, idempotence, round-trip, containment); and cover adversarial / non-finite / out-of-range inputs by default — including at least one **parse-accepted-then-overflows** vector (a value the parser ACCEPTS that yields a non-finite / out-of-range intermediate, e.g. `oklch(0.5 1e400 30)` → Infinity chroma), not only parse-rejected `NaN` / `Infinity` tokens; and, when the function shares an input parser with sibling tools, ensure the input-validation guard lives in the SHARED boundary OR is replicated AND adversarially tested in EVERY sibling tool (see rule 4 of the guidance). A test that re-measures with the implementation's own rounded value is self-confirming and is rejected by tautological rule R4 (`skills/impl/references/tautological-assertion-rules.md`).
+
 ## Context Conservation Protocol
 
 - All detailed analysis, file contents, and grep results MUST be written to files

@@ -155,6 +155,29 @@ partition `-part-{i}.md` files do; no combined `eval-round-{n}.md` is
 written (the orchestrator renders no AC verdict to disk — see
 `skills/impl/SKILL.md` line 40).
 
+## Oracle independence (computational ACs, all evaluator modes)
+
+Independent of the verifier count, every `ac-evaluator` invocation — single,
+partitioned, or 3-lens — MUST apply the oracle-independence requirement in
+`agents/ac-evaluator.md` `## Oracle Independence (computational ACs)` to any
+**computational AC** (one whose PASS/FAIL hinges on a computed
+numeric/algorithmic value): derive ≥1 expected value from an oracle that does
+not share the implementation's core and compare against the implementation's
+RAW (pre-rounding) output with an explicit tolerance — a green project suite is
+necessary but not sufficient. A throwaway oracle probe under the gitignored
+`.simple-workflow/scratch/` directory is permitted.
+
+Stacking three lenses does NOT substitute for this: all three verifiers read the
+SAME `git diff` and run the SAME project tests, so without an independent oracle
+they share the same blind spot — a test that re-measures with the code's own
+rounded value passes all three. The multi-verifier branch adds perspective
+diversity on top of an oracle check; it does not replace it. The ticket-wide
+kill switch is `constraints.oracle_verification: off` (absent / unknown →
+`auto`, active); the orchestrator resolves it at `/impl` Step 3a and inlines it
+into every `ac-evaluator` spawn prompt as the field `Oracle verification:
+{auto|off}`, so the evaluator reads the switch from the prompt (like the
+`## Bound capabilities (per AC)` handoff), not from disk.
+
 ## Prompt template field additions under Strategy B
 
 - **Field `j`** (soft turn budget, always present): append

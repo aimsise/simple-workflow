@@ -31,4 +31,5 @@ constraints:
   max_total_rounds: {9|12}  # conservative/moderate=9, aggressive=12
   allow_breaking_changes: {false|true}  # conservative/moderate=false, aggressive=true
   verification_depth: auto  # auto (default, all tiers) derives a depth tier from ticket Size x risk_tolerance; standard|thorough|exhaustive force a tier; off restores pre-v8.1.0 behaviour (base rounds, single evaluator, no forced third-pass). See skills/impl/references/verification-depth.md
+  oracle_verification: auto  # auto (default) enforces Gate 7 oracle independence for computational ACs + the criticality floor (thorough min for critical-domain computational ACs); off restores pre-v8.2.0 behaviour. See skills/impl/references/verification-depth.md and skills/create-ticket/references/ac-quality-criteria.md Gate 7
 ```

@@ -44,7 +44,7 @@ Available user skills: !`( ls -1 ~/.claude/skills 2>/dev/null ; ls -1 .claude/sk
 
 1. Parse `$ARGUMENTS` to identify the file path(s) or feature name to be tested. The spawned test-writer subagent owns the fork — the orchestrator does NOT run direct Read/Grep/Edit loops at this level; delegation happens via `context: fork` + `agent: test-writer` declared in the frontmatter.
 2. The test-writer subagent examines existing tests to understand patterns and conventions (test runner, helper imports, fixture style, naming).
-3. The test-writer subagent designs test cases covering: happy path, edge cases, boundary values, error cases.
+3. The test-writer subagent designs test cases covering: happy path, edge cases, boundary values, error cases — following the rubric in `skills/impl/references/test-authoring-guidance.md` (independent oracle + raw-value tolerance for computational targets, property/invariant tests, adversarial/non-finite inputs by default).
 4. The test-writer subagent writes tests following the existing patterns and project conventions (test framework, file naming, directory layout — as defined in CLAUDE.md or project conventions).
 5. The test-writer subagent runs the project's test command (as defined in CLAUDE.md or project conventions) to verify.
 6. The test-writer subagent fixes any failing tests it introduced before returning. If the iteration limit (`maxTurns: 25` in `agents/test-writer.md`) is hit with tests still failing, the agent returns a `partial` or `failed` status.
