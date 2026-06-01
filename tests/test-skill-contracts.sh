@@ -9176,5 +9176,192 @@ assert_true \
 
 echo ""
 
+# =============================================================================
+# Category AR: Gate 7 oracle independence (v8.2.0)
+# Diff: New category. Drift-guards the oracle-independence feature line that
+#       closes the rounded-meet false-pass defect class (a test re-measuring
+#       with the code's own rounded value). Verifies the canonical Gate 7
+#       section, the planner self-audit step 8, the ticket-evaluator Gate 7
+#       row, the ac-evaluator oracle section + scratch carve-out, the R4
+#       tautological rule, the test-authoring-guidance rubric + its wiring,
+#       the verification-depth criticality floor, and the oracle_verification
+#       policy field. Symmetry per CLAUDE.md ## Plans / ## Modifications.
+# =============================================================================
+echo "--- Cat AR: Gate 7 oracle independence ---"
+
+ACQC_AR="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+PLANNER_AR="$REPO_DIR/agents/planner.md"
+TEV_AR="$REPO_DIR/agents/ticket-evaluator.md"
+ACEV_AR="$REPO_DIR/agents/ac-evaluator.md"
+TAUT_AR="$REPO_DIR/skills/impl/references/tautological-assertion-rules.md"
+TAG_AR="$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
+VD_AR="$REPO_DIR/skills/impl/references/verification-depth.md"
+IMPL_AR="$REPO_DIR/agents/implementer.md"
+TW_AR="$REPO_DIR/agents/test-writer.md"
+
+# CT-AR-1: canonical Gate 7 section + oracle/raw-value vocabulary + kill switch.
+ar1_section=$(grep -cE '^## Gate 7: Oracle Independence' "$ACQC_AR" || true)
+ar1_oracle=$(grep -ciF 'independent oracle' "$ACQC_AR" || true)
+ar1_raw=$(grep -ciF 'raw' "$ACQC_AR" || true)
+ar1_kill=$(grep -cF 'oracle_verification' "$ACQC_AR" || true)
+ar1_result="false"
+if [ "$ar1_section" -ge 1 ] && [ "$ar1_oracle" -ge 1 ] && [ "$ar1_raw" -ge 1 ] && [ "$ar1_kill" -ge 1 ]; then ar1_result="true"; fi
+assert_true \
+  "CT-AR-1 (canonical Gate 7): ac-quality-criteria.md has '## Gate 7: Oracle Independence' (section=$ar1_section>=1), 'independent oracle' ($ar1_oracle>=1), 'raw' ($ar1_raw>=1), 'oracle_verification' kill switch ($ar1_kill>=1)" \
+  "$ar1_result"
+
+# CT-AR-2: planner Pre-emit Self-Audit step 8 (Gate 7 oracle independence).
+assert_file_contains \
+  "CT-AR-2 (planner step 8): agents/planner.md ships Pre-emit Self-Audit step 8 (Gate 7 oracle independence cross-check)" \
+  "$PLANNER_AR" \
+  '8\. \*\*Gate 7 oracle independence cross-check\*\*'
+
+# CT-AR-3: ticket-evaluator Gate 7 row in the Result template.
+ar3_oi=$(grep -cF 'Oracle Independence:' "$TEV_AR" || true)
+ar3_g7=$(grep -cF 'Gate 7' "$TEV_AR" || true)
+ar3_result="false"
+if [ "$ar3_oi" -ge 1 ] && [ "$ar3_g7" -ge 1 ]; then ar3_result="true"; fi
+assert_true \
+  "CT-AR-3 (ticket-evaluator Gate 7 row): agents/ticket-evaluator.md has 'Oracle Independence:' (got=$ar3_oi>=1) and 'Gate 7' (got=$ar3_g7>=1)" \
+  "$ar3_result"
+
+# CT-AR-4: ac-evaluator oracle section + scratch carve-out + necessary-not-sufficient.
+ar4_section=$(grep -cF '## Oracle Independence (computational ACs)' "$ACEV_AR" || true)
+ar4_scratch=$(grep -cF '.simple-workflow/scratch/' "$ACEV_AR" || true)
+ar4_nns=$(grep -ciF 'necessary but' "$ACEV_AR" || true)
+ar4_result="false"
+if [ "$ar4_section" -ge 1 ] && [ "$ar4_scratch" -ge 1 ] && [ "$ar4_nns" -ge 1 ]; then ar4_result="true"; fi
+assert_true \
+  "CT-AR-4 (ac-evaluator oracle path): agents/ac-evaluator.md has '## Oracle Independence (computational ACs)' (got=$ar4_section>=1), '.simple-workflow/scratch/' carve-out (got=$ar4_scratch>=1), 'necessary but' (got=$ar4_nns>=1)" \
+  "$ar4_result"
+
+# CT-AR-5: tautological rule R4 + ac-evaluator references four rules incl R4.
+ar5_r4=$(grep -cE '^### R4: Oracle Circularity' "$TAUT_AR" || true)
+ar5_four=$(grep -ciF 'four canonical rules' "$ACEV_AR" || true)
+ar5_r4ref=$(grep -cF 'R4' "$ACEV_AR" || true)
+ar5_result="false"
+if [ "$ar5_r4" -ge 1 ] && [ "$ar5_four" -ge 1 ] && [ "$ar5_r4ref" -ge 1 ]; then ar5_result="true"; fi
+assert_true \
+  "CT-AR-5 (R4 oracle circularity): tautological-assertion-rules.md has '### R4: Oracle Circularity' (got=$ar5_r4>=1); ac-evaluator references 'four canonical rules' (got=$ar5_four>=1) and 'R4' (got=$ar5_r4ref>=1)" \
+  "$ar5_result"
+
+# CT-AR-6: test-authoring-guidance.md exists AND is wired into implementer + test-writer.
+ar6_exists=0
+if [ -f "$TAG_AR" ]; then ar6_exists=1; fi
+ar6_impl=$(grep -cF 'test-authoring-guidance.md' "$IMPL_AR" || true)
+ar6_tw=$(grep -cF 'test-authoring-guidance.md' "$TW_AR" || true)
+ar6_result="false"
+if [ "$ar6_exists" -eq 1 ] && [ "$ar6_impl" -ge 1 ] && [ "$ar6_tw" -ge 1 ]; then ar6_result="true"; fi
+assert_true \
+  "CT-AR-6 (test-authoring rubric wired): test-authoring-guidance.md exists ($ar6_exists=1) and is referenced by implementer.md ($ar6_impl>=1) AND test-writer.md ($ar6_tw>=1)" \
+  "$ar6_result"
+
+# CT-AR-7: test-authoring-guidance.md carries the core rubric vocabulary.
+ar7_oracle=$(grep -ciF 'independent oracle' "$TAG_AR" || true)
+ar7_raw=$(grep -ciF 'raw' "$TAG_AR" || true)
+ar7_adv=$(grep -ciE 'adversarial|non-finite' "$TAG_AR" || true)
+ar7_result="false"
+if [ "$ar7_oracle" -ge 1 ] && [ "$ar7_raw" -ge 1 ] && [ "$ar7_adv" -ge 1 ]; then ar7_result="true"; fi
+assert_true \
+  "CT-AR-7 (rubric content): test-authoring-guidance.md has 'independent oracle' ($ar7_oracle>=1), 'raw' ($ar7_raw>=1), adversarial/non-finite ($ar7_adv>=1)" \
+  "$ar7_result"
+
+# CT-AR-8 (SYMMETRY GUARD): oracle independence wired across spawner (/impl
+# Step 15) + orchestration + verdict agent, mirroring DEPTH-8. ac-evaluator is
+# spawned ONLY by /impl, so this triple is the full matrix.
+ar8_impl=$(grep -ciF 'oracle independence' "$REPO_DIR/skills/impl/SKILL.md" || true)
+ar8_orch=$(grep -ciF 'oracle independence' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+ar8_agent=$(grep -cF '## Oracle Independence (computational ACs)' "$ACEV_AR" || true)
+ar8_result="false"
+if [ "$ar8_impl" -ge 1 ] && [ "$ar8_orch" -ge 1 ] && [ "$ar8_agent" -ge 1 ]; then ar8_result="true"; fi
+assert_true \
+  "CT-AR-8 (oracle wired symmetrically): impl SKILL ($ar8_impl>=1) + ac-evaluator-orchestration ($ar8_orch>=1) + ac-evaluator agent ($ar8_agent>=1); all expected >=1" \
+  "$ar8_result"
+
+# CT-AR-9: verification-depth criticality floor + oracle_verification policy field documented.
+ar9_floor=$(grep -ciF 'criticality floor' "$VD_AR" || true)
+ar9_policy=$(grep -cF 'oracle_verification' "$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md" || true)
+ar9_template=$(grep -cF 'oracle_verification' "$REPO_DIR/skills/brief/references/policy-template.md" || true)
+ar9_result="false"
+if [ "$ar9_floor" -ge 1 ] && [ "$ar9_policy" -ge 1 ] && [ "$ar9_template" -ge 1 ]; then ar9_result="true"; fi
+assert_true \
+  "CT-AR-9 (criticality floor + policy field): verification-depth.md 'criticality floor' ($ar9_floor>=1), autopilot-policy-reference.md oracle_verification ($ar9_policy>=1), policy-template.md oracle_verification ($ar9_template>=1)" \
+  "$ar9_result"
+
+# CT-AR-10 (single-spawner invariant behind CT-AR-8): ac-evaluator is spawned
+# ONLY by /impl, which is what makes the CT-AR-8 3-cell matrix the full
+# caller↔callee set. Drift-guard it: if a future skill teaches another SKILL.md
+# to spawn ac-evaluator, this fails so the oracle directive must be wired there
+# too (the asymmetric-bypass failure mode CLAUDE.md ## Plans names).
+ar10_nonimpl=0
+for ar10_f in "$REPO_DIR"/skills/*/SKILL.md; do
+  case "$ar10_f" in */impl/SKILL.md) continue;; esac
+  if grep -qF 'simple-workflow:ac-evaluator' "$ar10_f"; then ar10_nonimpl=$((ar10_nonimpl + 1)); fi
+done
+ar10_impl=$(grep -cF 'simple-workflow:ac-evaluator' "$REPO_DIR/skills/impl/SKILL.md" || true)
+ar10_result="false"
+if [ "$ar10_nonimpl" -eq 0 ] && [ "$ar10_impl" -ge 1 ]; then ar10_result="true"; fi
+assert_true \
+  "CT-AR-10 (ac-evaluator single-spawner): /impl/SKILL.md is the ONLY SKILL.md carrying a 'simple-workflow:ac-evaluator' spawn (impl=$ar10_impl>=1, other spawners=$ar10_nonimpl, expected 0) — keeps the CT-AR-8 matrix complete" \
+  "$ar10_result"
+
+# CT-AR-11 (adversarial coverage for externally-fed computational ACs): Gate 7
+# AND the ac-evaluator require adversarial / non-finite / out-of-range coverage,
+# so the non-finite-input DoS-hang / out-of-range-leak defect class is enforced,
+# not only the rounded-meet false-pass.
+ar11_acqc=$(grep -ciF 'adversarial' "$ACQC_AR" || true)
+ar11_acev=$(grep -ciF 'adversarial' "$ACEV_AR" || true)
+ar11_result="false"
+if [ "$ar11_acqc" -ge 1 ] && [ "$ar11_acev" -ge 1 ]; then ar11_result="true"; fi
+assert_true \
+  "CT-AR-11 (adversarial-input requirement): ac-quality-criteria.md Gate 7 ($ar11_acqc>=1) AND ac-evaluator.md ($ar11_acev>=1) require adversarial / non-finite / out-of-range coverage for externally-fed computational ACs" \
+  "$ar11_result"
+
+# CT-AR-12 (parse-accepted-overflow vector requirement): Gate 7 + the producer rubric + the
+# evaluator + the planner self-audit + both producer agents all demand a parse-ACCEPTED-then-
+# overflows adversarial vector, not just parse-rejected tokens. The full author-facing set is
+# enumerated per CLAUDE.md ## Modifications so a class-(a)-only test cannot satisfy any surface.
+ar12_acqc=$(grep -ciF 'parse-accepted' "$ACQC_AR" || true)
+ar12_tag=$(grep -ciF 'parse-accepted' "$TAG_AR" || true)
+ar12_acev=$(grep -ciF 'parse-accepted' "$ACEV_AR" || true)
+ar12_planner=$(grep -ciF 'parse-accepted' "$PLANNER_AR" || true)
+ar12_impl=$(grep -ciF 'parse-accepted' "$IMPL_AR" || true)
+ar12_tw=$(grep -ciF 'parse-accepted' "$TW_AR" || true)
+ar12_result="false"
+if [ "$ar12_acqc" -ge 1 ] && [ "$ar12_tag" -ge 1 ] && [ "$ar12_acev" -ge 1 ] && [ "$ar12_planner" -ge 1 ] && [ "$ar12_impl" -ge 1 ] && [ "$ar12_tw" -ge 1 ]; then ar12_result="true"; fi
+assert_true \
+  "CT-AR-12 (parse-accepted-overflow vector): Gate 7 ($ar12_acqc>=1), test-authoring-guidance ($ar12_tag>=1), ac-evaluator ($ar12_acev>=1), planner ($ar12_planner>=1), implementer ($ar12_impl>=1), test-writer ($ar12_tw>=1) all require a parse-accepted-then-overflows adversarial vector" \
+  "$ar12_result"
+
+# CT-AR-13 (sibling-guard requirement): the input-validation guard must be required across every
+# sibling tool sharing the input — wired symmetrically into Gate 7 (canonical), the producer
+# rubric, the ac-evaluator, the planner self-audit, the criticality floor, and both producer
+# agents. Tokens are chosen UNIQUE to the new clause (HEAD=0) so a revert flips the assert to FAIL:
+# a bare 'sibling' would have matched pre-existing 'sibling partition' text in ac-evaluator.md.
+ar13_acqc=$(grep -ciF 'sibling-guard' "$ACQC_AR" || true)
+ar13_tag=$(grep -ciF 'sibling tool' "$TAG_AR" || true)
+ar13_acev=$(grep -ciF 'sibling tool' "$ACEV_AR" || true)
+ar13_planner=$(grep -ciF 'sibling tool' "$PLANNER_AR" || true)
+ar13_vd=$(grep -ciF 'sibling tool' "$VD_AR" || true)
+ar13_impl=$(grep -ciF 'sibling tool' "$IMPL_AR" || true)
+ar13_tw=$(grep -ciF 'sibling tool' "$TW_AR" || true)
+ar13_result="false"
+if [ "$ar13_acqc" -ge 1 ] && [ "$ar13_tag" -ge 1 ] && [ "$ar13_acev" -ge 1 ] && [ "$ar13_planner" -ge 1 ] && [ "$ar13_vd" -ge 1 ] && [ "$ar13_impl" -ge 1 ] && [ "$ar13_tw" -ge 1 ]; then ar13_result="true"; fi
+assert_true \
+  "CT-AR-13 (sibling-guard enforcement): canonical ($ar13_acqc>=1), test-authoring-guidance ($ar13_tag>=1), ac-evaluator ($ar13_acev>=1), planner ($ar13_planner>=1), verification-depth ($ar13_vd>=1), implementer ($ar13_impl>=1), test-writer ($ar13_tw>=1) all require the guard across sibling tools" \
+  "$ar13_result"
+
+# CT-AR-14 (outputSchema advisory, Fix C): the canonical rubric carries a Planner MUST bullet
+# requiring an MCP-server ticket's registered tools to declare an outputSchema (advisory MCP
+# hygiene, explicitly NOT a Gate 7 FAIL trigger). Lightweight presence check only.
+ar14_acqc=$(grep -cF 'outputSchema' "$ACQC_AR" || true)
+ar14_result="false"
+if [ "$ar14_acqc" -ge 1 ]; then ar14_result="true"; fi
+assert_true \
+  "CT-AR-14 (outputSchema advisory): ac-quality-criteria.md Planner MUST carries the MCP outputSchema bullet ($ar14_acqc>=1)" \
+  "$ar14_result"
+
+echo ""
+
 # --- Summary ---
 print_summary

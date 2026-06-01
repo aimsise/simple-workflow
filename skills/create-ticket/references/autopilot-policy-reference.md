@@ -68,3 +68,37 @@ Summary of the resolved tiers:
 The `max_rounds` bonus is **not** applied when an explicit `rounds=N`
 argument is supplied to `/impl` (the user-specified cap is authoritative);
 see `skills/impl/references/round-cap-parser.md`.
+
+## `constraints.oracle_verification`
+
+**Consumed by**: `/impl` (Step 3a criticality floor; `ac-evaluator`
+oracle-independence enforcement at Step 15), the `planner` Gate 7 self-audit,
+and the `ticket-evaluator` Gate 7 grading.
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto`
+(fail-safe to active).
+
+**Effect**: when `auto`, two v8.2.0 behaviours are active — (1) **Gate 7 oracle
+independence**: every computational AC (PASS/FAIL hinges on a computed
+numeric/algorithmic value) must name an oracle independent of the implementation
+and be verified on the raw, pre-rounding value with an explicit tolerance
+(authoring-time gate in
+[`ac-quality-criteria.md`](ac-quality-criteria.md); verifier-side enforcement in
+`agents/ac-evaluator.md` `## Oracle Independence (computational ACs)`); and
+(2) the **criticality floor** in
+[`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md)
+raises the resolved depth tier to at least `thorough` for a computational AC in
+a critical domain (accessibility / security / money / data-integrity /
+standard-compliance). When `off`, both are disabled ticket-wide: computational ACs are graded `n/a`
+for Gate 7 and verified by the project tests + code-inspection path, and the
+criticality floor does not fire. NOTE: `off` restores the pre-v8.2.0 RUNTIME
+oracle path, NOT byte-identical pre-v8.2.0 behaviour for a freshly written test —
+the always-on tautological rule R4 (`tautological-assertion-rules.md`) and the
+positive test-authoring rubric carry no kill switch (like R1-R3) and still
+reject a newly authored / modified circular test even under `off`.
+This is the per-brief kill switch for the oracle-independence feature line; it
+is independent of `constraints.verification_depth` (which scales matrix depth).
+Use `off` only when the domain genuinely has no oracle and the deeper
+verification is unwanted.

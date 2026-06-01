@@ -52,6 +52,42 @@ oversight with deeper machine verification. `conservative` runs keep those
 gates as live `AskUserQuestion` prompts, so the human supplies the extra
 assurance and the matrix caps `conservative` at `thorough` even for XL.
 
+## Criticality floor (computational / critical ACs)
+
+The matrix above scales depth by blast-radius and autonomy. It does NOT account
+for **correctness criticality** — a tiny `S` ticket can still ship a
+wrong-but-self-consistent computed value (the WCAG rounded-meet defect class).
+The criticality floor adds that axis: when a ticket contains at least one
+**computational AC** (PASS/FAIL hinges on a computed numeric/algorithmic value —
+see Gate 7 in `skills/create-ticket/references/ac-quality-criteria.md`) in a
+**critical domain** — accessibility / security / money / data-integrity /
+standard-compliance — the resolved tier is floored at `thorough` regardless of
+Size × `risk_tolerance`, so the `/audit` skeptical third-pass is forced even on
+an `S` / `conservative` ticket. The critical-domain determination is a
+model-judgment read of the AC text (there is no deterministic ticket field);
+keyword cues that should trigger it: WCAG / contrast / a11y / focus-order
+(accessibility); auth / crypto / token / signature / input-validation
+(security); currency / decimal / rounding / money (money); checksum / hash /
+dedup / referential-integrity (data-integrity); RFC / ISO / spec-conformance
+(standard-compliance).
+
+The floor only RAISES the tier (`standard` → `thorough`); it never lowers a tier
+the matrix already resolved higher (`exhaustive` stays `exhaustive`). It is
+orthogonal to — and does not by itself trigger — the oracle-independence
+verification that `ac-evaluator` applies to every computational AC in all modes
+(`agents/ac-evaluator.md` `## Oracle Independence (computational ACs)`): the
+floor adds DEPTH (more rounds + forced third-pass), while the oracle requirement
+adds an INDEPENDENT measurement, and both target the same defect class. An
+explicit `rounds=N` argument caps the generator→evaluator loop but does NOT
+suppress the floor-forced `/audit` third-pass — the floor adds rigor (one audit
+pass), not impl iterations — so that interaction is intentional. The oracle requirement also carries the sibling-guard obligation (Gate 7): an input-validation guard required by a critical-domain computational AC must hold across every sibling tool sharing that input, not just the AC's primary tool.
+
+**Kill switches**: `constraints.verification_depth: off` disables the whole
+depth feature including this floor (pre-v8.1.0 behaviour). `constraints.oracle_verification: off`
+(absent / unknown → `auto`) disables the criticality floor AND the mandatory
+oracle-independence verification ticket-wide (pre-v8.2.0 behaviour), while
+leaving the matrix-derived depth scaling intact. Both default to active.
+
 ## Effects ladder
 
 The resolved tier controls three independent knobs:

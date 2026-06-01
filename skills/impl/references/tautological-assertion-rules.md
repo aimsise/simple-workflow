@@ -91,6 +91,49 @@ GOOD:
   expect(state.isReady).toBeTruthy();      // truthiness of a non-literal value
 </example>
 
+### R4: Oracle Circularity
+
+A numeric or algorithmic assertion compares the system under test against an
+"expected" value that is itself produced by the system under test — or by
+re-applying the implementation's own rounding / formatting / normalisation —
+rather than against an INDEPENDENT oracle (a reference library that does not
+share the implementation's core, a published formula, or a hand-computed truth
+table). The assertion passes whenever the code is self-consistent, even when
+the code is wrong, so it cannot observe a correctness regression in the quantity
+it claims to check. This is the defect class that let a WCAG contrast solver
+accept on a 2-decimal ROUNDED ratio — falsely reporting a target as met — past
+a green suite, because every test re-measured with the same rounded value the
+code produced.
+
+Canonical signature: `assert_close(impl(x), K)` where `K` is derived from `impl`
+(e.g. `expected = impl.raw(x)`, or `expected = round(impl(x))`), OR the
+assertion re-thresholds a field the implementation already rounded against the
+target the AC cares about (e.g. asserting `result.ratio >= target` where
+`result.ratio` is the 2-decimal value the code itself rounded).
+
+First-stage detection (grep-based): on a numeric assertion line (or its
+immediately-preceding `expected` / `const` setup line), the expected operand is
+(a) a call to the same module / function under test, or (b) the implementation's
+own rounding / formatting helper (`Math.round(`, `.toFixed(`, `Math.trunc(`,
+`toPrecision(`) wrapping a value the code produced, or (c) a re-read of a result
+field the code rounds, asserted against the AC's threshold. When the expected
+value comes from a distinct oracle import (a third-party library, a separate
+reference table, or a literal hand-computed constant with a cited source), the
+rule does NOT fire — see Limitations.
+
+<example lang="javascript">
+BAD:
+  const r = solveForContrast(bg, target);         // engine rounds ratio to 2dp
+  expect(r.ratio).toBeGreaterThanOrEqual(target); // R4: re-thresholds the code's own rounded field
+  const expected = Math.round(impl.contrast(a, b) * 100) / 100;
+  expect(impl.contrast(a, b)).toBeCloseTo(expected); // R4: expected derived from the SUT
+
+GOOD:
+  import Color from 'colorjs.io';                  // independent oracle, no shared core
+  const oracle = Color.contrast(a, b, 'WCAG21');
+  expect(rawContrast(a, b)).toBeCloseTo(oracle, 3); // raw value vs independent oracle, explicit tolerance
+</example>
+
 ## Hint Expressions
 
 A test file MAY exempt itself from R1 (and only R1, since R2 and R3 have no
@@ -131,6 +174,20 @@ reasoning that no `Read` / `Grep` / `Glob` workflow can deliver:
   arbitrary tautologies expressed through nested logical operators.
 - **Framework-specific helper detection**: assertion helpers that wrap
   `expect(...)` in a project-local matcher are not unwrapped.
+- **Oracle provenance (R4)**: deciding whether an `expected` value is genuinely
+  independent of the system under test — versus derived from it through an
+  alias, a re-exported helper, or a shared underlying library — requires
+  data-flow analysis the grep stage cannot perform. The first stage flags the
+  common in-file forms (same-function call, `Math.round` / `.toFixed` wrapping a
+  code-produced value, re-thresholding a rounded result field); a value imported
+  from a separate module is assumed independent unless that module is the SUT
+  itself — so a transitive-alias re-export of the implementation can slip past
+  R4's grep and is caught only by the evaluator's semantic check. The
+  `ac-evaluator`'s `## Oracle Independence (computational ACs)` section carries
+  the semantic judgement the grep stage cannot. The standalone
+  `skills/impl/lib/detect-tautological-assertions.sh` helper (and its test)
+  deliberately remain R1-R3 only; R4 first-stage detection is performed by the
+  `ac-evaluator`'s own `Read` / `Grep` pass, not that script.
 
 These cases remain out-of-scope for the first stage and are tracked as
 future work; closing them requires introducing AST tooling to the
