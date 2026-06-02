@@ -52,6 +52,32 @@ oversight with deeper machine verification. `conservative` runs keep those
 gates as live `AskUserQuestion` prompts, so the human supplies the extra
 assurance and the matrix caps `conservative` at `thorough` even for XL.
 
+## Criticality scalar (the floor's single named trigger, M5 / v8.3.0+)
+
+The floor below has always read a model-judgment over the AC text. M5 promotes that
+read into a SINGLE named scalar computed exactly once at `/impl` Step 3a so M5
+(evaluator model + red-team budget), M2 (red-team budget), and M3 (integration-review
+depth) all read one value instead of re-deriving the judgment:
+
+```
+criticality = blast_radius(Size) × irreversibility
+```
+
+- **blast_radius(Size)** — the existing Size axis (S/M/L/XL) the derivation matrix
+  already uses; larger Size widens the blast radius.
+- **irreversibility** — the NEW axis M5 adds (see `## Criticality floor`,
+  `### Irreversibility axis` below). An AC whose verified behaviour has an irreversible
+  real-world side-effect raises irreversibility regardless of Size.
+
+The resolver collapses to a two-level result `criticality ∈ {routine, critical}`:
+`critical` when the existing critical-domain computational-AC condition fires OR the
+irreversibility axis fires; `routine` otherwise. `/impl` Step 3a emits
+`[CRITICALITY] level={routine|critical} blast_radius={S|M|L|XL}
+irreversibility={none|writes|network|money|destructive|external-system}` to stderr so a
+dogfood run can audit the derivation without re-deriving it. `criticality=routine` is the
+byte-identical-to-pre-v8.3 default: it never raises the depth tier, never bumps the
+evaluator model, and leaves the red-team budget at 0.
+
 ## Criticality floor (computational / critical ACs)
 
 The matrix above scales depth by blast-radius and autonomy. It does NOT account
@@ -82,6 +108,28 @@ explicit `rounds=N` argument caps the generator→evaluator loop but does NOT
 suppress the floor-forced `/audit` third-pass — the floor adds rigor (one audit
 pass), not impl iterations — so that interaction is intentional. The oracle requirement also carries the sibling-guard obligation (Gate 7): an input-validation guard required by a critical-domain computational AC must hold across every sibling tool sharing that input, not just the AC's primary tool.
 
+### Irreversibility axis (M5 / v8.3.0+)
+
+The critical-domain condition above keys off correctness criticality. M5 adds an
+orthogonal IRREVERSIBILITY axis: when at least one AC verifies behaviour with an
+irreversible real-world side-effect — persistent data WRITES (DB/filesystem/schema
+migration), NETWORK mutation (non-idempotent external calls, publishes, deploys), MONEY
+movement (charges, transfers, ledger writes), DESTRUCTIVE operations
+(delete/truncate/overwrite), or EXTERNAL-SYSTEM calls whose effect cannot be rolled back
+— the resolved `criticality` is floored at `critical` even on an `S` ticket — which, exactly
+as the critical-domain computational condition does, floors the depth tier at `thorough`
+(raise `standard`→`thorough`, never lower a higher tier) AND, per the criticality scalar,
+bumps the evaluator model to opus and the red-team budget to full. Like the critical-domain
+condition, the irreversibility determination is a model-judgment read of the AC text
+(there is no deterministic ticket field); the cue list matches the irreversibility-axis
+cue list in `skills/impl/references/evidence-channels.md`. The axis only RAISES
+`criticality` to `critical`; it never lowers a value the critical-domain condition
+already raised. Its dedicated kill switch is `constraints.irreversibility_floor`
+(`auto`/`off`; absent / unknown → `auto` = active); `off` removes ONLY the
+irreversibility axis, leaving the critical-domain computational floor and the matrix
+depth scaling intact. It is additionally suppressed whenever
+`constraints.verification_depth: off` disables the whole depth feature.
+
 **Kill switches**: `constraints.verification_depth: off` disables the whole
 depth feature including this floor (pre-v8.1.0 behaviour). `constraints.oracle_verification: off`
 (absent / unknown → `auto`) disables the criticality floor AND the mandatory
@@ -90,13 +138,18 @@ leaving the matrix-derived depth scaling intact. Both default to active.
 
 ## Effects ladder
 
-The resolved tier controls three independent knobs:
+The resolved tier and the criticality floor control these independent knobs — the
+`evidence_floor` column added by M1, and the `evaluator model` + `red-team budget`
+outputs by M5 (both v8.3.0+); the floor only RAISES them, never lowers. They are folded
+into the single resolved struct `{depth_tier, criticality, evidence_floor,
+evaluator_model, redteam_budget, domain_set}` that `/impl` Step 3a materialises into
+`phases.impl.*`:
 
-| Tier | GE `max_rounds` bonus | `/audit` third-pass | Step 15 evaluators |
-|---|---|---|---|
-| `standard` | +0 | conditional (existing T-A..T-E) | 1 (single, current behaviour) |
-| `thorough` | +3 | forced via `depth=thorough` (trigger T-F) | 1 |
-| `exhaustive` | +6 | forced via `depth=exhaustive` (trigger T-F) | 3 (diverse-lens majority) |
+| Tier | GE `max_rounds` bonus | `/audit` third-pass | Step 15 evaluators | `evidence_floor` (Gate 8 channels MANDATORY) |
+|---|---|---|---|---|
+| `standard` | +0 | conditional (existing T-A..T-E) | 1 (single, current behaviour) | EC-STATIC + the AC's natural channel (no extra channel; byte-identical to pre-v8.3.0) |
+| `thorough` | +3 | forced via `depth=thorough` (trigger T-F) | 1 | + at least 1 INDEPENDENT channel beyond the natural one (EC-ORACLE / EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME) |
+| `exhaustive` | +6 | forced via `depth=exhaustive` (trigger T-F) | 3 (evidence-mode-diverse majority) | >= 2 INDEPENDENT channels (the 3 evidence-mode lenses V1 EC-RUNTIME / V2 EC-DIFFERENTIAL-or-EC-PROPERTY / V3 EC-ORACLE collectively satisfy this) |
 
 1. **GE `max_rounds` bonus** — added to the resolved base
    (`constraints.max_total_rounds` or default 9). See "Round-cap precedence".
@@ -105,10 +158,52 @@ The resolved tier controls three independent knobs:
    skeptical third-pass (`skills/audit/references/skeptical-pass.md`). This
    reuses existing machinery — it does NOT add a new loop-until-dry pass.
 3. **Step 15 evaluator count** — `exhaustive` activates the high-assurance
-   multi-verifier majority (3 diverse-lens `ac-evaluator` spawns + majority
+   multi-verifier majority (3 evidence-mode-diverse `ac-evaluator` spawns + majority
    merge). `standard` / `thorough` keep the single evaluator. See
    [`ac-evaluator-orchestration.md`](ac-evaluator-orchestration.md)
    `## High-assurance multi-verifier branch` for the lenses and merge.
+
+### Evaluator model + red-team budget (M5 / v8.3.0+)
+
+The resolver also fills two struct fields the floor RAISES:
+
+| criticality / tier | evaluator model | red-team budget (M2, v8.5.0+) |
+|---|---|---|
+| routine AND tier ∈ {standard, thorough} | sonnet (`ac-evaluator`, today's behaviour) | 0 (no red-team phase) |
+| critical OR tier == exhaustive | opus (`ac-evaluator-hi`, see below) | full sweep — all 5 attack classes (`skills/impl/references/evidence-channels.md`) at high iteration hardness |
+
+- **evaluator model**: today the evaluator is hardcoded sonnet (`skills/impl/SKILL.md`
+  Step 15 "always sonnet"; `agents/ac-evaluator.md` frontmatter `model: sonnet`). M5
+  resolves `evaluator_model` to `opus` when `criticality == critical` OR
+  `depth_tier == exhaustive`, symmetric with the EXISTING size-aware generator-model
+  selection (`constraints.sonnet_size_threshold` escalates the generator to opus for
+  L/XL — `skills/create-ticket/references/autopilot-policy-reference.md`). **Platform
+  caveat**: the Agent tool's JSONSchema does NOT accept a per-invocation `model:`
+  override — the SAME Strategy-B limitation that forces the soft turn budget instead of a
+  per-spawn `maxTurns` (`skills/impl/references/ac-evaluator-orchestration.md`
+  `## Turn-budget formula`). The orchestrator therefore selects a DEDICATED agent file:
+  when `evaluator_model == opus` it spawns `simple-workflow:ac-evaluator-hi`
+  (`agents/ac-evaluator-hi.md`, `model: opus`, body byte-identical to `ac-evaluator`
+  except its `name:` and `model:` frontmatter lines) instead of
+  `simple-workflow:ac-evaluator`; otherwise it spawns `ac-evaluator` unchanged. A v8.3
+  dogfood pre-verifies empirically whether a per-spawn `model:` argument is in fact
+  rejected; if it is accepted the two-file workaround can later collapse, but the
+  byte-identical-body invariant is the supported path today (guarded by CT-EV-MODEL). If
+  maintaining the second agent file is judged too costly, M5 degrades to
+  red-team-budget-only (evaluator stays sonnet at every tier) — set the floor's evaluator
+  bump aside without touching the budget column.
+- **red-team budget**: `redteam_budget` (attack-class count × iteration hardness) is
+  consumed by the M2 red-team pre-ship phase (v8.5.0). It scales with the SAME
+  `criticality` scalar — a tiny irreversible-write ticket gets the full sweep even at
+  Size S. In v8.3.0 M2 does not yet exist, so `redteam_budget` is recorded into the
+  struct but has no consumer (a pure no-op until v8.5.0).
+
+**Fail-open**: a `routine` ticket at `standard`/`thorough` keeps `evaluator_model =
+sonnet` and `redteam_budget = 0`, byte-identical to pre-v8.3 behaviour.
+`constraints.verification_depth: off` disables the whole floor including the model bump
+and the budget. `constraints.oracle_verification: off` disables the critical-domain axis
+of the floor (pre-v8.2.0); `constraints.irreversibility_floor: off` disables only the new
+irreversibility axis. Each kill switch defaults active (absent / unknown → `auto`).
 
 ## Round-cap precedence (updated)
 

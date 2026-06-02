@@ -133,7 +133,7 @@ Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Commu
 
 **Partition owned by decomposer (all modes)**; planner never re-partitions. See [references/spec-decomposer-input.md](references/spec-decomposer-input.md).
 
-**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) for Gates 1-7 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs). ACs failing any gate are rejected by Phase 4.
+**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) for Gates 1-8 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs). ACs failing any gate are rejected by Phase 4.
 
 #### Workflow selection (planner output)
 

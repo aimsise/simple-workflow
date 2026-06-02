@@ -264,8 +264,11 @@ GROUP_A_AGENTS=(
 )
 
 # Group C — verdict / read-only agents that retain explicit tools: allowlist.
+# ac-evaluator-hi is the M5 (v8.3.0) opus sibling of ac-evaluator: same Group C
+# tools: allowlist, byte-identical body except its name:/model: lines.
 GROUP_C_AGENTS=(
   "ac-evaluator"
+  "ac-evaluator-hi"
   "code-reviewer"
   "decomposer"
   "security-scanner"
@@ -493,7 +496,8 @@ echo ""
 #       widen a Group C agent's surface and is forbidden.
 #   (b) The set of agents whose frontmatter contains `^tools:` is exactly the
 #       6 Group C agents (ac-evaluator, code-reviewer, decomposer,
-#       security-scanner, ticket-evaluator, tune-analyzer).
+#       security-scanner, ticket-evaluator, tune-analyzer) PLUS ac-evaluator-hi
+#       (the M5 v8.3.0 opus sibling of ac-evaluator, which copies its tools:).
 echo "--- tools: allowlist enumeration (v8.0.0) ---"
 
 # (a) Zero agents may declare the unrestricted "Bash(*)" entry.
@@ -515,6 +519,7 @@ fi
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 expected_tools_set=$(printf '%s\n' \
   "ac-evaluator" \
+  "ac-evaluator-hi" \
   "code-reviewer" \
   "decomposer" \
   "security-scanner" \
@@ -535,7 +540,7 @@ actual_tools_set=$(
 )
 
 if [ "$actual_tools_set" = "$expected_tools_set" ]; then
-  echo -e "  ${GREEN}PASS${NC} the 6 agents with ^tools: in frontmatter are exactly Group C (ac-evaluator, code-reviewer, decomposer, security-scanner, ticket-evaluator, tune-analyzer)"
+  echo -e "  ${GREEN}PASS${NC} the 7 agents with ^tools: in frontmatter are exactly Group C + ac-evaluator-hi (ac-evaluator, ac-evaluator-hi, code-reviewer, decomposer, security-scanner, ticket-evaluator, tune-analyzer)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} agents with ^tools: do not match Group C"
