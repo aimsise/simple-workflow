@@ -9363,5 +9363,225 @@ assert_true \
 
 echo ""
 
+# =============================================================================
+# Category EV: Gate 8 Independent Evidence + Evidence-Channel Taxonomy (v8.3.0)
+# Diff: New category (M1 + Phase 0). Drift-guards the Gate 8 independent-evidence
+#       feature line: the evidence-channels.md taxonomy (5 EC channels, 5 RT-*
+#       attack classes), the Gate 8 section (Gate 7 kept literal/intact), the
+#       evidence-mode multi-verifier lenses, the evidence_floor ladder + Step 3a
+#       resolution, the authoring-side planner step 9 + ticket-evaluator row, the
+#       independent_evidence kill switch, the RT-* namespace guard (§5.1 MF1), and
+#       the Gates 1-8 gate-count carriers (MF3/MF6). Symmetry per CLAUDE.md
+#       ## Plans / ## Modifications. Every grep token is HEAD=0 (revert flips it).
+# =============================================================================
+echo "--- Cat EV: Gate 8 independent evidence (v8.3.0) ---"
+
+ACQC_EV="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+ECH_EV="$REPO_DIR/skills/impl/references/evidence-channels.md"
+ORCH_EV="$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
+ACEV_EV="$REPO_DIR/agents/ac-evaluator.md"
+VD_EV="$REPO_DIR/skills/impl/references/verification-depth.md"
+IMPL_EV="$REPO_DIR/skills/impl/SKILL.md"
+PLANNER_EV="$REPO_DIR/agents/planner.md"
+TEV_EV="$REPO_DIR/agents/ticket-evaluator.md"
+APR_EV="$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md"
+PT_EV="$REPO_DIR/skills/brief/references/policy-template.md"
+ASP_EV="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+CTSKILL_EV="$REPO_DIR/skills/create-ticket/SKILL.md"
+
+# CT-EV-1: Gate 8 section appended AND Gate 7 kept a literal intact section (guards
+# graft #3 — Gate 7 is NOT re-titled). Modelled on CT-AR-1.
+ev1_g8=$(grep -cF '## Gate 8: Independent Evidence' "$ACQC_EV" || true)
+ev1_g7=$(grep -cE '^## Gate 7: Oracle Independence' "$ACQC_EV" || true)
+ev1_result="false"
+if [ "$ev1_g8" -ge 1 ] && [ "$ev1_g7" -ge 1 ]; then ev1_result="true"; fi
+assert_true \
+  "CT-EV-1 (Gate 8 section + Gate 7 intact): ac-quality-criteria.md has '## Gate 8: Independent Evidence' ($ev1_g8>=1) AND retains '## Gate 7: Oracle Independence' ($ev1_g7>=1)" \
+  "$ev1_result"
+
+# CT-EV-2: evidence-channels.md taxonomy exists with all 5 channel IDs + the
+# 5-party binding_parties front-matter. Modelled on CT-AR-6's file-exists idiom.
+ev2_exists=0
+if [ -f "$ECH_EV" ]; then ev2_exists=1; fi
+ev2_oracle=$(grep -cF 'EC-ORACLE' "$ECH_EV" || true)
+ev2_diff=$(grep -cF 'EC-DIFFERENTIAL' "$ECH_EV" || true)
+ev2_prop=$(grep -cF 'EC-PROPERTY' "$ECH_EV" || true)
+ev2_runtime=$(grep -cF 'EC-RUNTIME' "$ECH_EV" || true)
+ev2_static=$(grep -cF 'EC-STATIC' "$ECH_EV" || true)
+ev2_bind=$(grep -cF 'binding_parties: [planner, ticket-evaluator, implementer, test-writer, ac-evaluator]' "$ECH_EV" || true)
+ev2_result="false"
+if [ "$ev2_exists" -eq 1 ] && [ "$ev2_oracle" -ge 1 ] && [ "$ev2_diff" -ge 1 ] && [ "$ev2_prop" -ge 1 ] && [ "$ev2_runtime" -ge 1 ] && [ "$ev2_static" -ge 1 ] && [ "$ev2_bind" -ge 1 ]; then ev2_result="true"; fi
+assert_true \
+  "CT-EV-2 (evidence-channels taxonomy): evidence-channels.md exists ($ev2_exists=1) with EC-ORACLE/DIFFERENTIAL/PROPERTY/RUNTIME/STATIC ($ev2_oracle/$ev2_diff/$ev2_prop/$ev2_runtime/$ev2_static each>=1) AND 5-party binding_parties ($ev2_bind>=1)" \
+  "$ev2_result"
+
+# CT-EV-3: the 3 multi-verifier lenses are EVIDENCE-MODE-diverse, pinned in BOTH
+# the orchestration directives AND the ac-evaluator lens descriptions (graft #17).
+ev3_orch_rt=$(grep -cF 'runtime/EC-RUNTIME' "$ORCH_EV" || true)
+ev3_orch_dp=$(grep -cF 'differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY' "$ORCH_EV" || true)
+ev3_orch_of=$(grep -cF 'oracle-or-fuzz/EC-ORACLE' "$ORCH_EV" || true)
+ev3_ag_rt=$(grep -cF 'runtime/EC-RUNTIME' "$ACEV_EV" || true)
+ev3_ag_dp=$(grep -cF 'differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY' "$ACEV_EV" || true)
+ev3_ag_of=$(grep -cF 'oracle-or-fuzz/EC-ORACLE' "$ACEV_EV" || true)
+ev3_result="false"
+if [ "$ev3_orch_rt" -ge 1 ] && [ "$ev3_orch_dp" -ge 1 ] && [ "$ev3_orch_of" -ge 1 ] && [ "$ev3_ag_rt" -ge 1 ] && [ "$ev3_ag_dp" -ge 1 ] && [ "$ev3_ag_of" -ge 1 ]; then ev3_result="true"; fi
+assert_true \
+  "CT-EV-3 (evidence-mode lenses): orchestration + ac-evaluator carry runtime/EC-RUNTIME, differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY, oracle-or-fuzz/EC-ORACLE (orch=$ev3_orch_rt/$ev3_orch_dp/$ev3_orch_of agent=$ev3_ag_rt/$ev3_ag_dp/$ev3_ag_of each>=1)" \
+  "$ev3_result"
+
+# CT-EV-4: evidence_floor wired — verification-depth ladder column + impl Step 3a
+# [EVIDENCE-FLOOR] stderr + 'Evidence floor:' spawn-prompt handoff. grep -cF for
+# the bracketed [EVIDENCE-FLOOR] token (regex metacharacters).
+ev4_col=$(grep -cF 'evidence_floor' "$VD_EV" || true)
+ev4_stderr=$(grep -cF '[EVIDENCE-FLOOR]' "$IMPL_EV" || true)
+ev4_handoff=$(grep -cF 'Evidence floor:' "$IMPL_EV" || true)
+ev4_result="false"
+if [ "$ev4_col" -ge 1 ] && [ "$ev4_stderr" -ge 1 ] && [ "$ev4_handoff" -ge 1 ]; then ev4_result="true"; fi
+assert_true \
+  "CT-EV-4 (evidence_floor wired): verification-depth evidence_floor column ($ev4_col>=1), impl SKILL [EVIDENCE-FLOOR] stderr ($ev4_stderr>=1) + 'Evidence floor:' handoff ($ev4_handoff>=1)" \
+  "$ev4_result"
+
+# CT-EV-5 (SYMMETRY GUARD, modelled on CT-AR-8): Gate 8 / independent-evidence
+# wired across the full ac-evaluator caller<->callee matrix (impl SKILL +
+# orchestration + ac-evaluator agent). ac-evaluator is spawned ONLY by /impl
+# (CT-AR-10 single-spawner invariant), so this triple is the complete matrix.
+ev5_impl=$(grep -ciF 'independent evidence' "$IMPL_EV" || true)
+ev5_orch=$(grep -ciF 'independent-evidence channels' "$ORCH_EV" || true)
+ev5_agent=$(grep -cF '## Independent Evidence (behavioral ACs)' "$ACEV_EV" || true)
+ev5_result="false"
+if [ "$ev5_impl" -ge 1 ] && [ "$ev5_orch" -ge 1 ] && [ "$ev5_agent" -ge 1 ]; then ev5_result="true"; fi
+assert_true \
+  "CT-EV-5 (Gate 8 wired symmetrically): impl SKILL 'independent evidence' ($ev5_impl>=1) + orchestration 'independent-evidence channels' ($ev5_orch>=1) + ac-evaluator '## Independent Evidence (behavioral ACs)' ($ev5_agent>=1)" \
+  "$ev5_result"
+
+# CT-EV-6: authoring-side Gate 8 wired into the planner self-audit (step 9) AND
+# the ticket-evaluator Result template, mirroring CT-AR-2 + CT-AR-3.
+ev6_planner=$(grep -cE '9\. \*\*Gate 8 independent-evidence cross-check\*\*' "$PLANNER_EV" || true)
+ev6_tev_row=$(grep -cF 'Independent Evidence: description (Gate 8' "$TEV_EV" || true)
+ev6_tev_g8=$(grep -cF 'Gate 8' "$TEV_EV" || true)
+ev6_result="false"
+if [ "$ev6_planner" -ge 1 ] && [ "$ev6_tev_row" -ge 1 ] && [ "$ev6_tev_g8" -ge 1 ]; then ev6_result="true"; fi
+assert_true \
+  "CT-EV-6 (Gate 8 authoring-side): planner step 9 ($ev6_planner>=1) + ticket-evaluator 'Independent Evidence: description (Gate 8' row ($ev6_tev_row>=1) + 'Gate 8' ($ev6_tev_g8>=1)" \
+  "$ev6_result"
+
+# CT-EV-7: the constraints.independent_evidence kill switch documented across the
+# policy surfaces (mirrors CT-AR-9): autopilot-policy-reference + policy-template
+# + ac-quality-criteria Gate 8.
+ev7_apr=$(grep -cF 'independent_evidence' "$APR_EV" || true)
+ev7_pt=$(grep -cF 'independent_evidence' "$PT_EV" || true)
+ev7_acqc=$(grep -cF 'independent_evidence' "$ACQC_EV" || true)
+ev7_result="false"
+if [ "$ev7_apr" -ge 1 ] && [ "$ev7_pt" -ge 1 ] && [ "$ev7_acqc" -ge 1 ]; then ev7_result="true"; fi
+assert_true \
+  "CT-EV-7 (independent_evidence kill switch documented): autopilot-policy-reference ($ev7_apr>=1) + policy-template ($ev7_pt>=1) + ac-quality-criteria Gate 8 ($ev7_acqc>=1)" \
+  "$ev7_result"
+
+# CT-EV-8 (§5.1 MF1 namespace guard): evidence-channels.md carries the 5 RT-*
+# attack classes AND ZERO confusable AC-prefixed attack tokens (AC- is the
+# acceptance-criterion namespace; an AC-FUZZ etc. would collide in an evaluator
+# prompt). ev8_ac_tokens uses ERE alternation and MUST be 0.
+ev8_rt_fuzz=$(grep -cF 'RT-FUZZ' "$ECH_EV" || true)
+ev8_rt_abuse=$(grep -cF 'RT-ABUSE' "$ECH_EV" || true)
+ev8_rt_malformed=$(grep -cF 'RT-MALFORMED' "$ECH_EV" || true)
+ev8_rt_exhaust=$(grep -cF 'RT-EXHAUST' "$ECH_EV" || true)
+ev8_rt_conc=$(grep -cF 'RT-CONCURRENCY' "$ECH_EV" || true)
+ev8_ac_tokens=$(grep -cE 'AC-(FUZZ|ABUSE|MALFORMED|EXHAUST|CONCURRENCY)' "$ECH_EV" || true)
+ev8_result="false"
+if [ "$ev8_rt_fuzz" -ge 1 ] && [ "$ev8_rt_abuse" -ge 1 ] && [ "$ev8_rt_malformed" -ge 1 ] && [ "$ev8_rt_exhaust" -ge 1 ] && [ "$ev8_rt_conc" -ge 1 ] && [ "$ev8_ac_tokens" -eq 0 ]; then ev8_result="true"; fi
+assert_true \
+  "CT-EV-8 (RT-* attack-class namespace, MF1): evidence-channels.md has RT-FUZZ/ABUSE/MALFORMED/EXHAUST/CONCURRENCY ($ev8_rt_fuzz/$ev8_rt_abuse/$ev8_rt_malformed/$ev8_rt_exhaust/$ev8_rt_conc each>=1) AND zero AC-prefixed attack tokens ($ev8_ac_tokens=0)" \
+  "$ev8_result"
+
+# CT-EV-9 (MF3/MF6 gate-count carriers): the gate-count enumeration is bumped to
+# 'Gates 1-8' across agent-spawn-prompts.md, ticket-evaluator.md (L15 surface),
+# and create-ticket/SKILL.md. A revert to 'Gates 1-7' flips this to FAIL.
+ev9_asp=$(grep -cF 'Gates 1-8' "$ASP_EV" || true)
+ev9_tev=$(grep -cF 'Gates 1-8' "$TEV_EV" || true)
+ev9_ctskill=$(grep -cF 'Gates 1-8' "$CTSKILL_EV" || true)
+ev9_result="false"
+if [ "$ev9_asp" -ge 1 ] && [ "$ev9_tev" -ge 1 ] && [ "$ev9_ctskill" -ge 1 ]; then ev9_result="true"; fi
+assert_true \
+  "CT-EV-9 (gate-count carriers -> Gates 1-8, MF3/MF6): agent-spawn-prompts ($ev9_asp>=1) + ticket-evaluator L15 ($ev9_tev>=1) + create-ticket SKILL ($ev9_ctskill>=1)" \
+  "$ev9_result"
+
+echo ""
+
+# =============================================================================
+# Category EV-MODEL: M5 criticality scalar + evaluator-model allocation (v8.3.0)
+# Diff: New category (M5). Drift-guards the criticality scalar
+#       (criticality = blast_radius x irreversibility), the irreversibility axis +
+#       its constraints.irreversibility_floor kill switch (three-file symmetry like
+#       CT-AR-9), the evaluator_model bump wired across spawner + references, and
+#       the byte-identical-body ac-evaluator-hi.md fallback (graft #10). Every grep
+#       token is HEAD=0 (revert flips it).
+# =============================================================================
+echo "--- Cat EV-MODEL: criticality / evaluator-model allocation (v8.3.0) ---"
+
+ACEV_EVM="$REPO_DIR/agents/ac-evaluator.md"
+ACEVHI_EVM="$REPO_DIR/agents/ac-evaluator-hi.md"
+IMPL_EVM="$REPO_DIR/skills/impl/SKILL.md"
+VD_EVM="$REPO_DIR/skills/impl/references/verification-depth.md"
+ORCH_EVM="$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
+APR_EVM="$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md"
+PT_EVM="$REPO_DIR/skills/brief/references/policy-template.md"
+
+# CT-EV-MODEL-1 (graft #10 byte-identical-body guard): ac-evaluator-hi.md exists and
+# its body is byte-identical to ac-evaluator.md EXCEPT the frontmatter 'name:' and
+# 'model:' lines (the two intentional differences). diff over both files with those
+# lines stripped must be empty; hi carries '^model: opus', base '^model: sonnet', and
+# base carries the cross-reference comment. The strip-then-diff idiom keeps the full
+# verification body in lockstep so a future edit to ac-evaluator.md must be mirrored.
+evm1_hi_exists=0
+if [ -f "$ACEVHI_EVM" ]; then evm1_hi_exists=1; fi
+evm1_diff_empty="false"
+if [ "$evm1_hi_exists" -eq 1 ] && diff <(grep -vE '^(model|name):' "$ACEV_EVM") <(grep -vE '^(model|name):' "$ACEVHI_EVM") >/dev/null 2>&1; then evm1_diff_empty="true"; fi
+evm1_hi_opus=$(grep -c '^model: opus' "$ACEVHI_EVM" || true)
+evm1_lo_sonnet=$(grep -c '^model: sonnet' "$ACEV_EVM" || true)
+evm1_xref=$(grep -cF 'agents/ac-evaluator-hi.md (model: opus)' "$ACEV_EVM" || true)
+evm1_result="false"
+if [ "$evm1_hi_exists" -eq 1 ] && [ "$evm1_diff_empty" = "true" ] && [ "$evm1_hi_opus" -ge 1 ] && [ "$evm1_lo_sonnet" -ge 1 ] && [ "$evm1_xref" -ge 1 ]; then evm1_result="true"; fi
+assert_true \
+  "CT-EV-MODEL-1 (ac-evaluator-hi byte-identical except name/model): hi exists ($evm1_hi_exists=1), bodies identical sans name/model ($evm1_diff_empty), hi '^model: opus' ($evm1_hi_opus>=1), base '^model: sonnet' ($evm1_lo_sonnet>=1), cross-ref comment ($evm1_xref>=1)" \
+  "$evm1_result"
+
+# CT-EV-MODEL-2: evaluator-model bump wired across the spawner (/impl Step 3a +
+# Step 15 agent-file selection) AND its references. The unique [EVALUATOR-MODEL]
+# stderr token is introduced only by this change.
+evm2_impl_em=$(grep -cF 'EVALUATOR_MODEL' "$IMPL_EVM" || true)
+evm2_impl_hi=$(grep -cF 'simple-workflow:ac-evaluator-hi' "$IMPL_EVM" || true)
+evm2_vd=$(grep -cF 'evaluator model' "$VD_EVM" || true)
+evm2_orch=$(grep -cF 'ac-evaluator-hi' "$ORCH_EVM" || true)
+evm2_result="false"
+if [ "$evm2_impl_em" -ge 1 ] && [ "$evm2_impl_hi" -ge 1 ] && [ "$evm2_vd" -ge 1 ] && [ "$evm2_orch" -ge 1 ]; then evm2_result="true"; fi
+assert_true \
+  "CT-EV-MODEL-2 (evaluator-model wired): impl SKILL EVALUATOR_MODEL ($evm2_impl_em>=1) + ac-evaluator-hi spawn ($evm2_impl_hi>=1), verification-depth 'evaluator model' column ($evm2_vd>=1), orchestration ac-evaluator-hi ($evm2_orch>=1)" \
+  "$evm2_result"
+
+# CT-EV-MODEL-3: irreversibility axis + its kill switch documented across the
+# canonical reference, the per-skill policy doc, and the emitted template (the
+# three-file symmetry CT-AR-9 enforces for the criticality floor).
+evm3_vd=$(grep -cF '### Irreversibility axis' "$VD_EVM" || true)
+evm3_apr=$(grep -cF 'irreversibility_floor' "$APR_EVM" || true)
+evm3_pt=$(grep -cF 'irreversibility_floor' "$PT_EVM" || true)
+evm3_result="false"
+if [ "$evm3_vd" -ge 1 ] && [ "$evm3_apr" -ge 1 ] && [ "$evm3_pt" -ge 1 ]; then evm3_result="true"; fi
+assert_true \
+  "CT-EV-MODEL-3 (irreversibility axis): verification-depth '### Irreversibility axis' ($evm3_vd>=1) + autopilot-policy-reference irreversibility_floor ($evm3_apr>=1) + policy-template ($evm3_pt>=1)" \
+  "$evm3_result"
+
+# CT-EV-MODEL-4: the single named criticality scalar documented in the canonical
+# reference AND emitted as a [CRITICALITY] stderr line by the Step 3a resolver.
+# grep -cF for both tokens ([ ] and = are handled literally).
+evm4_vd=$(grep -cF 'criticality = blast_radius' "$VD_EVM" || true)
+evm4_impl=$(grep -cF '[CRITICALITY]' "$IMPL_EVM" || true)
+evm4_result="false"
+if [ "$evm4_vd" -ge 1 ] && [ "$evm4_impl" -ge 1 ]; then evm4_result="true"; fi
+assert_true \
+  "CT-EV-MODEL-4 (criticality scalar): verification-depth 'criticality = blast_radius' ($evm4_vd>=1) + impl SKILL [CRITICALITY] stderr ($evm4_impl>=1)" \
+  "$evm4_result"
+
+echo ""
+
 # --- Summary ---
 print_summary

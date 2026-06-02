@@ -54,7 +54,7 @@ Summary of the resolved tiers:
 |---|---|---|---|
 | `standard` | +0 | conditional (existing T-A..T-E) | 1 (single, current behaviour) |
 | `thorough` | +3 | forced (trigger T-F) | 1 |
-| `exhaustive` | +6 | forced (trigger T-F) | 3 (diverse-lens majority) |
+| `exhaustive` | +6 | forced (trigger T-F) | 3 (evidence-mode-diverse majority) |
 
 - `auto` (default): resolve the tier from `Size x risk_tolerance` per the
   matrix in `verification-depth.md`. For the common S/M conservative/moderate
@@ -68,6 +68,16 @@ Summary of the resolved tiers:
 The `max_rounds` bonus is **not** applied when an explicit `rounds=N`
 argument is supplied to `/impl` (the user-specified cap is authoritative);
 see `skills/impl/references/round-cap-parser.md`.
+
+## `constraints.irreversibility_floor`
+
+**Consumed by**: `/impl` (Step 3a criticality resolver — the M5 irreversibility axis of the criticality floor).
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto` (fail-safe to active).
+
+**Effect**: when `auto`, the M5 (v8.3.0+) IRREVERSIBILITY axis is active — an AC that verifies an irreversible real-world side-effect (persistent data writes, non-idempotent network mutation, money movement, destructive ops, or external-system calls that cannot be rolled back) floors `criticality` at `critical` even on an `S` ticket, which in turn raises the depth tier to at least `thorough`, bumps the evaluator model to opus (via the `ac-evaluator-hi` agent file), and sets the red-team budget to full (the latter consumed by M2 from v8.5.0). When `off`, ONLY the irreversibility axis is removed — the critical-domain computational floor (`constraints.oracle_verification`) and the matrix depth scaling (`constraints.verification_depth`) are unaffected. The full axis, cue list, evaluator-model column, and red-team-budget column live in [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md) `## Criticality scalar` / `## Criticality floor` / `## Effects ladder`. This is the per-brief kill switch for the irreversibility axis alone; use it when a brief's tickets routinely touch irreversible systems but the deeper verification + opus evaluator is unwanted.
 
 ## `constraints.oracle_verification`
 
@@ -102,3 +112,32 @@ This is the per-brief kill switch for the oracle-independence feature line; it
 is independent of `constraints.verification_depth` (which scales matrix depth).
 Use `off` only when the domain genuinely has no oracle and the deeper
 verification is unwanted.
+
+## `constraints.independent_evidence`
+
+**Consumed by**: `/impl` (Step 3a `evidence_floor` resolution; `ac-evaluator` Gate 8
+enforcement at Step 15), the `planner` Gate 8 self-audit, and the `ticket-evaluator`
+Gate 8 grading.
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto` (fail-safe to
+active).
+
+**Effect**: when `auto`, **Gate 8 independent evidence** (M1, v8.3.0+) is active — every
+behavioral AC (PASS/FAIL hinges on observable runtime behaviour) must name at least one
+evidence channel independent of the implementation's own internals (EC-ORACLE /
+EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME per
+[`../../impl/references/evidence-channels.md`](../../impl/references/evidence-channels.md)),
+OR be rewritten as a structural AC (EC-STATIC). The resolved `evidence_floor` (effects
+ladder in
+[`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md))
+sets how many independent channels are MANDATORY per tier: `standard` = EC-STATIC + the
+AC's natural channel (no extra channel — byte-identical to pre-v8.3.0 for a routine S/M
+ticket), `thorough` = +1 independent channel, `exhaustive` = >=2. When `off`, Gate 8 is
+graded `n/a` ticket-wide and the evidence-floor requirement is dropped (the `ac-evaluator`
+falls back to its pre-v8.3.0 path); the always-on Gate 7 oracle check for computational
+ACs is governed separately by `constraints.oracle_verification`. This is the per-brief
+kill switch for the Gate 8 / independent-evidence feature line; it is independent of
+`constraints.oracle_verification` (the EC-ORACLE sub-case) and
+`constraints.verification_depth` (which scales tier/depth).

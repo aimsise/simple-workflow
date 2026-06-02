@@ -1,5 +1,5 @@
 ---
-name: ac-evaluator
+name: ac-evaluator-hi
 description: "AC compliance evaluator. Independently verifies acceptance criteria, test results, and functional correctness. Code quality is reviewed separately."
 tools:
   - Read
@@ -138,7 +138,7 @@ tools:
   - "shell(wc:*)"
   - "shell(head:*)"
   - "shell(tail:*)"
-model: sonnet  # M5/v8.3.0+: the opus variant is the byte-identical sibling agents/ac-evaluator-hi.md (model: opus); the orchestrator spawns ac-evaluator-hi when the Step 3a resolver sets EVALUATOR_MODEL=opus (criticality=critical OR verification_depth=exhaustive), because the Agent JSONSchema rejects a per-spawn model: override (Strategy-B). Keep the two bodies byte-identical except this line and the name: line (CT-EV-MODEL).
+model: opus  # M5/v8.3.0+: opus variant of agents/ac-evaluator.md (the sonnet default); /impl Step 15 spawns this file when the Step 3a resolver sets EVALUATOR_MODEL=opus (criticality=critical OR verification_depth=exhaustive), because the Agent JSONSchema rejects a per-spawn model: override (Strategy-B). Body byte-identical to ac-evaluator.md except this line and the name: line (CT-EV-MODEL).
 maxTurns: 200  # raised in T-2; 60 is the documented floor, orchestrator passes a soft turn budget in the prompt via AC_COUNT * 4
 ---
 

@@ -97,14 +97,20 @@ return).
 
 ### Lens directives (field `l`)
 
-Each invocation appends exactly one lens directive so the three runs probe
-different failure modes (perspective-diverse verification beats three
-identical refuters). Substitute `{i}` ∈ {1,2,3} and persist to
-`eval-round-{n}-v{i}.md`:
+Each invocation appends exactly one lens directive so the three runs gather
+evidence through DIFFERENT, INDEPENDENT channels (evidence-mode-diverse
+verification beats three lenses that read the same `git diff` and run the
+same tests — see `## Independent-evidence channels (all evaluator modes)`
+below). The three lenses map to the evidence channels defined in
+[`evidence-channels.md`](evidence-channels.md): V1 → EC-RUNTIME (real public
+boundary), V2 → EC-DIFFERENTIAL or EC-PROPERTY (reference cross-check or
+seeded property sweep), V3 → EC-ORACLE + targeted fuzz (independent oracle
+on the raw value + a parse-accepted-overflow vector). Substitute `{i}` ∈
+{1,2,3} and persist to `eval-round-{n}-v{i}.md`:
 
-- **V1 — correctness lens**: `--- lens: 1/3 correctness --- Verify each AC strictly against the existing tests, type checker, and observable behaviour. Treat a green suite as necessary but not sufficient: confirm the test actually exercises the AC.`
-- **V2 — adversarial-refute lens**: `--- lens: 2/3 adversarial-refute --- Your goal is to REFUTE each PASS. For every AC, actively search for an input, ordering, or state that breaks it. Default to FAIL when the evidence for PASS is not conclusive.`
-- **V3 — reproduction-edge lens**: `--- lens: 3/3 reproduction-edge --- Probe boundary conditions, error paths, empty/null inputs, and concurrency. FAIL an AC whose required behaviour you cannot reproduce, or whose test coverage is insufficient to demonstrate it.`
+- **V1 — runtime / black-box lens (EC-RUNTIME)**: `--- lens: 1/3 runtime/EC-RUNTIME --- Gather evidence through the REAL public / protocol boundary only: drive the actual CLI, the actual MCP Client over a transport, or the exported public API — never internal handlers reached by reflection or imports the real consumer cannot use. A green project suite is necessary but NOT sufficient: confirm the AC's behaviour is observable at the public boundary, and FAIL any AC whose only evidence is a white-box test that bypasses the schema / serialization / transport layer where real consumers fail.`
+- **V2 — differential / property lens (EC-DIFFERENTIAL or EC-PROPERTY)**: `--- lens: 2/3 differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY --- Establish evidence INDEPENDENT of the implementation's own output. When a reference implementation of the same contract exists, cross-check the implementation against it (EC-DIFFERENTIAL). Otherwise drive a seeded random sweep over the input space (fixed seed → reproducible) and assert the invariants the output must hold — monotonicity, symmetry, idempotence, round-trip, range/gamut containment (EC-PROPERTY). FAIL an AC whose tests assert only a handful of fixed points the code itself could have produced, with no reference cross-check and no property coverage across the distribution.`
+- **V3 — independent-oracle / targeted-fuzz lens (EC-ORACLE + adversarial)**: `--- lens: 3/3 oracle-or-fuzz/EC-ORACLE --- For any computational AC, independently derive at least one expected value from an oracle that does NOT share the implementation's core (a third-party reference library, a published formula applied from first principles, or a cited hand-computed constant) and compare against the implementation's RAW, pre-rounding output with an explicit tolerance — this is the Gate 7 oracle probe, applied with full force. Additionally fuzz at least one parse-accepted-then-overflows vector (a value the parser ACCEPTS that yields a non-finite / out-of-range intermediate, e.g. `oklch(0.5 1e400 30)`) through the tool under a time-bounded watchdog; FAIL if it hangs or returns a non-error success carrying null / NaN fields. A scratch oracle probe under .simple-workflow/scratch/ is permitted.`
 
 The lens header mirrors the `--- partition: <i>/2 ---` convention so the
 agent recognises its role; the `ac-evaluator` body documents the three
@@ -112,6 +118,16 @@ lenses under `## Verification Lens (high-assurance handoff)`. All other
 fields (`a`-`h`, `j`) are identical across the three spawns; field `k`
 (partition) is absent here. The soft turn budget (field `j`) is computed
 once from the full `AC_COUNT` and passed to all three.
+
+**Evaluator model in the multi-verifier branch (M5, v8.3.0+)**: `exhaustive` tier
+resolves `EVALUATOR_MODEL == opus` at Step 3a, so all three lens spawns use the opus
+agent file `simple-workflow:ac-evaluator-hi` (the per-spawn `model:` override is rejected
+by the Agent JSONSchema — the same Strategy-B limitation as the soft turn budget above;
+the model is therefore selected by which agent file is spawned, never by a per-invocation
+field). The lens directives, the soft turn budget (field `j`), and the majority merge are
+otherwise unchanged; `ac-evaluator-hi.md` is byte-identical to `ac-evaluator.md` except
+its `name:` and `model:` lines, so it recognises the `--- lens: <i>/3 ---` header and
+applies the assigned lens identically.
 
 ### Majority merge (after all three return)
 
@@ -155,8 +171,32 @@ partition `-part-{i}.md` files do; no combined `eval-round-{n}.md` is
 written (the orchestrator renders no AC verdict to disk — see
 `skills/impl/SKILL.md` line 40).
 
-## Oracle independence (computational ACs, all evaluator modes)
+## Independent-evidence channels (all evaluator modes)
 
+Independent of the verifier count, every `ac-evaluator` invocation — single,
+partitioned, or 3-lens — MUST establish that each behavioral AC is proven by
+at least one evidence channel independent of the implementation's own
+internals, per `agents/ac-evaluator.md` and Gate 8 in
+`skills/create-ticket/references/ac-quality-criteria.md`. The five channels
+(EC-ORACLE / EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME / EC-STATIC) are
+defined in [`evidence-channels.md`](evidence-channels.md). The orchestrator
+resolves the `evidence_floor` at `/impl` Step 3a (standard = EC-STATIC + the
+AC's natural channel; thorough = +1 independent channel; exhaustive = >=2
+independent channels — see
+[verification-depth.md](verification-depth.md) effects ladder) and inlines it
+into every spawn prompt as the field `Evidence floor: {tier:channels}` so the
+evaluator reads the floor from the prompt (like the `## Bound capabilities
+(per AC)` handoff), not from disk. The ticket-wide kill switch is
+`constraints.independent_evidence: off` (absent / unknown → `auto`, active),
+which the orchestrator resolves at Step 3a; when `off`, the evidence-floor
+requirement is dropped and the evaluator falls back to its pre-v8.3.0 path
+(project tests + code inspection + the always-on Gate 7 oracle check when
+`oracle_verification` is active).
+
+### Oracle independence (computational ACs — the EC-ORACLE sub-case)
+
+Gate 7 is the strongest independent-evidence sub-case, scoped to computational
+ACs (PASS/FAIL hinges on a computed numeric/algorithmic value).
 Independent of the verifier count, every `ac-evaluator` invocation — single,
 partitioned, or 3-lens — MUST apply the oracle-independence requirement in
 `agents/ac-evaluator.md` `## Oracle Independence (computational ACs)` to any
@@ -167,11 +207,20 @@ RAW (pre-rounding) output with an explicit tolerance — a green project suite i
 necessary but not sufficient. A throwaway oracle probe under the gitignored
 `.simple-workflow/scratch/` directory is permitted.
 
-Stacking three lenses does NOT substitute for this: all three verifiers read the
-SAME `git diff` and run the SAME project tests, so without an independent oracle
-they share the same blind spot — a test that re-measures with the code's own
-rounded value passes all three. The multi-verifier branch adds perspective
-diversity on top of an oracle check; it does not replace it. The ticket-wide
+Under M1 (v8.3.0+) the three multi-verifier lenses are EVIDENCE-MODE-diverse,
+not merely attitude-diverse: V1 exercises the real public boundary
+(EC-RUNTIME), V2 cross-checks against a reference impl or a seeded property
+sweep (EC-DIFFERENTIAL / EC-PROPERTY), and V3 applies an independent oracle on
+the raw value plus a parse-accepted-overflow fuzz vector (EC-ORACLE). Because
+the lenses now draw on DIFFERENT, INDEPENDENT evidence channels, they no
+longer share the single-source blind spot that the pre-M1 attitude-only
+lenses did — a test that re-measures with the code's own rounded value is
+caught by V3's oracle and a white-box test that bypasses the transport is
+caught by V1's public-boundary requirement. The oracle check remains MANDATORY
+for every computational AC in single-verifier (`standard`) mode too — M1 does
+NOT gate evidence independence on the `exhaustive` tier; the `evidence_floor`
+mandates the AC's natural independent channel even at `standard`, and the
+full multi-channel fan-out only at `exhaustive`. The ticket-wide
 kill switch is `constraints.oracle_verification: off` (absent / unknown →
 `auto`, active); the orchestrator resolves it at `/impl` Step 3a and inlines it
 into every `ac-evaluator` spawn prompt as the field `Oracle verification:
@@ -193,7 +242,7 @@ into every `ac-evaluator` spawn prompt as the field `Oracle verification:
   `AC_COUNT < 30`): prepend the `--- lens: {i}/3 {name} ---` directive for
   verifier `i` (the three verbatim directives are listed under
   `## High-assurance multi-verifier branch` above) so the agent applies
-  the assigned correctness / adversarial-refute / reproduction-edge lens.
+  the assigned EC-RUNTIME / EC-DIFFERENTIAL-or-EC-PROPERTY / EC-ORACLE evidence-mode lens.
   Fields `k` and `l` are mutually exclusive (partition wins).
 
 ## Copy-pasteable Evaluator prompt template
