@@ -31,6 +31,14 @@ exit code) needs only a direct assertion.
    table with a cited source. NEVER take the implementation's own output —
    directly, via an alias, or by re-reading a field the code already rounded —
    as the expected value. That circularity is rejected by tautological rule R4.
+   At the `thorough` / `exhaustive` depth tier, for a standard-backed
+   computational target use **two or more mutually-validated independent
+   oracles** with **at least one first-principles** (the spec formula,
+   hand-implemented, no library) and trust a value only when they agree within
+   an explicit tolerance — one library oracle silently shares that library's
+   conventions. Copy the shape from
+   [`independent-oracle-harness.md`](independent-oracle-harness.md). Where no
+   second independent oracle exists, the single-oracle path stands (note it).
 
 2. **Raw before rounded, with explicit tolerance.** Assert on the
    implementation's RAW, pre-rounding / pre-formatting value against the oracle
@@ -45,6 +53,13 @@ exit code) needs only a direct assertion.
    round-trip (`decode(encode(x)) == x`), gamut / range containment, and
    conservation. A property holds across a distribution; a point test holds at
    one point.
+   When a second INDEPENDENT ALGORITHM for the same contract exists (e.g.
+   CSS-MINDE vs chroma-clamping gamut mapping, two independent sorts), at the
+   `thorough` / `exhaustive` depth tier add an **algorithm-vs-algorithm**
+   differential within an explicit tolerance — a membership / containment check
+   alone is necessary-not-sufficient, because a wrong result can still be
+   in-range. Degrade to property coverage + a note where no second algorithm
+   exists.
 
 4. **Adversarial / non-finite / out-of-range inputs by default.** For any
    function taking external or untrusted input, include empty, `NaN`,
@@ -92,6 +107,18 @@ exit code) needs only a direct assertion.
    of hard-coded fixtures, and cross-check each generated case against the
    oracle / invariant. A dozen fixed inputs is a dozen points; a seeded sweep is
    a distribution.
+   At the `thorough` / `exhaustive` depth tier this is a **MUST**, not an
+   encouragement: a computational / algorithmic AC MUST ship a **committed,
+   fixed-seed** property-fuzz loop (the seed is hard-coded so the run is
+   reproducible; a `mulberry32`-style PRNG seeded by a literal is the canonical
+   shape — see
+   [`independent-oracle-harness.md`](independent-oracle-harness.md)) over the
+   input distribution, asserting the invariants / oracle agreement across a
+   **tier-scaled minimum** number of cases (rule of thumb: `thorough` >= a few
+   hundred per invariant family, `exhaustive` >= ~1000). The loop must be in the
+   committed test file, not an ad-hoc external probe. Where the ecosystem has no
+   PRNG idiom, or the AC is not computational, this degrades to the existing
+   deterministic-grid coverage + a one-line note — never a block.
 
 ## No-oracle fallback
 

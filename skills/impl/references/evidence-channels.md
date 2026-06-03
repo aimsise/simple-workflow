@@ -40,14 +40,34 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   implementation's core: a third-party reference library, a published formula applied
   from first principles, or a hand-computed truth table. *Independent because* the
   expected value exists without running the SUT. This is the strongest channel and the
-  one Gate 7 (oracle independence for computational ACs) requires.
+  one Gate 7 (oracle independence for computational ACs) requires. At the
+  `thorough` / `exhaustive` evidence_floor a standard-backed computational AC
+  must use **two or more mutually-validated** EC-ORACLE channels with **at least
+  one first-principles** (spec formula, no library) — they agree within
+  tolerance before either is trusted; a single oracle suffices only at
+  `standard`, and the requirement degrades to one oracle + a Caveat where no
+  second independent oracle exists. See
+  [`independent-oracle-harness.md`](independent-oracle-harness.md) for the
+  canonical shape.
 - **EC-DIFFERENTIAL** — the implementation's output cross-checked against a SEPARATE
   reference implementation of the same contract. *Independent because* a second
-  implementation would have to share the exact same bug to agree.
+  implementation would have to share the exact same bug to agree. Strongest as
+  **algorithm-vs-algorithm**: when a second, INDEPENDENT ALGORITHM for the same
+  contract exists (e.g. CSS-MINDE vs chroma-clamping gamut mapping), cross-check
+  the two within an explicit tolerance — a membership / invariant test alone
+  (`inGamut`, "is sorted") is **necessary-not-sufficient** because a wrong
+  result can still satisfy it. At `thorough` / `exhaustive` use the
+  second-algorithm differential where one is identifiable; degrade to membership
+  / property coverage + a Caveat where no second algorithm exists.
 - **EC-PROPERTY** — invariants the output must satisfy across a seeded input
   distribution (monotonicity, symmetry, idempotence, round-trip, range/gamut
   containment), independent of any single expected value. *Independent because* the
-  invariant is a law the correct answer obeys, not a value the SUT produced.
+  invariant is a law the correct answer obeys, not a value the SUT produced. At
+  the `thorough` / `exhaustive` evidence_floor this seeded distribution MUST be a
+  **committed, fixed-seed** loop (reproducible PRNG, tier-scaled case count), not
+  a hand-picked grid — see
+  [`independent-oracle-harness.md`](independent-oracle-harness.md); it degrades
+  to deterministic coverage + a Caveat where no PRNG idiom exists.
 - **EC-RUNTIME** — black-box observation through the real public / protocol boundary:
   the real CLI, the real MCP `Client` over a transport, the exported public API, a
   rendered DOM — never internal handlers reached by reflection or by imports a real
