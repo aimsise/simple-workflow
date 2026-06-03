@@ -9505,6 +9505,113 @@ assert_true \
   "CT-EV-9 (gate-count carriers -> Gates 1-8, MF3/MF6): agent-spawn-prompts ($ev9_asp>=1) + ticket-evaluator L15 ($ev9_tev>=1) + create-ticket SKILL ($ev9_ctskill>=1)" \
   "$ev9_result"
 
+# -----------------------------------------------------------------------------
+# Wave A (v8.3.1): ultracode-superiority verification-assurance refinement.
+# H1 multi-oracle / H2 committed seeded fuzz / H3 algorithm-vs-algorithm /
+# H13 independent-oracle-harness.md / H12 criticality cue tighten. Every token
+# below is HEAD=0 (verified net-new), so a revert flips the assert to FAIL.
+# Fail-open is a runtime property (engages only at thorough/exhaustive for a
+# standard-backed computational AC) and is proven by the §6 fail-open diff, not
+# by a contract test. New file-path vars (collision-checked against L9379-9390):
+TAG_EV="$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
+TW_EV="$REPO_DIR/agents/test-writer.md"
+IMPLAGENT_EV="$REPO_DIR/agents/implementer.md"
+HARNESS_EV="$REPO_DIR/skills/impl/references/independent-oracle-harness.md"
+
+# CT-EV-10 (H1 multi-oracle, symmetry guard): the >=2-mutually-validated-oracle
+# (>=1 first-principles) obligation is wired across the FULL author->verify
+# surface — canonical gate (ac-quality-criteria), taxonomy (evidence-channels),
+# producer rubric (test-authoring-guidance + implementer + test-writer),
+# authoring gate (planner step 8 + ticket-evaluator Gate-7 row), verifier
+# (ac-evaluator), and the floor doc (verification-depth). 'mutually-validated' is
+# the H1 signature token (pinned in all 9 binding-party files so a silent revert
+# of ANY cell — incl. the planner author + ticket-evaluator grader cells the
+# appendix symmetry matrix names — flips this to FAIL); 'first-principles'
+# (hyphenated) is pinned at the two ends (authoring gate + verifier).
+ev10_acqc=$(grep -ciF 'mutually-validated' "$ACQC_EV" || true)
+ev10_ech=$(grep -ciF 'mutually-validated' "$ECH_EV" || true)
+ev10_tag=$(grep -ciF 'mutually-validated' "$TAG_EV" || true)
+ev10_acev=$(grep -ciF 'mutually-validated' "$ACEV_EV" || true)
+ev10_vd=$(grep -ciF 'mutually-validated' "$VD_EV" || true)
+ev10_impl=$(grep -ciF 'mutually-validated' "$IMPLAGENT_EV" || true)
+ev10_tw=$(grep -ciF 'mutually-validated' "$TW_EV" || true)
+ev10_planner=$(grep -ciF 'mutually-validated' "$PLANNER_EV" || true)
+ev10_tev=$(grep -ciF 'mutually-validated' "$TEV_EV" || true)
+ev10_fp_acqc=$(grep -ciF 'first-principles' "$ACQC_EV" || true)
+ev10_fp_acev=$(grep -ciF 'first-principles' "$ACEV_EV" || true)
+ev10_result="false"
+if [ "$ev10_acqc" -ge 1 ] && [ "$ev10_ech" -ge 1 ] && [ "$ev10_tag" -ge 1 ] && [ "$ev10_acev" -ge 1 ] && [ "$ev10_vd" -ge 1 ] && [ "$ev10_impl" -ge 1 ] && [ "$ev10_tw" -ge 1 ] && [ "$ev10_planner" -ge 1 ] && [ "$ev10_tev" -ge 1 ] && [ "$ev10_fp_acqc" -ge 1 ] && [ "$ev10_fp_acev" -ge 1 ]; then ev10_result="true"; fi
+assert_true \
+  "CT-EV-10 (H1 multi-oracle wired): 'mutually-validated' in ac-quality-criteria/evidence-channels/test-authoring/ac-evaluator/verification-depth/implementer/test-writer/planner/ticket-evaluator ($ev10_acqc/$ev10_ech/$ev10_tag/$ev10_acev/$ev10_vd/$ev10_impl/$ev10_tw/$ev10_planner/$ev10_tev each>=1) + 'first-principles' in gate+verifier ($ev10_fp_acqc/$ev10_fp_acev each>=1)" \
+  "$ev10_result"
+
+# CT-EV-11 (H2 committed seeded fuzz, symmetry guard): rule 7 promoted from
+# "encouraged" to a depth-gated MUST + the committed fixed-seed PRNG obligation
+# wired across producer rubric, taxonomy, verifier, and floor doc. 'fixed-seed'
+# (hyphenated; the SPACED 'fixed seed' pre-existed) is the H2 signature token. A
+# revert (rule 7 back to encouragement, or dropping the fixed-seed clause) flips it.
+ev11_tag=$(grep -ciF 'fixed-seed' "$TAG_EV" || true)
+ev11_ech=$(grep -ciF 'fixed-seed' "$ECH_EV" || true)
+ev11_acev=$(grep -ciF 'fixed-seed' "$ACEV_EV" || true)
+ev11_vd=$(grep -ciF 'fixed-seed' "$VD_EV" || true)
+ev11_impl=$(grep -ciF 'fixed-seed' "$IMPLAGENT_EV" || true)
+ev11_tw=$(grep -ciF 'fixed-seed' "$TW_EV" || true)
+ev11_planner=$(grep -ciF 'fixed-seed' "$PLANNER_EV" || true)
+ev11_tev=$(grep -ciF 'fixed-seed' "$TEV_EV" || true)
+ev11_result="false"
+if [ "$ev11_tag" -ge 1 ] && [ "$ev11_ech" -ge 1 ] && [ "$ev11_acev" -ge 1 ] && [ "$ev11_vd" -ge 1 ] && [ "$ev11_impl" -ge 1 ] && [ "$ev11_tw" -ge 1 ] && [ "$ev11_planner" -ge 1 ] && [ "$ev11_tev" -ge 1 ]; then ev11_result="true"; fi
+assert_true \
+  "CT-EV-11 (H2 committed seeded fuzz wired): 'fixed-seed' in test-authoring/evidence-channels/ac-evaluator/verification-depth/implementer/test-writer/planner/ticket-evaluator ($ev11_tag/$ev11_ech/$ev11_acev/$ev11_vd/$ev11_impl/$ev11_tw/$ev11_planner/$ev11_tev each>=1)" \
+  "$ev11_result"
+
+# CT-EV-12 (H3 algorithm-vs-algorithm, symmetry guard): EC-DIFFERENTIAL re-spec'd
+# to algorithm-vs-algorithm (membership is necessary-not-sufficient) across the
+# canonical gate, taxonomy, producer rubric, verifier, the lens directives, and
+# both producers. 'algorithm-vs-algorithm' is the H3 signature token (HEAD=0).
+ev12_acqc=$(grep -ciF 'algorithm-vs-algorithm' "$ACQC_EV" || true)
+ev12_ech=$(grep -ciF 'algorithm-vs-algorithm' "$ECH_EV" || true)
+ev12_tag=$(grep -ciF 'algorithm-vs-algorithm' "$TAG_EV" || true)
+ev12_acev=$(grep -ciF 'algorithm-vs-algorithm' "$ACEV_EV" || true)
+ev12_orch=$(grep -ciF 'algorithm-vs-algorithm' "$ORCH_EV" || true)
+ev12_impl=$(grep -ciF 'algorithm-vs-algorithm' "$IMPLAGENT_EV" || true)
+ev12_tw=$(grep -ciF 'algorithm-vs-algorithm' "$TW_EV" || true)
+ev12_planner=$(grep -ciF 'algorithm-vs-algorithm' "$PLANNER_EV" || true)
+ev12_tev=$(grep -ciF 'algorithm-vs-algorithm' "$TEV_EV" || true)
+ev12_result="false"
+if [ "$ev12_acqc" -ge 1 ] && [ "$ev12_ech" -ge 1 ] && [ "$ev12_tag" -ge 1 ] && [ "$ev12_acev" -ge 1 ] && [ "$ev12_orch" -ge 1 ] && [ "$ev12_impl" -ge 1 ] && [ "$ev12_tw" -ge 1 ] && [ "$ev12_planner" -ge 1 ] && [ "$ev12_tev" -ge 1 ]; then ev12_result="true"; fi
+assert_true \
+  "CT-EV-12 (H3 algorithm-vs-algorithm wired): 'algorithm-vs-algorithm' in ac-quality-criteria/evidence-channels/test-authoring/ac-evaluator/orchestration/implementer/test-writer/planner/ticket-evaluator ($ev12_acqc/$ev12_ech/$ev12_tag/$ev12_acev/$ev12_orch/$ev12_impl/$ev12_tw/$ev12_planner/$ev12_tev each>=1)" \
+  "$ev12_result"
+
+# CT-EV-13 (H13 independent-oracle-harness.md exists + reference-wired): the new
+# gold-standard oracle harness file exists AND is linked from the producer rubric,
+# taxonomy, verifier, and both producers (CT-AR-6 file-exists + reference-wired
+# idiom). A revert deleting the file or any inbound link flips this to FAIL.
+ev13_exists=0
+if [ -f "$HARNESS_EV" ]; then ev13_exists=1; fi
+ev13_tag=$(grep -cF 'independent-oracle-harness.md' "$TAG_EV" || true)
+ev13_ech=$(grep -cF 'independent-oracle-harness.md' "$ECH_EV" || true)
+ev13_acev=$(grep -cF 'independent-oracle-harness.md' "$ACEV_EV" || true)
+ev13_tw=$(grep -cF 'independent-oracle-harness.md' "$TW_EV" || true)
+ev13_impl=$(grep -cF 'independent-oracle-harness.md' "$IMPLAGENT_EV" || true)
+ev13_result="false"
+if [ "$ev13_exists" -eq 1 ] && [ "$ev13_tag" -ge 1 ] && [ "$ev13_ech" -ge 1 ] && [ "$ev13_acev" -ge 1 ] && [ "$ev13_tw" -ge 1 ] && [ "$ev13_impl" -ge 1 ]; then ev13_result="true"; fi
+assert_true \
+  "CT-EV-13 (H13 harness file + wired): independent-oracle-harness.md exists ($ev13_exists=1) + linked from test-authoring/evidence-channels/ac-evaluator/test-writer/implementer ($ev13_tag/$ev13_ech/$ev13_acev/$ev13_tw/$ev13_impl each>=1)" \
+  "$ev13_result"
+
+# CT-EV-14 (H12 criticality cue tighten): verification-depth.md criticality floor
+# carries the new shared-core escalation trigger so a computational AC over a
+# shared input boundary reliably escalates to thorough/exhaustive (the catch
+# mechanism only fires if classification fires). 'shared-core' is HEAD=0
+# ('gamut'/'color-space' pre-exist, so they are not usable as the unique token).
+ev14_vd=$(grep -cF 'shared-core' "$VD_EV" || true)
+ev14_result="false"
+if [ "$ev14_vd" -ge 1 ]; then ev14_result="true"; fi
+assert_true \
+  "CT-EV-14 (H12 criticality cue): verification-depth criticality floor carries 'shared-core' trigger ($ev14_vd>=1)" \
+  "$ev14_result"
+
 echo ""
 
 # =============================================================================

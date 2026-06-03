@@ -92,10 +92,17 @@ Size × `risk_tolerance`, so the `/audit` skeptical third-pass is forced even on
 an `S` / `conservative` ticket. The critical-domain determination is a
 model-judgment read of the AC text (there is no deterministic ticket field);
 keyword cues that should trigger it: WCAG / contrast / a11y / focus-order
-(accessibility); auth / crypto / token / signature / input-validation
+/ color-space / gamut / OKLab / luminance / chroma conversion (accessibility &
+color-science); auth / crypto / token / signature / input-validation
 (security); currency / decimal / rounding / money (money); checksum / hash /
 dedup / referential-integrity (data-integrity); RFC / ISO / spec-conformance
-(standard-compliance).
+(standard-compliance); and any **computational AC over a shared-core input
+boundary** — a parser / validation / constant (e.g. an epsilon / range / gamut
+guard) shared with sibling tools, where an inconsistency in one sibling is the
+exact wrong-but-self-consistent defect class the floor targets. The shared-core
+trigger is independent of the named domains above: a computational AC that reads
+or must hold an invariant across a shared input boundary floors `critical` even
+when its surface domain is otherwise routine.
 
 The floor only RAISES the tier (`standard` → `thorough`); it never lowers a tier
 the matrix already resolved higher (`exhaustive` stays `exhaustive`). It is
@@ -162,6 +169,32 @@ evaluator_model, redteam_budget, domain_set}` that `/impl` Step 3a materialises 
    merge). `standard` / `thorough` keep the single evaluator. See
    [`ac-evaluator-orchestration.md`](ac-evaluator-orchestration.md)
    `## High-assurance multi-verifier branch` for the lenses and merge.
+
+### Standard-backed computational evidence floor (Wave A: multi-oracle / seeded-fuzz / algorithm-differential)
+
+At the `thorough` and `exhaustive` floors, the independent channels mandated by
+the `evidence_floor` column above are SHARPENED for a **standard-backed
+computational AC** (one in a domain with a published spec / a second independent
+oracle / a second algorithm — color/WCAG, crypto, dates, units, money rounding,
+spec parsers, accessibility ratios):
+
+- **multi-oracle (H1)** — the EC-ORACLE evidence MUST be **two or more
+  mutually-validated oracles** with **at least one derived from first
+  principles** (the spec formula, no library), trusted only when they agree
+  within an explicit tolerance. A single library oracle suffices only at
+  `standard`.
+- **committed seeded fuzz (H2)** — a **committed, fixed-seed** property-fuzz
+  loop (EC-PROPERTY) over the input distribution, tier-scaled, not a hand-picked
+  grid.
+- **algorithm-vs-algorithm (H3)** — where a second independent ALGORITHM for the
+  contract exists, an EC-DIFFERENTIAL cross-check within tolerance (membership is
+  necessary-not-sufficient).
+
+These RAISE the bar only for standard-backed computational ACs at
+`thorough` / `exhaustive`; they **degrade to the single natural channel + a
+Caveat — never a block** where no published spec / second oracle / second
+algorithm exists, and the `standard` floor is unchanged. The canonical oracle
+shape is [`independent-oracle-harness.md`](independent-oracle-harness.md).
 
 ### Evaluator model + red-team budget (M5 / v8.3.0+)
 
