@@ -86,8 +86,9 @@ single-evaluator `[CONTRACT-VIOLATION]` does. The quorum rule then
 governs: if fewer than 2 verifiers reach a terminal verdict, the merged
 result is `FAIL-CRITICAL` (insufficient independent verification). See
 [ac-evaluator-orchestration.md](ac-evaluator-orchestration.md)
-`## High-assurance multi-verifier branch` for the majority merge and the
-`valid < 2` quorum.
+`## High-assurance multi-verifier branch` for the refute-then-synthesize merge
+(v8.4.0+; `constraints.refute_merge: off` restores the prior majority-merge) and
+the `valid < 2` quorum.
 
 ### (iii) Output begins with `ERROR-` (e.g. `ERROR-WRITE-FAILED`)
 

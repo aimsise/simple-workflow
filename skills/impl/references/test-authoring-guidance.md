@@ -68,6 +68,11 @@ exit code) needs only a direct assertion.
    hangs (e.g. an unbounded binary search on `Infinity`) and contract-violating
    outputs (e.g. impossible channel values) that happy-path fixtures miss.
 
+   This default-adversarial requirement binds **computational or behavioral** ACs
+   alike (M3, v8.4.0+): any AC whose function takes external / untrusted input needs
+   this coverage, even though rules 1-3 (oracle / raw-value / differential) stay
+   computational-only.
+
    **Two classes of bad input — test BOTH, and never skip the second.** (a) *Parse-rejected*
    tokens (`NaN` / `Infinity` as literal keywords, malformed syntax) that the parser / validator
    rejects at the door: these exercise the cheap early-return error path, usually already correct.

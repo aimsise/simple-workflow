@@ -154,7 +154,7 @@ evaluator_model, redteam_budget, domain_set}` that `/impl` Step 3a materialises 
 
 | Tier | GE `max_rounds` bonus | `/audit` third-pass | Step 15 evaluators | `evidence_floor` (Gate 8 channels MANDATORY) |
 |---|---|---|---|---|
-| `standard` | +0 | conditional (existing T-A..T-E) | 1 (single, current behaviour) | EC-STATIC + the AC's natural channel (no extra channel; byte-identical to pre-v8.3.0) |
+| `standard` | +0 | conditional (existing T-A..T-E) | 1 (single, current behaviour) | EC-STATIC + the AC's natural channel — this is the TIER floor; the RESOLVED floor is `max(tier, AC-shape)`, so a behavioral-AC ticket floors at `+1-independent` even here (see `### AC-shape evidence-independence floor`) |
 | `thorough` | +3 | forced via `depth=thorough` (trigger T-F) | 1 | + at least 1 INDEPENDENT channel beyond the natural one (EC-ORACLE / EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME) |
 | `exhaustive` | +6 | forced via `depth=exhaustive` (trigger T-F) | 3 (evidence-mode-diverse majority) | >= 2 INDEPENDENT channels (the 3 evidence-mode lenses V1 EC-RUNTIME / V2 EC-DIFFERENTIAL-or-EC-PROPERTY / V3 EC-ORACLE collectively satisfy this) |
 
@@ -169,6 +169,57 @@ evaluator_model, redteam_budget, domain_set}` that `/impl` Step 3a materialises 
    merge). `standard` / `thorough` keep the single evaluator. See
    [`ac-evaluator-orchestration.md`](ac-evaluator-orchestration.md)
    `## High-assurance multi-verifier branch` for the lenses and merge.
+
+### AC-shape evidence-independence floor (M3 / v8.4.0+)
+
+The `evidence_floor` column above is keyed to the **depth tier** (Size × risk).
+M3 adds a SECOND, orthogonal axis keyed to **AC shape** (Size-independent), so the
+anti-shared-blind-spot independence the floor buys is no longer gated behind
+blast-radius. The resolved floor is the stronger of the two:
+
+```
+evidence_floor = max(tier floor, AC-shape floor)
+```
+
+ordered `EC-STATIC+natural` < `+1-independent` < `>=2-independent`.
+
+- **AC-shape floor** — derived from the ticket's AC shapes alone, independent of
+  `Size × risk_tolerance`:
+  - the ticket carries ≥1 **behavioral AC** (Gate 8 — PASS/FAIL hinges on
+    observable runtime behaviour) → `+1-independent` (the AC's natural channel PLUS
+    one independent channel beyond it; a computational AC satisfies this via its
+    EC-ORACLE).
+  - **structural-only** ticket (every AC is file-grep / counter / exit-code
+    verifiable) → `EC-STATIC+natural` (adds nothing).
+- **Monotonicity / no regression on deeper tiers** — the `max()` only ever RAISES
+  the floor. A `thorough` / `exhaustive` ticket already floors at `+1-independent` /
+  `>=2-independent`, so the AC-shape axis is a no-op there. The ONLY behaviour it
+  changes is a `standard`-tier ticket that carries a behavioral AC: its floor rises
+  `EC-STATIC+natural → +1-independent`, so the single `standard` evaluator
+  establishes that AC through one channel beyond its natural one.
+- **Proportionality (the contract this split exists to honour)** — depth and
+  evidence-independence are now SEPARATE axes: **Size gates depth** (rounds / `/audit`
+  third-pass / the 3-spawn fan-out — all still `exhaustive`-only), **AC shape gates
+  the independence floor**. The raised `standard` floor adds NO spawn — the same one
+  evaluator just exercises one more channel in-agent — so routine S/M wall-clock and
+  spawn count are unchanged; only the evidence bar rises, by one channel.
+- **Kill switch / byte-identical revert** — `constraints.independent_evidence: off`
+  drops BOTH floors (the `max()` collapses and the evaluator falls back to its
+  pre-v8.3.0 path), exactly restoring the routine-S/M behaviour this axis changes.
+  Absent / field absent / unknown → `auto` (active). `constraints.verification_depth:
+  off` additionally disables the whole depth feature including this axis.
+
+**Strongest-derivation oracle (tier-independent, M3)**: when a computational AC's
+contract is **derivable from a published spec / formula**, the expected value SHOULD
+be taken from a **first-principles** oracle (the spec formula, hand-implemented, no
+library) in preference to a sibling reference library — at EVERY tier, even where a
+single oracle suffices (`standard`); a sibling library is the second choice because
+it silently inherits that library's conventions. The evaluator records the
+**oracle-kind** it used (`first-principles | sibling | hand | none`) in the per-AC
+`[ORACLE-AUDIT]` line (M8) so a dogfood run can confirm the strongest AVAILABLE
+derivation was chosen, not merely the most convenient. This preference is all-tier;
+the depth-gated multi-oracle (H1) requirement (≥2 mutually-validated oracles) below
+is unchanged and stays `thorough` / `exhaustive`-only.
 
 ### Standard-backed computational evidence floor (Wave A: multi-oracle / seeded-fuzz / algorithm-differential)
 

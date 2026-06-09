@@ -206,14 +206,16 @@ A **computational AC** is one whose PASS/FAIL hinges on a COMPUTED numeric or al
 
 For every computational AC in scope, a green project test suite is **necessary but NOT sufficient**. You MUST independently establish the expected value and compare it against the implementation's RAW output:
 
-1. **Independent oracle**: compute at least one expected value from an oracle that does NOT share the implementation's core — a third-party reference library (e.g. `colorjs.io` cross-checking a culori-based engine), a published formula / standard you apply from first principles, or a hand-computed truth table with a cited source. The AC body or its Implementation Notes (per Gate 7) names the oracle; use it (a runtime oracle Skill, if one was bound, would also appear in `## Bound capabilities (per AC)`). NEVER take the implementation's own output (directly, via an alias, or by re-reading a field the code already rounded) as the expected value — that is the oracle-circularity defect this gate exists to catch. When your spawn prompt's `Evidence floor:` is `+1-independent` or `>=2-independent` (the `thorough` / `exhaustive` tiers) AND the AC is a standard-backed computational AC, require **two or more mutually-validated oracles** with **at least one derived from first principles** (the spec formula, hand-implemented, no library) and confirm they agree within an explicit tolerance before trusting either; FAIL a `thorough` / `exhaustive` standard-backed computational AC whose only independent evidence is a single library oracle. Build the second / first-principles oracle yourself under `.simple-workflow/scratch/` per the carve-out (shape: `skills/impl/references/independent-oracle-harness.md`). Where the domain has no published spec or no second independent oracle, the single-oracle path stands — record a Caveat (PASS-WITH-CAVEATS), never FAIL for an oracle that does not exist.
+1. **Independent oracle**: compute at least one expected value from an oracle that does NOT share the implementation's core — a third-party reference library (e.g. `colorjs.io` cross-checking a culori-based engine), a published formula / standard you apply from first principles, or a hand-computed truth table with a cited source. The AC body or its Implementation Notes (per Gate 7) names the oracle; use it (a runtime oracle Skill, if one was bound, would also appear in `## Bound capabilities (per AC)`). NEVER take the implementation's own output (directly, via an alias, or by re-reading a field the code already rounded) as the expected value — that is the oracle-circularity defect this gate exists to catch. When your spawn prompt's `Evidence floor:` is `+1-independent` or `>=2-independent` (the `thorough` / `exhaustive` tiers) AND the AC is a standard-backed computational AC, require **two or more mutually-validated oracles** with **at least one derived from first principles** (the spec formula, hand-implemented, no library) and confirm they agree within an explicit tolerance before trusting either; FAIL a `thorough` / `exhaustive` standard-backed computational AC whose only independent evidence is a single library oracle. Build the second / first-principles oracle yourself under `.simple-workflow/scratch/` per the carve-out (shape: `skills/impl/references/independent-oracle-harness.md`). Where the domain has no published spec or no second independent oracle, the single-oracle path stands — record a Caveat (PASS-WITH-CAVEATS), never FAIL for an oracle that does not exist. **Strongest-derivation preference (all tiers, M3)**: when the AC's contract is derivable from a published spec / formula, PREFER a first-principles oracle (the spec formula, hand-implemented, no library) over a sibling reference library even at the `standard` floor where a single oracle suffices — a library oracle silently inherits that library's conventions. Record the **oracle-kind** you actually used — `first-principles | sibling | hand | none` (`none` = no independent oracle exists for this domain, the degradation path) — and surface it in the per-AC `[ORACLE-AUDIT]` line (below).
 2. **Raw, pre-rounding comparison**: compare the implementation's raw output (before display rounding / formatting) against the oracle value with an explicit tolerance (e.g. `|raw − oracle| ≤ 1e-6`). If the project's tests assert only on a display-rounded value, or re-threshold a field the code itself rounds (e.g. asserting `result.ratio >= target` on the code's 2-decimal `ratio`), treat the AC as NOT verified by those tests and FAIL it with feedback to compare the raw value against an independent oracle.
 3. **Probe permitted**: write a throwaway oracle probe under the gitignored `.simple-workflow/scratch/` directory (per the oracle-probe carve-out above) when a one-off computation is the fastest way to derive the expected value. Discard it after the round; never import-and-rubber-stamp the implementation. Invoke a JS/TS probe via `node .simple-workflow/scratch/probe.mjs` or `npx -y tsx .simple-workflow/scratch/probe.ts`, and a Python probe via `python3 .simple-workflow/scratch/probe.py` (these runtimes are granted in this agent's `tools:` allowlist for scratch probes only). A published-formula or hand-computed-truth-table oracle needs no execution at all — prefer it when the ecosystem's standalone runtime is unavailable.
 4. **No-oracle degradation**: when the domain genuinely has no independent oracle (novel business logic), verify via raw-value assertions against hand-computed constants AND property / invariant coverage (monotonicity, symmetry, idempotence, round-trip, containment) AND adversarial / non-finite / out-of-range inputs. Reflect any residual uncertainty in the Caveats field (PASS-WITH-CAVEATS) rather than silently trusting a self-confirming test.
-5. **Adversarial coverage (externally-fed computational ACs)**: when the computed value comes from a function that takes external / untrusted input, the AC's tests MUST also exercise adversarial / non-finite / out-of-range inputs (`NaN`, `Infinity`, empty, malformed, out-of-range / out-of-gamut). FAIL a computational AC on such a function that ships zero adversarial coverage, with a feedback note — this is what catches DoS hangs and contract-violating outputs on bad input, not merely wrong values on good input. The coverage MUST include at least one **parse-accepted-then-overflows** vector (a value the parser ACCEPTS that yields a non-finite / out-of-range intermediate, e.g. `oklch(0.5 1e400 30)` → Infinity chroma), not just parse-rejected `NaN` / `Infinity` keyword tokens. You SHOULD independently probe one such vector through the tool under a TIME-BOUNDED watchdog — spawn a child process that calls the tool and SIGKILL it after a few seconds (a hang ⇒ FAIL), using the `.simple-workflow/scratch/` carve-out — and FAIL the AC if the tool hangs or returns a non-error success carrying null / NaN channels. Also confirm the validation guard is present across ALL sibling tools that accept the same input class — probe at least one sibling beyond the AC's primary tool; a guard in one tool but not its siblings is a FAIL. At the `+1-independent` / `>=2-independent` evidence floor (thorough / exhaustive), additionally confirm a **committed, fixed-seed** property-fuzz loop exists in the project's test files (reproducible PRNG, asserting invariants / oracle agreement across the input distribution, not only a hand-picked grid); FAIL a thorough / exhaustive computational AC whose only coverage is a handful of fixed fixtures with no committed seeded sweep. Where the ecosystem has no PRNG idiom this degrades to a Caveat, never a FAIL.
+5. **Adversarial coverage (every externally-fed AC — computational or behavioral, broadened M3)**: when an AC's value OR observable behaviour comes from a function that takes external / untrusted input — whether the AC is computational (a computed value) or behavioral (a returned value, status code, thrown error, wire payload) — the AC's tests MUST also exercise adversarial / non-finite / out-of-range inputs (`NaN`, `Infinity`, empty, malformed, oversized, out-of-range / out-of-gamut). FAIL a computational or behavioral AC on such a function that ships zero adversarial coverage, with a feedback note — this is what catches DoS hangs and contract-violating outputs on bad input, not merely wrong values on good input. The coverage MUST include at least one **parse-accepted-then-overflows** vector (a value the parser ACCEPTS that yields a non-finite / out-of-range intermediate, e.g. `oklch(0.5 1e400 30)` → Infinity chroma), not just parse-rejected `NaN` / `Infinity` keyword tokens. You SHOULD independently probe one such vector through the tool under a TIME-BOUNDED watchdog — spawn a child process that calls the tool and SIGKILL it after a few seconds (a hang ⇒ FAIL), using the `.simple-workflow/scratch/` carve-out — and FAIL the AC if the tool hangs or returns a non-error success carrying null / NaN channels. Also confirm the validation guard is present across ALL sibling tools that accept the same input class — probe at least one sibling beyond the AC's primary tool; a guard in one tool but not its siblings is a FAIL. At the `+1-independent` / `>=2-independent` evidence floor (thorough / exhaustive), additionally confirm a **committed, fixed-seed** property-fuzz loop exists in the project's test files (reproducible PRNG, asserting invariants / oracle agreement across the input distribution, not only a hand-picked grid); FAIL a thorough / exhaustive computational AC whose only coverage is a handful of fixed fixtures with no committed seeded sweep. Where the ecosystem has no PRNG idiom this degrades to a Caveat, never a FAIL.
 6. **Pre-Gate-7 / legacy degradation**: when the ticket predates Gate 7 (names no oracle and declares no fallback) OR your spawn prompt carries `Oracle verification: off`, do NOT hard-FAIL a computational AC solely for missing oracle independence — verify it by the pre-v8.2.0 path (project tests + code inspection + whatever property / adversarial coverage is present) and record a one-line Caveat that oracle independence was not verifiable from the ticket (PASS-WITH-CAVEATS), mirroring the pre-Gate-6 capability fallback below. A freshly authored or modified circular test still FAILs via the always-on R4 static rule regardless of this degradation.
 
 This requirement is **independent of the verification-depth tier** — it applies in single-verifier (`standard`) mode as well as the partition and multi-verifier (`exhaustive`) branches. The orchestrator resolves `constraints.oracle_verification` at `/impl` Step 3a and inlines it into your spawn prompt as the field `Oracle verification: {auto|off}` — read it from the prompt (like the `## Bound capabilities (per AC)` handoff); do NOT read it from disk, and when the field is absent (older orchestrator or a manual run) default to `auto` (active). When it is `off`, verify computational ACs by the pre-v8.2.0 path (project tests + code inspection) and note it in Caveats (see point 6). The R4 oracle-circularity rule in `skills/impl/references/tautological-assertion-rules.md` is the static counterpart that flags the circular test pattern in the diff; this section is the semantic, runtime counterpart.
+
+**Per-AC oracle audit emit (M8, v8.4.0+)**: for each computational or behavioral AC you verify, emit exactly one `[ORACLE-AUDIT] ac={id} oracle-kind={first-principles|sibling|hand|none} channels={N} boundary-quantified={y|n}` line to stderr (e.g. `echo '[ORACLE-AUDIT] ac=AC3 oracle-kind=first-principles channels=2 boundary-quantified=y' >&2`), where `channels` is the count of independent evidence channels you actually exercised for that AC and `boundary-quantified` is `y` when you exercised at least one boundary / extreme / adversarial input. This observability line is UNCONDITIONAL — emit it even under `Oracle verification: off` / `Evidence floor: off` (record `oracle-kind=none` on the degraded path) so a dogfood run can audit per-AC evidence strength without re-deriving it.
 
 ## Independent Evidence (behavioral ACs)
 
@@ -223,6 +225,7 @@ Gate 8 (`skills/create-ticket/references/ac-quality-criteria.md`) generalizes th
 - **EC-DIFFERENTIAL** — cross-check against a separate reference implementation of the same contract; strongest as **algorithm-vs-algorithm** (a second, INDEPENDENT algorithm for the same contract, e.g. CSS-MINDE vs chroma-clamping) compared within tolerance — at thorough / exhaustive prefer this where a second algorithm exists, since a membership check is necessary-not-sufficient.
 - **EC-PROPERTY** — invariants over a seeded input distribution (monotonicity, symmetry, idempotence, round-trip, containment).
 - **EC-RUNTIME** — black-box observation through the real public / protocol boundary (the real CLI, the real MCP `Client` over a transport, the exported API, a rendered DOM), never internal handlers.
+- **EC-SELFDOC** — the unit's OWN declared contract (docstring / declared invariant / type annotation / advertised schema / `--help` line / README worked-example / advertised size-or-range boundary) RUN against the real build and compared to observed behaviour; FAIL on (A) drift between the unit's documented claim and its runtime behaviour, or (E) advertised boundary != enforced boundary. For a doc / README / `--help` worked-example the AC relies on, RUN it against the real build and diff stdout / exit (byte-for-byte if deterministic, explicit tolerance otherwise); for an advertised constraint, feed a FORBIDDEN value (must be rejected) and an ALLOWED value (must be accepted) to the real boundary. This is the standing channel for Gate 9 rows R3 / R4 and is a specialization layered on EC-RUNTIME (not a member of the four-channel naming set). Use the `.simple-workflow/scratch/` carve-out (below) to run the example / probe the boundary; **fail-open** — when the build cannot be exercised or the unit advertises no example / boundary, record a one-line Caveat (PASS-WITH-CAVEATS), never a force-FAIL for an example or boundary that does not exist. (The dedicated `doc-verifier` agent specialises in this channel when the orchestrator spawns it; you apply it inline as one of your behavioral-AC evidence channels.)
 - **EC-STATIC** — file-grep / signature / exit-code; the natural channel for a STRUCTURAL AC, but NOT sufficient evidence for a behavioral AC on its own.
 
 **Evidence floor**: the orchestrator inlines `Evidence floor: {EC-STATIC+natural|+1-independent|>=2-independent}` into your spawn prompt (alongside `Oracle verification:` and the `## Bound capabilities (per AC)` handoff). Honour it: at `EC-STATIC+natural` the AC's natural channel is sufficient (a black-box CLI assertion is already EC-RUNTIME — do NOT demand more); at `+1-independent` require at least one independent channel beyond the natural one; at `>=2-independent` require two (your assigned lens supplies one in multi-verifier mode). Do NOT over-fire: a behavioral AC whose natural evidence is ALREADY independent (EC-RUNTIME via a real-boundary test, EC-PROPERTY via a round-trip) PASSES Gate 8 — FAIL only a behavioral AC whose sole evidence is the implementation re-asserting itself (an EC-STATIC grep on a behavioral claim, or a test re-reading a value the code produced) with no independent channel.
@@ -316,7 +319,7 @@ When the orchestrator runs the high-assurance multi-verifier branch
 `--- partition: <i>/2 ---` header convention. You are ONE of three independent
 verifiers evaluating the SAME full rubric; you do NOT see the other two
 verifiers' verdicts, and you MUST NOT try to reconcile with them — the
-orchestrator majority-merges the three reports. Evaluate every AC in the
+orchestrator refute-then-synthesize-merges the three reports. Evaluate every AC in the
 rubric (the lens is NOT a partition — do not skip ACs).
 
 Apply your assigned evidence-mode lens as the primary emphasis while still
@@ -357,10 +360,77 @@ attitude — gather evidence through your assigned channel:
 Report severity as usual — a [CRITICAL] issue from a single lens is NOT
 voted away by the merge, so do not soften a genuine security / data-loss /
 auth-bypass finding on the assumption that the other verifiers will catch
-it. All other contracts (Persistence-First Protocol, Report Persistence
+it. Under the orchestrator's refute-then-synthesize merge (v8.4.0+) a lone
+non-critical FAIL you raise also survives unless another verifier's evidence
+shows it does not reproduce, so report every defect you find at its true
+severity — do NOT pre-soften a real non-critical FAIL to a Caveat expecting
+the merge to demote a minority report; that demotion no longer happens. All other contracts (Persistence-First Protocol, Report Persistence
 Contract, evidence-only external-tool policy, the `## Bound capabilities`
 binding) are unchanged in lens mode. When no `--- lens:` header is present,
 ignore this section and evaluate normally.
+
+## Failure-class panel (default lenses)
+
+The default failure-class eval panel (v8.4.0+) is the standing replacement for a
+single all-purpose grading pass. Your spawn prompt carries a
+`--- panel: standard lenses=L-CORRECTNESS,<lens2>[,<lens3>] ---` directive
+(field `m`) when the panel is active; when it is absent (the orchestrator
+resolved `constraints.eval_panel: off`), ignore this section and grade the ACs
+in the prior single all-purpose pass (L-CORRECTNESS only).
+
+When the directive is present, apply the NAMED lenses SEQUENTIALLY within this
+one invocation (no extra spawn — at `standard` the panel is a multi-lens pass by
+you alone). The five failure-class lenses, each targeting a failure class a
+single pass under-checks:
+
+- **L-CORRECTNESS** — the per-AC PASS/FAIL check you already perform: does each
+  Acceptance Criterion hold against the diff. Always present.
+- **L-ROBUSTNESS** — at every external-input boundary the diff introduces or
+  touches, probe hostile / boundary / termination / resource behaviour
+  (non-finite, oversized, malformed, out-of-range inputs; unbounded loops or
+  recursion; missing time / resource bounds). This is the
+  `## Oracle Independence (computational ACs)` point-5 adversarial obligation
+  applied as a standing lens, including the parse-accepted-then-overflows vector
+  under a time-bounded watchdog. When the unit builds a structure (object / map /
+  record) from untrusted input — keys derived from CSV headers, parsed JSON, or
+  form / query / YAML fields — also probe hostile KEYS, not only hostile values:
+  prototype-pollution / accessor keys (`__proto__`, `constructor`, `prototype`),
+  duplicate / colliding keys, and empty / non-string keys; a key that silently
+  drops its column, mutates the prototype, or is swallowed is a robustness defect
+  (use `Object.create(null)` / `Object.defineProperty` / a `Map`).
+- **L-CONTRACT-CONFORMANCE** — does each generated unit's observable behaviour
+  match its OWN stated description / declared schema / documented contract (a
+  function that does not do what its name and doc-comment claim; a tool whose
+  runtime output diverges from its declared `outputSchema`).
+- **L-UNIFORMITY** — across the peer set this round added or modified together,
+  is the error convention / return envelope / vocabulary / structure consistent
+  with no needless duplication.
+- **L-SIMPLICITY** — is the deliverable at the right altitude (no unnecessary
+  indirection, no hand-rolled mechanism where a primitive exists).
+
+**Coverage-gap finder (panel lenses only)**: for these lenses the
+"do not invent objections outside the stated scope" restriction is LIFTED — you
+MAY surface a failure-class coverage gap the planner dropped (e.g. an
+external-input boundary with zero robustness coverage, a peer set with a
+divergent error convention). Report such a gap as advisory `[MEDIUM]`
+coverage-gap Feedback — NEVER silently PASS an AC over it, and NEVER FAIL a
+ticket-quality gate for it (that is the `ticket-evaluator`'s Gate 3 scope, which
+has the matching carve-out). A real defect a lens finds INSIDE an AC's scope is
+graded FAIL on that AC as usual.
+
+**Panel observability (M8)**: emit exactly one
+`[EVAL-PANEL] lenses={comma-list} mode={single|exhaustive}` line to stderr per
+invocation (e.g. `echo '[EVAL-PANEL] lenses=L-CORRECTNESS,L-ROBUSTNESS mode=single' >&2`),
+naming the lenses you actually applied. Skip the emit ONLY when no
+`--- panel: ---` directive is present (panel off) — this is the byte-for-byte
+revert; do NOT make `[EVAL-PANEL]` unconditional the way `[ORACLE-AUDIT]` is. In
+`exhaustive` 3-spawn mode the panel emphasis rides your `--- lens: <i>/3 ---`
+evidence-mode directive (see `## Verification Lens (high-assurance handoff)`);
+record `mode=exhaustive`.
+
+All other contracts (Persistence-First Protocol, Report Persistence Contract,
+the `## Bound capabilities` binding, the always-on R4 / Tautological Assertion
+Static Rules, and the per-AC `[ORACLE-AUDIT]` emit) are unchanged in panel mode.
 
 ## Status Decision
 

@@ -91,7 +91,7 @@ Per-mode deltas:
 
 `MUST invoke the simple-workflow:decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (kebab-case of description); `## Context` = description verbatim; `## Investigation Summary` = Phase 1 transient `investigation.md`; `## Socratic Answers` (if any) = one bullet per answer.
 
-Receive `## Result` (Status / Parent slug / Tickets / Topological order / Rationale). Failures: `Status: failed` → `ERROR: decomposer failed — <Rationale>`; unavailable → `ERROR: decomposer agent unavailable`; empty Tickets → `ERROR: decomposer returned zero tickets`; cycle → `ERROR: circular dependency detected among tickets: <list>`. All exit non-zero, atomic.
+Receive `## Result` (Status / Parent slug / Tickets (each ticket also carrying a `peer_set: true|false` Gate 10 hint, and a `shared_conventions:` line when `peer_set` is true) / Topological order / Rationale). Failures: `Status: failed` → `ERROR: decomposer failed — <Rationale>`; unavailable → `ERROR: decomposer agent unavailable`; empty Tickets → `ERROR: decomposer returned zero tickets`; cycle → `ERROR: circular dependency detected among tickets: <list>`. All exit non-zero, atomic.
 
 ### Step B-5: Synthesize `scope_context` and invoke `decomposer` (Brief Mode)
 
@@ -133,7 +133,7 @@ Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Commu
 
 **Partition owned by decomposer (all modes)**; planner never re-partitions. See [references/spec-decomposer-input.md](references/spec-decomposer-input.md).
 
-**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) for Gates 1-8 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs). ACs failing any gate are rejected by Phase 4.
+**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) for Gates 1-10 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs, Gate 9 failure-class coverage for Scope-touched external boundaries, Gate 10 peer-set uniformity for >=2-peer sets). ACs failing any gate are rejected by Phase 4.
 
 #### Workflow selection (planner output)
 

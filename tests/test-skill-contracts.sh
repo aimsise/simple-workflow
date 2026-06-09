@@ -9371,7 +9371,7 @@ echo ""
 #       evidence-mode multi-verifier lenses, the evidence_floor ladder + Step 3a
 #       resolution, the authoring-side planner step 9 + ticket-evaluator row, the
 #       independent_evidence kill switch, the RT-* namespace guard (§5.1 MF1), and
-#       the Gates 1-8 gate-count carriers (MF3/MF6). Symmetry per CLAUDE.md
+#       the Gates 1-9 gate-count carriers (MF3/MF6). Symmetry per CLAUDE.md
 #       ## Plans / ## Modifications. Every grep token is HEAD=0 (revert flips it).
 # =============================================================================
 echo "--- Cat EV: Gate 8 independent evidence (v8.3.0) ---"
@@ -9408,11 +9408,11 @@ ev2_diff=$(grep -cF 'EC-DIFFERENTIAL' "$ECH_EV" || true)
 ev2_prop=$(grep -cF 'EC-PROPERTY' "$ECH_EV" || true)
 ev2_runtime=$(grep -cF 'EC-RUNTIME' "$ECH_EV" || true)
 ev2_static=$(grep -cF 'EC-STATIC' "$ECH_EV" || true)
-ev2_bind=$(grep -cF 'binding_parties: [planner, ticket-evaluator, implementer, test-writer, ac-evaluator]' "$ECH_EV" || true)
+ev2_bind=$(grep -cF 'binding_parties: [planner, ticket-evaluator, implementer, test-writer, ac-evaluator, doc-verifier]' "$ECH_EV" || true)
 ev2_result="false"
 if [ "$ev2_exists" -eq 1 ] && [ "$ev2_oracle" -ge 1 ] && [ "$ev2_diff" -ge 1 ] && [ "$ev2_prop" -ge 1 ] && [ "$ev2_runtime" -ge 1 ] && [ "$ev2_static" -ge 1 ] && [ "$ev2_bind" -ge 1 ]; then ev2_result="true"; fi
 assert_true \
-  "CT-EV-2 (evidence-channels taxonomy): evidence-channels.md exists ($ev2_exists=1) with EC-ORACLE/DIFFERENTIAL/PROPERTY/RUNTIME/STATIC ($ev2_oracle/$ev2_diff/$ev2_prop/$ev2_runtime/$ev2_static each>=1) AND 5-party binding_parties ($ev2_bind>=1)" \
+  "CT-EV-2 (evidence-channels taxonomy): evidence-channels.md exists ($ev2_exists=1) with EC-ORACLE/DIFFERENTIAL/PROPERTY/RUNTIME/STATIC ($ev2_oracle/$ev2_diff/$ev2_prop/$ev2_runtime/$ev2_static each>=1) AND 6-party binding_parties ($ev2_bind>=1)" \
   "$ev2_result"
 
 # CT-EV-3: the 3 multi-verifier lenses are EVIDENCE-MODE-diverse, pinned in BOTH
@@ -9494,15 +9494,15 @@ assert_true \
   "$ev8_result"
 
 # CT-EV-9 (MF3/MF6 gate-count carriers): the gate-count enumeration is bumped to
-# 'Gates 1-8' across agent-spawn-prompts.md, ticket-evaluator.md (L15 surface),
+# 'Gates 1-9' across agent-spawn-prompts.md, ticket-evaluator.md (L15 surface),
 # and create-ticket/SKILL.md. A revert to 'Gates 1-7' flips this to FAIL.
-ev9_asp=$(grep -cF 'Gates 1-8' "$ASP_EV" || true)
-ev9_tev=$(grep -cF 'Gates 1-8' "$TEV_EV" || true)
-ev9_ctskill=$(grep -cF 'Gates 1-8' "$CTSKILL_EV" || true)
+ev9_asp=$(grep -cF 'Gates 1-10' "$ASP_EV" || true)
+ev9_tev=$(grep -cF 'Gates 1-10' "$TEV_EV" || true)
+ev9_ctskill=$(grep -cF 'Gates 1-10' "$CTSKILL_EV" || true)
 ev9_result="false"
 if [ "$ev9_asp" -ge 1 ] && [ "$ev9_tev" -ge 1 ] && [ "$ev9_ctskill" -ge 1 ]; then ev9_result="true"; fi
 assert_true \
-  "CT-EV-9 (gate-count carriers -> Gates 1-8, MF3/MF6): agent-spawn-prompts ($ev9_asp>=1) + ticket-evaluator L15 ($ev9_tev>=1) + create-ticket SKILL ($ev9_ctskill>=1)" \
+  "CT-EV-9 (gate-count carriers -> Gates 1-10, MF3/MF6): agent-spawn-prompts ($ev9_asp>=1) + ticket-evaluator L15 ($ev9_tev>=1) + create-ticket SKILL ($ev9_ctskill>=1)" \
   "$ev9_result"
 
 # -----------------------------------------------------------------------------
@@ -9611,6 +9611,329 @@ if [ "$ev14_vd" -ge 1 ]; then ev14_result="true"; fi
 assert_true \
   "CT-EV-14 (H12 criticality cue): verification-depth criticality floor carries 'shared-core' trigger ($ev14_vd>=1)" \
   "$ev14_result"
+
+# CT-EV-M3-1 (AC-shape evidence-independence floor axis, M3/v8.4.0): the
+# Size-independent max(tier, AC-shape) floor is documented in the canonical
+# reference AND resolved at /impl Step 3a. Both tokens are HEAD=0 (revert flips).
+ev_m3_1_vd_axis=$(grep -cF 'AC-shape evidence-independence floor' "$VD_EV" || true)
+ev_m3_1_vd_max=$(grep -cF 'max(tier floor, AC-shape floor)' "$VD_EV" || true)
+ev_m3_1_impl_max=$(grep -cF 'max(tier floor, AC-shape floor)' "$IMPL_EV" || true)
+ev_m3_1_result="false"
+if [ "$ev_m3_1_vd_axis" -ge 1 ] && [ "$ev_m3_1_vd_max" -ge 1 ] && [ "$ev_m3_1_impl_max" -ge 1 ]; then ev_m3_1_result="true"; fi
+assert_true \
+  "CT-EV-M3-1 (AC-shape floor axis): verification-depth '### AC-shape evidence-independence floor' ($ev_m3_1_vd_axis>=1) + 'max(tier floor, AC-shape floor)' ($ev_m3_1_vd_max>=1) + impl SKILL max() ($ev_m3_1_impl_max>=1)" \
+  "$ev_m3_1_result"
+
+# CT-EV-M3-2 (Gate 7 adversarial trigger broadened to external-input boundaries —
+# computational OR behavioral, M3): symmetry guard across the full author->produce
+# ->verify surface (gate + verifier + grader + author + 2 producers + producer
+# rubric). The 'computational or behavioral' token is HEAD=0 in all 7. Mirrors the
+# CT-EV-10/11/12 cross-agent symmetry-guard pattern; an asymmetric revert FAILs.
+TW_EV="$REPO_DIR/agents/test-writer.md"
+IMPLAGENT_EV="$REPO_DIR/agents/implementer.md"
+TAG_EV="$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
+ev_m3_2_acqc=$(grep -cF 'external-input boundary (computational or behavioral)' "$ACQC_EV" || true)
+ev_m3_2_acev=$(grep -ciF 'computational or behavioral' "$ACEV_EV" || true)
+ev_m3_2_planner=$(grep -ciF 'computational or behavioral' "$PLANNER_EV" || true)
+ev_m3_2_tev=$(grep -ciF 'computational or behavioral' "$TEV_EV" || true)
+ev_m3_2_tw=$(grep -ciF 'computational or behavioral' "$TW_EV" || true)
+ev_m3_2_impl=$(grep -ciF 'computational or behavioral' "$IMPLAGENT_EV" || true)
+ev_m3_2_tag=$(grep -ciF 'computational or behavioral' "$TAG_EV" || true)
+ev_m3_2_result="false"
+if [ "$ev_m3_2_acqc" -ge 1 ] && [ "$ev_m3_2_acev" -ge 1 ] && [ "$ev_m3_2_planner" -ge 1 ] && [ "$ev_m3_2_tev" -ge 1 ] && [ "$ev_m3_2_tw" -ge 1 ] && [ "$ev_m3_2_impl" -ge 1 ] && [ "$ev_m3_2_tag" -ge 1 ]; then ev_m3_2_result="true"; fi
+assert_true \
+  "CT-EV-M3-2 (Gate 7 broadened, 7-file symmetry): ac-quality-criteria canonical phrase ($ev_m3_2_acqc>=1) + 'computational or behavioral' in ac-evaluator/planner/ticket-evaluator/test-writer/implementer/test-authoring ($ev_m3_2_acev/$ev_m3_2_planner/$ev_m3_2_tev/$ev_m3_2_tw/$ev_m3_2_impl/$ev_m3_2_tag each>=1)" \
+  "$ev_m3_2_result"
+
+# CT-EV-M3-3 (strongest-derivation oracle-kind recording, all-tier, M3): wired into
+# the canonical reference AND the verifier (the byte-identical hi mirror is guarded
+# by CT-EV-MODEL-1). 'oracle-kind' is HEAD=0.
+ev_m3_3_vd=$(grep -cF 'oracle-kind' "$VD_EV" || true)
+ev_m3_3_acev=$(grep -cF 'oracle-kind' "$ACEV_EV" || true)
+ev_m3_3_result="false"
+if [ "$ev_m3_3_vd" -ge 1 ] && [ "$ev_m3_3_acev" -ge 1 ]; then ev_m3_3_result="true"; fi
+assert_true \
+  "CT-EV-M3-3 (oracle-kind recording wired): verification-depth ($ev_m3_3_vd>=1) + ac-evaluator ($ev_m3_3_acev>=1)" \
+  "$ev_m3_3_result"
+
+# CT-EV-M8-1 (per-AC [ORACLE-AUDIT] observability emit, M8/v8.4.0): the evaluator
+# emits a per-AC audit line AND /impl Step 15 documents it. grep -cF for the
+# bracketed token (regex metacharacters). HEAD=0 (revert flips it).
+ev_m8_1_acev=$(grep -cF '[ORACLE-AUDIT]' "$ACEV_EV" || true)
+ev_m8_1_impl=$(grep -cF '[ORACLE-AUDIT]' "$IMPL_EV" || true)
+ev_m8_1_result="false"
+if [ "$ev_m8_1_acev" -ge 1 ] && [ "$ev_m8_1_impl" -ge 1 ]; then ev_m8_1_result="true"; fi
+assert_true \
+  "CT-EV-M8-1 ([ORACLE-AUDIT] observability): ac-evaluator emit ($ev_m8_1_acev>=1) + impl SKILL doc ($ev_m8_1_impl>=1)" \
+  "$ev_m8_1_result"
+# CT-EV-PANEL-1 (5-lens failure-class set + section, eval panel v8.4.0+): the five
+# lens tokens are wired into the orchestration reference AND the ac-evaluator body,
+# and the new section headings exist (incl. the -hi twin). All tokens net-new vs
+# the working tree (a revert of the panel edit flips each to FAIL). The -hi twin's
+# identical lenses are also guarded by CT-EV-MODEL-1 strip-then-diff.
+ACEVHI_EV="$REPO_DIR/agents/ac-evaluator-hi.md"
+ev_panel_lc_orch=$(grep -cF 'L-CORRECTNESS' "$ORCH_EV" || true)
+ev_panel_lr_orch=$(grep -cF 'L-ROBUSTNESS' "$ORCH_EV" || true)
+ev_panel_lcc_orch=$(grep -cF 'L-CONTRACT-CONFORMANCE' "$ORCH_EV" || true)
+ev_panel_lu_orch=$(grep -cF 'L-UNIFORMITY' "$ORCH_EV" || true)
+ev_panel_ls_orch=$(grep -cF 'L-SIMPLICITY' "$ORCH_EV" || true)
+ev_panel_lc_ac=$(grep -cF 'L-CORRECTNESS' "$ACEV_EV" || true)
+ev_panel_ls_ac=$(grep -cF 'L-SIMPLICITY' "$ACEV_EV" || true)
+ev_panel_sec_orch=$(grep -cF '## Default failure-class panel' "$ORCH_EV" || true)
+ev_panel_sec_ac=$(grep -cF '## Failure-class panel (default lenses)' "$ACEV_EV" || true)
+ev_panel_sec_hi=$(grep -cF '## Failure-class panel (default lenses)' "$ACEVHI_EV" || true)
+ev_panel_result="false"
+if [ "$ev_panel_lc_orch" -ge 1 ] && [ "$ev_panel_lr_orch" -ge 1 ] && [ "$ev_panel_lcc_orch" -ge 1 ] && [ "$ev_panel_lu_orch" -ge 1 ] && [ "$ev_panel_ls_orch" -ge 1 ] && [ "$ev_panel_lc_ac" -ge 1 ] && [ "$ev_panel_ls_ac" -ge 1 ] && [ "$ev_panel_sec_orch" -ge 1 ] && [ "$ev_panel_sec_ac" -ge 1 ] && [ "$ev_panel_sec_hi" -ge 1 ]; then ev_panel_result="true"; fi
+assert_true \
+  "CT-EV-PANEL-1 (failure-class 5-lens set + section): orch lenses ($ev_panel_lc_orch/$ev_panel_lr_orch/$ev_panel_lcc_orch/$ev_panel_lu_orch/$ev_panel_ls_orch each>=1) + ac-evaluator lenses ($ev_panel_lc_ac/$ev_panel_ls_ac) + sections orch($ev_panel_sec_orch)/ac($ev_panel_sec_ac)/hi($ev_panel_sec_hi) each>=1" \
+  "$ev_panel_result"
+
+# CT-EV-EVALPANEL-1 ([EVAL-PANEL] M8 observability emit + field m, eval panel
+# v8.4.0+): the panel emit is documented in the ac-evaluator body AND its
+# byte-identical -hi twin AND at /impl Step 15; the field-m '--- panel:' directive
+# is registered in the orchestration reference. grep -cF for bracketed token
+# (regex metacharacters). All tokens net-new (a revert flips each to FAIL).
+# Mirrors CT-EV-M8-1's bracketed-token idiom; the -hi count independently pins the
+# mirror beyond CT-EV-MODEL-1.
+ev_evalpanel_acev=$(grep -cF '[EVAL-PANEL]' "$ACEV_EV" || true)
+ev_evalpanel_hi=$(grep -cF '[EVAL-PANEL]' "$ACEVHI_EV" || true)
+ev_evalpanel_impl=$(grep -cF '[EVAL-PANEL]' "$IMPL_EV" || true)
+ev_evalpanel_field=$(grep -cF -- '--- panel:' "$ORCH_EV" || true)  # -- : pattern begins with a dash
+ev_evalpanel_result="false"
+if [ "$ev_evalpanel_acev" -ge 1 ] && [ "$ev_evalpanel_hi" -ge 1 ] && [ "$ev_evalpanel_impl" -ge 1 ] && [ "$ev_evalpanel_field" -ge 1 ]; then ev_evalpanel_result="true"; fi
+assert_true \
+  "CT-EV-EVALPANEL-1 ([EVAL-PANEL] emit + field m): ac-evaluator ($ev_evalpanel_acev>=1) + ac-evaluator-hi mirror ($ev_evalpanel_hi>=1) + impl SKILL doc ($ev_evalpanel_impl>=1) + '--- panel:' field-m in orchestration ($ev_evalpanel_field>=1)" \
+  "$ev_evalpanel_result"
+
+# CT-EV-PANEL-KS-1 (constraints.eval_panel kill switch + [EVAL-PANEL-MODE] resolver,
+# three-file symmetry like CT-EV-7, eval panel v8.4.0+): the panel kill switch is
+# documented in the canonical policy reference, the emitted policy template, and
+# the /impl Step 3a resolver; the resolver emits [EVAL-PANEL-MODE]. 'eval_panel'
+# and '[EVAL-PANEL-MODE]' are net-new (a revert flips them to FAIL).
+ev_panelks_apr=$(grep -cF 'constraints.eval_panel' "$APR_EV" || true)
+ev_panelks_pt=$(grep -cF 'eval_panel' "$PT_EV" || true)
+ev_panelks_impl=$(grep -cF 'constraints.eval_panel' "$IMPL_EV" || true)
+ev_panelks_mode=$(grep -cF '[EVAL-PANEL-MODE]' "$IMPL_EV" || true)
+ev_panelks_result="false"
+if [ "$ev_panelks_apr" -ge 1 ] && [ "$ev_panelks_pt" -ge 1 ] && [ "$ev_panelks_impl" -ge 1 ] && [ "$ev_panelks_mode" -ge 1 ]; then ev_panelks_result="true"; fi
+assert_true \
+  "CT-EV-PANEL-KS-1 (eval_panel kill switch + mode emit): policy-reference ($ev_panelks_apr>=1) + policy-template ($ev_panelks_pt>=1) + impl Step 3a ($ev_panelks_impl>=1) + [EVAL-PANEL-MODE] ($ev_panelks_mode>=1)" \
+  "$ev_panelks_result"
+
+# CT-EV-EVALPANEL-2 (coverage-gap carve-out symmetry, ticket-side + impl-side,
+# eval panel v8.4.0+): the shared fixed token 'coverage-gap finder' appears in the
+# ac-quality-criteria carve-out AND the orchestration panel section AND the
+# ac-evaluator body. Mirrors the CT-EV-M3-2 cross-file 'grep -ciF' symmetry guard
+# (case-insensitive — the ac-evaluator header capitalises 'Coverage-gap finder').
+ev_cg_acqc=$(grep -ciF 'coverage-gap finder' "$ACQC_EV" || true)
+ev_cg_orch=$(grep -ciF 'coverage-gap finder' "$ORCH_EV" || true)
+ev_cg_acev=$(grep -ciF 'coverage-gap finder' "$ACEV_EV" || true)
+ev_cg_result="false"
+if [ "$ev_cg_acqc" -ge 1 ] && [ "$ev_cg_orch" -ge 1 ] && [ "$ev_cg_acev" -ge 1 ]; then ev_cg_result="true"; fi
+assert_true \
+  "CT-EV-EVALPANEL-2 (coverage-gap carve-out symmetry): ac-quality-criteria ($ev_cg_acqc>=1) + orchestration ($ev_cg_orch>=1) + ac-evaluator ($ev_cg_acev>=1)" \
+  "$ev_cg_result"
+
+# CT-EV-GATE9-1 (Gate 9 failure-class coverage, canonical + author + grader 3-file
+# symmetry, v8.4.0+): the new gate section exists in the canonical rubric AND the
+# planner self-audit names it AND the ticket-evaluator Gate-Results row names it.
+# 'Gate 9: Failure-Class Coverage' is net-new (no such gate in the working tree).
+# Mirrors the CT-EV-M3-2 cross-agent symmetry-guard pattern. (Feature-named per the
+# v8.4.0 M-label collision rule — NOT CT-EV-M2.)
+ev_g9_1_acqc=$(grep -cF 'Gate 9: Failure-Class Coverage' "$ACQC_EV" || true)
+ev_g9_1_planner=$(grep -cF 'Gate 9: Failure-Class Coverage' "$PLANNER_EV" || true)
+ev_g9_1_tev=$(grep -cF 'Gate 9' "$TEV_EV" || true)
+ev_g9_1_result="false"
+if [ "$ev_g9_1_acqc" -ge 1 ] && [ "$ev_g9_1_planner" -ge 1 ] && [ "$ev_g9_1_tev" -ge 1 ]; then ev_g9_1_result="true"; fi
+assert_true \
+  "CT-EV-GATE9-1 (Gate 9 canonical+author+grader symmetry): ac-quality-criteria section ($ev_g9_1_acqc>=1) + planner self-audit ($ev_g9_1_planner>=1) + ticket-evaluator Gate-9 row ($ev_g9_1_tev>=1)" \
+  "$ev_g9_1_result"
+
+# CT-EV-GATE9-2 (permanent failure-class matrix scaffold in the ticket template,
+# v8.4.0+): the template ships the '#### Failure-Class Coverage (Gate 9)' block AND
+# the R1 row label so the planner fills it in place. Both tokens net-new.
+ev_g9_2_template="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+ev_g9_2_scaffold=$(grep -cF '#### Failure-Class Coverage (Gate 9)' "$ev_g9_2_template" || true)
+ev_g9_2_r1=$(grep -cF 'R1 FULL-DOMAIN INVARIANT' "$ev_g9_2_template" || true)
+ev_g9_2_result="false"
+if [ "$ev_g9_2_scaffold" -ge 1 ] && [ "$ev_g9_2_r1" -ge 1 ]; then ev_g9_2_result="true"; fi
+assert_true \
+  "CT-EV-GATE9-2 (ticket-template Gate-9 matrix scaffold): '#### Failure-Class Coverage (Gate 9)' ($ev_g9_2_scaffold>=1) + 'R1 FULL-DOMAIN INVARIANT' row ($ev_g9_2_r1>=1)" \
+  "$ev_g9_2_result"
+
+# CT-EV-GATE9-3 (Gate 9 kill switch wired, canonical gate + policy doc + policy
+# template + planner audit, v8.4.0+): constraints.failure_class_coverage appears in
+# the Gate 9 Kill-switch line, the autopilot-policy-reference section, and the
+# planner step-10 read; failure_class_coverage appears in the policy template. All
+# net-new. This is the self-AC#3 'kill switch reverts' guard at the contract level.
+ev_g9_3_acqc=$(grep -cF 'constraints.failure_class_coverage' "$ACQC_EV" || true)
+ev_g9_3_apr=$(grep -cF 'constraints.failure_class_coverage' "$APR_EV" || true)
+ev_g9_3_planner=$(grep -cF 'constraints.failure_class_coverage' "$PLANNER_EV" || true)
+ev_g9_3_pt=$(grep -cF 'failure_class_coverage' "$PT_EV" || true)
+ev_g9_3_result="false"
+if [ "$ev_g9_3_acqc" -ge 1 ] && [ "$ev_g9_3_apr" -ge 1 ] && [ "$ev_g9_3_planner" -ge 1 ] && [ "$ev_g9_3_pt" -ge 1 ]; then ev_g9_3_result="true"; fi
+assert_true \
+  "CT-EV-GATE9-3 (Gate 9 kill switch wired): canonical gate ($ev_g9_3_acqc>=1) + policy doc ($ev_g9_3_apr>=1) + planner audit ($ev_g9_3_planner>=1) + policy template ($ev_g9_3_pt>=1)" \
+  "$ev_g9_3_result"
+
+# CT-EV-LENSSYNC-1 (field-l lens-directive impl<->orchestration SYNC, v8.4.0+):
+# the V1/V2/V3 short form that /impl Step 15 dispatches stays in sync with the
+# orchestration canonical field-l directive. NOTE: the orch+ac-evaluator arms of
+# the V2 token are ALREADY pinned by CT-EV-3 (do not duplicate them); this CT adds
+# ONLY the net-new impl<->orchestration symmetry the panel's exhaustive fan-out
+# relies on. The matched tokens PRE-EXIST (the assertion value is the SYMMETRY, not
+# HEAD=0); the CT NAME is net-new. Renamed from a draft 'CT-EV-GATE9-1'
+# to avoid colliding with the Gate-9 CT family above.
+ev_lenssync_orch=$(grep -cF 'differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY' "$ORCH_EV" || true)
+ev_lenssync_impl=$(grep -cF 'V1 EC-RUNTIME / black-box, V2 EC-DIFFERENTIAL-or-EC-PROPERTY, V3 EC-ORACLE + targeted-fuzz' "$IMPL_EV" || true)
+ev_lenssync_result="false"
+if [ "$ev_lenssync_orch" -ge 1 ] && [ "$ev_lenssync_impl" -ge 1 ]; then ev_lenssync_result="true"; fi
+assert_true \
+  "CT-EV-LENSSYNC-1 (field-l lens-directive impl<->orchestration sync): orchestration field-l ($ev_lenssync_orch>=1) + impl SKILL Step 15 field-l ($ev_lenssync_impl>=1)" \
+  "$ev_lenssync_result"
+
+# CT-EV-PANEL-ROBUST-1 (L-ROBUSTNESS + Gate 9 R2 adversarial-key / prototype-pollution
+# vector, dogfood-hardening v8.4.0+): the failure-class panel's L-ROBUSTNESS lens AND
+# the canonical Gate 9 R2 hostile-input row now require probing hostile KEYS (not only
+# hostile values) where a unit builds a structure from untrusted input. The shared
+# token 'prototype-pollution' is wired into the ac-evaluator body + its byte-identical
+# -hi twin + the orchestration panel section + Gate 9 R2. 'prototype-pollution' is
+# net-new (a revert flips each to FAIL). Closes the csvjson dogfood __proto__
+# silent-data-loss miss (sw lost a __proto__ header column; uc did not).
+ev_protopol_acev=$(grep -cF 'prototype-pollution' "$ACEV_EV" || true)
+ev_protopol_hi=$(grep -cF 'prototype-pollution' "$ACEVHI_EV" || true)
+ev_protopol_orch=$(grep -cF 'prototype-pollution' "$ORCH_EV" || true)
+ev_protopol_acqc=$(grep -cF 'prototype-pollution' "$ACQC_EV" || true)
+ev_protopol_result="false"
+if [ "$ev_protopol_acev" -ge 1 ] && [ "$ev_protopol_hi" -ge 1 ] && [ "$ev_protopol_orch" -ge 1 ] && [ "$ev_protopol_acqc" -ge 1 ]; then ev_protopol_result="true"; fi
+assert_true \
+  "CT-EV-PANEL-ROBUST-1 (L-ROBUSTNESS + Gate 9 R2 adversarial-key vector): ac-evaluator ($ev_protopol_acev>=1) + -hi mirror ($ev_protopol_hi>=1) + orchestration ($ev_protopol_orch>=1) + Gate 9 R2 ($ev_protopol_acqc>=1)" \
+  "$ev_protopol_result"
+
+# CT-EV-GATE10-1 (Gate 10 peer-set uniformity, canonical + author + grader 3-file
+# symmetry, v8.4.0+): the new gate section exists in the canonical rubric AND the
+# planner self-audit names it AND the ticket-evaluator Gate-Results row names it.
+# 'Gate 10: Peer-Set Uniformity' is net-new (HEAD=0). Feature-named per the v8.4.0
+# M-label collision rule (NOT CT-EV-M4).
+ev_g10_1_acqc=$(grep -cF 'Gate 10: Peer-Set Uniformity' "$ACQC_EV" || true)
+ev_g10_1_planner=$(grep -cF 'Gate 10 peer-set uniformity' "$PLANNER_EV" || true)
+ev_g10_1_tev=$(grep -cF 'Gate 10' "$TEV_EV" || true)
+ev_g10_1_result="false"
+if [ "$ev_g10_1_acqc" -ge 1 ] && [ "$ev_g10_1_planner" -ge 1 ] && [ "$ev_g10_1_tev" -ge 1 ]; then ev_g10_1_result="true"; fi
+assert_true \
+  "CT-EV-GATE10-1 (Gate 10 canonical+author+grader symmetry): ac-quality-criteria section ($ev_g10_1_acqc>=1) + planner self-audit ($ev_g10_1_planner>=1) + ticket-evaluator Gate-10 row ($ev_g10_1_tev>=1)" \
+  "$ev_g10_1_result"
+
+# CT-EV-GATE10-2 (permanent peer-uniformity scaffold in the ticket template AND the
+# decomposer peer_set hint, v8.4.0+). All three tokens net-new (HEAD=0).
+ev_g10_2_template="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
+ev_g10_2_decomp="$REPO_DIR/agents/decomposer.md"
+ev_g10_2_scaffold=$(grep -cF '#### Peer-Set Uniformity (Gate 10)' "$ev_g10_2_template" || true)
+ev_g10_2_row=$(grep -cF 'D PEER-SET UNIFORMITY' "$ev_g10_2_template" || true)
+ev_g10_2_hint=$(grep -cF 'peer_set:' "$ev_g10_2_decomp" || true)
+ev_g10_2_result="false"
+if [ "$ev_g10_2_scaffold" -ge 1 ] && [ "$ev_g10_2_row" -ge 1 ] && [ "$ev_g10_2_hint" -ge 1 ]; then ev_g10_2_result="true"; fi
+assert_true \
+  "CT-EV-GATE10-2 (ticket-template peer-uniformity scaffold + decomposer hint): '#### Peer-Set Uniformity (Gate 10)' ($ev_g10_2_scaffold>=1) + 'D PEER-SET UNIFORMITY' row ($ev_g10_2_row>=1) + decomposer 'peer_set:' ($ev_g10_2_hint>=1)" \
+  "$ev_g10_2_result"
+
+# CT-EV-GATE10-3 (Gate 10 kill switch wired, canonical gate + policy doc + policy
+# template + planner audit, v8.4.0+). All net-new (HEAD=0). Kill-switch-reverts guard.
+ev_g10_3_acqc=$(grep -cF 'constraints.peer_uniformity' "$ACQC_EV" || true)
+ev_g10_3_apr=$(grep -cF 'constraints.peer_uniformity' "$APR_EV" || true)
+ev_g10_3_planner=$(grep -cF 'constraints.peer_uniformity' "$PLANNER_EV" || true)
+ev_g10_3_pt=$(grep -cF 'peer_uniformity' "$PT_EV" || true)
+ev_g10_3_result="false"
+if [ "$ev_g10_3_acqc" -ge 1 ] && [ "$ev_g10_3_apr" -ge 1 ] && [ "$ev_g10_3_planner" -ge 1 ] && [ "$ev_g10_3_pt" -ge 1 ]; then ev_g10_3_result="true"; fi
+assert_true \
+  "CT-EV-GATE10-3 (Gate 10 kill switch wired): canonical gate ($ev_g10_3_acqc>=1) + policy doc ($ev_g10_3_apr>=1) + planner audit ($ev_g10_3_planner>=1) + policy template ($ev_g10_3_pt>=1)" \
+  "$ev_g10_3_result"
+
+# CT-EV-SELFDOC-1 (EC-SELFDOC channel + both failure modes, v8.4.0+). HEAD=0.
+ev_sd1_channel=$(grep -cF '**EC-SELFDOC**' "$ECH_EV" || true)
+ev_sd1_modeA=$(grep -cF 'description-vs-behavior drift' "$ECH_EV" || true)
+ev_sd1_modeE=$(grep -cF 'advertised-boundary != enforced-boundary' "$ECH_EV" || true)
+ev_sd1_result="false"
+if [ "$ev_sd1_channel" -ge 1 ] && [ "$ev_sd1_modeA" -ge 1 ] && [ "$ev_sd1_modeE" -ge 1 ]; then ev_sd1_result="true"; fi
+assert_true \
+  "CT-EV-SELFDOC-1 (EC-SELFDOC channel + failure modes A/E): channel ($ev_sd1_channel>=1) + mode-A ($ev_sd1_modeA>=1) + mode-E ($ev_sd1_modeE>=1)" \
+  "$ev_sd1_result"
+
+# CT-EV-SELFDOC-2 (doc-verifier agent: Group C, scratch-only, fail-open, v8.4.0+). HEAD=0.
+ev_sd2_dv="$REPO_DIR/agents/doc-verifier.md"
+ev_sd2_name=$(grep -cF 'name: doc-verifier' "$ev_sd2_dv" || true)
+ev_sd2_tools=$(grep -cE '^tools:' "$ev_sd2_dv" || true)
+ev_sd2_nobash=$(grep -cF '"Bash(*)"' "$ev_sd2_dv" || true)
+ev_sd2_scratch=$(grep -cF '.simple-workflow/scratch/' "$ev_sd2_dv" || true)
+ev_sd2_failopen=$(grep -cF 'PASS-WITH-CAVEATS' "$ev_sd2_dv" || true)
+ev_sd2_result="false"
+if [ "$ev_sd2_name" -ge 1 ] && [ "$ev_sd2_tools" -ge 1 ] && [ "$ev_sd2_nobash" -eq 0 ] && [ "$ev_sd2_scratch" -ge 1 ] && [ "$ev_sd2_failopen" -ge 1 ]; then ev_sd2_result="true"; fi
+assert_true \
+  "CT-EV-SELFDOC-2 (doc-verifier Group C scratch-only fail-open): name ($ev_sd2_name>=1) + tools ($ev_sd2_tools>=1) + no-Bash(*) ($ev_sd2_nobash=0) + scratch ($ev_sd2_scratch>=1) + fail-open ($ev_sd2_failopen>=1)" \
+  "$ev_sd2_result"
+
+# CT-EV-SELFDOC-4 (Gate 9 R3/R4 concretization markers, v8.4.0+). HEAD=0.
+ev_sd4_r3=$(grep -cF 'A row asserting only that the docstring TEXT exists' "$ACQC_EV" || true)
+ev_sd4_r4f=$(grep -cF 'feed a FORBIDDEN value' "$ACQC_EV" || true)
+ev_sd4_r4a=$(grep -cF 'AND an ALLOWED value' "$ACQC_EV" || true)
+ev_sd4_result="false"
+if [ "$ev_sd4_r3" -ge 1 ] && [ "$ev_sd4_r4f" -ge 1 ] && [ "$ev_sd4_r4a" -ge 1 ]; then ev_sd4_result="true"; fi
+assert_true \
+  "CT-EV-SELFDOC-4 (Gate 9 R3/R4 concretized): R3 RUN-not-grep ($ev_sd4_r3>=1) + R4 FORBIDDEN ($ev_sd4_r4f>=1) + R4 ALLOWED ($ev_sd4_r4a>=1)" \
+  "$ev_sd4_result"
+
+# CT-EV-SELFDOC-5 (selfdoc kill switch in policy doc + policy template, v8.4.0+). HEAD=0.
+ev_sd5_apr=$(grep -cF 'constraints.selfdoc_verification' "$APR_EV" || true)
+ev_sd5_pt=$(grep -cF 'selfdoc_verification: auto' "$PT_EV" || true)
+ev_sd5_result="false"
+if [ "$ev_sd5_apr" -ge 1 ] && [ "$ev_sd5_pt" -ge 1 ]; then ev_sd5_result="true"; fi
+assert_true \
+  "CT-EV-SELFDOC-5 (selfdoc kill switch documented): policy-reference ($ev_sd5_apr>=1) + policy-template ($ev_sd5_pt>=1)" \
+  "$ev_sd5_result"
+
+# CT-EV-REFUTE-1 (refute-merge wired symmetrically: orchestration + impl, v8.4.0+). HEAD=0.
+ev_refute1_orch_sec=$(grep -ciF '### Refute-then-synthesize merge' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+ev_refute1_orch_rule=$(grep -ciF 'survives unless refuted' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+ev_refute1_impl=$(grep -ciF 'refute-then-synthesize merge' "$REPO_DIR/skills/impl/SKILL.md" || true)
+ev_refute1_result="false"
+if [ "$ev_refute1_orch_sec" -ge 1 ] && [ "$ev_refute1_orch_rule" -ge 1 ] && [ "$ev_refute1_impl" -ge 1 ]; then ev_refute1_result="true"; fi
+assert_true \
+  "CT-EV-REFUTE-1 (refute-merge wired symmetrically): orchestration section ($ev_refute1_orch_sec>=1) + 'survives unless refuted' rule ($ev_refute1_orch_rule>=1) + impl Step 15 ($ev_refute1_impl>=1)" \
+  "$ev_refute1_result"
+
+# CT-EV-REFUTE-2 (refute_merge kill switch: policy doc + policy template + orchestration block). HEAD=0.
+ev_refute2_apr=$(grep -ciF 'constraints.refute_merge' "$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md" || true)
+ev_refute2_pt=$(grep -ciF 'refute_merge: auto' "$REPO_DIR/skills/brief/references/policy-template.md" || true)
+ev_refute2_orch=$(grep -ciF 'Kill switch `constraints.refute_merge' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+ev_refute2_result="false"
+if [ "$ev_refute2_apr" -ge 1 ] && [ "$ev_refute2_pt" -ge 1 ] && [ "$ev_refute2_orch" -ge 1 ]; then ev_refute2_result="true"; fi
+assert_true \
+  "CT-EV-REFUTE-2 (refute_merge kill switch documented): policy-reference ($ev_refute2_apr>=1) + policy-template ($ev_refute2_pt>=1) + orchestration block ($ev_refute2_orch>=1)" \
+  "$ev_refute2_result"
+
+# CT-EV-REFUTE-3 (majority-merge revert target preserved after the rename). HEAD=0.
+ev_refute3_majority=$(grep -ciF 'majority-merge' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+ev_refute3_legacy=$(grep -cF '[AC-EVAL-MAJORITY]' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+ev_refute3_result="false"
+if [ "$ev_refute3_majority" -ge 1 ] && [ "$ev_refute3_legacy" -ge 1 ]; then ev_refute3_result="true"; fi
+assert_true \
+  "CT-EV-REFUTE-3 (majority-merge revert preserved): 'majority-merge' token ($ev_refute3_majority>=1) + legacy '[AC-EVAL-MAJORITY]' line ($ev_refute3_legacy>=1)" \
+  "$ev_refute3_result"
+
+# CT-EV-GATE9-R1RT-1 (Gate 9 R1 round-trip-losslessness cue, dogfood class-C closer
+# v8.4.0+): the canonical Gate 9 R1 row now mandates a parse(serialize(x))==x property
+# across the value domain for serialization / persistence / format boundaries — the cue
+# that closes the kv-list / csvjson-__proto__ format-strength gap the 2-subject dogfood
+# A/B surfaced (uc shipped a lossless format, sw a spec-faithful-but-lossy one). Both
+# tokens are net-new in the canonical rubric (a revert flips this assert to FAIL).
+ev_g9rt_a=$(grep -cF 'Round-trip losslessness' "$ACQC_EV" || true)
+ev_g9rt_b=$(grep -cF 'parse(serialize(x)) == x' "$ACQC_EV" || true)
+ev_g9rt_result="false"
+if [ "$ev_g9rt_a" -ge 1 ] && [ "$ev_g9rt_b" -ge 1 ]; then ev_g9rt_result="true"; fi
+assert_true \
+  "CT-EV-GATE9-R1RT-1 (Gate 9 R1 round-trip-losslessness cue): 'Round-trip losslessness' ($ev_g9rt_a>=1) + 'parse(serialize(x)) == x' ($ev_g9rt_b>=1) in canonical rubric" \
+  "$ev_g9rt_result"
+
 
 echo ""
 

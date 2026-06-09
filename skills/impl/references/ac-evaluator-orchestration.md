@@ -124,12 +124,12 @@ resolves `EVALUATOR_MODEL == opus` at Step 3a, so all three lens spawns use the 
 agent file `simple-workflow:ac-evaluator-hi` (the per-spawn `model:` override is rejected
 by the Agent JSONSchema — the same Strategy-B limitation as the soft turn budget above;
 the model is therefore selected by which agent file is spawned, never by a per-invocation
-field). The lens directives, the soft turn budget (field `j`), and the majority merge are
+field). The lens directives, the soft turn budget (field `j`), and the refute-then-synthesize merge are
 otherwise unchanged; `ac-evaluator-hi.md` is byte-identical to `ac-evaluator.md` except
 its `name:` and `model:` lines, so it recognises the `--- lens: <i>/3 ---` header and
 applies the assigned lens identically.
 
-### Majority merge (after all three return)
+### Refute-then-synthesize merge (after all three return)
 
 Run the Step 16 four-way output-envelope check (empty / file+IN_PROGRESS /
 ERROR- / non-empty) on **each** of the three returns independently —
@@ -150,10 +150,29 @@ attempt — a per-verifier soft failure, not a whole-round stop). Let
     AC `FAIL-CRITICAL` (a [CRITICAL] issue — security, data-loss, auth
     bypass), the merged AC is `FAIL-CRITICAL`. Security findings survive a
     minority.
-  - **Non-critical FAIL needs a majority**: an AC is merged `FAIL` when
-    **≥2** valid verifiers fail it (non-critically). A lone non-critical
-    FAIL against ≥2 PASS is merged `PASS` but its Issues/Feedback are
-    retained for the round's feedback trail.
+  - **Non-critical FAIL survives unless refuted** (refute-then-synthesize,
+    v8.4.0+; kill switch `constraints.refute_merge`, below): when **any one**
+    valid verifier raises a non-critical `FAIL` on an AC, the merge does NOT
+    demote it on a head-count. Instead each OTHER valid verifier is treated as
+    a potential **refuter**: a verifier refutes the failure iff it
+    independently rendered `PASS` / `PASS-WITH-CAVEATS` on the SAME AC — its own
+    independent-channel evidence (its lens's runtime probe / differential or
+    property check / oracle comparison) did not surface the reported failure.
+    This is computed by the orchestrator from the verifiers' ALREADY-rendered
+    per-AC verdicts; it does NOT re-spawn verifiers or break the
+    independence firewall (no verifier ever sees another's report). The AC is
+    merged `FAIL` **unless every other valid verifier refutes it**; a lone
+    non-critical FAIL that **reproduces** (is not refuted) therefore SURVIVES as
+    `FAIL` — the real defect one verifier caught is no longer silently demoted to
+    `PASS`. A FAIL that every other valid verifier explicitly refutes is merged
+    `PASS` (the minority report was a false positive), and its Issues/Feedback are
+    retained for the round's feedback trail with a `[refuted-by: v{j}...]` tag so
+    the next round's Generator sees both the claim and the refutation. Silence is
+    NOT refutation: a verifier that did not evaluate the AC, was dropped from the
+    `valid` set, or returned no verdict on it does **not** count as a refuter —
+    only an affirmative independent non-FAIL verdict refutes. With exactly one
+    other valid verifier remaining (quorum is still `valid >= 2`), that one
+    verifier's non-FAIL verdict is the sole refutation required.
   - Else the AC is `PASS` (or `PASS-WITH-CAVEATS` when ≥2 valid verifiers
     are `PASS-WITH-CAVEATS`; a single caveat is recorded but does not
     downgrade a majority `PASS`).
@@ -164,12 +183,131 @@ attempt — a per-verifier soft failure, not a whole-round stop). Let
   round's Generator sees which lens flagged what.
 
 Emit the merged verdict as the effective Step 15 result and proceed to
-Step 16. `[AC-EVAL-MAJORITY] acs={AC_COUNT} valid={valid}/3 merged={Status}`
+Step 16. `[AC-EVAL-REFUTE-MERGE] acs={AC_COUNT} valid={valid}/3 merged={Status} survived={N-lone-FAIL-survived} refuted={N-FAIL-refuted}` (or, when `constraints.refute_merge: off`, the legacy `[AC-EVAL-MAJORITY] acs={AC_COUNT} valid={valid}/3 merged={Status}`)
 is logged to stderr for auditability. The three `eval-round-{n}-v{i}.md`
 files satisfy the `eval-round-*.md` artifact-presence glob exactly as the
 partition `-part-{i}.md` files do; no combined `eval-round-{n}.md` is
 written (the orchestrator renders no AC verdict to disk — see
 `skills/impl/SKILL.md` line 40).
+
+## Default failure-class panel (`constraints.eval_panel`)
+
+The high-assurance multi-verifier branch above is the panel PRIMITIVE: an N-way
+lens fan-out over the SAME rubric + `git diff`, merged per AC. The default
+failure-class eval panel (v8.4.0+) promotes a SMALL diverse-lens set to the
+DEFAULT eval shape so every ticket — not only `exhaustive` ones — is graded
+through a fixed failure-class lens set rather than a single all-purpose pass.
+
+**The five failure-class lenses** (each maps to a failure class a single-pass
+grader systematically under-checks):
+
+- **L-CORRECTNESS** — the current per-AC PASS/FAIL check (does each AC hold).
+  The always-present lens; what the single evaluator already does.
+- **L-ROBUSTNESS** — at EVERY external-input boundary the diff introduces or
+  touches, probe hostile / boundary / termination / resource behaviour:
+  non-finite / oversized / malformed / out-of-range inputs, unbounded loops or
+  recursion, missing time / resource bounds. Reuses the
+  parse-accepted-then-overflows obligation in `agents/ac-evaluator.md`
+  `## Oracle Independence (computational ACs)` point 5, applied as a standing
+  lens rather than only per computational AC. When the unit builds a structure
+  (object / map / record) from untrusted input (keys from CSV headers, parsed
+  JSON, form / query / YAML fields), this lens also probes hostile KEYS, not only
+  hostile values: prototype-pollution / accessor keys (`__proto__`,
+  `constructor`, `prototype`), duplicate / colliding keys, empty / non-string
+  keys — a silently-dropped column, a mutated prototype, or a swallowed key is a
+  robustness defect.
+- **L-CONTRACT-CONFORMANCE** — does each generated unit's observable behaviour
+  match its OWN stated description / declared schema / documented contract (a
+  function that does not do what its name and doc-comment claim; a tool whose
+  runtime output diverges from its declared `outputSchema`).
+- **L-UNIFORMITY** — across the peer set this round added or modified together,
+  is the error convention / return envelope / vocabulary / structure consistent
+  with no needless duplication.
+- **L-SIMPLICITY** — is the deliverable at the right altitude (no unnecessary
+  indirection, no hand-rolled mechanism where a primitive exists).
+
+**Coverage-gap mandate (panel lenses only)**: for these five lenses the
+"do not invent out-of-stated-scope objections" restriction is LIFTED — a lens
+MAY surface a failure-class coverage gap the planner dropped (the grader becomes
+a coverage-gap finder, not only an AC grader). A surfaced gap is reported as
+advisory `[MEDIUM]` coverage-gap Feedback, NOT as a silent AC PASS and NOT as a
+Gate-3 ticket-quality FAIL (the matching carve-out lives in
+`skills/create-ticket/references/ac-quality-criteria.md` `## Evaluator MUST NOT`
+and `agents/ticket-evaluator.md`). A real defect a lens finds inside an AC's
+scope is graded on that AC as usual.
+
+**Proportionality — size gates DEPTH only, never the lens set**:
+
+- **single / `standard` mode** (the default for most tickets): ONE
+  `simple-workflow:ac-evaluator` invocation runs AT LEAST TWO lenses
+  SEQUENTIALLY within that single spawn — always L-CORRECTNESS plus the most
+  load-bearing additional lens (L-ROBUSTNESS when the diff touches an
+  external-input boundary, else L-CONTRACT-CONFORMANCE; L-UNIFORMITY when the
+  round generated >=2 peer units). NO additional spawn — the panel at `standard`
+  is a sequential multi-lens pass by the same evaluator, costing no extra agent
+  invocation. The evaluator receives a `--- panel: standard
+  lenses=L-CORRECTNESS,<lens2>[,<lens3>] ---` directive (field `m`).
+- **`exhaustive` mode**: the existing 3-spawn fan-out is the EXHAUSTIVE depth —
+  reused unchanged, with the three spawns now ALSO carrying the failure-class
+  lens emphasis (the EC-RUNTIME / EC-DIFFERENTIAL / EC-ORACLE evidence channels
+  of field `l` are retained; L-ROBUSTNESS rides V1/V3, L-CONTRACT-CONFORMANCE +
+  L-UNIFORMITY + L-SIMPLICITY ride V2's independent-output pass). Size gates this
+  DEPTH (1 spawn × >=2 sequential lenses → 3 spawns × all 5), never which lenses
+  apply.
+
+**Merge**: the per-AC refute-then-synthesize / severity merge of `### Refute-then-synthesize merge (after
+all three return)` above is REUSED verbatim for the fan-out; in single mode the
+lone evaluator's verdict stands (with one verifier there is no sibling to refute or
+be refuted by, so its verdict is final — refute-then-synthesize is a no-op at
+fan-out width 1). The refute-then-synthesize merge (v8.4.0+) REPLACES the prior
+majority-merge that this note previously deferred to a later phase: a lone
+non-critical FAIL now survives unless every other valid verifier refutes it,
+closing the Phase-B gap where a real defect one lens caught was demoted to PASS.
+The `constraints.refute_merge: off` kill switch restores the byte-for-byte
+majority-merge for any ticket that needs the prior consensus-demotion behaviour.
+
+**Kill switch `constraints.refute_merge: auto|on|off`** (absent file / field /
+unknown → `auto`, active). Resolved by the orchestrator at `/impl` Step 3a and
+carried into the Step 15 merge:
+
+- `auto` / `on` — the refute-then-synthesize merge above is in force: a lone
+  non-critical FAIL survives unless every other valid verifier refutes it.
+- `off` — restore the prior **majority-merge** byte-for-byte: an AC is merged
+  `FAIL` only when `>=2` valid verifiers fail it (non-critically); a lone
+  non-critical FAIL against `>=2` PASS is demoted to `PASS` with its
+  Issues/Feedback retained, and the stderr line reverts to
+  `[AC-EVAL-MAJORITY] acs=... valid=.../3 merged=...`. The CRITICAL-not-voted-away
+  rule, the `valid < 2` Quorum → FAIL-CRITICAL rule, and the severity ladder are
+  identical in both modes (the switch flips ONLY the non-critical-FAIL
+  disposition). The refute-then-synthesize merge is NOT an unconditional
+  mechanism (only the R4 tautological-assertion static rule is unconditional).
+
+The switch is independent of `verification_depth` (the merge only runs when the
+`exhaustive` 3-spawn fan-out is active — at single / partition width there is
+nothing to refute), `eval_panel` (which gates the lens set, not the merge),
+`independent_evidence`, and `oracle_verification`.
+
+**Kill switch `constraints.eval_panel: auto|on|off`** (absent file / field /
+unknown → `auto`, active). Resolved by the orchestrator at `/impl` Step 3a and
+inlined into the spawn prompt as field `m`:
+
+- `auto` — the panel is ON for a ticket that touches `>=2` source units OR
+  carries `>=1` behavioral AC; OFF (single all-purpose pass, byte-identical to
+  pre-v8.4.0) for a trivial single-unit structural-only ticket.
+- `on` — force the panel regardless of size / AC shape.
+- `off` — DISABLE the panel: the evaluator runs the prior single all-purpose
+  pass (L-CORRECTNESS only, NO `--- panel: ---` directive emitted, NO
+  `[EVAL-PANEL]` line), reverting byte-for-byte to the pre-v8.4.0 single-pass
+  behaviour. The panel is NOT an unconditional mechanism (only the R4
+  tautological-assertion rule is unconditional).
+
+The orchestrator emits `[EVAL-PANEL-MODE] mode={auto|on|off} active={y|n} lenses={N} spawns={1|3} reason={multi-unit|behavioral-ac|forced|trivial|off}`
+to stderr at Step 3a, and each `ac-evaluator` invocation emits one
+`[EVAL-PANEL] lenses={comma-list} mode={single|exhaustive}` line (M8
+observability — see `agents/ac-evaluator.md` `## Failure-class panel (default
+lenses)`) UNLESS the panel resolved `off`. `eval_panel` is independent of
+`verification_depth` (which scales tier/depth), `oracle_verification` (the
+EC-ORACLE sub-case), and `independent_evidence` (the per-AC evidence floor).
 
 ## Independent-evidence channels (all evaluator modes)
 
@@ -237,6 +375,18 @@ into every `ac-evaluator` spawn prompt as the field `Oracle verification:
 - **Field `k`** (partition header, only when partition branch is
   active): prepend `--- partition: {i}/2 ---` to the prompt body so
   the agent recognises it is evaluating a subset.
+- **Field `m`** (failure-class panel directive, present unless
+  `constraints.eval_panel` resolved `off` AND the ticket is trivial): in single
+  mode prepend `--- panel: standard lenses=L-CORRECTNESS,<lens2>[,<lens3>] ---`
+  so the lone evaluator runs the named lenses sequentially in one spawn; in
+  `exhaustive` mode the panel emphasis rides the three field-`l` lens spawns
+  (the five failure-class lenses map onto V1/V2/V3 per `## Default failure-class
+  panel`). Omitted entirely when `eval_panel: off` (byte-for-byte revert to the
+  single all-purpose pass). Fields `m` and `l` co-exist (the panel rides the
+  lenses in `exhaustive`); fields `m` and `k` (partition) co-exist — partition
+  splits the rubric, the panel still applies its lens emphasis within each
+  partition's ACs. (Unlike `k`/`l`, field `m` is NOT mutually exclusive with
+  them.)
 - **Field `l`** (lens directive, only when the high-assurance
   multi-verifier branch is active — `verification_depth: exhaustive` and
   `AC_COUNT < 30`): prepend the `--- lens: {i}/3 {name} ---` directive for
