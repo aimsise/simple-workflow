@@ -132,12 +132,176 @@ EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME per
 OR be rewritten as a structural AC (EC-STATIC). The resolved `evidence_floor` (effects
 ladder in
 [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md))
-sets how many independent channels are MANDATORY per tier: `standard` = EC-STATIC + the
-AC's natural channel (no extra channel — byte-identical to pre-v8.3.0 for a routine S/M
-ticket), `thorough` = +1 independent channel, `exhaustive` = >=2. When `off`, Gate 8 is
+sets how many independent channels are MANDATORY as `max(tier floor, AC-shape floor)`
+(M3, v8.4.0+): the **tier floor** is `standard` = EC-STATIC + the AC's natural channel,
+`thorough` = +1 independent channel, `exhaustive` = >=2; the Size-independent **AC-shape
+floor** raises any ticket carrying a behavioral AC to `+1-independent` even at `standard`
+(a structural-only ticket stays at EC-STATIC + natural — byte-identical to pre-v8.3.0).
+When `off`, Gate 8 is
 graded `n/a` ticket-wide and the evidence-floor requirement is dropped (the `ac-evaluator`
 falls back to its pre-v8.3.0 path); the always-on Gate 7 oracle check for computational
 ACs is governed separately by `constraints.oracle_verification`. This is the per-brief
 kill switch for the Gate 8 / independent-evidence feature line; it is independent of
 `constraints.oracle_verification` (the EC-ORACLE sub-case) and
 `constraints.verification_depth` (which scales tier/depth).
+
+## `constraints.failure_class_coverage`
+
+**Consumed by**: the `planner` Gate 9 self-audit (Pre-emit Self-Audit step 10) and
+the `ticket-evaluator` Gate 9 grading. (Authoring-side only — Gate 9 ENUMERATES
+which Scope-touched external boundaries need an AC; it has no `/impl` /
+`ac-evaluator` consumer, since Gate 7 / Gate 8 GRADE the resulting ACs at
+verification time.)
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto`
+(fail-safe to active).
+
+**Effect**: when `auto`, **Gate 9 failure-class coverage** (v8.4.0+) is active —
+for each external boundary the ticket's `### Scope` touches (public / exported
+function, CLI subcommand, endpoint, exported API symbol, file-format /
+wire-format, or parser; and any `>=2`-peer sibling set), the planner MUST emit the
+`#### Failure-Class Coverage (Gate 9)` matrix whose four rows (R1 FULL-DOMAIN
+INVARIANT, R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP, R3
+DESCRIPTION-MATCHES-BEHAVIOR, R4 DOC/INTERFACE TRUTHFULNESS) each resolve to >=1 AC
+OR a one-line `n/a` justification, and the `ticket-evaluator` FAILs a boundary
+with a blank (unresolved) row. When `off`, Gate 9 is graded `n/a` ticket-wide and
+the matrix is not required (restores the pre-v8.4.0 feature-driven AC derivation
+— the byte-for-byte revert). A ticket that touches no external boundary
+(internal-helper-only) is `n/a` for Gate 9 regardless of this field
+(routine-ticket flood prevention). This is the per-brief kill switch for the
+failure-class-coverage feature line; it is independent of
+`constraints.oracle_verification` (Gate 7), `constraints.independent_evidence`
+(Gate 8), and `constraints.eval_panel` (the failure-class eval panel).
+
+## `constraints.peer_uniformity`
+
+**Consumed by**: the `planner` Gate 10 self-audit (Pre-emit Self-Audit step 11) and
+the `ticket-evaluator` Gate 10 grading. (Authoring-side only — Gate 10 ENUMERATES
+whether a `>=2`-peer set needs a unified-convention AC; its diff-time grader is the
+existing `ac-evaluator` **L-UNIFORMITY** failure-class lens, governed separately by
+`constraints.eval_panel`, so Gate 10 itself has no distinct `/impl` consumer.)
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto`
+(fail-safe to active).
+
+**Effect**: when `auto`, **Gate 10 peer-set uniformity** (v8.4.0+) is active — when
+the ticket's `### Scope` creates a `>=2`-peer set (a family of analogous sibling
+units in one category — peer tools / endpoints / subcommands / exported functions
+sharing an output surface), the planner MUST assert `>=1` **UNIFIED convention** AC
+over the set (single error convention / single success-envelope shape / single
+vocabulary per concept / single wrapper for repeated boilerplate, mechanically
+grep/AST-verifiable across every peer) OR record a one-line `n/a` justification
+under the `#### Peer-Set Uniformity (Gate 10)` scaffold, and the `ticket-evaluator`
+FAILs a peer set with an unresolved row. When `off`, Gate 10 is graded `n/a`
+ticket-wide and no unified AC is required (restores the pre-Gate-10 behaviour where
+cross-unit output uniformity was unenforced — the byte-for-byte revert). A ticket
+whose Scope creates fewer than 2 peers is `n/a` for Gate 10 regardless of this
+field. This is the per-brief kill switch for the peer-uniformity feature line; it
+is independent of `constraints.oracle_verification` (Gate 7, incl. its
+sibling-INPUT-guard), `constraints.independent_evidence` (Gate 8),
+`constraints.failure_class_coverage` (Gate 9), and `constraints.eval_panel` (the
+failure-class eval panel whose L-UNIFORMITY lens is the diff-time grader).
+
+## `constraints.eval_panel`
+
+**Consumed by**: `/impl` (Step 3a `EVAL_PANEL` resolution; the `ac-evaluator` /
+`ac-evaluator-hi` per-ticket `[EVAL-PANEL]` panel emit at Step 15).
+
+**Accepted values**: `auto`, `on`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto`
+(fail-safe to active).
+
+**Effect**: when `auto` or `on`, the **failure-class eval panel** (M8, v8.4.0+)
+is active — the `ac-evaluator` grades through a fixed failure-class lens set
+(L-CORRECTNESS plus >=1 more lens at `standard`, the full five-lens fan-out at
+`exhaustive`) instead of a single all-purpose pass, and after every AC is
+verdicted it emits one ticket-level `[EVAL-PANEL] lenses={comma-list}
+mode={single|exhaustive}` line to stderr recording which lenses ran. `auto`
+activates the panel for a ticket touching `>=2` source units OR carrying `>=1`
+behavioral AC (a trivial single-unit structural-only ticket stays a single
+all-purpose pass); `on` forces it regardless of size / AC shape. The orchestrator
+resolves the value at `/impl` Step 3a (emitting `[EVAL-PANEL-MODE] ...`) and
+inlines it into the Evaluator spawn prompt as field `m` (the `--- panel: ... ---`
+directive), so the evaluator reads the switch from the prompt, not from disk.
+When `off`, the panel is disabled, the `--- panel: ---` directive and the
+`[EVAL-PANEL]` line are dropped, and the evaluator runs the prior single
+all-purpose pass — the byte-for-byte revert to pre-v8.4.0. NOTE: `off` drops ONLY
+the panel; the per-AC `[ORACLE-AUDIT]` line is unconditional (governed by no kill
+switch) and still emits, as do the always-on Gate 7 oracle check and the R4
+tautological-assertion static rule. This is the per-brief kill switch for the
+failure-class eval panel; it is independent of `constraints.independent_evidence`,
+`constraints.oracle_verification`, `constraints.verification_depth`, and
+`constraints.failure_class_coverage` (Gate 9, the authoring-side sibling).
+
+## `constraints.refute_merge`
+
+**Consumed by**: `/impl` (Step 3a `REFUTE_MERGE` resolution; the Step 15
+`exhaustive` multi-verifier merge).
+
+**Accepted values**: `auto`, `on`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto`
+(fail-safe to active).
+
+**Effect**: when `auto` or `on`, the **refute-then-synthesize merge** (v8.4.0+)
+is in force for the `exhaustive` 3-spawn multi-verifier branch. A non-critical
+`FAIL` raised by any one valid verifier merges `FAIL` UNLESS every other valid
+verifier refutes it — i.e. that verifier independently rendered `PASS` /
+`PASS-WITH-CAVEATS` on the SAME AC (its own independent-channel evidence did not
+surface the failure); silence / not-evaluated / dropped is NOT refutation. A lone
+reproducing non-critical FAIL therefore survives instead of being demoted to
+`PASS`, closing the prior gap where a real defect one verifier caught was silently
+dropped. The orchestrator resolves the value at `/impl` Step 3a and logs
+`[AC-EVAL-REFUTE-MERGE] ... survived=N refuted=N` at the merge. When `off`, the
+merge reverts byte-for-byte to the prior **majority-merge**: a non-critical FAIL is
+merged only with a `>=2`-verifier majority, a lone non-critical FAIL is demoted to
+`PASS` (Issues/Feedback retained), and the stderr line reverts to
+`[AC-EVAL-MAJORITY]`. NOTE: the switch flips ONLY the non-critical-FAIL
+disposition; the CRITICAL-not-voted-away rule, the `valid < 2` Quorum →
+FAIL-CRITICAL rule, and the severity ladder are identical in both modes, and the
+merge runs ONLY in the `exhaustive` multi-verifier branch (single / partition
+modes have no sibling to refute and are unaffected). This is the per-brief kill
+switch for the refute-then-synthesize merge; it is independent of
+`constraints.eval_panel`, `constraints.independent_evidence`,
+`constraints.oracle_verification`, and `constraints.verification_depth`.
+
+## `constraints.selfdoc_verification`
+
+**Consumed by**: the EC-SELFDOC evidence channel in
+[`../../impl/references/evidence-channels.md`](../../impl/references/evidence-channels.md)
+— the `doc-verifier` agent, the `ac-evaluator` / `ac-evaluator-hi`
+`## Independent Evidence (behavioral ACs)` EC-SELFDOC duty, and the Gate 9 R3
+(DESCRIPTION-MATCHES-BEHAVIOR) / R4 (DOC/INTERFACE TRUTHFULNESS) authoring rows in
+[`ac-quality-criteria.md`](ac-quality-criteria.md).
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto` (fail-safe to
+active).
+
+**Effect**: when `auto`, **EC-SELFDOC doc/interface-truthfulness verification** (v8.4.0+)
+is active — a behavioral AC's evidence MAY (and for Gate 9 rows R3 / R4 SHOULD) compare
+the unit's OWN declared contract (docstring / declared invariant / type annotation /
+`--help` line / README or quickstart worked-example / advertised size-or-range boundary)
+against observed runtime behaviour, RUN against the real build: each advertised example is
+reproduced and diffed (byte-for-byte if deterministic, explicit tolerance otherwise), and
+each advertised boundary is probed with a FORBIDDEN value (must be rejected) and an
+ALLOWED value (must be accepted). The verifier-side execution happens under the
+`.simple-workflow/scratch/` exec carve-out and is **fail-open** — where the build cannot
+be exercised or the unit advertises no example / boundary, the verifier records a one-line
+Caveat (PASS-WITH-CAVEATS), never a force-FAIL. When `off`, the EC-SELFDOC channel and the
+`doc-verifier` agent stand down: the `ac-evaluator` drops the EC-SELFDOC duty (the other
+behavioral-AC channels — EC-ORACLE / EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME / EC-STATIC
+— are unaffected) and Gate 9 rows R3 / R4 are satisfied by their pre-v8.4.0 prose form
+without the RUN-the-example / FORBIDDEN+ALLOWED concretization — the byte-for-byte revert.
+This is the per-brief kill switch for the EC-SELFDOC / doc-verifier feature line; it is
+independent of `constraints.oracle_verification` (Gate 7 / EC-ORACLE),
+`constraints.independent_evidence` (Gate 8, the broader behavioral-evidence switch),
+`constraints.failure_class_coverage` (Gate 9 authoring enumeration — which still emits the
+R3 / R4 ROWS; this switch governs only their EC-SELFDOC concretization + the doc-verifier
+run), and `constraints.eval_panel`.

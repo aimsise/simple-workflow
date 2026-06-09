@@ -61,6 +61,11 @@ Return a structured summary under 800 tokens. Do NOT write files. Do NOT invoke 
 **Topological order**: [<parent-slug>-part-1, <parent-slug>-part-2, ...]
 **Rationale**: <1-3 sentences explaining the split — why these units are independently deployable>
 
+For EACH ticket above, ALSO surface a peer-set hint (Gate 10 upstream signal for the planner):
+
+- peer_set: true | false  — `true` when this ticket's scope creates `>=2` analogous sibling units in ONE category (peer tools / endpoints / subcommands / functions sharing an output surface); `false` for a single-unit ticket or units that form no analogous sibling set.
+  shared_conventions: <1-line hint, ONLY when peer_set is true> — the cross-unit convention the peers should share (e.g. "single error envelope across the 3 parse tools", "one success wrapper for the 4 list endpoints"). Omit this sub-line entirely when peer_set is false.
+
 ## Decomposition principles
 
 1. Each ticket must describe a coherent, independently-deployable unit. Never produce a ticket with fewer than 2 latent ACs worth of scope — if a Work Unit is too thin, merge it with a neighbor.

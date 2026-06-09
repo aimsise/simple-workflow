@@ -24,6 +24,18 @@ NOT break the contract — extra categories are not flagged as drift by
 present and each MUST have at least three checklist items in
 `- [ ] <Capitalized item>` form.
 
+**Cross-cutting dimension — doc/interface truthfulness (EC-SELFDOC, v8.4.0+)**:
+reproducing a unit's OWN advertised contract against the real build is NOT scoped
+to the Documentation category. For EVERY category, when the changed code carries a
+docstring / declared invariant / `--help` line / README or quickstart worked-example
+/ advertised size-or-range boundary, the reviewer SHOULD confirm the runtime
+behaviour matches that own claim — RUN the advertised example and diff its output,
+and probe each advertised boundary with a FORBIDDEN value (must be rejected) and an
+ALLOWED value (must be accepted). This is the **EC-SELFDOC** channel
+(`skills/impl/references/evidence-channels.md`); the dedicated verifier is the
+`doc-verifier` agent. The Documentation-category item below remains, but the
+doc-reproduction obligation is cross-cutting and applies under any category.
+
 ## Category: CodeQuality
 
 - [ ] Naming is consistent with surrounding code and project conventions

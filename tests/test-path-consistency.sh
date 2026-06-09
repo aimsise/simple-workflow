@@ -266,11 +266,15 @@ GROUP_A_AGENTS=(
 # Group C — verdict / read-only agents that retain explicit tools: allowlist.
 # ac-evaluator-hi is the M5 (v8.3.0) opus sibling of ac-evaluator: same Group C
 # tools: allowlist, byte-identical body except its name:/model: lines.
+# doc-verifier is the EC-SELFDOC / doc-truthfulness verifier (v8.4.0+): a Group C
+# read-only agent with an explicit scoped tools: allowlist (scratch-only build/run
+# exec for advertised-example reproduction), registered exactly as ac-evaluator-hi was.
 GROUP_C_AGENTS=(
   "ac-evaluator"
   "ac-evaluator-hi"
   "code-reviewer"
   "decomposer"
+  "doc-verifier"
   "security-scanner"
   "ticket-evaluator"
   "tune-analyzer"
@@ -522,6 +526,7 @@ expected_tools_set=$(printf '%s\n' \
   "ac-evaluator-hi" \
   "code-reviewer" \
   "decomposer" \
+  "doc-verifier" \
   "security-scanner" \
   "ticket-evaluator" \
   "tune-analyzer" | sort)
@@ -540,7 +545,7 @@ actual_tools_set=$(
 )
 
 if [ "$actual_tools_set" = "$expected_tools_set" ]; then
-  echo -e "  ${GREEN}PASS${NC} the 7 agents with ^tools: in frontmatter are exactly Group C + ac-evaluator-hi (ac-evaluator, ac-evaluator-hi, code-reviewer, decomposer, security-scanner, ticket-evaluator, tune-analyzer)"
+  echo -e "  ${GREEN}PASS${NC} the 8 agents with ^tools: in frontmatter are exactly Group C + ac-evaluator-hi + doc-verifier (ac-evaluator, ac-evaluator-hi, code-reviewer, decomposer, doc-verifier, security-scanner, ticket-evaluator, tune-analyzer)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} agents with ^tools: do not match Group C"

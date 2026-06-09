@@ -1,7 +1,7 @@
 ---
 version: 1
 canonical: true
-binding_parties: [planner, ticket-evaluator, implementer, test-writer, ac-evaluator]
+binding_parties: [planner, ticket-evaluator, implementer, test-writer, ac-evaluator, doc-verifier]
 ---
 
 # Evidence-Channel Taxonomy (canonical)
@@ -76,7 +76,36 @@ but is NOT independent evidence for a *behavioral* AC on its own.
 - **EC-STATIC** — file-grep / counter / exit-code / signature inspection. *Necessary
   for structural ACs* (a file exists, a symbol is exported with a given signature, a
   flag is parsed) but NOT an independent channel for a behavioral AC: code can be
-  statically well-formed and behaviourally wrong.
+  statically well-formed and behaviourally wrong.- **EC-SELFDOC** — the unit's OWN declared contract checked against its observed
+  runtime behaviour: a docstring, a declared invariant, a type annotation, a `--help`
+  / man-page line, a README / quickstart worked-example, or an advertised schema /
+  size / range boundary, RUN against the real build and compared to what the unit
+  actually does. EC-SELFDOC is a **specialization layered on EC-RUNTIME** (the
+  advertised example / boundary is exercised through the real public / protocol
+  boundary); it is NOT a member of the four-channel naming set `{EC-ORACLE,
+  EC-DIFFERENTIAL, EC-PROPERTY, EC-RUNTIME}` that the Gate 8 binding rule draws from —
+  a behavioral AC still names one of those four (or rewrites to EC-STATIC). *Independent
+  because* the expected behaviour is fixed by the unit's own published claim BEFORE the
+  run, so a drift between claim and behaviour fails the channel even when every other
+  test agrees with the (wrong) code. Two failure modes: (A)
+  **description-vs-behavior drift** — the runtime output contradicts the unit's own docstring / declared invariant
+  / advertised example (a function documented "returns a sorted copy" that returns the
+  input order; a README example whose command no longer reproduces its shown output);
+  (E) **advertised-boundary != enforced-boundary** — the value the docs say is the limit
+  is not the value the code accepts / rejects at (docs say "accepts up to 100 MiB" but
+  100 MiB is rejected, or 200 MiB is accepted). The verifier-side consumer of this
+  channel is the [`doc-verifier`](../../../agents/doc-verifier.md) agent (it RUNs the
+  advertised example / probes the advertised boundary under the `.simple-workflow/scratch/`
+  exec carve-out and diffs), and the `ac-evaluator` / `ac-evaluator-hi`
+  `## Independent Evidence (behavioral ACs)` duty. It is the standing evidence channel
+  for Gate 9 rows R3 (DESCRIPTION-MATCHES-BEHAVIOR) and R4 (DOC/INTERFACE TRUTHFULNESS)
+  in [`../../create-ticket/references/ac-quality-criteria.md`](../../create-ticket/references/ac-quality-criteria.md).
+  Where the build cannot be exercised (no runnable build, no example to reproduce, no
+  numeric/range boundary advertised), EC-SELFDOC is **fail-open**: the consumer records
+  a one-line Caveat (PASS-WITH-CAVEATS), it is never an unconditional FAIL for an example
+  or boundary that does not exist. This channel is governed by the
+  `constraints.selfdoc_verification` kill switch (default `auto`, fail-safe to active);
+  see [`../../create-ticket/references/autopilot-policy-reference.md`](../../create-ticket/references/autopilot-policy-reference.md).
 
 The mapping from these IDs to the producer-side authoring rules lives in
 [`test-authoring-guidance.md`](test-authoring-guidance.md) (black-box-over-white-box,
