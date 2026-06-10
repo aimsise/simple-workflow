@@ -9934,6 +9934,26 @@ assert_true \
   "CT-EV-GATE9-R1RT-1 (Gate 9 R1 round-trip-losslessness cue): 'Round-trip losslessness' ($ev_g9rt_a>=1) + 'parse(serialize(x)) == x' ($ev_g9rt_b>=1) in canonical rubric" \
   "$ev_g9rt_result"
 
+# CT-EV-SELFDOC-6 (doc-verifier SPAWN-wiring, v8.4.1+): the v8.4.0 doc-verifier agent
+# is now actually spawned — /audit Step 2 AND /refactor Phase 3 Step 6 invoke
+# 'simple-workflow:doc-verifier', the spawn is gated by 'constraints.selfdoc_verification'
+# in BOTH skills (off => skip), and the agent carries the '## When spawned (input
+# contract)' section. All five tokens net-new in those files (a revert of the
+# spawn-wiring flips this assert to FAIL). Closes the v8.4.0 documented-but-unspawned gap.
+AUDIT_SK="$REPO_DIR/skills/audit/SKILL.md"
+REFACTOR_SK="$REPO_DIR/skills/refactor/SKILL.md"
+DOCVER_AG="$REPO_DIR/agents/doc-verifier.md"
+ev_sd6_audit_spawn=$(grep -cF 'simple-workflow:doc-verifier' "$AUDIT_SK" || true)
+ev_sd6_refac_spawn=$(grep -cF 'simple-workflow:doc-verifier' "$REFACTOR_SK" || true)
+ev_sd6_audit_ks=$(grep -cF 'constraints.selfdoc_verification' "$AUDIT_SK" || true)
+ev_sd6_refac_ks=$(grep -cF 'constraints.selfdoc_verification' "$REFACTOR_SK" || true)
+ev_sd6_contract=$(grep -cF '## When spawned (input contract)' "$DOCVER_AG" || true)
+ev_sd6_result="false"
+if [ "$ev_sd6_audit_spawn" -ge 1 ] && [ "$ev_sd6_refac_spawn" -ge 1 ] && [ "$ev_sd6_audit_ks" -ge 1 ] && [ "$ev_sd6_refac_ks" -ge 1 ] && [ "$ev_sd6_contract" -ge 1 ]; then ev_sd6_result="true"; fi
+assert_true \
+  "CT-EV-SELFDOC-6 (doc-verifier spawn-wiring): /audit spawn ($ev_sd6_audit_spawn>=1) + /refactor spawn ($ev_sd6_refac_spawn>=1) + audit kill-switch ($ev_sd6_audit_ks>=1) + refactor kill-switch ($ev_sd6_refac_ks>=1) + agent input-contract ($ev_sd6_contract>=1)" \
+  "$ev_sd6_result"
+
 
 echo ""
 

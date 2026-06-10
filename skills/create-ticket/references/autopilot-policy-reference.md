@@ -274,7 +274,9 @@ switch for the refute-then-synthesize merge; it is independent of
 
 **Consumed by**: the EC-SELFDOC evidence channel in
 [`../../impl/references/evidence-channels.md`](../../impl/references/evidence-channels.md)
-— the `doc-verifier` agent, the `ac-evaluator` / `ac-evaluator-hi`
+— the `doc-verifier` agent (spawned by `/audit` Step 2 and `/refactor` Phase 3 Step 6,
+in parallel with the other reviewers, when this switch is active and a documentation /
+advertised-interface surface is touched), the `ac-evaluator` / `ac-evaluator-hi`
 `## Independent Evidence (behavioral ACs)` EC-SELFDOC duty, and the Gate 9 R3
 (DESCRIPTION-MATCHES-BEHAVIOR) / R4 (DOC/INTERFACE TRUTHFULNESS) authoring rows in
 [`ac-quality-criteria.md`](ac-quality-criteria.md).
@@ -297,7 +299,8 @@ be exercised or the unit advertises no example / boundary, the verifier records 
 Caveat (PASS-WITH-CAVEATS), never a force-FAIL. When `off`, the EC-SELFDOC channel and the
 `doc-verifier` agent stand down: the `ac-evaluator` drops the EC-SELFDOC duty (the other
 behavioral-AC channels — EC-ORACLE / EC-DIFFERENTIAL / EC-PROPERTY / EC-RUNTIME / EC-STATIC
-— are unaffected) and Gate 9 rows R3 / R4 are satisfied by their pre-v8.4.0 prose form
+— are unaffected), `/audit` Step 2 and `/refactor` Phase 3 Step 6 skip the `doc-verifier`
+spawn, and Gate 9 rows R3 / R4 are satisfied by their pre-v8.4.0 prose form
 without the RUN-the-example / FORBIDDEN+ALLOWED concretization — the byte-for-byte revert.
 This is the per-brief kill switch for the EC-SELFDOC / doc-verifier feature line; it is
 independent of `constraints.oracle_verification` (Gate 7 / EC-ORACLE),

@@ -35,10 +35,12 @@ The following agent invocations are **contractual** — `/audit` MUST delegate t
 |---|---|---|
 | `security-scanner` agent (Agent tool) | Step 2 — **always**, regardless of `only_security_scan` flag | No security review; hardcoded secrets / injection vulnerabilities may reach `done/` undetected. Detected by absence of `security-scan-{n}.md` in ticket dir and absence of security-scanner trace in skill invocation audit |
 | `code-reviewer` agent (Agent tool) | Step 2 — in parallel with security-scanner when `only_security_scan=false` (default) | No code quality review; `/impl`'s retry loop has no feedback on style/maintainability/correctness concerns. Detected by absence of `quality-round-{n}.md` in ticket dir |
+| `doc-verifier` agent (Agent tool) | Step 2 — in parallel when `constraints.selfdoc_verification` is active AND a documentation / advertised-interface surface is touched | No EC-SELFDOC verification; a docstring / README / `--help` example that no longer reproduces, or an advertised boundary ≠ the enforced one, reaches `done/` undetected. Detected by absence of `doc-verify-{n}.md` in ticket dir when the trigger fired |
 
 **Binding rules**:
 - `MUST invoke simple-workflow:security-scanner via the Agent tool` every time `/audit` runs — never skip security review even when changes look "obviously safe".
 - `MUST invoke simple-workflow:code-reviewer via the Agent tool` unless `only_security_scan=true` was explicitly passed. Never substitute by having `/audit` itself read files and render a verdict.
+- `MUST invoke simple-workflow:doc-verifier via the Agent tool` when `constraints.selfdoc_verification` is active AND the change touches a documentation / advertised-interface surface (a `README` / `*.md` / `--help` / man-page, or a Gate 9 R3 / R4 AC). Never substitute by having `/audit` itself reproduce the examples and judge; skip only via the documented `constraints.selfdoc_verification: off` / no-doc-surface paths.
 - `NEVER bypass these agents via direct file operations` — `/audit` must NOT read the changed files itself (Step 2 explicitly states: "Do NOT read files directly — delegate ALL review work to the agents").
 - `Fail this audit immediately if any required agent cannot be invoked via the Agent tool` — the Error Handling section treats agent failure as Critical = 1; **never silently treat a failed agent as PASS or PASS_WITH_CONCERNS**.
 
@@ -199,13 +201,18 @@ When `ticket-dir` is NOT set, do NOT write a dispatch log.
 
 If `only_security_scan` is `true`, the code-reviewer is **skipped** (security-only mode).
 
+**If** `constraints.selfdoc_verification` is active (read it from `{ticket-dir}/autopilot-policy.yaml`; absent file / field / unknown value → `auto` = active) **AND** the change touches a documentation / advertised-interface surface (a changed `README` / `*.md` / `--help` / man-page / quickstart, OR the ticket carries a Gate 9 R3 `DESCRIPTION-MATCHES-BEHAVIOR` / R4 `DOC/INTERFACE TRUTHFULNESS` AC), you **MUST also invoke the `simple-workflow:doc-verifier` agent via the Agent tool** (sonnet) **in parallel** with the other reviewers. doc-verifier RUNs the unit's OWN advertised examples and boundary claims against the real build under the `.simple-workflow/scratch/` exec carve-out and reports **EC-SELFDOC** drift (description-vs-behavior, class A) or advertised-vs-enforced boundary mismatch (class E) — independent of code-reviewer (quality) and security-scanner (security). **NEVER substitute by having `/audit` itself read the docs and judge.**
+- Pass the changed files list and the doc-verify output path (`{ticket-dir}/doc-verify-{n}.md`, or the default `.simple-workflow/docs/reviews/doc-verify-{topic}.md`). When `ticket-dir` is set and `{ticket-dir}/ticket.md` carries a `#### Failure-Class Coverage (Gate 9)` matrix, inline its R3 / R4 rows so doc-verifier knows which advertised examples / boundaries to exercise.
+- Receive Critical / Warnings / Suggestions counts and a summary. A doc example that does not reproduce, or an advertised boundary that differs from the enforced one, is a Critical finding; where the build genuinely cannot be exercised, doc-verifier returns `PASS-WITH-CAVEATS` (fail-open), never a spurious Critical.
+- doc-verifier is **skipped** (record a one-line note in the aggregated report) when `constraints.selfdoc_verification: off` OR no documentation / advertised-interface surface is touched. This is the per-brief kill switch for the EC-SELFDOC verification line.
+
 Do NOT read files directly — delegate ALL review work to the agents.
 
 ### 3. Aggregate Results
 
 Combine the results from the spawned agents into a single aggregated report:
 
-- `Critical` = sum of Critical counts from all spawned agents (security-scanner always; code-reviewer when not skipped).
+- `Critical` = sum of Critical counts from all spawned agents (security-scanner always; code-reviewer when not skipped; doc-verifier when the EC-SELFDOC trigger fired).
 - `Warnings` = sum of Warnings counts from all spawned agents.
 - `Suggestions` = sum of Suggestions counts from all spawned agents.
 - Determine `Status`:
@@ -213,7 +220,7 @@ Combine the results from the spawned agents into a single aggregated report:
   - Else if `Warnings > 0` or `Suggestions > 0` → `PASS_WITH_CONCERNS`
   - Else → `PASS`
 
-The aggregated counts MUST be calculated across both agents (or just security-scanner when code-reviewer is skipped).
+The aggregated counts MUST be calculated across all spawned agents (security-scanner always; code-reviewer when not skipped; doc-verifier when the EC-SELFDOC trigger fired).
 
 - When Step 3.5 (Skeptical Third-Pass) fires and returns `DO_NOT_SHIP`, treat this as `Critical += 1` in the aggregated tally. This causes `Status` to be `FAIL` via the existing `Critical > 0` rule. When Step 3.5 does not fire, the tally is unaffected.
 
