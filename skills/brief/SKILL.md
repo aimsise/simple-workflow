@@ -222,8 +222,11 @@ Brief generated in manual mode. To proceed:
    Tickets will NOT receive autopilot-policy.yaml (manual mode).
 4. Per ticket: /scout → /impl → /ship (standard manual flow)
 
-If you later decide to switch to autopilot, run:
+If you later decide to switch to autopilot, first re-run /create-ticket with the brief
+set to chain: on so each ticket dir receives autopilot-policy.yaml, then run:
   /autopilot {slug}
+Running /autopilot directly on a manual (chain: off) brief stops with a re-propagation
+directive — per-ticket autopilot-policy.yaml is only propagated when the brief is chain: on.
 The brief-level autopilot-policy.yaml is preserved at .simple-workflow/backlog/briefs/active/{slug}/autopilot-policy.yaml.
 ```
 
