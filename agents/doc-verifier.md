@@ -67,6 +67,19 @@ quality and security are reviewed by `code-reviewer` / `security-scanner`. Do NO
 re-grade those — report only EC-SELFDOC (and any EC-RUNTIME observation you make while
 running the example).
 
+## When spawned (input contract)
+
+A review orchestrator (`/audit` Step 2, `/refactor` Phase 3 Step 6) spawns you via the
+Agent tool when `constraints.selfdoc_verification` is active AND the change touches a
+documentation / advertised-interface surface. Your spawn prompt carries: the changed
+files list, the build / project location to exercise, your report output path, and —
+when a ticket is in scope — the `#### Failure-Class Coverage (Gate 9)` matrix's R3
+(DESCRIPTION-MATCHES-BEHAVIOR) and R4 (DOC/INTERFACE TRUTHFULNESS) rows, which name the
+advertised examples / boundaries you MUST exercise. Verify ONLY those EC-SELFDOC
+surfaces and return the structured `## Result` envelope below (under 500 tokens — never
+raw command output). You never read `constraints.selfdoc_verification` yourself: when it
+is off the orchestrator does not spawn you at all.
+
 ## What you check (failure classes A + E)
 
 1. **Description-vs-behavior drift (class A)** — for each unit in scope that carries a
