@@ -2435,6 +2435,41 @@ fi
 
 echo ""
 
+# CT-MODE-15 (manual-brief + /autopilot dead-end fix): autopilot Phase 1 step 3 must
+# HARD-STOP a manual (chain: off / mode: manual) brief invoked under /autopilot with
+# reason=brief_mode_manual and a re-propagation directive, instead of the old
+# WARN+continue that stranded every ticket at the per-ticket Policy guard (the three
+# guards have no brief-level fallback). The stale 'and continue' WARN literal MUST be gone.
+echo "--- CT-MODE-15 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 'reason=brief_mode_manual' "$REPO_DIR/skills/autopilot/SKILL.md" \
+   && grep -qF 'Re-run /create-ticket' "$REPO_DIR/skills/autopilot/SKILL.md" \
+   && ! grep -qF 'only brief-level policy is in effect' "$REPO_DIR/skills/autopilot/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-15: autopilot SKILL.md manual-brief branch hard-stops (reason=brief_mode_manual + re-propagation directive; stranding WARN removed)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-15: autopilot SKILL.md manual-brief branch must hard-stop with 'reason=brief_mode_manual' + 'Re-run /create-ticket' and drop the 'only brief-level policy is in effect' WARN"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
+# CT-MODE-16 (brief manual-flow guidance drift): brief Step 3 chain=off guidance must tell
+# the user to re-run /create-ticket (with chain: on) BEFORE switching to /autopilot, so the
+# advertised manual->autopilot off-ramp is actually deliverable (per-ticket policy propagated)
+# rather than dead-ending at the autopilot manual-brief hard-stop.
+echo "--- CT-MODE-16 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 're-run /create-ticket' "$REPO_DIR/skills/brief/SKILL.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-16: brief SKILL.md Step 3 manual guidance names the /create-ticket re-propagation prerequisite before /autopilot"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-16: brief SKILL.md Step 3 manual guidance missing the 're-run /create-ticket' prerequisite before the /autopilot switch"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # =============================================================================
 # Category AD: /audit per-Category checklist references contract
 # Diff: New category. Verifies that the canonical per-Category checklist
