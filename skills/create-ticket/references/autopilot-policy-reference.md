@@ -5,33 +5,35 @@ This document catalogs the per-ticket knobs that individual skills read from
 limits, etc.) is documented in `.simple-workflow/docs/plans/` — this page lists only the
 fields that orchestrator skills consult directly outside the gate machinery.
 
-## `constraints.sonnet_size_threshold`
+## Generator model policy
 
-**Consumed by**: `/impl` (Generator model selection, step 13).
+simple-workflow does not size-route the generation-side model. The model each
+generation-side agent runs on is fixed in its agent-file frontmatter:
 
-**Accepted values**: `S`, `M`, `L`, `off`.
-
-**Default** (field absent OR policy file absent): `M`.
-
-**Effect**:
-
-| Value | Sizes that use sonnet | Sizes that use opus |
+| Agent | `model:` | Rationale |
 |---|---|---|
-| `S` | S | M, L, XL, unknown |
-| `M` (default) | S, M | L, XL, unknown |
-| `L` | S, M, L | XL, unknown |
-| `off` | — (none) | all sizes |
+| `agents/implementer.md` | `opus` (always) | High-volume work where the retry economy of the stronger model beats size-routing: at the current price ratio (Opus ≈ 1.67× Sonnet per 1M tokens) a single extra evaluation round on a downgraded generator erases the routing saving, so opus is the cost-rational default. |
+| `agents/planner.md` | `inherit` | Small-output, high-leverage step — a planning error loses the whole implement + evaluate round. Inheriting the session model lifts the planning ceiling to whatever model the session runs (raising the bar on newest model families). |
+| `agents/decomposer.md` | `inherit` | Same shape — a decomposition error is lost per ticket. Inherits the session model. |
 
-The default `M` preserves the behavior shipped before the knob was
-introduced: Size S and M tickets run the Generator on sonnet; L/XL/unknown
-escalate to opus.
+`inherit` resolves to the session model by default. The resolution order is
+`CLAUDE_CODE_SUBAGENT_MODEL` env var > a per-invocation override passed by the
+caller > the agent frontmatter > the session model. To force the whole
+generation + verification fleet onto one model regardless of these per-agent
+pins, set `CLAUDE_CODE_SUBAGENT_MODEL` in the environment before launching.
 
-Set `constraints.sonnet_size_threshold: off` in a high-risk brief's policy
-file to force every ticket under that brief to use opus, regardless of
-assigned Size. Set `constraints.sonnet_size_threshold: L` to experiment
-with a cheaper Generator on larger tickets — not recommended for
-production pipelines; use `M` unless you have measured the failure-rate
-trade-off.
+The evaluation-side model allocation (sonnet by default, opus for
+`criticality == critical` or the `exhaustive` tier via the byte-identical
+`agents/ac-evaluator-hi.md` sibling) is described in
+[`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md)
+`## Criticality scalar` / `## Effects ladder` and is unaffected by this policy.
+
+> **Migration note** — the per-ticket `constraints` knob that used to
+> size-route the Generator model (documented in this section in earlier
+> versions) was **removed**; the Generator now always runs on opus per the
+> policy above. If an older `autopilot-policy.yaml` still carries that routing
+> field, it is now an unknown key with no consumer and is silently ignored — a
+> harmless no-op, so no migration action is required.
 
 ## `constraints.verification_depth`
 

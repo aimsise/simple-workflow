@@ -253,5 +253,70 @@ assert_guard_allow \
   "$CMD_E" \
   "$TMP_E"
 
+# ---------------------------------------------------------------------------
+# Scenario (f): Detection 3 (proposal 4 / ST-04) -- Bash-mediated state-file
+# status mutation, gated by SW_BASH_STATE_GUARD_MODE (default metric-only).
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Scenario (f): Bash state-file status mutation (SW_BASH_STATE_GUARD_MODE) ---"
+TMP_F="$(mktemp -d)"
+register_cleanup "$TMP_F"
+SLUG_F="state-mutate-slug"
+mkdir -p "$TMP_F/.simple-workflow/backlog/briefs/active/$SLUG_F"
+write_autopilot_state \
+  "$TMP_F/.simple-workflow/backlog/briefs/active/$SLUG_F/autopilot-state.yaml" \
+  "$SLUG_F"
+
+# run_guard variant that sets SW_BASH_STATE_GUARD_MODE for the hook process.
+run_guard_mode() {
+  local mode="$1" command="$2" cwd="$3" payload so se
+  payload=$(jq -n --arg cmd "$command" --arg cwd "$cwd" \
+    '{tool_name:"Bash", tool_input:{command:$cmd}, cwd:$cwd, session_id:"test", transcript_path:""}')
+  so=$(mktemp); se=$(mktemp)
+  set +e
+  printf '%s' "$payload" | env SW_BASH_STATE_GUARD_MODE="$mode" bash "$HOOK_PATH" >"$so" 2>"$se"
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$so"); LAST_STDERR=$(cat "$se"); rm -f "$so" "$se"
+}
+
+CMD_F_MUTATE='yq -i ".tickets[].status = \"skipped\"" autopilot-state.yaml'
+
+# (f1) knob=on -> decision:block with unauthorized_state_mutate_bash + schema ref.
+run_guard_mode on "$CMD_F_MUTATE" "$TMP_F"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_state_mutate_bash' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'docs/state-schema.md'; then
+  echo -e "  ${GREEN}PASS${NC} (f1) knob=on: Bash status mutation blocked (unauthorized_state_mutate_bash + docs/state-schema.md ref)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (f1) knob=on: expected decision:block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# (f2) metric-only (the shipped default) -> NOT blocked; stderr logs would-deny.
+run_guard_mode metric-only "$CMD_F_MUTATE" "$TMP_F"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_state_mutate_bash'; then
+  echo -e "  ${GREEN}PASS${NC} (f2) metric-only (default): not blocked, logs would-deny to stderr"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (f2) metric-only: expected allow + stderr would-deny. stdout: $LAST_STDOUT stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# (f3) knob=on + legitimate read-only command on a state file -> allowed (no mutation).
+run_guard_mode on "grep skipped autopilot-state.yaml" "$TMP_F"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} (f3) knob=on: read-only 'grep skipped' on state file allowed (no mutation)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (f3) knob=on: read-only command should be allowed. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 echo ""
 print_summary

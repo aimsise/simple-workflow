@@ -646,6 +646,114 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# Public function: parse_active_steps
+# Usage: parse_active_steps <state_file>
+#
+# Emits one line per pipeline step whose status is `in_progress` or `pending`,
+# across every ticket, in document order, formatted as `<step_key>:<status>`
+# (e.g. `scout:in_progress`). The autopilot Stop hook
+# (`hooks/autopilot-continue.sh`) consumes this to decide whether unfinished
+# step-level work remains (line count) and which step runs next (first
+# `in_progress`, else first `pending`).
+#
+# WI-3 schema-tolerance: accepts the canonical-flat (`scout: in_progress`),
+# inline-flow (`steps: {scout: in_progress, ...}`), and nested
+# (`scout:\n  status: in_progress`) step shapes — the same forms the
+# auto-compact path tolerates — so a model schema slip does not silently
+# strand the continuation driver. Returns 1 only on a missing/empty file
+# argument; an empty step set is a normal rc=0 result.
+# ---------------------------------------------------------------------------
+parse_active_steps() {
+  local file="$1"
+  if [ -z "$file" ] || [ ! -f "$file" ]; then
+    return 1
+  fi
+
+  if _psf_have yq; then
+    yq -r '
+      .tickets[].steps // {} | to_entries[] |
+      select((.value.status // .value) == "in_progress"
+             or (.value.status // .value) == "pending") |
+      .key + ":" + (.value.status // .value)
+    ' "$file" 2>/dev/null
+    return 0
+  fi
+
+  if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$file" <<'PY' 2>/dev/null
+import sys
+import yaml
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    doc = yaml.safe_load(fh) or {}
+tickets = doc.get("tickets")
+if isinstance(tickets, dict):
+    entries = list(tickets.values())
+elif isinstance(tickets, list):
+    entries = tickets
+else:
+    entries = []
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    steps = entry.get("steps") or {}
+    if not isinstance(steps, dict):
+        continue
+    for key, val in steps.items():
+        st = val.get("status") if isinstance(val, dict) else val
+        if st in ("in_progress", "pending"):
+            print("%s:%s" % (key, st))
+PY
+    return 0
+  fi
+
+  # awk fallback: stateful walk, POSIX awk only. Handles flat
+  # (`scout: in_progress`), inline-flow (`steps: {scout: in_progress, ...}`),
+  # and nested (`scout:\n  status: in_progress`) step shapes. Only the four
+  # known step keys (create-ticket|scout|impl|ship) are matched directly, so
+  # there is no collision with the ticket-level `status:` field; the nested
+  # `status:` line is consumed only while a step opener is pending (cur_key).
+  awk '
+    BEGIN { in_tickets = 0; cur_key = "" }
+    /^tickets:[[:space:]]*$/ { in_tickets = 1; next }
+    in_tickets && /^[^[:space:]-]/ { in_tickets = 0; cur_key = "" }
+    in_tickets && /^[[:space:]]+steps:[[:space:]]*\{.*\}[[:space:]]*$/ {
+      line = $0
+      sub(/^[[:space:]]+steps:[[:space:]]*\{/, "", line)
+      sub(/\}[[:space:]]*$/, "", line)
+      n = split(line, pairs, /,/)
+      for (i = 1; i <= n; i++) {
+        kv = pairs[i]; ci = index(kv, ":")
+        if (ci > 0) {
+          k = substr(kv, 1, ci - 1); v = substr(kv, ci + 1)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+          if (v == "in_progress" || v == "pending") print k ":" v
+        }
+      }
+      cur_key = ""
+      next
+    }
+    in_tickets && /^[[:space:]]+(create-ticket|scout|impl|ship):/ {
+      line = $0; sub(/^[[:space:]]+/, "", line); ci = index(line, ":")
+      k = substr(line, 1, ci - 1); v = substr(line, ci + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+      sub(/[[:space:]]+#.*$/, "", v)
+      if (v == "") { cur_key = k }
+      else { if (v == "in_progress" || v == "pending") print k ":" v; cur_key = "" }
+      next
+    }
+    in_tickets && cur_key != "" && /^[[:space:]]+status:[[:space:]]*/ {
+      line = $0; sub(/^[[:space:]]+status:[[:space:]]*/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      if (line == "in_progress" || line == "pending") print cur_key ":" line
+      cur_key = ""
+      next
+    }
+  ' "$file"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Public function: find_phase_state_file
 # Usage: find_phase_state_file [start_dir]
 #

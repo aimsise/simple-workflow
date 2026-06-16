@@ -1322,5 +1322,52 @@ else
 fi
 cleanup_test_repo
 
+# ============================================================
+# AC-NESTED (proposal 3 / ST-01): nested-form scout in_progress — block stop.
+# WI-3 schema-tolerance regression guard. The prior flat-only grep in the
+# continuation driver matched `scout: in_progress` but NOT the nested
+# `scout:\n  status: in_progress` shape, so a purely nested state yielded
+# ACTIVE_STEPS=0 and allowed a premature stop. Routing ACTIVE_STEPS/NEXT_STEP
+# through parse_active_steps must now block. Reverting that refactor makes this
+# case FAIL (decision != block).
+# ============================================================
+echo "--- AC-NESTED: nested-form scout in_progress (WI-3) ---"
+
+setup_test_repo
+create_state_file "test-slug" "version: 1
+slug: test-slug
+started: 2026-04-15T00:00:00Z
+execution_mode: single
+total_tickets: 1
+tickets:
+  - logical_id: test-slug
+    ticket_dir: 001-test
+    status: in_progress
+    steps:
+      create-ticket:
+        status: completed
+      scout:
+        status: in_progress
+      impl:
+        status: pending
+      ship:
+        status: pending"
+
+run_autopilot_hook '{"session_id":"test-nested"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+REASON_NEXT=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null | grep -c 'scout' || true)
+if [ "$DECISION" = "block" ] && [ "$REASON_NEXT" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} nested-form scout in_progress: decision=block, next step 'scout' resolved (WI-3 nested tolerance)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} nested-form scout in_progress: expected decision=block with next step 'scout'"
+  echo -e "       Exit code: $LAST_EXIT_CODE, Decision: '$DECISION', scout-in-reason: '$REASON_NEXT'"
+  echo -e "       Stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-test-nested
+cleanup_test_repo
+
 echo ""
 print_summary

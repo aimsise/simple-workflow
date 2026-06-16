@@ -33,12 +33,68 @@ This rule was distilled from a v6.7.0 dogfood incident in which a verify hook ne
 - `SW_AUTOPILOT_ASK_GUARD` — controls `hooks/pre-askuserquestion-guard.sh`. Values: `on` (default; matrix active), `metric-only` (compute the matrix and log `[ASK-GUARD] metric-only: would deny ...` to stderr without denying), `off` (disable the guard; unknown values collapse here so a typo fails open). The hook implements the 3-tier `risk_tolerance` allow-list documented in `skills/autopilot/SKILL.md ## Non-interactive orchestrator contract (3-tier, risk_tolerance-aware)`; when `autopilot-policy.yaml` is absent or carries an unknown `risk_tolerance:` value, `hooks/lib/parse-state-file.sh::get_risk_tolerance` returns `conservative` (deliberate fail-open so the six known gate-id headers remain answerable).
 - `SW_AUTOPILOT_DONE_GATE_TTL_SEC` — default `86400` (24 hours). TTL window for `hooks/scout-checkpoint-guard.sh` Step 2a (the autopilot-completion gate added in v8.0.1). The gate silent-exits the hook when (1) no `autopilot-state.yaml` exists under `briefs/active/` or `product_backlog/` (no active autopilot), (2) `briefs/done/<parent>/autopilot-state.yaml` exists with mtime within this TTL, AND (3) every `tickets[].status` equals `completed`. Required because the existing Step 3 phase-state.yaml lookup uses `find_phase_state_file` which scans `active/` only — after `/ship` moves the brief to `briefs/done/`, the moved `phase-state.yaml` becomes invisible and the 3-AND (a)(b)(c) would otherwise false-block on stale transcript artifacts. Set `0` to disable the TTL bound (the gate fires on any all-completed `briefs/done/` state regardless of age — useful for replay scenarios where a session is resumed long after autopilot finished). Shorten (e.g. `600`) during dogfood / regression debugging when you want stale done state to fall through immediately. Non-numeric values fall back to `86400` with a one-line `[SCOUT-AUTOPILOT-DONE-GATE]` stderr warning. Honoured only when `SW_SCOUT_CHECKPOINT_MODE` is not `off` — the kill switch in Step 2 short-circuits the entire hook including Step 2a.
 - `SW_AUTOPILOT_POLICY_STOP_HONOR` — default `on`. Controls whether the three autopilot Stop hooks (`hooks/autopilot-continue.sh`, `hooks/impl-checkpoint-guard.sh`, `hooks/scout-checkpoint-guard.sh`) HONOUR a model-declared hard-stop instead of forcing the loop to continue. When the orchestrator legitimately hard-stops it emits `[AUTOPILOT-POLICY] gate=<name> action=stop reason=<...>` in its last assistant turn (mandated by `skills/autopilot/SKILL.md`); the shared detector `hooks/lib/detect-policy-gate-stop.sh::last_turn_declares_policy_gate_stop` scans only that LAST assistant turn's `text` content blocks for the marker. Values: `on` (default — honour: `autopilot-continue.sh` allows `end_turn` and appends a `boundary: session_end` / `stop_reason: policy_gate_stop` `runtime_metrics` entry, the two checkpoint guards stand down without blocking and clear their own counter, none of the three re-injects "Do NOT stop"), `metric-only` (detect and log a `[POLICY-GATE-STOP]`-prefixed stderr line stating it WOULD honour, but still emit `decision: block` — forensic mode), `off` (ignore the declaration entirely; block exactly as before). Unknown values fail **closed** to `off` semantics so a typo never silently widens the honour behaviour. This knob is purely additive: with it `off` OR no marker present, the existing loop guards (autopilot-continue's `FILE_COUNT>=5 && NOTOOL_COUNT>=5`; the checkpoint guards' 3× counters) remain the sole backstop and every hook behaves exactly as before. Detection is independent of `AUTOPILOT_LEGACY_LOOPGUARD`. Fixes a dogfood thrash where a hard-stop was re-injected 11× because the hooks ignored the model's declared `policy_gate_stop`.
+- `SW_SAFETY_JQ_MISSING_MODE` — default `metric-only`. Controls the jq-missing preflight at the top of the three safety hooks (`hooks/pre-bash-safety.sh`, `hooks/pre-write-safety.sh`, `hooks/pre-edit-safety.sh`). `jq` is a documented hard dependency; when it is absent these guards cannot parse the tool payload and previously died with a silent `exit 127` (which Claude Code treats as a non-blocking error — a fail-OPEN). Values: `on` (fail **closed** — `exit 2` with an explicit `[SAFETY-JQ-MISSING] <hook>: jq not found …` message, blocking the tool call), `metric-only` (default — log `[SAFETY-JQ-MISSING] metric-only: … would fail closed …` to stderr and ALLOW the call with `exit 0`, so the shipped fail-open behaviour is unchanged but now observable), `off` (silently allow, `exit 0`, no message). Unknown values collapse to `metric-only` (the observe-only default — a typo never silently flips the guard to fail-closed). **Promotion**: ship at `metric-only`; after one dogfood confirms no false trips on a jq-present host, set `=on` to enforce fail-closed. The `[SAFETY-JQ-MISSING]` exit-2 path is verified under a PATH-restricted (no-jq) test in `tests/test-pre-bash-safety.sh` / `tests/test-pre-write-safety.sh` / `tests/test-pre-edit-safety.sh` with the knob set to `on`.
+- `SW_BASH_STATE_GUARD_MODE` — default `metric-only`. Controls detection 3 of `hooks/pre-bash-contract-guard.sh` (the autopilot-context PreToolUse:Bash guard): a Bash-mediated state-file status mutation — `yq -i` / `sed -i` / shell-redirect on `autopilot-state.yaml` / `phase-state.yaml` that drives a `status:` (or `steps.<phase>`) to `skipped` / `completed` / `failed` / `in_progress`. The Write/Edit skip-transition guard (`hooks/pre-state-transition.sh`) is wired only to Write/Edit, so this closes the Bash bypass (ST-04). Values: `on` (emit `decision:block` with `unauthorized_state_mutate_bash` — deny the call), `metric-only` (default — log `[PRE-BASH-CONTRACT-GUARD] metric-only: would deny ...` to stderr and ALLOW), `off` (skip detection 3 entirely). Unknown values collapse to `metric-only`. Detections 1 (forbidden manual_bash_fallbacks rationale) and 2 (direct `git commit`) are NOT gated by this knob — the hook's existing NAC posture is preserved. **Promotion**: ship at `metric-only`; after one dogfood confirms no false trips, set `=on` to enforce. Read-only commands (`grep`/`cat`/`yq` without `-i`) and `runtime_metrics` appends (no status transition) are not matched.
+- `SW_STATE_FIELD_GUARD_MODE` — default `metric-only`. Gates the **HOOK_OWNED_FIELDS enforcement** in `hooks/pre-write-safety.sh` / `hooks/pre-edit-safety.sh`. The registry now ships with `.runtime_metrics` (an append-only telemetry list written exclusively by the six runtime-metrics writer hooks — Foundation 3 / ST-03), so a model Write/Edit that would clobber hook-appended `runtime_metrics` entries (a lost-update) is detectable. Values: `on` (emit `decision:block` whose reason NAMES the violated field — e.g. `.runtime_metrics` — and references `docs/state-schema.md`), `metric-only` (default — log `[STATE-FIELD-GUARD] metric-only: would block ...` to stderr and ALLOW, so populating the registry does NOT change the shipped allow-by-default behaviour), `off` (allow silently). Unknown values collapse to `metric-only`. **Promotion**: ship at `metric-only`; after one dogfood confirms no false trips, set `=on` to enforce. Detection covers the inline `runtime_metrics: []` → `[…]` (and blank-out) form; a multi-line list mutation expressed without an inline value change is not detected (acceptable under the metric-only default).
 
 ## Language
 
 **IMPORTANT**: every tracked file (anything not matched by `.gitignore`) AND every Git / GitHub artifact (commit messages, branch names, tag names and annotations, PR titles and bodies, PR review comments, Issue titles and bodies, Issue comments, Discussions posts, GitHub Release notes) MUST be written in English. Translate before writing if the conversation is in another language.
 
 Non-English content is allowed only in gitignored paths: `.simple-workflow/`, `.docs/`, `CLAUDE.local.md`, `.claude/settings.local.json`, `.claude/worktrees/`, `.env*`.
+
+## Product/Language/Domain Agnosticism
+
+**IMPORTANT**: the plugin's normative content — everything under `skills/`,
+`agents/`, and `hooks/` that instructs the model how to build, verify, or ship —
+MUST serve every user's needs without baking in dependence on a specific
+product, programming language, or problem domain. Triggers, rubrics, gates, and
+examples MUST key off **properties** (a computed numeric/algorithmic value; a
+shared input/validation boundary; an irreversible side-effect; a behaviour the
+spec advertises as strict / canonical / lossless / or bounded by a limit), never
+off membership in a named-product / named-language / named-domain list.
+
+### The (A) / (B) substrate line
+
+Two substrates, two different rules:
+
+- **(A) The user-product substrate** — the source, tests, and artifacts a user
+  builds *with* the plugin. This MUST be treated agnostically. The harness may
+  not assume the user's language, framework, test runner, or domain. A named
+  language / framework / domain may appear ONLY as clearly-labelled,
+  non-exhaustive **illustration** ("e.g. …", "illustrative only") — never as the
+  operative trigger, an exhaustive checklist, or a recognition cue the mechanism
+  depends on.
+- **(B) The harness-own substrate** — the plugin's *own* operating dependencies:
+  `git`, `gh`, `jq`, `yq`, the Claude Code runtime (hooks, skills, agents, the
+  `Agent` / `Workflow` tools, the state-file machinery), and the PR / release
+  delivery path. These are legitimately FIXED and are NOT subject to the (A)
+  rule. Depending on `git` for repo inspection or `gh` for PR creation is
+  harness plumbing, not a domain dependency.
+
+### Agnosticism must never lower product quality
+
+Agnosticism constrains *how* the harness is written; it is not a licence to
+verify less. The harness (subagents / skills / hooks) MUST **meet or beat** its
+prior defect catch-rate. Where an agnostic formulation cannot guarantee the same
+quality a product/domain-specific one did, the answer is NOT to retreat to the
+specific cue: thoroughly explore and **generate** an innovative agnostic
+mechanism, **verify** it catches the baseline defect classes by construction,
+gain confidence, and only THEN implement and update the plan. A property- /
+grammar- / oracle-driven mechanism that catches a defect class for ALL inputs is
+strictly stronger than a keyword cue that catches it only when a known token is
+recalled.
+
+### Enforcement boundary (HARD-LINE vs JUDGMENT)
+
+Normative-prose agnosticism is primarily a **review standard**, not a fully
+grep-enforced invariant. Only specific, stable **product-instance token**
+denylists are mechanised as contract tests (e.g. `CT-DECONTAM-1`, whose
+denylist is product instances ONLY — abstract failure-class names and bare
+domain vocabulary are deliberately excluded). Judgment criteria ("is this
+example illustrative or load-bearing?") MUST NOT be faked as contract tests.
+When in doubt, prefer a property-based formulation and leave the final
+agnosticism call to review.
 
 ## Releases
 
@@ -108,3 +164,5 @@ For any intentional omission, record a one-line rationale in the commit message 
 - Triple-backtick fenced code blocks are exempt from the absolute-home-path scan, so verbatim CI logs (e.g. `/Users/runner/work/...`) may be quoted inside fenced blocks. Do not abuse this exemption for project-authored paths.
 - The `.gitignore` file is allowlisted because it legitimately stores absolute paths.
 - The detection regex is case-sensitive and POSIX-only: lowercase `/users/` and Windows-style `C:\Users\...` paths are out of scope.
+- **Known limitation — unclosed fences**: the scan toggles fence state on each fence line (a line beginning with three backticks), so an **unclosed** (odd-count) fence extends to end-of-file per CommonMark and exempts every following line from the absolute-home-path scan. An accidental unbalanced fence in generated Markdown can therefore let a home path slip past the guard, which does not validate fence pairing — keep fences balanced.
+- **Known limitation — Bash write sinks**: the PII / sensitive-file guards run only on the `Write` and `Edit` tools. The same content written through `Bash` (`echo > file`, `tee`, `python3 -c`, a heredoc) is **not** inspected — `pre-bash-safety.sh` checks `git add` staging plus the destructive / network / identity / privilege denylist, not write sinks. A PII string or sensitive filename created via a shell redirect bypasses these guards by design (best-effort defense-in-depth); prefer `Write` / `Edit` for files that may carry PII.

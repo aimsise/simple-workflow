@@ -2470,6 +2470,26 @@ fi
 
 echo ""
 
+# CT-MODE-17 (README execution-chain #2 re-propagation, proposal 6): the README
+# "Brief manually, then switch to autopilot" execution chain must show the
+# chain=off -> set chain: on -> re-run /create-ticket brief=<path> -> /autopilot
+# re-propagation sequence (aligned with brief Step 3 + the autopilot manual-brief
+# hard-stop), NOT the old /create-ticket -> /autopilot dead-end, and the stale
+# `/brief <idea> mode=manual|auto` execution-chain commands must be gone.
+echo "--- CT-MODE-17 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 're-run /create-ticket so each ticket dir receives autopilot-policy.yaml' "$REPO_DIR/README.md" \
+   && grep -qF '/create-ticket brief=.simple-workflow/backlog/briefs/active/<slug>/brief.md' "$REPO_DIR/README.md" \
+   && ! grep -qE '/brief <idea> mode=(manual|auto)' "$REPO_DIR/README.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-17: README execution chain #2 documents the /create-ticket re-propagation sequence (chain=off -> chain: on -> re-run /create-ticket -> /autopilot); stale mode= execution chains removed"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-17: README execution chain #2 must show the re-propagation sequence (re-run /create-ticket brief=<path> before /autopilot) and drop the mode= execution-chain commands"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # =============================================================================
 # Category AD: /audit per-Category checklist references contract
 # Diff: New category. Verifies that the canonical per-Category checklist
@@ -5124,6 +5144,31 @@ else
 fi
 rm -rf "$AC12_TMP"
 
+# CT-AC-12b (proposal 4 / ST-02): product_backlog-form ticket_dir state-lie. A
+# fabricated `ship: completed` on a NEVER-SCOUTED ticket whose ticket_dir still
+# holds the initial `product_backlog/` form must be caught by Gate 5: the
+# product_backlog -> done/ rewrite makes the -d existence check fail (no done/
+# dir) so the state-lie protection fires. Without that rewrite arm the
+# product_backlog/ dir existed and the lie passed (false negative), so this
+# assertion FAILs on the pre-fix code.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC12B_TMP=$(mktemp -d)
+mkdir -p "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC12B_TMP/.simple-workflow/backlog/product_backlog/dummy/001-fakery"
+# done/ deliberately NOT created — the ticket was never actually shipped.
+AC12B_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/product_backlog/dummy/001-fakery\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+printf '%s' "$AC12B_NEW" > "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC12B_INPUT=$(jq -n --arg fp "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12B_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC12B_OUT=$(cd "$AC12B_TMP" && INPUT="$AC12B_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC12B_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12B_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-12b: product_backlog-form ticket_dir state-lie caught (no inject)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-12b: product_backlog state-lie NOT caught. Output: $AC12B_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC12B_TMP"
+
 # CT-AC-13: dedup — fresh sentinel present -> no-op (Gate 6). When the
 # primary already fired and wrote .auto-compact-pending, the safety-net
 # must short-circuit so the user only sees ONE /compact per boundary.
@@ -5164,6 +5209,29 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 rm -rf "$AC14_TMP"
+
+# CT-AC-14b (proposal 3 / ST-11): inline-flow ship-completed payload reaches the
+# dispatcher. The Gate-2 payload detector must accept the template-seeded inline
+# `steps: {…, ship: completed}` shape, not only the flat `ship: completed`.
+# Reverting the `completed([[:space:],}]|$)` trailing class makes the flat grep
+# miss `ship: completed}`, Gate 2 short-circuits via `|| exit 0`, and the
+# dispatcher is never reached — so this assertion FAILs on the pre-fix code.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC14B_TMP=$(mktemp -d)
+mkdir -p "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC14B_TMP/.simple-workflow/backlog/done/dummy/001-shipped"
+touch "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC14B_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps: {scout: completed, impl: completed, ship: completed}\n')
+AC14B_INPUT=$(jq -n --arg fp "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC14B_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC14B_OUT=$(cd "$AC14B_TMP" && INPUT="$AC14B_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC14B_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-14b: safety-net — inline-flow ship-completed payload reaches dispatcher (Gate 2 flow tolerance)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-14b: inline-flow ship-completed payload did NOT reach dispatcher. Output: $AC14B_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC14B_TMP"
 
 rm -rf "$AC_STUB_DIR"
 
@@ -9845,6 +9913,101 @@ assert_true \
   "CT-EV-PANEL-ROBUST-1 (L-ROBUSTNESS + Gate 9 R2 adversarial-key vector): ac-evaluator ($ev_protopol_acev>=1) + -hi mirror ($ev_protopol_hi>=1) + orchestration ($ev_protopol_orch>=1) + Gate 9 R2 ($ev_protopol_acqc>=1)" \
   "$ev_protopol_result"
 
+# CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector,
+# dogfood42-hardening): where a boundary is advertised strict/canonical/exact or
+# parses a number through a lenient primitive (int()/Number()/parseInt), the panel
+# lens AND the canonical Gate 9 R2 row now require probing inputs that satisfy the
+# rules' letter yet exceed the advertised surface (non-ASCII/Unicode-digit numerals,
+# leading-sign/whitespace forms, valid-but-non-canonical 01h / 1d0h0m0s). The shared
+# token 'strictness-leniency' is wired into the ac-evaluator body + its byte-identical
+# -hi twin + the orchestration panel section + Gate 9 R2. 'strictness-leniency' is
+# net-new (a revert flips each to FAIL). Closes the durfmt dogfood miss (a
+# 'strict-canonical' parser accepted a full-width-digit token / +5 / 01h / 1d0h0m0s).
+ev_strlen_acev=$(grep -cF 'strictness-leniency' "$ACEV_EV" || true)
+ev_strlen_hi=$(grep -cF 'strictness-leniency' "$ACEVHI_EV" || true)
+ev_strlen_orch=$(grep -cF 'strictness-leniency' "$ORCH_EV" || true)
+ev_strlen_acqc=$(grep -cF 'strictness-leniency' "$ACQC_EV" || true)
+ev_strlen_result="false"
+if [ "$ev_strlen_acev" -ge 1 ] && [ "$ev_strlen_hi" -ge 1 ] && [ "$ev_strlen_orch" -ge 1 ] && [ "$ev_strlen_acqc" -ge 1 ]; then ev_strlen_result="true"; fi
+assert_true \
+  "CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector): ac-evaluator ($ev_strlen_acev>=1) + -hi mirror ($ev_strlen_hi>=1) + orchestration ($ev_strlen_orch>=1) + Gate 9 R2 ($ev_strlen_acqc>=1)" \
+  "$ev_strlen_result"
+
+# CT-DECONTAM-1 (product-instance recidivism guard, decontamination phase). This
+# guard forbids product-INSTANCE tokens from leaking into the normative evaluation
+# content (the rubric, the two ac-evaluator twins, the orchestration / authoring /
+# evidence references, and the planner/implementer/test-writer/ticket-evaluator
+# agents). Concrete product instances (e.g. a specific color-space call, a named
+# third-party library, a one-off durfmt literal) belong in transient dogfood
+# transcripts, NOT baked into the generic evaluation guidance, where they bias every
+# future ticket toward the colour/duration domains they came from. The denylist is
+# product instances ONLY: abstract failure-class names (prototype-pollution,
+# strictness-leniency) and bare colour-space / gamut / constructor vocabulary are
+# DELIBERATELY excluded so this guard never collides with the CT-pinned tokens that
+# CT-EV-PANEL-ROBUST-1 / -2 and their kin assert MUST be present. RED-first: on the
+# contaminated tree this FAILs with a nonzero hit count and names each file+token;
+# it turns green only once the later de-contamination phases strip the instances.
+# NOTE: test-skill-contracts.sh itself is intentionally NOT in the normative set —
+# it legitimately carries every denylist literal below.
+decontam_norm_files=(
+  "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+  "$REPO_DIR/agents/ac-evaluator.md"
+  "$REPO_DIR/agents/ac-evaluator-hi.md"
+  "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
+  "$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
+  "$REPO_DIR/skills/impl/references/evidence-channels.md"
+  "$REPO_DIR/agents/planner.md"
+  "$REPO_DIR/agents/implementer.md"
+  "$REPO_DIR/agents/test-writer.md"
+  "$REPO_DIR/agents/ticket-evaluator.md"
+  "$REPO_DIR/skills/impl/references/verification-depth.md"
+  "$REPO_DIR/skills/impl/references/tautological-assertion-rules.md"
+  "$REPO_DIR/skills/impl/references/independent-oracle-harness.md"
+)
+decontam_denylist=(
+  'oklch('
+  '1e400'
+  'culori'
+  'colorjs.io'
+  'CSS-MINDE'
+  'srgbToLinear'
+  '0.2126'
+  'WCAG21'
+  'clampChroma'
+  'deltaE'
+  'toGamut'
+  'inGamut'
+  'gamut_map'
+  'parse_color'
+  'U+FF11'
+  'Arabic-Indic'
+  '01h'
+  '1d0h0m0s'
+  '__proto__'
+)
+decontam_total=0
+decontam_hits=""
+for decontam_tok in "${decontam_denylist[@]}"; do
+  for decontam_f in "${decontam_norm_files[@]}"; do
+    [ -f "$decontam_f" ] || continue
+    decontam_c=$(grep -cF -- "$decontam_tok" "$decontam_f" 2>/dev/null || true)
+    decontam_c=${decontam_c:-0}
+    if [ "$decontam_c" -gt 0 ]; then
+      decontam_total=$((decontam_total + decontam_c))
+      decontam_hits="${decontam_hits}
+       hit ($decontam_c) [$decontam_tok] in ${decontam_f#"$REPO_DIR"/}"
+    fi
+  done
+done
+decontam_result="false"
+if [ "$decontam_total" -eq 0 ]; then decontam_result="true"; fi
+if [ -n "$decontam_hits" ]; then
+  echo -e "  CT-DECONTAM-1 product-instance leaks ($decontam_total total):${decontam_hits}" >&2
+fi
+assert_true \
+  "CT-DECONTAM-1 (product-instance recidivism guard): no product-INSTANCE tokens in the ${#decontam_norm_files[@]}-file normative set (total hits=$decontam_total, expected 0)" \
+  "$decontam_result"
+
 # CT-EV-GATE10-1 (Gate 10 peer-set uniformity, canonical + author + grader 3-file
 # symmetry, v8.4.0+): the new gate section exists in the canonical rubric AND the
 # planner self-audit names it AND the ticket-evaluator Gate-Results row names it.
@@ -9883,6 +10046,35 @@ if [ "$ev_g10_3_acqc" -ge 1 ] && [ "$ev_g10_3_apr" -ge 1 ] && [ "$ev_g10_3_plann
 assert_true \
   "CT-EV-GATE10-3 (Gate 10 kill switch wired): canonical gate ($ev_g10_3_acqc>=1) + policy doc ($ev_g10_3_apr>=1) + planner audit ($ev_g10_3_planner>=1) + policy template ($ev_g10_3_pt>=1)" \
   "$ev_g10_3_result"
+
+# CT-EV-SHARED-INPUT-XTICKET (cross-ticket shared-input-boundary signal + delegation-not-n/a
+# sibling-guard clause, P-A). Both net-new tokens are HEAD=0 (RED-first). PART A pins the structured
+# decomposer cross-ticket signal across producer + schema-SoT + forwarder; PART B pins the
+# delegation-not-n/a clause across canonical + both byte-identical ac-evaluator twins + planner
+# self-audit + ticket-evaluator grade-line. The decomposer emits the signal UNCONDITIONALLY
+# (mirrors the existing unconditional peer_set: hint — decomposer.md reads no policy); downstream
+# Gate 7/9 grading reuses constraints.failure_class_coverage (CT-EV-GATE9-3), so no new knob CT.
+SHIN_DECOMP="$REPO_DIR/agents/decomposer.md"
+SHIN_SPEC="$REPO_DIR/skills/create-ticket/references/spec-decomposer-input.md"
+SHIN_SKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+shin_a_decomp=$(grep -cF 'shared_input_boundary:' "$SHIN_DECOMP" || true)
+shin_a_spec=$(grep -cF 'shared_input_boundary:' "$SHIN_SPEC" || true)
+shin_a_skill=$(grep -cF 'shared_input_boundary:' "$SHIN_SKILL" || true)
+shin_a_result="false"
+if [ "$shin_a_decomp" -ge 1 ] && [ "$shin_a_spec" -ge 1 ] && [ "$shin_a_skill" -ge 1 ]; then shin_a_result="true"; fi
+assert_true \
+  "CT-EV-SHARED-INPUT-XTICKET PART A (decomposer cross-ticket shared_input_boundary signal: producer+schema+forwarder): decomposer ($shin_a_decomp>=1) + spec-decomposer-input ($shin_a_spec>=1) + create-ticket SKILL ($shin_a_skill>=1)" \
+  "$shin_a_result"
+shin_b_acqc=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACQC_EV" || true)
+shin_b_acev=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACEV_EV" || true)
+shin_b_acevhi=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACEVHI_EV" || true)
+shin_b_planner=$(grep -ciF 'delegation is NOT an automatic n/a' "$PLANNER_EV" || true)
+shin_b_tev=$(grep -ciF 'delegation is NOT an automatic n/a' "$TEV_EV" || true)
+shin_b_result="false"
+if [ "$shin_b_acqc" -ge 1 ] && [ "$shin_b_acev" -ge 1 ] && [ "$shin_b_acevhi" -ge 1 ] && [ "$shin_b_planner" -ge 1 ] && [ "$shin_b_tev" -ge 1 ]; then shin_b_result="true"; fi
+assert_true \
+  "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+both twins+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + ac-evaluator-hi ($shin_b_acevhi>=1) + planner ($shin_b_planner>=1) + ticket-evaluator ($shin_b_tev>=1)" \
+  "$shin_b_result"
 
 # CT-EV-SELFDOC-1 (EC-SELFDOC channel + both failure modes, v8.4.0+). HEAD=0.
 ev_sd1_channel=$(grep -cF '**EC-SELFDOC**' "$ECH_EV" || true)
@@ -10065,6 +10257,77 @@ if [ "$evm4_vd" -ge 1 ] && [ "$evm4_impl" -ge 1 ]; then evm4_result="true"; fi
 assert_true \
   "CT-EV-MODEL-4 (criticality scalar): verification-depth 'criticality = blast_radius' ($evm4_vd>=1) + impl SKILL [CRITICALITY] stderr ($evm4_impl>=1)" \
   "$evm4_result"
+
+# =============================================================================
+# Category GEN-MODEL: Generator model policy (proposal 1').
+# sonnet_size_threshold retired; implementer = opus always; planner/decomposer =
+# explicit `model: inherit`. Each assertion FAILs when the proposal-1' change is
+# reverted (knob restored / inherit reverted to opus / size-routed description
+# restored).
+# =============================================================================
+GENM_PLANNER="$REPO_DIR/agents/planner.md"
+GENM_DECOMP="$REPO_DIR/agents/decomposer.md"
+GENM_IMPL_AGENT="$REPO_DIR/agents/implementer.md"
+
+# CT-GEN-MODEL-1: the sonnet_size_threshold knob is retired — zero reference files
+# across skills/ and agents/ — AND the successor `Generator model policy` section
+# exists in the canonical policy reference.
+genm1_files=$( { grep -rln 'sonnet_size_threshold' "$REPO_DIR/skills" "$REPO_DIR/agents" 2>/dev/null || true; } | wc -l | tr -d ' ')
+genm1_policy=$(grep -cF '## Generator model policy' "$APR_EVM" || true)
+genm1_result="false"
+if [ "$genm1_files" -eq 0 ] && [ "$genm1_policy" -ge 1 ]; then genm1_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-1 (sonnet_size_threshold retired): 0 ref files in skills/+agents/ (got $genm1_files) AND 'Generator model policy' section present ($genm1_policy>=1)" \
+  "$genm1_result"
+
+# CT-GEN-MODEL-2: planner carries an EXPLICIT `model: inherit` (an omitted/implicit
+# inherit is not accepted — self-documentation + CT verifiability).
+genm2_count=$(grep -c '^model: inherit' "$GENM_PLANNER" || true)
+genm2_result="false"
+if [ "$genm2_count" -ge 1 ]; then genm2_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-2 (planner model: inherit explicit): agents/planner.md '^model: inherit' ($genm2_count>=1)" \
+  "$genm2_result"
+
+# CT-GEN-MODEL-3: decomposer carries an EXPLICIT `model: inherit`.
+genm3_count=$(grep -c '^model: inherit' "$GENM_DECOMP" || true)
+genm3_result="false"
+if [ "$genm3_count" -ge 1 ]; then genm3_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-3 (decomposer model: inherit explicit): agents/decomposer.md '^model: inherit' ($genm3_count>=1)" \
+  "$genm3_result"
+
+# CT-GEN-MODEL-4: implementer stays pinned to `model: opus` AND no longer advertises
+# the retired size-routed description ("Opus model for L/XL tickets, Sonnet for S/M").
+genm4_opus=$(grep -c '^model: opus' "$GENM_IMPL_AGENT" || true)
+genm4_olddesc=$(grep -cF 'Opus model for L/XL tickets, Sonnet for S/M' "$GENM_IMPL_AGENT" || true)
+genm4_result="false"
+if [ "$genm4_opus" -ge 1 ] && [ "$genm4_olddesc" -eq 0 ]; then genm4_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-4 (implementer opus pinned, size-routed description removed): '^model: opus' ($genm4_opus>=1) AND old size-routing description absent ($genm4_olddesc==0)" \
+  "$genm4_result"
+
+# =============================================================================
+# CT-RM-WRITERS (proposal 4 / ST-03): runtime_metrics writer enumeration sync.
+# The writer list in skills/autopilot/references/state-file.md must name EVERY
+# hook in the canonical `Sourced by:` header of hooks/lib/runtime-metrics.sh. A
+# writer added to the lib header but not reflected in state-file.md FAILs (and
+# the stale 2-of-6 enumeration this CT replaces would FAIL too).
+# =============================================================================
+RMW_LIB="$REPO_DIR/hooks/lib/runtime-metrics.sh"
+RMW_DOC="$REPO_DIR/skills/autopilot/references/state-file.md"
+rmw_canonical=$( { sed -n '/^# Sourced by:/,/^# Public contract:/p' "$RMW_LIB" 2>/dev/null | grep -oE 'hooks/[a-z0-9-]+\.sh' || true; } | sort -u)
+rmw_count=$(printf '%s\n' "$rmw_canonical" | grep -c '[^[:space:]]' || true)
+rmw_missing=""
+while IFS= read -r _rmw_h; do
+  [ -z "$_rmw_h" ] && continue
+  grep -qF "$_rmw_h" "$RMW_DOC" || rmw_missing="$rmw_missing $_rmw_h"
+done <<< "$rmw_canonical"
+rmw_result="false"
+if [ "$rmw_count" -ge 6 ] && [ -z "$rmw_missing" ]; then rmw_result="true"; fi
+assert_true \
+  "CT-RM-WRITERS (runtime_metrics writer sync): state-file.md names all $rmw_count runtime-metrics.sh writers (missing:${rmw_missing:- none})" \
+  "$rmw_result"
 
 echo ""
 

@@ -160,5 +160,51 @@ if printf '%s' "$COMMAND" | grep -qE "$GIT_COMMIT_RE"; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# Detection 3 (knob-gated, M-03 / ST-04): Bash-mediated state-file status
+# mutation. The skip-transition guard (pre-state-transition.sh) is wired only
+# to Write/Edit, so a model blocked there can reroute to a raw `yq -i` /
+# `sed -i` / shell-redirect on autopilot-state.yaml / phase-state.yaml and flip
+# a `status:` to skipped/completed unobserved (the autopilot Stop hook then
+# honours the Bash-written transition as pipeline progress).
+#
+# This NEW deny ships OFF-by-default. It is gated by SW_BASH_STATE_GUARD_MODE so
+# the behaviour change is opt-in (matches the repo's metric-only-first rollout
+# convention for intrusive guards):
+#   on          -> emit decision:block (deny)
+#   metric-only -> (default) log `[PRE-BASH-CONTRACT-GUARD] metric-only: would
+#                  deny ...` to stderr and ALLOW the call
+#   off         -> skip detection 3 entirely
+# Detections 1 and 2 above are NOT gated by this knob (the hook's NAC posture is
+# preserved). A typo collapses to metric-only (the observe-only default).
+STATE_GUARD_MODE="${SW_BASH_STATE_GUARD_MODE:-metric-only}"
+if [ "$STATE_GUARD_MODE" != "off" ] \
+   && printf '%s' "$COMMAND" | grep -qE '(autopilot-state|phase-state)\.yaml'; then
+  _sg_mutation=false
+  # `yq -i` / `sed -i` (with any flags/args before -i), or a `>` / `>>` redirect
+  # whose target is a state file.
+  if printf '%s' "$COMMAND" | grep -qE '(^|[|;&[:space:]])(yq|sed)([[:space:]]+[^|;&]*)?[[:space:]]-i([[:space:]]|=|$)'; then
+    _sg_mutation=true
+  fi
+  if printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*[^[:space:]|;&]*(autopilot-state|phase-state)\.yaml'; then
+    _sg_mutation=true
+  fi
+  # A step/ticket status being driven to a terminal/skip value. The
+  # `[^[:alpha:]]{0,15}` gap tolerates `= "..."`, `: ...`, `= \"...\"`, `[].`.
+  _sg_transition=false
+  if printf '%s' "$COMMAND" | grep -qiE '(status|steps|ship|scout|impl|create-ticket)[^[:alpha:]]{0,15}(skipped|completed|failed|in_progress|in-progress)'; then
+    _sg_transition=true
+  fi
+  if [ "$_sg_mutation" = true ] && [ "$_sg_transition" = true ]; then
+    case "$STATE_GUARD_MODE" in
+      on)
+        emit_block "unauthorized_state_mutate_bash" \
+          "Direct Bash mutation of a state-file status (yq -i / sed -i / redirect on autopilot-state.yaml / phase-state.yaml) bypasses the Write/Edit skip-transition guard (pre-state-transition.sh). Route state transitions through the owning Skill (/scout, /impl, /ship) or a Write/Edit so the hook-layer guards fire. Field reference: docs/state-schema.md; see also skills/autopilot/SKILL.md." ;;
+      metric-only|*)
+        printf '[PRE-BASH-CONTRACT-GUARD] metric-only: would deny unauthorized_state_mutate_bash (Bash state-file status mutation): %s\n' "${COMMAND:0:140}" >&2 ;;
+    esac
+  fi
+fi
+
 # All checks passed -> allow.
 exit 0

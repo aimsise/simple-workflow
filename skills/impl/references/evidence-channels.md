@@ -53,9 +53,9 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   reference implementation of the same contract. *Independent because* a second
   implementation would have to share the exact same bug to agree. Strongest as
   **algorithm-vs-algorithm**: when a second, INDEPENDENT ALGORITHM for the same
-  contract exists (e.g. CSS-MINDE vs chroma-clamping gamut mapping), cross-check
+  contract exists (two independent algorithms for the same contract), cross-check
   the two within an explicit tolerance — a membership / invariant test alone
-  (`inGamut`, "is sorted") is **necessary-not-sufficient** because a wrong
+  (a containment check, "is sorted") is **necessary-not-sufficient** because a wrong
   result can still satisfy it. At `thorough` / `exhaustive` use the
   second-algorithm differential where one is identifiable; degrade to membership
   / property coverage + a Caveat where no second algorithm exists.
@@ -124,8 +124,8 @@ namespace rule above).
 - **RT-ABUSE** — misuse of the public contract: out-of-order calls, illegal state
   transitions, authorization bypass, contract-violating argument combinations.
 - **RT-MALFORMED** — structurally invalid or adversarial payloads (overlong, mixed
-  encoding, injection, parse-accepted-then-overflows values such as
-  `oklch(0.5 1e400 30)`).
+  encoding, injection, parse-accepted-then-overflows values: an input the parser
+  ACCEPTS that yields a non-finite / out-of-range intermediate after a conversion).
 - **RT-EXHAUST** — resource exhaustion: unbounded allocation, pathological recursion,
   timeouts, rate-limit / quota pressure.
 - **RT-CONCURRENCY** — races, re-entrancy, shared-state corruption, ordering hazards

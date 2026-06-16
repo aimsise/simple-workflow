@@ -30,6 +30,10 @@ source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 # hooks/lib/detect-policy-gate-stop.sh (single source of truth for the
 # model-declared policy-gate-stop marker — see AC-6 / the helper header).
 source "$SCRIPT_DIR/lib/detect-policy-gate-stop.sh"
+# `parse_active_steps` is defined in hooks/lib/parse-state-file.sh — the WI-3
+# schema-tolerant (flat / inline-flow / nested) step parser the continuation
+# driver below uses to count unfinished steps and pick the next one.
+source "$SCRIPT_DIR/lib/parse-state-file.sh"
 
 # `_runtime_metrics_payload_field` is currently duplicated in
 # hooks/pre-compact-save.sh as `_pc_runtime_metrics_payload_field`. Both
@@ -408,10 +412,15 @@ if [ "$FILE_COUNT" -ge 5 ] && [ "$NOTOOL_COUNT" -ge "$NOTOOL_THRESHOLD" ]; then
   exit 0
 fi
 
-# --- Check for unfinished steps ---
-# Count step-level entries that are in_progress or pending
-# Note: grep -c exits 1 when no matches; capture separately to avoid double output
-ACTIVE_STEPS=$(grep -cE '(create-ticket|scout|impl|ship): (in_progress|pending)' "$STATE_FILE" 2>/dev/null) || ACTIVE_STEPS=0
+# --- Check for unfinished steps (WI-3 schema-tolerant) ---
+# parse_active_steps (hooks/lib/parse-state-file.sh) emits one `<step>:<status>`
+# line per in_progress/pending step across all tickets, tolerating the flat
+# (`scout: in_progress`), inline-flow (`steps: {scout: in_progress, …}`), and
+# nested (`scout:\n  status: in_progress`) shapes. The prior inline grep matched
+# only the flat/flow shapes and silently stranded a nested-form pipeline.
+ACTIVE_STEP_LINES=$(parse_active_steps "$STATE_FILE" 2>/dev/null || true)
+# grep -c exits 1 (and prints 0) when there are no active steps; guard it.
+ACTIVE_STEPS=$(printf '%s' "$ACTIVE_STEP_LINES" | grep -c ':') || ACTIVE_STEPS=0
 
 if [ "$ACTIVE_STEPS" -eq 0 ]; then
   # All step-level work done — pipeline is finished, allow stop.
@@ -428,10 +437,11 @@ if [ "$ACTIVE_STEPS" -eq 0 ]; then
 fi
 
 # --- Determine next step to execute ---
-# Priority: first in_progress step, then first pending step
-NEXT_STEP=$(grep -E '(create-ticket|scout|impl|ship): in_progress' "$STATE_FILE" | head -1 | sed 's/^ *//; s/: in_progress//') || true
+# Priority: first in_progress step, then first pending step. Derived from the
+# same WI-3-tolerant parse_active_steps output (`<step>:<status>` lines).
+NEXT_STEP=$(printf '%s\n' "$ACTIVE_STEP_LINES" | grep ':in_progress$' | head -1 | sed 's/:in_progress$//') || true
 if [ -z "$NEXT_STEP" ]; then
-  NEXT_STEP=$(grep -E '(create-ticket|scout|impl|ship): pending' "$STATE_FILE" | head -1 | sed 's/^ *//; s/: pending//') || true
+  NEXT_STEP=$(printf '%s\n' "$ACTIVE_STEP_LINES" | grep ':pending$' | head -1 | sed 's/:pending$//') || true
 fi
 NEXT_STEP="${NEXT_STEP:-unknown}"
 

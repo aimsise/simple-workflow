@@ -49,9 +49,16 @@
 # tests), source the lib in a subshell with a controlled registry override.
 
 # ---------------------------------------------------------------------------
-# Registry: hook-owned fields (shipped empty — Negative AC-2 enforced).
+# Registry: hook-owned fields (Foundation 3 — proposal 4 / ST-03).
+# `.runtime_metrics` is an append-only telemetry list written EXCLUSIVELY by the
+# autopilot Stop / PreCompact / checkpoint hooks (see hooks/lib/runtime-metrics.sh
+# header). Registering it lets pre-write/pre-edit-safety detect a model full-file
+# Write/Edit that would clobber hook-appended entries (the ST-03 lost-update).
+# The actual DENY is gated by SW_STATE_FIELD_GUARD_MODE in those callers
+# (default `metric-only` — observe, do not block — so this enforcement ships
+# opt-in and the prior no-op behaviour is the default until promoted to `on`).
 # ---------------------------------------------------------------------------
-declare -A HOOK_OWNED_FIELDS=()
+declare -A HOOK_OWNED_FIELDS=([".runtime_metrics"]=1)
 
 # ---------------------------------------------------------------------------
 # Internal helpers (not part of the public contract; prefix _sa_).
@@ -256,8 +263,11 @@ is_hook_owned_field() {
   for reg_key in "${!HOOK_OWNED_FIELDS[@]}"; do
     # Convert * to +([!.]) so a single * matches one segment with no dots.
     pat=$(printf '%s' "$reg_key" | sed 's/\*/+([!.])/g')
+    # $pat is intentionally UNQUOTED in the case arm below — the extglob pattern must
+    # be expanded as a glob to match `key`; quoting it would break is_hook_owned_field.
+    # shellcheck disable=SC2254
     case "$key" in
-      $pat) result=0; break ;;   # UNQUOTED $pat — required for glob expansion
+      $pat) result=0; break ;;
     esac
   done
   eval "$_prev"
@@ -268,6 +278,8 @@ is_hook_owned_field() {
 # Public function: state_field_change_blocked
 # ---------------------------------------------------------------------------
 state_field_change_blocked() {
+  # 'state_file' is part of the public signature but unused on this path.
+  # shellcheck disable=SC2034
   local state_file="$1"
   local old_string="$2"
   local new_string="$3"
@@ -300,8 +312,10 @@ state_field_change_blocked() {
 
     # F-BLANK: block whenever old_val is non-empty AND new_val differs,
     # including blank-out (new_val empty). Initial-set is already handled
-    # by the early-exit above.
+    # by the early-exit above. Echo the matched registry key so the caller
+    # can name the violated field in its block reason (proposal 4 / UX-10).
     if [ "$old_val" != "$new_val" ]; then
+      printf '%s\n' "$reg_key"
       return 0
     fi
   done

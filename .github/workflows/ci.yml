@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Run ShellCheck on hooks
-        run: shellcheck --severity=warning hooks/*.sh
+        run: shellcheck --severity=warning hooks/*.sh hooks/lib/*.sh
       - name: Run ShellCheck on tests
         run: shellcheck --severity=warning tests/*.sh tests/helpers/*.sh
 

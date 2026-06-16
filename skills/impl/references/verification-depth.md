@@ -82,27 +82,36 @@ evaluator model, and leaves the red-team budget at 0.
 
 The matrix above scales depth by blast-radius and autonomy. It does NOT account
 for **correctness criticality** — a tiny `S` ticket can still ship a
-wrong-but-self-consistent computed value (the WCAG rounded-meet defect class).
+wrong-but-self-consistent computed value (the rounded-meet defect class — a
+value that matches the implementation's own rounded output yet is wrong).
 The criticality floor adds that axis: when a ticket contains at least one
 **computational AC** (PASS/FAIL hinges on a computed numeric/algorithmic value —
 see Gate 7 in `skills/create-ticket/references/ac-quality-criteria.md`) in a
-**critical domain** — accessibility / security / money / data-integrity /
-standard-compliance — the resolved tier is floored at `thorough` regardless of
+**critical domain**, the resolved tier is floored at `thorough` regardless of
 Size × `risk_tolerance`, so the `/audit` skeptical third-pass is forced even on
 an `S` / `conservative` ticket. The critical-domain determination is a
-model-judgment read of the AC text (there is no deterministic ticket field);
-keyword cues that should trigger it: WCAG / contrast / a11y / focus-order
-/ color-space / gamut / OKLab / luminance / chroma conversion (accessibility &
-color-science); auth / crypto / token / signature / input-validation
-(security); currency / decimal / rounding / money (money); checksum / hash /
-dedup / referential-integrity (data-integrity); RFC / ISO / spec-conformance
-(standard-compliance); and any **computational AC over a shared-core input
-boundary** — a parser / validation / constant (e.g. an epsilon / range / gamut
-guard) shared with sibling tools, where an inconsistency in one sibling is the
-exact wrong-but-self-consistent defect class the floor targets. The shared-core
-trigger is independent of the named domains above: a computational AC that reads
-or must hold an invariant across a shared input boundary floors `critical` even
-when its surface domain is otherwise routine.
+model-judgment read of the AC text (there is no deterministic ticket field).
+
+The PRIMARY trigger is a **property**, not membership in a named-domain list:
+any **computational AC over a shared-core input boundary** — a parser /
+validation / constant (e.g. an epsilon / range / bounds guard) shared with
+sibling tools, where an inconsistency in one sibling is the exact
+wrong-but-self-consistent defect class the floor targets — floors `critical`.
+This shared-boundary property is independent of surface domain: a computational
+AC that reads or must hold an invariant across a shared input boundary floors
+`critical` even when its domain is otherwise routine. Equally, an AC whose
+computed value is **correctness-critical** — a wrong result carries outsized
+real-world cost, or the value must conform to a published spec / standard —
+floors `critical`.
+
+The domain families below are **illustrative and non-exhaustive**: they help the
+model recognise the property above, they do NOT bound it. A ticket that matches
+the property but names none of these still floors `critical`; a ticket that
+mentions a cue but carries no computational / correctness-critical AC does not.
+Balanced examples — accessibility (e.g. contrast / color-space ratios);
+security (e.g. auth / crypto / input-validation); money (e.g. currency / decimal
+rounding); data-integrity (e.g. checksum / referential-integrity); and
+standard-compliance (e.g. RFC / ISO conformance).
 
 The floor only RAISES the tier (`standard` → `thorough`); it never lowers a tier
 the matrix already resolved higher (`exhaustive` stays `exhaustive`). It is
@@ -259,9 +268,9 @@ The resolver also fills two struct fields the floor RAISES:
 - **evaluator model**: today the evaluator is hardcoded sonnet (`skills/impl/SKILL.md`
   Step 15 "always sonnet"; `agents/ac-evaluator.md` frontmatter `model: sonnet`). M5
   resolves `evaluator_model` to `opus` when `criticality == critical` OR
-  `depth_tier == exhaustive`, symmetric with the EXISTING size-aware generator-model
-  selection (`constraints.sonnet_size_threshold` escalates the generator to opus for
-  L/XL — `skills/create-ticket/references/autopilot-policy-reference.md`). **Platform
+  `depth_tier == exhaustive` (the Generator already always runs on opus — see the
+  **Generator model policy** in
+  `skills/create-ticket/references/autopilot-policy-reference.md`). **Platform
   caveat**: the Agent tool's JSONSchema does NOT accept a per-invocation `model:`
   override — the SAME Strategy-B limitation that forces the soft turn budget instead of a
   per-spawn `maxTurns` (`skills/impl/references/ac-evaluator-orchestration.md`

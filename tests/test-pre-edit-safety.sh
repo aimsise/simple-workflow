@@ -205,6 +205,31 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# F-HOOKS-03: legitimate source/doc files that merely CONTAIN "credentials" or
+# "secret" in the name must NOT be false-blocked — only secret-bearing
+# extensions are. These two ALLOW assertions FAIL under the prior
+# `credentials\b|secret\b` regex (revert guard), while `.env` / `.ssh/id_rsa` /
+# `credentials.json` / `app-secret.yaml` remain blocked above.
+run_edit_hook "credentials.ts"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} ALLOW: credentials.ts (source file, not a secret)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ALLOW: credentials.ts"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+run_edit_hook "secret.md"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} ALLOW: secret.md (doc file, not a secret)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ALLOW: secret.md"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 echo ""
 
 # --- PII / absolute-home-path tests ---
@@ -314,6 +339,82 @@ second line: /Users/charlie/bin/tool"
 assert_pii_allow_edit "Edge3 (edit): empty new_string allowed" \
   "notes/empty.md" \
   ""
+
+echo ""
+
+# UX-11 (proposal 5): jq-missing fail-close is knob-gated (SW_SAFETY_JQ_MISSING_MODE).
+# PATH-restricted — an empty dir as PATH hides jq while bash is invoked by absolute
+# path so the guard reaches its jq preflight.
+_JQ_BASH="$(command -v bash)"
+_JQ_NOPATH="$(mktemp -d)"
+
+set +e
+_jq_on_out="$(printf '{"tool_input":{"file_path":"x"}}' | env PATH="$_JQ_NOPATH" SW_SAFETY_JQ_MISSING_MODE=on "$_JQ_BASH" "$HOOK" 2>&1)"
+_jq_on_rc=$?
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$_jq_on_rc" -eq 2 ] && printf '%s' "$_jq_on_out" | grep -qF '[SAFETY-JQ-MISSING]'; then
+  echo -e "  ${GREEN}PASS${NC} jq-missing + knob=on: fail-closed (exit 2) with [SAFETY-JQ-MISSING] message"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} jq-missing + knob=on: expected exit 2 + message (rc=$_jq_on_rc, out=${_jq_on_out:0:80})"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+set +e
+_jq_def_out="$(printf '{"tool_input":{"file_path":"x"}}' | env PATH="$_JQ_NOPATH" "$_JQ_BASH" "$HOOK" 2>&1)"
+_jq_def_rc=$?
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$_jq_def_rc" -eq 0 ] && printf '%s' "$_jq_def_out" | grep -qF 'metric-only'; then
+  echo -e "  ${GREEN}PASS${NC} jq-missing + default: metric-only allows (exit 0) with message"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} jq-missing + default: expected exit 0 + metric-only message (rc=$_jq_def_rc)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rmdir "$_JQ_NOPATH" 2>/dev/null || true
+
+echo ""
+
+# Proposal 4 / ST-03: HOOK_OWNED_FIELDS enforcement is gated by
+# SW_STATE_FIELD_GUARD_MODE (default metric-only). With the knob ON, an Edit that
+# changes the hook-owned `.runtime_metrics` field on a state file is blocked, and
+# the block reason names the violated field AND references docs/state-schema.md.
+# Default (metric-only) does NOT block — it logs a [STATE-FIELD-GUARD] line.
+_SFG_EDIT_INPUT=$(jq -n \
+  --arg fp "/tmp/sfg/autopilot-state.yaml" \
+  --arg o 'runtime_metrics: []' \
+  --arg n 'runtime_metrics: [{boundary: x}]' \
+  '{tool_input:{file_path:$fp, old_string:$o, new_string:$n}}')
+
+set +e
+_sfg_on_out="$(printf '%s' "$_SFG_EDIT_INPUT" | env SW_STATE_FIELD_GUARD_MODE=on bash "$HOOK" 2>&1)"
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$_sfg_on_out" | grep -q '"decision":"block"' \
+   && printf '%s' "$_sfg_on_out" | grep -q 'hook_owned_field_violation' \
+   && printf '%s' "$_sfg_on_out" | grep -q '\.runtime_metrics' \
+   && printf '%s' "$_sfg_on_out" | grep -q 'docs/state-schema.md'; then
+  echo -e "  ${GREEN}PASS${NC} state-field guard knob=on: .runtime_metrics Edit blocked (reason names field + docs/state-schema.md)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} state-field guard knob=on: expected decision:block with field name + schema ref. out: ${_sfg_on_out:0:140}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+set +e
+_sfg_def_out="$(printf '%s' "$_SFG_EDIT_INPUT" | env SW_STATE_FIELD_GUARD_MODE=metric-only bash "$HOOK" 2>&1)"
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$_sfg_def_out" | grep -q '"decision":"block"' \
+   && printf '%s' "$_sfg_def_out" | grep -q '\[STATE-FIELD-GUARD\] metric-only'; then
+  echo -e "  ${GREEN}PASS${NC} state-field guard metric-only (default): .runtime_metrics Edit not blocked, logs would-block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} state-field guard metric-only: expected allow + [STATE-FIELD-GUARD] log. out: ${_sfg_def_out:0:140}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 

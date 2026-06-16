@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# jq is a documented hard dependency. When it is missing this guard cannot parse
+# the tool payload; rather than dying with a silent `exit 127` (which Claude Code
+# treats as a non-blocking error — a fail-OPEN), resolve the behaviour through
+# SW_SAFETY_JQ_MISSING_MODE (UX-11):
+#   on          -> fail CLOSED (exit 2) with an explicit message
+#   metric-only -> (default) log the would-be fail-closed and ALLOW (exit 0)
+#   off         -> silently allow (exit 0)
+# A typo collapses to metric-only (the observe-only default), never to a silent
+# fail-open. Default is metric-only so this hardening does not change the shipped
+# fail-open behaviour until an operator opts in with `=on` (post-dogfood promote).
+if ! command -v jq >/dev/null 2>&1; then
+  case "${SW_SAFETY_JQ_MISSING_MODE:-metric-only}" in
+    on)
+      echo "[SAFETY-JQ-MISSING] pre-bash-safety: jq not found on PATH — failing closed (exit 2). Install jq (e.g. 'brew install jq') to run this guard." >&2
+      exit 2 ;;
+    off)
+      exit 0 ;;
+    metric-only|*)
+      echo "[SAFETY-JQ-MISSING] metric-only: pre-bash-safety would fail closed (exit 2) — jq not found on PATH; allowing this call. Install jq, or set SW_SAFETY_JQ_MISSING_MODE=on to enforce." >&2
+      exit 0 ;;
+  esac
+fi
+
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 # --- Destructive command patterns ---
 # Detect at any token position: start, after pipe, after semicolon, after &&/||
 # Optional env/command prefix before the actual destructive command
-DESTRUCTIVE='(^|[|;&]|\$\(|`)\s*(env\s+|command\s+)?(rm\s+-[A-Za-z]*[rR][A-Za-z]*f|rm\s+-[A-Za-z]*f[A-Za-z]*[rR]|rm\s+(--recursive\s+--force|--force\s+--recursive|-[A-Za-z]*[rR]\s+--force|--force\s+-[A-Za-z]*[rR]|--recursive\s+-[A-Za-z]*f|-[A-Za-z]*f\s+--recursive)|git\s+push\s+(--force|--force-with-lease|-f)\b|git\s+reset\s+--hard|git\s+clean\s+-[A-Za-z]*f|[Dd][Rr][Oo][Pp]\s+([Tt][Aa][Bb][Ll][Ee]|[Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee]))'
+# `rm -r -f` / `rm -f -r` (and `-r … -f` with intervening flags) are SEPARATED
+# short flags that the combined (`-rf`) and long-form alternatives below miss;
+# the two `rm\s+-…\s+…-…` alternatives close that gap (F-HOOKS-04).
+DESTRUCTIVE='(^|[|;&]|\$\(|`)\s*(env\s+|command\s+)?(rm\s+-[A-Za-z]*[rR][A-Za-z]*f|rm\s+-[A-Za-z]*f[A-Za-z]*[rR]|rm\s+(--recursive\s+--force|--force\s+--recursive|-[A-Za-z]*[rR]\s+--force|--force\s+-[A-Za-z]*[rR]|--recursive\s+-[A-Za-z]*f|-[A-Za-z]*f\s+--recursive)|rm\s+-[A-Za-z]*[rR][A-Za-z]*\s+(-[A-Za-z]+\s+)*-[A-Za-z]*f[A-Za-z]*|rm\s+-[A-Za-z]*f[A-Za-z]*\s+(-[A-Za-z]+\s+)*-[A-Za-z]*[rR][A-Za-z]*|git\s+push\s+(--force|--force-with-lease|-f)\b|git\s+reset\s+--hard|git\s+clean\s+-[A-Za-z]*f|[Dd][Rr][Oo][Pp]\s+([Tt][Aa][Bb][Ll][Ee]|[Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee]))'
 
 # Strip allowed pattern before checking: git reset --hard origin/<branch>
 CHECKED=$(echo "$COMMAND" | sed -E 's/git +reset +--hard +origin\/[A-Za-z0-9._/-]+//g')
@@ -17,7 +44,7 @@ if echo "$CHECKED" | grep -qE "$DESTRUCTIVE"; then
 fi
 
 # --- Indirect destructive patterns (xargs, find -exec) ---
-INDIRECT_DESTRUCTIVE='(xargs\s+|find\s+.*-exec\s+)(rm\s+-[A-Za-z]*[rR][A-Za-z]*f|rm\s+-[A-Za-z]*f[A-Za-z]*[rR]|rm\s+(--recursive\s+--force|--force\s+--recursive|-[A-Za-z]*[rR]\s+--force|--force\s+-[A-Za-z]*[rR]|--recursive\s+-[A-Za-z]*f|-[A-Za-z]*f\s+--recursive))|find\s+.*-delete|find\s+.*-exec\s+(bash|sh|zsh|ksh)\s+-c\s+'
+INDIRECT_DESTRUCTIVE='(xargs\s+|find\s+.*-exec\s+)(rm\s+-[A-Za-z]*[rR][A-Za-z]*f|rm\s+-[A-Za-z]*f[A-Za-z]*[rR]|rm\s+(--recursive\s+--force|--force\s+--recursive|-[A-Za-z]*[rR]\s+--force|--force\s+-[A-Za-z]*[rR]|--recursive\s+-[A-Za-z]*f|-[A-Za-z]*f\s+--recursive)|rm\s+-[A-Za-z]*[rR][A-Za-z]*\s+(-[A-Za-z]+\s+)*-[A-Za-z]*f[A-Za-z]*|rm\s+-[A-Za-z]*f[A-Za-z]*\s+(-[A-Za-z]+\s+)*-[A-Za-z]*[rR][A-Za-z]*)|find\s+.*-delete|find\s+.*-exec\s+(bash|sh|zsh|ksh)\s+-c\s+'
 
 if echo "$COMMAND" | grep -qE "$INDIRECT_DESTRUCTIVE"; then
   echo "Blocked: indirect destructive command not allowed: $COMMAND" >&2

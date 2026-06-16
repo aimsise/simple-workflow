@@ -261,6 +261,56 @@ else
   fi
 fi
 
+# AC-10 (proposal 3 / ST-01,ST-11): parse_active_steps is WI-3 schema-tolerant —
+# it returns the SAME active (in_progress|pending) step set for the canonical-flat,
+# inline-flow, and nested step shapes. The continuation driver
+# (hooks/autopilot-continue.sh) relies on this to count unfinished steps and pick
+# the next step across all three forms. Reverting proposal 3 removes the helper, so
+# every assertion below fails (empty output).
+PAS_FLAT="$SCAFFOLD_TMP/pas-flat.yaml"
+PAS_FLOW="$SCAFFOLD_TMP/pas-flow.yaml"
+PAS_NESTED="$SCAFFOLD_TMP/pas-nested.yaml"
+cat > "$PAS_FLAT" <<'EOF'
+tickets:
+  - logical_id: t1
+    ticket_dir: 001-a
+    status: in_progress
+    steps:
+      create-ticket: completed
+      scout: in_progress
+      impl: pending
+      ship: pending
+EOF
+cat > "$PAS_FLOW" <<'EOF'
+tickets:
+  - logical_id: t1
+    ticket_dir: 001-a
+    status: in_progress
+    steps: {create-ticket: completed, scout: in_progress, impl: pending, ship: pending}
+EOF
+cat > "$PAS_NESTED" <<'EOF'
+tickets:
+  - logical_id: t1
+    ticket_dir: 001-a
+    status: in_progress
+    steps:
+      create-ticket:
+        status: completed
+      scout:
+        status: in_progress
+      impl:
+        status: pending
+      ship:
+        status: pending
+EOF
+PAS_EXPECT="scout:in_progress,impl:pending,ship:pending"
+pas_flat="$(parse_active_steps "$PAS_FLAT" 2>/dev/null | tr '\n' ',' | sed 's/,$//')" || pas_flat=""
+pas_flow="$(parse_active_steps "$PAS_FLOW" 2>/dev/null | tr '\n' ',' | sed 's/,$//')" || pas_flow=""
+pas_nested="$(parse_active_steps "$PAS_NESTED" 2>/dev/null | tr '\n' ',' | sed 's/,$//')" || pas_nested=""
+assert_eq "AC-10a: parse_active_steps flat form -> active steps" "$PAS_EXPECT" "$pas_flat"
+assert_eq "AC-10b: parse_active_steps inline-flow form -> active steps" "$PAS_EXPECT" "$pas_flow"
+assert_eq "AC-10c: parse_active_steps nested form -> active steps" "$PAS_EXPECT" "$pas_nested"
+
 echo ""
 echo "==============================="
 echo -e "Total: $TESTS_TOTAL | ${GREEN}Passed: $TESTS_PASSED${NC} | ${RED}Failed: $TESTS_FAILED${NC}"
