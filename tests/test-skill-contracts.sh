@@ -10076,6 +10076,19 @@ assert_true \
   "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+both twins+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + ac-evaluator-hi ($shin_b_acevhi>=1) + planner ($shin_b_planner>=1) + ticket-evaluator ($shin_b_tev>=1)" \
   "$shin_b_result"
 
+# CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe scratch carve-out clarification,
+# AASC prereq). Reconciles the :199 "single exception ... computational AC" wording with
+# point 5's already-directed behavioral watchdog probe (an existing inconsistency); names
+# NO accept-set sweep (that is the gated AASC mechanism). Net-new token HEAD=0; byte-identical
+# in both twins (CT-EV-MODEL-1 covers the identity).
+scev_acev=$(grep -ciF 'behavioral evidence probe' "$ACEV_EV" || true)
+scev_acevhi=$(grep -ciF 'behavioral evidence probe' "$ACEVHI_EV" || true)
+scev_result="false"
+if [ "$scev_acev" -ge 1 ] && [ "$scev_acevhi" -ge 1 ]; then scev_result="true"; fi
+assert_true \
+  "CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe carve-out clarification, both twins): ac-evaluator ($scev_acev>=1) + ac-evaluator-hi ($scev_acevhi>=1)" \
+  "$scev_result"
+
 # CT-EV-SELFDOC-1 (EC-SELFDOC channel + both failure modes, v8.4.0+). HEAD=0.
 ev_sd1_channel=$(grep -cF '**EC-SELFDOC**' "$ECH_EV" || true)
 ev_sd1_modeA=$(grep -cF 'description-vs-behavior drift' "$ECH_EV" || true)
