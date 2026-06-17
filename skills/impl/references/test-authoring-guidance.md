@@ -96,7 +96,11 @@ exit code) needs only a direct assertion.
    build added a finiteness guard to one tool but not the analogous sibling tools parsing the same
    input class, shipping a live DoS hang reachable through the unguarded siblings while the
    guarded tool passed. Write the class-(b) adversarial test against EACH sibling tool, not only
-   the one tool the AC names.
+   the one tool the AC names. When the ac-evaluator's EXECUTED accept-set conformance sweep (see
+   [`accept-set-conformance-harness.md`](accept-set-conformance-harness.md)) reports an accept-set
+   leak across this shared input class, commit a fixed rejection characterization test for that
+   leaking input class (leaking input as the RED case, validator fix GREEN) — gated by
+   `constraints.accept_set_conformance` and always-on, not depth-gated.
 
 5. **Spec-completeness.** Assert every output field and guarantee the spec
    promises — a missing field, an absent status flag, a dropped metric field, or

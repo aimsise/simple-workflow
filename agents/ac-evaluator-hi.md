@@ -196,7 +196,7 @@ Acceptable AC verification methods (in priority order):
 
 When a runtime or visual AC is in scope AND a browser-automation utility skill is available, you MUST gather live evidence via method 6 — code inspection (methods 3-4) alone is NOT sufficient evidence to PASS such an AC. If no browser-automation skill is available, fall back to code inspection and reflect the missing live verification in the Caveats field (see PASS-WITH-CAVEATS).
 
-If an AC requires behavior the existing test suite does not cover, the correct verdict is FAIL with an observation that test coverage is insufficient — NOT a workaround via scratch script. The carve-out permits EVIDENCE-GATHERING on already-built behaviour, NEVER a substitute for missing coverage: (a) for a computational AC, an independent-oracle probe under `.simple-workflow/scratch/` that derives the expected value from an oracle independent of the code; and (b) the **behavioral evidence probes** this section already directs — the time-bounded watchdog probe of an external-input boundary (point 5 below) and an EC-SELFDOC real-build / advertised-boundary probe — which likewise run under `.simple-workflow/scratch/` as independent verification of an already-built behaviour, not coverage workarounds.
+If an AC requires behavior the existing test suite does not cover, the correct verdict is FAIL with an observation that test coverage is insufficient — NOT a workaround via scratch script. The carve-out permits EVIDENCE-GATHERING on already-built behaviour, NEVER a substitute for missing coverage: (a) for a computational AC, an independent-oracle probe under `.simple-workflow/scratch/` that derives the expected value from an oracle independent of the code; and (b) the **behavioral evidence probes** this section already directs — the time-bounded watchdog probe of an external-input boundary (point 5 below) and an EC-SELFDOC real-build / advertised-boundary probe — which likewise run under `.simple-workflow/scratch/` as independent verification of an already-built behaviour, not coverage workarounds; and (c) the **accept-set conformance sweep** — when a boundary advertises strict / canonical / lossless / limit OR a same-input-class sibling exists, an EXECUTED generative grammar-complement sweep (the four metamorphic relations of `## Failure-class panel` L-ROBUSTNESS, per `skills/impl/references/accept-set-conformance-harness.md`) whose accept-set is diffed black-box against an independent hand-coded spec oracle, run under `.simple-workflow/scratch/` and discarded after the round. This sweep is EVIDENCE-GATHERING on the already-built validator, NOT a substitute for missing PRODUCT test coverage: when the sweep finds an accept-set leak, the durable fix is producer-side — the next implementer / test-writer round commits a fixed rejection characterization test to the PRODUCT tests (your scratch corpus is ephemeral and never committed); you record the leaking input class in your Feedback so that round can pin it.
 
 **Exception**: If a truly temporary file is unavoidable, write to `os.tmpdir()` (Node) / `$TMPDIR` (POSIX) and clean up via the script's own `finally` block — NEVER `rm` as a separate shell command after the run (rm may be denied by permission gating, leaving the file behind). For oracle probes specifically, prefer the `.simple-workflow/scratch/` carve-out above; this `os.tmpdir()` path is the general fallback for any other unavoidable temp file.
 
@@ -410,6 +410,58 @@ single pass under-checks:
   emit — and FAIL the unit when its enforced boundary is wider
   than the strictness it advertises (accepted silently AND not
   normalized-idempotent), not only when a value is corrupted.
+  **Accept-set conformance (EXECUTE, always-on, `accept_set_conformance`)**:
+  this strictness clause is satisfied by READING, and live dogfoods leaked
+  despite it — so when a boundary's contract lexically advertises **strict /
+  canonical / lossless / limit** (word-existence in the AC, its Implementation
+  Notes, the docstring, or `--help`) OR a sibling accepts the **same input
+  class** (the `shared_input_boundary` peer signal forwarded by the planner /
+  ticket-evaluator), you MUST NOT merely reason about the accept set — you MUST
+  **EXECUTE** a generative grammar-complement sweep in `.simple-workflow/scratch/`
+  (the behavioral evidence probe authorized at `## AC Verification Method`,
+  clause (c)) and diff its accept-set against an **independent hand-coded spec
+  oracle** you write from the spec, never by calling the unit's own validator /
+  `int()` / `Number()` / `isdigit()`. Derive a per-boundary **Grammar Card** —
+  `A` = the advertised input ALPHABET, `U` = any Unicode normalization /
+  decimal-digit transform, `W` = the canonical WRITER form, `K` = any KEYED
+  structure built from untrusted input — and run the four machine-generated
+  metamorphic relations black-box under a watchdog with a `mulberry32`-seeded
+  corpus (shape + worked example:
+  `skills/impl/references/accept-set-conformance-harness.md`): **MR-FINITE** (a
+  parse-accepted input whose conversion overflows to non-finite / out-of-range),
+  **MR-ALPHABET** (enumerate the Unicode decimal-digit property complement across
+  the BMP AND the astral planes — your generator names NO script and hard-codes
+  NO codepoint list; it iterates the codepoint space and selects by the
+  decimal-digit property, so every script's digits are covered for ALL inputs),
+  **MR-CANONICAL** (a structurally-valid-but-non-canonical form the writer would
+  never emit must be rejected or normalized-idempotent), and **MR-KEYFAITH** (a
+  reserved / accessor / colliding key must not mutate host-structure metadata or
+  be silently dropped — **ASSUMED, not proven**: treat an MR-KEYFAITH divergence
+  as advisory unless a concrete drop / mutation is observed). **FAIL gating
+  (oracle-authoritative two-tier, NO false-positive storm):** FAIL the AC on an
+  accept-set divergence ONLY when the hand-coded oracle AUTHORITATIVELY reflects a
+  spec that is STRICTLY NARROWER than the unit's accept-set (the advertised
+  contract is narrow and explicit — e.g. ASCII digits only, no leading zero,
+  bounded [0,N]); when the advertised width is NOT unambiguously narrower than
+  what the unit accepts (the boundary is legitimately or arguably WIDE —
+  Unicode-aware, locale-flexible, list-format-tolerant), the oracle (not the
+  unit) is the suspect: record the divergence as ADVISORY `[MEDIUM]` Feedback and
+  PASS-WITH-CAVEATS, NEVER a force-FAIL (this mirrors the EC-SELFDOC fail-open
+  posture). A single-character validator regression that the committed suite
+  still passes GREEN is exactly the narrow-spec class this EXECUTED sweep catches
+  and the suite does not. This sweep is **always-on** — independent of the
+  verification-depth tier, applied at `standard` too — gated ONLY by its own
+  switch: the orchestrator inlines `Accept-set conformance: {auto|off}` into your
+  spawn prompt (alongside `Oracle verification:` / `Evidence floor:` / `Selfdoc
+  verification:`); read it from the prompt, NOT from disk; absent field → `auto`;
+  when `off`, skip the EXECUTED sweep and verify the boundary by the prior
+  read-only strictness reasoning above, recording a one-line Caveat. **Caveat arm
+  (no-runnable-artifact)**: when the unit is a COMPILED-language artifact you
+  cannot run black-box (your scratch allowlist grants `node` / `python3` but, for
+  Rust/Go, only `cargo test` / `go test` — no `rustc` / `cargo run` / `go run` /
+  built binary), run the oracle alone, record the divergence you CAN derive
+  statically, and set `caveat=no-runnable-artifact` on the `[ACCEPT-SET-SWEEP]`
+  emit so a null result is never confused with a clean sweep.
 - **L-CONTRACT-CONFORMANCE** — does each generated unit's observable behaviour
   match its OWN stated description / declared schema / documented contract (a
   function that does not do what its name and doc-comment claim; a tool whose
@@ -462,7 +514,7 @@ The natural execution order of this agent (verify ACs depth-first, then `Write` 
 
 1. **Skeleton write before verification.** As your FIRST action, `Write` the report path with a top-of-file line `## Status: IN_PROGRESS` followed by an AC checklist (one `- [ ] AC-N: <description>` line per AC extracted from the plan). This MUST happen before invoking any Bash, Read, or Grep verification tool. The resulting file is a partial-state marker that the orchestrator can detect even if you terminate mid-verification.
 
-2. **Terminal rewrite before return.** After completing AC verification, rewrite the same file with final verdicts (`- [x] AC-N` or `- [ ] AC-N — FAILED: reason`) and replace the top-of-file `## Status: IN_PROGRESS` with the terminal `## Status: PASS`, `## Status: PASS-WITH-CAVEATS`, `## Status: FAIL`, or `## Status: FAIL-CRITICAL`. The terminal `## Status:` line MUST be the FIRST `## Status:` line in the file (the orchestrator inspects the first match).
+2. **Terminal rewrite before return.** After completing AC verification, rewrite the same file with final verdicts (`- [x] AC-N` or `- [ ] AC-N — FAILED: reason`) and replace the top-of-file `## Status: IN_PROGRESS` with the terminal `## Status: PASS`, `## Status: PASS-WITH-CAVEATS`, `## Status: FAIL`, or `## Status: FAIL-CRITICAL`. The terminal `## Status:` line MUST be the FIRST `## Status:` line in the file (the orchestrator inspects the first match). **Accept-set sweep section (persisted observability, v8.5.0+):** when the EXECUTED accept-set conformance sweep (`## Failure-class panel` L-ROBUSTNESS) is in scope, the terminal rewrite MUST include in the PERSISTED report body a section `## Accept-set sweep` with exactly one line per external-input boundary INSPECTED (not only the ones that triggered) — `boundary={A|U|W|K} triggered={y|n} ran={y|n} astral={y|n} corpus-size={N} divergences={D} authoritative={y|n} caveat={none|no-runnable-artifact}` — so a dogfood greps the persisted `eval-round-N.md` (this report body, NOT the under-500-token `## Result` return envelope) and can tell `triggered=n` (scanned, recognized nothing) apart from a fired sweep apart from feature-absent. Emit `triggered=n` for every boundary you scanned that did not advertise strict/canonical/lossless/limit and has no same-input-class sibling; this UNCONDITIONAL per-boundary line is the falsifiability instrument (mirrors the unconditional `[ORACLE-AUDIT]` contract that survived to the dogfood reader, NOT the conditional `[EVAL-PANEL]` one that did not). Write `## Accept-set sweep\nn/a (no external-input boundary in scope)` when the diff introduces or touches no external-input boundary at all.
 
 3. **Output path stability.** The `**Output**` field returned to the caller MUST be the same path written in step 1. Do not rename, move, or duplicate the file between the skeleton write and the terminal rewrite.
 

@@ -68,6 +68,20 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   a hand-picked grid — see
   [`independent-oracle-harness.md`](independent-oracle-harness.md); it degrades
   to deterministic coverage + a Caveat where no PRNG idiom exists.
+- **EC-METAMORPHIC** — a **specialization layered on EC-PROPERTY**: when a boundary
+  advertises **strict / canonical / lossless / limit** or a same-input-class sibling
+  exists, an EXECUTED generative grammar-complement sweep whose accept-set is diffed
+  black-box against an INDEPENDENT hand-coded spec oracle (the four metamorphic
+  relations MR-FINITE / MR-ALPHABET / MR-CANONICAL / MR-KEYFAITH — see
+  [`accept-set-conformance-harness.md`](accept-set-conformance-harness.md)).
+  *Independent because* the oracle derives the spec accept-set without ever calling
+  the unit's own validator. It is NOT a member of the four-channel naming set
+  `{EC-ORACLE, EC-DIFFERENTIAL, EC-PROPERTY, EC-RUNTIME}` the Gate 8 binding rule
+  draws from — a behavioral AC still names one of those four. FAIL gating is
+  oracle-authoritative two-tier (force-FAIL only on a strictly-narrower advertised
+  contract; otherwise advisory `[MEDIUM]`), and where no runnable artifact exists it
+  is **fail-open** with a Caveat. MR-KEYFAITH is **ASSUMED, not proven**: treat an
+  MR-KEYFAITH divergence as advisory unless a concrete drop / mutation is observed.
 - **EC-RUNTIME** — black-box observation through the real public / protocol boundary:
   the real CLI, the real MCP `Client` over a transport, the exported public API, a
   rendered DOM — never internal handlers reached by reflection or by imports a real

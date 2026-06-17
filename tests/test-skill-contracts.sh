@@ -9963,6 +9963,7 @@ decontam_norm_files=(
   "$REPO_DIR/skills/impl/references/verification-depth.md"
   "$REPO_DIR/skills/impl/references/tautological-assertion-rules.md"
   "$REPO_DIR/skills/impl/references/independent-oracle-harness.md"
+  "$REPO_DIR/skills/impl/references/accept-set-conformance-harness.md"
 )
 decontam_denylist=(
   'oklch('
@@ -10193,6 +10194,72 @@ if [ "$ev_sd6_audit_spawn" -ge 1 ] && [ "$ev_sd6_refac_spawn" -ge 1 ] && [ "$ev_
 assert_true \
   "CT-EV-SELFDOC-6 (doc-verifier spawn-wiring): /audit spawn ($ev_sd6_audit_spawn>=1) + /refactor spawn ($ev_sd6_refac_spawn>=1) + audit kill-switch ($ev_sd6_audit_ks>=1) + refactor kill-switch ($ev_sd6_refac_ks>=1) + agent input-contract ($ev_sd6_contract>=1)" \
   "$ev_sd6_result"
+
+
+# CT-AASC-1 (accept-set conformance EXECUTED sweep + persisted observability, both twins, v8.5.0+).
+# Load-bearing per charter section H: the ONLY truly additive element is the evaluator ACTUALLY
+# EXECUTING the grammar-complement sweep in scratch (not more prose contract). Pins (a) the
+# executed-sweep mandate (net-new phrase 'accept-set conformance' + the EXECUTE verb), and (b) the
+# [ACCEPT-SET-SWEEP] marker routed into the PERSISTED report body (the M8 falsifiability fix).
+# Both net-new tokens are HEAD=0 (verified RED-first: grep returns 0 files); byte-identical in both
+# twins (CT-EV-MODEL-1 strip-then-diff covers the identity). A revert flips each grep to FAIL.
+aasc1_acev_phrase=$(grep -ciF 'accept-set conformance' "$ACEV_EV" || true)
+aasc1_hi_phrase=$(grep -ciF 'accept-set conformance' "$ACEVHI_EV" || true)
+aasc1_acev_marker=$(grep -cF '[ACCEPT-SET-SWEEP]' "$ACEV_EV" || true)
+aasc1_hi_marker=$(grep -cF '[ACCEPT-SET-SWEEP]' "$ACEVHI_EV" || true)
+aasc1_acev_exec=$(grep -cF 'EXECUTE' "$ACEV_EV" || true)
+aasc1_hi_exec=$(grep -cF 'EXECUTE' "$ACEVHI_EV" || true)
+aasc1_result="false"
+if [ "$aasc1_acev_phrase" -ge 1 ] && [ "$aasc1_hi_phrase" -ge 1 ] && [ "$aasc1_acev_marker" -ge 1 ] && [ "$aasc1_hi_marker" -ge 1 ] && [ "$aasc1_acev_exec" -ge 1 ] && [ "$aasc1_hi_exec" -ge 1 ]; then aasc1_result="true"; fi
+assert_true \
+  "CT-AASC-1 (executed accept-set sweep + observability, both twins): ac-evaluator phrase ($aasc1_acev_phrase>=1) marker ($aasc1_acev_marker>=1) EXECUTE ($aasc1_acev_exec>=1) + -hi phrase ($aasc1_hi_phrase>=1) marker ($aasc1_hi_marker>=1) EXECUTE ($aasc1_hi_exec>=1)" \
+  "$aasc1_result"
+
+# CT-AASC-2 (four metamorphic relations + no-runnable-artifact caveat, both twins, v8.5.0+).
+# Pins the executed sweep's four MR-* relations (MR-ALPHABET enumerates the Unicode decimal-digit
+# complement BMP+astral naming no script) and the compiled-language Caveat arm (blocker 2: a built
+# Rust/Go artifact cannot be run black-box, so a null must be distinguishable from a clean sweep).
+# All five tokens HEAD=0 (verified RED-first); byte-identical in both twins.
+aasc2_ok="true"
+for aasc2_tok in 'MR-FINITE' 'MR-ALPHABET' 'MR-CANONICAL' 'MR-KEYFAITH' 'no-runnable-artifact'; do
+  aasc2_a=$(grep -cF "$aasc2_tok" "$ACEV_EV" || true)
+  aasc2_b=$(grep -cF "$aasc2_tok" "$ACEVHI_EV" || true)
+  if [ "$aasc2_a" -lt 1 ] || [ "$aasc2_b" -lt 1 ]; then aasc2_ok="false"; echo "  CT-AASC-2 missing [$aasc2_tok] acev=$aasc2_a hi=$aasc2_b" >&2; fi
+done
+assert_true \
+  "CT-AASC-2 (4 metamorphic relations + no-runnable-artifact caveat, both twins): MR-FINITE/ALPHABET/CANONICAL/KEYFAITH + caveat present in ac-evaluator AND -hi ($aasc2_ok)" \
+  "$aasc2_ok"
+
+# CT-AASC-3 (producer-side accept-set retained-corpus obligation, both producers, v8.5.0+).
+# Load-bearing per charter section H clause (iii) + blocker 9: the ac-evaluator is read-only and
+# cannot write PRODUCT tests, so the fixed rejection characterization test MUST be a producer
+# obligation. Pins the net-new phrase in implementer + test-writer (byte-symmetric per CLAUDE.md
+# ## Modifications). HEAD=0 (verified RED-first). Reuses the existing IMPLAGENT_EV / TW_EV handles
+# (declared upstream at lines 9621/9620 and 9736/9735) — NOT a fresh IMPL_AGENT_EV (Review naming-nit).
+aasc3_impl=$(grep -ciF 'accept-set conformance retained corpus' "$IMPLAGENT_EV" || true)
+aasc3_tw=$(grep -ciF 'accept-set conformance retained corpus' "$TW_EV" || true)
+aasc3_result="false"
+if [ "$aasc3_impl" -ge 1 ] && [ "$aasc3_tw" -ge 1 ]; then aasc3_result="true"; fi
+assert_true \
+  "CT-AASC-3 (producer-side retained-corpus obligation, both producers): implementer ($aasc3_impl>=1) + test-writer ($aasc3_tw>=1)" \
+  "$aasc3_result"
+
+# CT-AASC-5 (accept-set-conformance-harness.md exists + wired; EC-METAMORPHIC + Grammar Card,
+# v8.5.0+). Mirrors CT-EV-13 (independent-oracle-harness exists+linked). Prose-support scaffold
+# (charter section H: a doc is recognition-gated), pinned so the wiring cannot silently rot. Net-new
+# tokens 'accept-set-conformance-harness', 'EC-METAMORPHIC', 'Grammar Card' all HEAD=0 (verified).
+AASC_DOC="$REPO_DIR/skills/impl/references/accept-set-conformance-harness.md"
+aasc5_exists=0; if [ -f "$AASC_DOC" ]; then aasc5_exists=1; fi
+aasc5_link_acev=$(grep -cF 'accept-set-conformance-harness' "$ACEV_EV" || true)
+aasc5_link_hi=$(grep -cF 'accept-set-conformance-harness' "$ACEVHI_EV" || true)
+aasc5_link_ech=$(grep -cF 'accept-set-conformance-harness' "$ECH_EV" || true)
+aasc5_ecmeta=$(grep -cF 'EC-METAMORPHIC' "$ECH_EV" || true)
+aasc5_grammar=$(grep -cF 'Grammar Card' "$AASC_DOC" 2>/dev/null || true)
+aasc5_result="false"
+if [ "$aasc5_exists" -eq 1 ] && [ "$aasc5_link_acev" -ge 1 ] && [ "$aasc5_link_hi" -ge 1 ] && [ "$aasc5_link_ech" -ge 1 ] && [ "$aasc5_ecmeta" -ge 1 ] && [ "$aasc5_grammar" -ge 1 ]; then aasc5_result="true"; fi
+assert_true \
+  "CT-AASC-5 (harness doc exists + wired + EC-METAMORPHIC + Grammar Card): exists ($aasc5_exists=1), linked from ac-evaluator ($aasc5_link_acev>=1) + -hi ($aasc5_link_hi>=1) + evidence-channels ($aasc5_link_ech>=1), EC-METAMORPHIC in evidence-channels ($aasc5_ecmeta>=1), Grammar Card in doc ($aasc5_grammar>=1)" \
+  "$aasc5_result"
 
 
 echo ""
