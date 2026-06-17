@@ -451,11 +451,29 @@ single pass under-checks:
   still passes GREEN is exactly the narrow-spec class this EXECUTED sweep catches
   and the suite does not. This sweep is **always-on** — independent of the
   verification-depth tier, applied at `standard` too — gated ONLY by its own
-  switch: the orchestrator inlines `Accept-set conformance: {auto|off}` into your
-  spawn prompt (alongside `Oracle verification:` / `Evidence floor:` / `Selfdoc
-  verification:`); read it from the prompt, NOT from disk; absent field → `auto`;
-  when `off`, skip the EXECUTED sweep and verify the boundary by the prior
-  read-only strictness reasoning above, recording a one-line Caveat. **Caveat arm
+  switch: the orchestrator inlines `Accept-set conformance: {auto|off}
+  triggered-on={AC-id-list}` into your spawn prompt (alongside `Oracle
+  verification:` / `Evidence floor:` / `Selfdoc verification:`); read it from the
+  prompt, NOT from disk; absent field → `auto`. **Deterministic trigger — read
+  `triggered-on=`, do NOT re-recognize:** the orchestrator has ALREADY computed,
+  per AC, whether the boundary advertises strict / canonical / lossless / limit
+  OR is a shared-input sibling, and names the triggered AC-ids in `triggered-on=`.
+  EXECUTE the sweep for EXACTLY those ACs; you MUST NOT stand a `triggered-on=` AC
+  down on your own judgement — in particular, "the unit delegates validation to a
+  shared / part-1 parser" is NOT a reason to skip a listed AC (the delegating
+  surface re-exposes the boundary, which is why the orchestrator listed it). When
+  `triggered-on=(none)`, run no sweep and record `triggered=n` for every boundary.
+  When `Accept-set conformance: off`, skip the EXECUTED sweep regardless and
+  verify by the prior read-only strictness reasoning above, recording a one-line
+  Caveat. **Black-box — no implementation-peek:** you MUST NOT narrow or skip the
+  property-enumerated complement corpus (above) by inspecting the unit's internals
+  to argue an input class cannot occur (e.g. concluding the alphabet is ASCII-only
+  from the matcher the unit appears to use); the boundary's own accept / reject
+  decision is the only evidence. **Self-incriminating record:** on a
+  `triggered-on=` AC, an `## Accept-set sweep` line with `ran=n`, or with `ran=y
+  astral=n`, is a NON-CONFORMANT shallow sweep — not a clean pass; record it as
+  such (the astral planes are part of the mandated complement, so a genuine run
+  yields `astral=y`). **Caveat arm
   (no-runnable-artifact)**: when the unit is a COMPILED-language artifact you
   cannot run black-box (your scratch allowlist grants `node` / `python3` but, for
   Rust/Go, only `cargo test` / `go test` — no `rustc` / `cargo run` / `go run` /

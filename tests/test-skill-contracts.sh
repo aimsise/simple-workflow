@@ -10261,6 +10261,32 @@ assert_true \
   "CT-AASC-5 (harness doc exists + wired + EC-METAMORPHIC + Grammar Card): exists ($aasc5_exists=1), linked from ac-evaluator ($aasc5_link_acev>=1) + -hi ($aasc5_link_hi>=1) + evidence-channels ($aasc5_link_ech>=1), EC-METAMORPHIC in evidence-channels ($aasc5_ecmeta>=1), Grammar Card in doc ($aasc5_grammar>=1)" \
   "$aasc5_result"
 
+# CT-AASC-6 (deterministic accept-set trigger: orchestrator computes + inlines triggered-on=, both twins read it; v8.5.0+).
+# LOAD-BEARING per charter section H: moves the strict/canonical/lossless/limit + shared_input_boundary recognition out of
+# the evaluator (dogfood46 non-uniformity) into a deterministic Step-15 computation inlined as triggered-on=. Net-new tokens
+# 'triggered-on=' and (in SKILL.md) 'accept_set_conformance' are HEAD=0 (RED-first; bare 'triggered='/'accept-set' pre-exist
+# from STEP 5 and are NOT what this pins). Twins byte-identical.
+aasc6_skill_constraint=$(grep -cF 'accept_set_conformance' "$IMPL_EV" || true)
+aasc6_skill_field=$(grep -cF 'triggered-on=' "$IMPL_EV" || true)
+aasc6_skill_emit=$(grep -cF '[ACCEPT-SET-TRIGGER]' "$IMPL_EV" || true)
+aasc6_acev_read=$(grep -cF 'triggered-on=' "$ACEV_EV" || true)
+aasc6_hi_read=$(grep -cF 'triggered-on=' "$ACEVHI_EV" || true)
+aasc6_result="false"
+if [ "$aasc6_skill_constraint" -ge 1 ] && [ "$aasc6_skill_field" -ge 1 ] && [ "$aasc6_skill_emit" -ge 1 ] && [ "$aasc6_acev_read" -ge 1 ] && [ "$aasc6_hi_read" -ge 1 ]; then aasc6_result="true"; fi
+assert_true "CT-AASC-6 (deterministic trigger triggered-on= computed+inlined+read): SKILL constraint ($aasc6_skill_constraint>=1) field ($aasc6_skill_field>=1) emit ($aasc6_skill_emit>=1) + ac-evaluator reads ($aasc6_acev_read>=1) + -hi reads ($aasc6_hi_read>=1)" "$aasc6_result"
+
+# CT-AASC-7 (black-box no-impl-peek + self-incriminating shallow-sweep record, both twins; v8.5.0+).
+# LOAD-BEARING per charter section H: dogfood46 skipped astral via an implementation-peek and recorded astral=n as a neutral
+# field. Pins the two GENUINELY-NEW anti-cues (the astral/no-script/property-enumeration prose already existed in STEP 5 and
+# is deliberately NOT re-pinned here to avoid accretion-pinning). Both tokens HEAD=0 (RED-first). Twins byte-identical.
+aasc7_ok="true"
+for aasc7_tok in 'implementation-peek' 'shallow sweep'; do
+  aasc7_a=$(grep -cF "$aasc7_tok" "$ACEV_EV" || true)
+  aasc7_b=$(grep -cF "$aasc7_tok" "$ACEVHI_EV" || true)
+  if [ "$aasc7_a" -lt 1 ] || [ "$aasc7_b" -lt 1 ]; then aasc7_ok="false"; echo "  CT-AASC-7 missing twin token [$aasc7_tok] acev=$aasc7_a hi=$aasc7_b" >&2; fi
+done
+assert_true "CT-AASC-7 (black-box no-impl-peek + shallow-sweep self-incrimination, both twins): implementation-peek + shallow sweep present in ac-evaluator AND -hi ($aasc7_ok)" "$aasc7_ok"
+
 
 echo ""
 
