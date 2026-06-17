@@ -6,7 +6,7 @@
 
 The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for **end-to-end AI development workflows**. From idea to pull request: structured interview, codebase investigation, multi-agent implementation, security audit, code review, and PR creation, all automated.
 
-Built on a **Harness for long-running AI agents** with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
+Built on a **Harness for long-running AI agents** that brings *loop engineering* to the development lifecycle — a rigorous, closed *inner loop* (act → verify → correct → continue) bounded by contract stopping conditions — with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
 
 ## Prerequisites
 
@@ -77,12 +77,12 @@ Three typical execution patterns:
 # re-run /create-ticket so each ticket dir receives autopilot-policy.yaml (re-propagation):
 /create-ticket brief=.simple-workflow/backlog/briefs/active/<slug>/brief.md
 /autopilot <slug>
-# autopilot then loops: /scout → /impl → /ship per ticket → PR
+# autopilot then loops: /scout → /impl → /ship per ticket → PR   ← loop engineering fires (the closed inner loop self-drives)
 # (running /autopilot directly on a chain=off brief stops with a re-propagation directive)
 
 # 3. Full automation (one command):
 /brief <idea>
-# brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR
+# brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR   ← loop engineering fires once /autopilot takes over
 ```
 
 > **Caveat — full automation works best on focused, well-scoped ideas.** On overly broad or ambiguous input, the model can break output contracts, fabricate intermediate state, and continue past failures without surfacing them. Full automation has fewer human-in-the-loop checkpoints than the brief-assisted manual flow, so this kind of misbehaviour is easier to miss. For large or exploratory work, prefer `chain=off` (you inspect artifacts at each step) or split the work into smaller, focused briefs.
@@ -93,7 +93,7 @@ Tickets carry a `### Capabilities` section that records which user Skills and MC
 
 ## Why simple-workflow?
 
-simple-workflow stands on three pillars:
+simple-workflow stands on three pillars — together they form the closed *inner loop* of *loop engineering* and the engineering around it that makes the loop trustworthy enough to run unattended:
 
 - **Harness Engineering**: an asymmetric information firewall between code authors and code judges (the Generator-Evaluator pattern), ticket-confined artifacts, and safe-clear `[SW-CHECKPOINT]` markers are enforced *structurally* — by lifecycle hooks, fresh sub-agent contexts, and on-disk artifacts that hold regardless of model behavior. The bounded sub-agent return budget (< 500 tokens) is a *prompt-level contract* pinned by contract tests, not a runtime-truncation guarantee
 - **Context Conservation**: the context window is treated as a consumable resource — sub-agents return < 500-token summaries, artifacts live on disk, and state survives compaction
