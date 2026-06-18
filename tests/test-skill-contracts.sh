@@ -10358,6 +10358,32 @@ aasc12_result="false"
 if [ "$aasc12_doc" -ge 1 ] && [ "$aasc12_acev" -ge 1 ] && [ "$aasc12_hi" -ge 1 ] && [ "$aasc12_doc_full" -ge 1 ] && [ "$aasc12_acev_full" -ge 1 ] && [ "$aasc12_hi_full" -ge 1 ]; then aasc12_result="true"; fi
 assert_true "CT-AASC-12 (reflection corpus incl private/internal slots + FULL set, doc+both twins): private-slot doc ($aasc12_doc) acev ($aasc12_acev) hi ($aasc12_hi); FULL-set doc ($aasc12_doc_full) acev ($aasc12_acev_full) hi ($aasc12_hi_full)" "$aasc12_result"
 
+# CT-AASC-13 (AASC verification hook registered: deterministic post-hoc conformance gate; v8.5.0+).
+# LOAD-BEARING per charter section H: the AASC sweep + its self-incrimination rule are ALREADY normative MUST in the
+# ac-evaluator lens ("an `## Accept-set sweep` line with `ran=n`, or with `ran=y astral=n`, is a NON-CONFORMANT shallow
+# sweep"), yet live dogfoods leaked them run-to-run because the rule is honoured only by model RECOGNITION.
+# hooks/accept-set-verify.sh reads the EMITTED `## Accept-set sweep` line from the persisted eval-round-{n}.md and applies
+# the SAME rule deterministically (P1 stand-down / P2 shallow-astral / P3 sliced-corpus / P4 gating), with zero model
+# recall — the only recognition-independent lever. This pins the hook wired as >=2 PostToolUse entries (Write + Edit).
+# RED-first: HEAD=0 (hook absent / unwired). Behaviour is covered by tests/test-accept-set-verify.sh (not a grep CT).
+aasc13_wired=$(grep -cF 'hooks/accept-set-verify.sh' "$REPO_DIR/hooks/hooks.json" || true)
+aasc13_result="false"
+if [ "$aasc13_wired" -ge 2 ]; then aasc13_result="true"; fi
+assert_true "CT-AASC-13 (AASC verification hook registered, Write+Edit PostToolUse): hooks.json registration count ($aasc13_wired>=2)" "$aasc13_result"
+
+# CT-AASC-14 (accept_set_conformance kill switch documented across the 3 spawner surfaces; v8.5.0+).
+# The ac-evaluator already honours an `Accept-set conformance: off` short-circuit and /impl Step 15 already reads
+# `constraints.accept_set_conformance` (absent->auto), but the per-brief policy field was undocumented on every spawner
+# surface, so operators could not set it — a half-wired L1/L2/L3 gap. This closes it symmetrically (CLAUDE.md ## Plans
+# enumerate-every-spawner rule), mirroring CT-EV-REFUTE-2. RED-first: HEAD=0 on all three tokens. DECONTAM-clean: the
+# field name is an abstract property, no product/key literal.
+aasc14_pt=$(grep -ciF 'accept_set_conformance: auto' "$REPO_DIR/skills/brief/references/policy-template.md" || true)
+aasc14_apr=$(grep -ciF 'constraints.accept_set_conformance' "$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md" || true)
+aasc14_orch=$(grep -ciF 'constraints.accept_set_conformance: auto|off' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+aasc14_result="false"
+if [ "$aasc14_pt" -ge 1 ] && [ "$aasc14_apr" -ge 1 ] && [ "$aasc14_orch" -ge 1 ]; then aasc14_result="true"; fi
+assert_true "CT-AASC-14 (accept_set_conformance kill switch documented): policy-template ($aasc14_pt>=1) + policy-reference ($aasc14_apr>=1) + orchestration block ($aasc14_orch>=1)" "$aasc14_result"
+
 
 echo ""
 

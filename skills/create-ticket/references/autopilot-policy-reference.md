@@ -272,6 +272,47 @@ switch for the refute-then-synthesize merge; it is independent of
 `constraints.eval_panel`, `constraints.independent_evidence`,
 `constraints.oracle_verification`, and `constraints.verification_depth`.
 
+## `constraints.accept_set_conformance`
+
+**Consumed by**: `/impl` (Step 15 `accept_set_conformance` resolution — the per-AC
+deterministic trigger + the EXECUTED accept-set sweep handoff to `ac-evaluator` /
+`ac-evaluator-hi`), the `ac-evaluator` `## Failure-class panel` L-ROBUSTNESS lens
+(which EXECUTES the sweep for the `triggered-on=` ACs against an independent
+hand-coded spec oracle), and the `hooks/accept-set-verify.sh` PostToolUse gate
+(which verifies the persisted `## Accept-set sweep` line post-hoc).
+
+**Accepted values**: `auto`, `off`.
+
+**Default** (field absent OR policy file absent OR unknown value): `auto`
+(fail-safe to active).
+
+**Effect**: when `auto`, **Advertised-Accept-Set Conformance** (v8.5.0+) is
+active. For any AC whose boundary advertises **strict / canonical / lossless /
+limit** (word-existence in the AC, its Implementation Notes, the docstring, or
+`--help`) OR shares an input class with a `shared_input_boundary` sibling (a
+keyed structure built from untrusted input triggers the K axis even with no
+lexical word), the orchestrator marks the AC `triggered-on=` and the evaluator
+MUST NOT merely reason about the accept set — it EXECUTES a generative
+grammar-complement sweep in `.simple-workflow/scratch/` and diffs the unit's
+accept-set against an independent hand-coded spec oracle (the four metamorphic
+relations MR-FINITE / MR-ALPHABET / MR-CANONICAL / MR-KEYFAITH; see
+[`../../impl/references/accept-set-conformance-harness.md`](../../impl/references/accept-set-conformance-harness.md)).
+A divergence is FAILed only under the two-tier oracle-authoritative gate (the
+oracle is authoritatively narrower than the unit's accept-set), else recorded as
+ADVISORY PASS-WITH-CAVEATS (the EC-SELFDOC fail-open posture). The evaluator
+persists one `## Accept-set sweep` line per inspected boundary, and
+`hooks/accept-set-verify.sh` deterministically verifies that line — a triggered
+boundary not run, an alphabet/unicode (A/U-axis) sweep that skipped the astral
+complement or used a sliced corpus, or an authoritative divergence not driven to
+FAIL is flagged (metric-only by default; see CLAUDE.md
+`SW_ACCEPT_SET_CONFORMANCE_MODE`). When `off`, the EXECUTED sweep and the hook
+gate stand down: the evaluator verifies the boundary by the prior read-only
+strictness reasoning and records a one-line Caveat — the byte-for-byte revert.
+This is the per-brief kill switch for the Advertised-Accept-Set Conformance
+feature line; it is independent of `constraints.verification_depth`,
+`constraints.oracle_verification`, `constraints.eval_panel`, and
+`constraints.independent_evidence`.
+
 ## `constraints.selfdoc_verification`
 
 **Consumed by**: the EC-SELFDOC evidence channel in

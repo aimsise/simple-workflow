@@ -314,6 +314,31 @@ lenses)`) UNLESS the panel resolved `off`. `eval_panel` is independent of
 `verification_depth` (which scales tier/depth), `oracle_verification` (the
 EC-ORACLE sub-case), and `independent_evidence` (the per-AC evidence floor).
 
+**Kill switch `constraints.accept_set_conformance: auto|off`** (absent file /
+field / unknown → `auto`, active). Resolved by the orchestrator at `/impl`
+Step 15 (the per-AC deterministic trigger) and enforced post-hoc by
+`hooks/accept-set-verify.sh`:
+
+- `auto` — Advertised-Accept-Set Conformance is in force: the orchestrator
+  computes `triggered-on=` per AC (a boundary lexically advertising **strict /
+  canonical / lossless / limit**, OR a `shared_input_boundary` sibling — a keyed
+  structure built from untrusted input triggers the K axis even with no lexical
+  word), inlines `Accept-set conformance: auto triggered-on={ids}` into the
+  evaluator spawn, and the evaluator EXECUTES the generative grammar-complement
+  sweep (black-box, vs an independent hand-coded spec oracle) for exactly those
+  ACs, persisting one `## Accept-set sweep` line per inspected boundary.
+- `off` — DISABLE the EXECUTED sweep: the evaluator verifies the boundary by the
+  prior read-only strictness reasoning and records a one-line Caveat, and the
+  `hooks/accept-set-verify.sh` gate has no sweep line to verify — reverting
+  byte-for-byte to the pre-v8.5.0 read-only path.
+
+The switch is independent of `verification_depth`, `oracle_verification`,
+`eval_panel`, and `independent_evidence`. The post-hoc gate
+`hooks/accept-set-verify.sh` ships `metric-only` (observe, never block) and is
+promoted to `on` after a clean dogfood (CLAUDE.md
+`SW_ACCEPT_SET_CONFORMANCE_MODE`); the EXECUTED sweep itself runs whenever this
+switch is not `off`.
+
 ## Independent-evidence channels (all evaluator modes)
 
 Independent of the verifier count, every `ac-evaluator` invocation — single,
