@@ -436,12 +436,15 @@ single pass under-checks:
   **MR-CANONICAL** (a structurally-valid-but-non-canonical form the writer would
   never emit must be rejected or normalized-idempotent), and **MR-KEYFAITH** (a
   reserved / accessor / colliding key must not mutate host-structure metadata or
-  be silently dropped — **ASSUMED, not proven**: treat an MR-KEYFAITH divergence
-  as advisory unless a concrete drop / mutation is observed. For the CORPUS you
+  be silently dropped — a CONCRETE round-trip-faithfulness violation (a drop, an
+  overwrite, or a host-metadata mutation) on a lossless / strict keyed boundary
+  is subject to the SAME standard two-tier oracle-authoritative FAIL gating as the
+  other MRs (below), not a weaker advisory-only floor. For the CORPUS you
   MUST DERIVE the candidate key corpus BY REFLECTION over the structure's own
-  type / prototype — its reserved, accessor, and method names — so your generator
+  type / prototype — its reserved, accessor, method, AND private / internal slot
+  names (the FULL reflected set, never truncated or sliced) — so your generator
   names NO key and hard-codes NO key list; it enumerates via reflection, so every
-  reserved / accessor / colliding key is covered for ALL inputs, plus the generic
+  reserved / accessor / colliding / private-slot key is covered for ALL inputs, plus the generic
   structural hostiles (an empty key, a duplicate of an existing key, a key that
   collides after the structure's normalization), and you diff against an
   independent round-trip-faithfulness oracle

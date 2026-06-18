@@ -10307,7 +10307,7 @@ assert_true \
 # enumerate-by-PROPERTY/names-NO-script directive (which reached astral breadth in dogfood47). This brings the MR-KEYFAITH
 # CORPUS directive to (c)-parity: a MUST to DERIVE the candidate key corpus BY REFLECTION (naming NO key literal, exactly as
 # MR-ALPHABET selects by the decimal-digit PROPERTY) so every reserved / accessor / colliding key is covered for ALL inputs.
-# The GATING qualifier (**ASSUMED, not proven** ... advisory) is UNCHANGED this round. Net-new token
+# The GATING qualifier was upgraded to the shared two-tier gate in a later round (see CT-AASC-10). Net-new token
 # 'DERIVE the candidate key corpus BY REFLECTION' is HEAD=0 (RED-first). Twins byte-identical. Stays decontam-clean: the
 # directive names no key-literal denylist token (CT-DECONTAM-1 must remain 0 hits).
 aasc9_tok='DERIVE the candidate key corpus BY REFLECTION'
@@ -10318,6 +10318,45 @@ if [ "$aasc9_a" -ge 1 ] && [ "$aasc9_b" -ge 1 ]; then aasc9_result="true"; fi
 assert_true \
   "CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive-by-reflection, both twins): directive present in ac-evaluator ($aasc9_a>=1) AND -hi ($aasc9_b>=1)" \
   "$aasc9_result"
+
+# CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins; (b)-finish round).
+# LOAD-BEARING: the MR-KEYFAITH lens shipped its divergence as **ASSUMED, not proven** / advisory-only, a WEAKER
+# floor than the other MRs. A concrete round-trip-faithfulness violation (a drop / overwrite / host-metadata mutation)
+# on a lossless / strict keyed boundary is now folded into the SAME standard two-tier oracle-authoritative FAIL gating
+# as MR-FINITE / MR-ALPHABET / MR-CANONICAL. This pins the folded-gate phrase present in BOTH twins AND the removal of
+# the old **ASSUMED, not proven** qualifier (RED-first: HEAD ships the ASSUMED text and not the folded phrase).
+aasc10_tok='SAME standard two-tier oracle-authoritative FAIL gating as the'
+aasc10_a=$(grep -cF "$aasc10_tok" "$ACEV_EV" || true)
+aasc10_b=$(grep -cF "$aasc10_tok" "$ACEVHI_EV" || true)
+aasc10_old_a=$(grep -cF 'ASSUMED, not proven' "$ACEV_EV" || true)
+aasc10_old_b=$(grep -cF 'ASSUMED, not proven' "$ACEVHI_EV" || true)
+aasc10_result="false"
+if [ "$aasc10_a" -ge 1 ] && [ "$aasc10_b" -ge 1 ] && [ "$aasc10_old_a" -eq 0 ] && [ "$aasc10_old_b" -eq 0 ]; then aasc10_result="true"; fi
+assert_true "CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins): folded-gate phrase acev ($aasc10_a>=1) hi ($aasc10_b>=1), ASSUMED removed acev ($aasc10_old_a=0) hi ($aasc10_old_b=0)" "$aasc10_result"
+
+# CT-AASC-11 (round-trip oracle from input-pairs last-write-wins; harness doc).
+# LOAD-BEARING: the worked MR-KEYFAITH (b) oracle must compute its expectation FROM THE INPUT PAIRS by last-write-wins,
+# never by reading it back out of the builder (the dogfood-50 circular-oracle trap). This pins the net-new phrase in the
+# harness doc (RED-first: HEAD=0 for the phrase).
+aasc11_c=$(grep -cF 'computed from the INPUT PAIRS by last-write-wins' "$AASC_DOC" 2>/dev/null || true)
+aasc11_result="false"
+if [ "$aasc11_c" -ge 1 ]; then aasc11_result="true"; fi
+assert_true "CT-AASC-11 (round-trip oracle from input-pairs last-write-wins): net-new phrase in harness doc ($aasc11_c>=1)" "$aasc11_result"
+
+# CT-AASC-12 (reflection corpus incl private/internal slots + FULL set; doc + both twins).
+# LOAD-BEARING: a private-slot collision (an input key shadowing the structure's own internal storage slot) is a real
+# drop / overwrite class reflection already exposes, so the reflected corpus MUST be the FULL reflected set (never sliced)
+# and MUST include private / internal slot names. Pins both net-new tokens ('private / internal slot' + 'FULL reflected
+# set') across the harness doc AND both twins (RED-first: HEAD=0). Stays decontam-clean: no key-literal denylist token.
+aasc12_doc=$(grep -cF 'private / internal slot names' "$AASC_DOC" 2>/dev/null || true)
+aasc12_acev=$(grep -cF 'private / internal slot' "$ACEV_EV" || true)
+aasc12_hi=$(grep -cF 'private / internal slot' "$ACEVHI_EV" || true)
+aasc12_doc_full=$(grep -cF 'FULL reflected set' "$AASC_DOC" 2>/dev/null || true)
+aasc12_acev_full=$(grep -cF 'FULL reflected set' "$ACEV_EV" || true)
+aasc12_hi_full=$(grep -cF 'FULL reflected set' "$ACEVHI_EV" || true)
+aasc12_result="false"
+if [ "$aasc12_doc" -ge 1 ] && [ "$aasc12_acev" -ge 1 ] && [ "$aasc12_hi" -ge 1 ] && [ "$aasc12_doc_full" -ge 1 ] && [ "$aasc12_acev_full" -ge 1 ] && [ "$aasc12_hi_full" -ge 1 ]; then aasc12_result="true"; fi
+assert_true "CT-AASC-12 (reflection corpus incl private/internal slots + FULL set, doc+both twins): private-slot doc ($aasc12_doc) acev ($aasc12_acev) hi ($aasc12_hi); FULL-set doc ($aasc12_doc_full) acev ($aasc12_acev_full) hi ($aasc12_hi_full)" "$aasc12_result"
 
 
 echo ""

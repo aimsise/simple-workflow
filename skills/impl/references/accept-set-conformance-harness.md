@@ -110,16 +110,18 @@ def make_corpus():
 - **MR-CANONICAL** — a structurally-valid-but-non-canonical form the canonical
   Writer would never emit (`01`, `0255`) must be rejected OR be
   normalized-idempotent (`f(f(x)) == f(x)` and `f(x)` is the canonical form).
-- **MR-KEYFAITH** — *(ASSUMED, not proven)* a reserved / accessor / colliding key
-  in a K-axis structure must not mutate host-structure metadata or be silently
-  dropped. The structural-key reflection this hypothesises is unverified; treat
-  an MR-KEYFAITH divergence as advisory unless a concrete drop / mutation is
-  observed. The copyable shape for this class lives in
+- **MR-KEYFAITH** — a reserved / accessor / colliding key in a K-axis structure
+  must not mutate host-structure metadata or be silently dropped. A CONCRETE
+  round-trip-faithfulness violation (a drop, an overwrite, or a host-metadata
+  mutation) is subject to the SAME oracle-authoritative two-tier FAIL gating as
+  the other MRs (see [§ FAIL gating](#fail-gating--oracle-authoritative-two-tier-no-false-positive-storm)
+  below): a violation on a lossless / strict keyed boundary the oracle
+  authoritatively narrows is a FAIL; a legitimately-WIDE keyed boundary (arbitrary
+  keys accepted by contract, last-write-wins, no protected metadata) is advisory
+  (`authoritative=n`, a Caveat). The copyable shape for this class lives in
   [§ The worked MR-KEYFAITH (b) shape](#the-worked-mr-keyfaith-b-shape-reflection-derived-keyed-structure)
   below — a reflection-derived key generator paired with an independent
-  round-trip-faithfulness oracle. Reaching for it does **not** upgrade the gating:
-  the generated divergence stays advisory (`authoritative=n`, a Caveat) unless the
-  black-box diff exhibits a concrete drop / overwrite / host-metadata mutation.
+  round-trip-faithfulness oracle.
 
 ## The worked MR-KEYFAITH (b) shape reflection-derived keyed structure
 
@@ -133,13 +135,20 @@ This subsection gives MR-KEYFAITH the same copyable structure as MR-ALPHABET, fo
 a K-axis structure built from untrusted `(key, value)` input pairs. It is
 **illustrative only** on both the domain axis and the language axis; transcribe
 the ROLES (independent round-trip-faithfulness oracle; reflection-derived
-generator; black-box diff), not the surface domain. Gating is unchanged: the
-divergence this produces is advisory unless the diff shows a concrete drop /
-overwrite / host-metadata mutation (see the MR-KEYFAITH bullet above).
+generator; black-box diff), not the surface domain. Gating follows the shared two-tier gate (see the MR-KEYFAITH bullet
+above): a concrete drop / overwrite / host-metadata mutation on a lossless /
+strict keyed boundary the oracle authoritatively narrows is a FAIL; a
+legitimately-wide keyed boundary is advisory.
 
 The oracle is **round-trip-faithfulness** and is INDEPENDENT of the builder: it
 reasons only from the input PAIRS and never calls the builder under test to
-decide what is correct.
+decide what is correct. The expectation is
+computed from the INPUT PAIRS by last-write-wins; it is NEVER read back out of the
+builder (the dogfood-50 trap:
+deriving `expected` by re-invoking the builder makes the oracle circular — a
+builder that drops a key would "agree with itself"). The round-trip leg below
+re-runs the builder only to confirm SERIALIZE then BUILD stability; the truth it is
+diffed against stays the pairs-derived mapping, never the builder's own output.
 
 ```python
 # ILLUSTRATIVE ONLY (neutral domain, Python): round-trip faithfulness for a
@@ -169,7 +178,13 @@ def oracle_faithful(pairs, build, get, serialize, MISSING=object()):
 
 The generator DERIVES the host structure's own reserved / accessor key names BY
 REFLECTION at runtime and names no key literal — exactly as MR-ALPHABET selects
-by the decimal-digit PROPERTY and names no script. The reflection API calls
+by the decimal-digit PROPERTY and names no script. The reflected set MUST include
+the structure's own private / internal slot names (the leading-underscore /
+name-mangled / non-public attribute names), not only its public methods and
+dunders — a private-slot collision (an input key that shadows the structure's own
+internal storage slot) is a real drop / overwrite class, and reflection already
+exposes those names, so enumerate the FULL reflected set, never a truncated or
+sliced subset. The reflection API calls
 (below) are introspection plumbing, not key literals; the dangerous names are
 whatever the live host happens to expose, so the source stays decontaminated.
 
