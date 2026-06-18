@@ -126,6 +126,27 @@ mkfix eval-round-Fsuffix.md "## Status: PASS
 ## Accept-set sweep
 boundary=A triggered=y ran=y astral=y corpus-size=5-canonical-forms divergences=0 authoritative=n caveat=none"
 
+# Fhash: a mis-LEVELED header (`### Accept-set sweep`, three hashes) must still be
+# READ (Gate 2b + section awk match any hash depth) so a P1 stand-down under it is
+# caught, not skipped. Live-observed in the dogfood51 ground-truth (003 eval-round-3).
+# Same drift class as Fcap, on the hash-depth axis.
+mkfix eval-round-Fhash.md "## Status: FAIL
+
+### Accept-set sweep
+boundary=K triggered=y ran=n astral=n corpus-size=0 divergences=0 authoritative=y caveat=none"
+
+# Ftab: a tab-separated sweep line must still have its fields extracted (field_of
+# value class is whitespace-bounded, not space-only) so a P1 stand-down is caught.
+printf '## Status: FAIL\n\n## Accept-set sweep\nboundary=K\ttriggered=y\tran=n\tastral=n\tcorpus-size=0\tdivergences=0\tauthoritative=y\tcaveat=none\n' > "$FIXDIR/eval-round-Ftab.md"
+
+# Fcaps: an ALL-CAPS header (`## ACCEPT-SET SWEEP`) must still be READ — Gate 2b is
+# grep -i and the section awk lowercases via tolower(), so the two header-matchers
+# accept the SAME set (any case, any hash depth); a bad sweep under it cannot escape.
+mkfix eval-round-Fcaps.md "## Status: FAIL
+
+## ACCEPT-SET SWEEP
+boundary=K triggered=y ran=n astral=n corpus-size=0 divergences=0 authoritative=y caveat=none"
+
 # ---- MODE=on (enforce) ----------------------------------------------------
 echo "--- MODE=on (enforce: decision:block on violation) ---"
 export SW_ACCEPT_SET_CONFORMANCE_MODE=on SW_AASC_CORPUS_FLOOR=256
@@ -147,6 +168,9 @@ run_fix some-other-file.md; expect_noblock "F8 non-eval path (Gate 1) -> no bloc
 run_fix eval-round-Fcap.md;    expect_block    "Fcap capital-S header + P1 -> READ case-insensitively + block (dogfood51 fix #2)"
 run_fix eval-round-Fthin.md;   expect_advisory "Fthin thin-but-conformant A=5 astral=y PASS report -> advisory, NO block (dogfood51 002-r1 false-trip fix)"
 run_fix eval-round-Fsuffix.md; expect_advisory "Fsuffix descriptive corpus-size (5-canonical-forms) -> leading-int parsed -> advisory (dogfood51 fix #3)"
+run_fix eval-round-Fhash.md;   expect_block    "Fhash mis-leveled header (### Accept-set sweep) + P1 -> READ at any hash depth + block (live 003 eval-round-3 escape)"
+run_fix eval-round-Ftab.md;    expect_block    "Ftab tab-separated sweep line + P1 -> fields extracted (whitespace-bounded class) + block"
+run_fix eval-round-Fcaps.md;   expect_block    "Fcaps all-caps header (## ACCEPT-SET SWEEP) + P1 -> READ (awk tolower == Gate2b -i) + block"
 
 # ---- MODE=metric-only (default; observe only) -----------------------------
 echo "--- MODE=metric-only (default: observe, never block) ---"

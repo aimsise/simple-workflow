@@ -10330,9 +10330,13 @@ aasc10_a=$(grep -cF "$aasc10_tok" "$ACEV_EV" || true)
 aasc10_b=$(grep -cF "$aasc10_tok" "$ACEVHI_EV" || true)
 aasc10_old_a=$(grep -cF 'ASSUMED, not proven' "$ACEV_EV" || true)
 aasc10_old_b=$(grep -cF 'ASSUMED, not proven' "$ACEVHI_EV" || true)
+# Sibling-artifact uniformity (CLAUDE.md Modifications rule): the cross-linked EC-taxonomy
+# reference both evaluators point to must NOT carry the stale ASSUMED/advisory-only posture,
+# else a reader there downgrades a genuine narrow-keyed-boundary leak the twins now FAIL-gate.
+aasc10_old_ech=$(grep -cF 'ASSUMED, not proven' "$ECH_EV" || true)
 aasc10_result="false"
-if [ "$aasc10_a" -ge 1 ] && [ "$aasc10_b" -ge 1 ] && [ "$aasc10_old_a" -eq 0 ] && [ "$aasc10_old_b" -eq 0 ]; then aasc10_result="true"; fi
-assert_true "CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins): folded-gate phrase acev ($aasc10_a>=1) hi ($aasc10_b>=1), ASSUMED removed acev ($aasc10_old_a=0) hi ($aasc10_old_b=0)" "$aasc10_result"
+if [ "$aasc10_a" -ge 1 ] && [ "$aasc10_b" -ge 1 ] && [ "$aasc10_old_a" -eq 0 ] && [ "$aasc10_old_b" -eq 0 ] && [ "$aasc10_old_ech" -eq 0 ]; then aasc10_result="true"; fi
+assert_true "CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins + EC ref): folded-gate phrase acev ($aasc10_a>=1) hi ($aasc10_b>=1), ASSUMED removed acev ($aasc10_old_a=0) hi ($aasc10_old_b=0) evidence-channels ($aasc10_old_ech=0)" "$aasc10_result"
 
 # CT-AASC-11 (round-trip oracle from input-pairs last-write-wins; harness doc).
 # LOAD-BEARING: the worked MR-KEYFAITH (b) oracle must compute its expectation FROM THE INPUT PAIRS by last-write-wins,

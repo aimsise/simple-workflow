@@ -44,7 +44,8 @@
 # derived corpus (reserved/accessor/private-slot names — a handful of ASCII
 # identifiers, never astral), so the astral/corpus checks do not apply to them.
 # P1 and P4 are axis-independent. The `## Accept-set sweep` header is matched
-# case-insensitively (a mis-cased header must not let a whole report skip the gate).
+# case-insensitively AND at any hash depth (`#`..`######`), so neither a mis-cased
+# nor a mis-leveled header can let a whole report silently skip the gate.
 #
 # Kill switch SW_ACCEPT_SET_CONFORMANCE_MODE:
 #   metric-only (DEFAULT) -> observe: log `[ACCEPT-SET-VERIFY] metric-only: would block ...`, ALLOW.
@@ -99,7 +100,7 @@ esac
 # (sweep not in scope, or a pre-v8.5.0 / degraded report). Fail-OPEN. Matched
 # case-insensitively so a mis-cased header (`## Accept-set Sweep`) cannot let a
 # whole report skip the gate (dogfood51: 001-r2 used a capital-S header).
-grep -qiE '^## accept-set sweep[[:space:]]*$' "$TOOL_FILE_PATH" 2>/dev/null || exit 0
+grep -qiE '^#{1,6}[[:space:]]+accept-set sweep[[:space:]]*$' "$TOOL_FILE_PATH" 2>/dev/null || exit 0
 
 # Gate 3: kill switch. Unknown collapses to metric-only.
 MODE_RAW="${SW_ACCEPT_SET_CONFORMANCE_MODE:-metric-only}"
@@ -117,8 +118,8 @@ esac
 # Extract the `## Accept-set sweep` section body (heading exclusive, up to the
 # next `## ` heading or EOF).
 SECTION=$(awk '
-  /^## [Aa]ccept-set [Ss]weep[[:space:]]*$/ { f=1; next }
-  /^## / { f=0 }
+  tolower($0) ~ /^#{1,6}[[:space:]]+accept-set sweep[[:space:]]*$/ { f=1; next }
+  /^#{1,6}[[:space:]]/ { f=0 }
   f
 ' "$TOOL_FILE_PATH" 2>/dev/null || true)
 
@@ -137,18 +138,30 @@ esac
 # field_of <line> <key> -> the token value (empty if absent).
 field_of() {
   local v
-  v=$(printf '%s\n' "$1" | grep -oE "$2=[^ ]+" | head -1) || true
+  v=$(printf '%s\n' "$1" | grep -oE "$2=[^[:space:]]+" | head -1) || true
   printf '%s' "${v#*=}"
 }
 
 BLOCKING=""
 ADVISORY=""
 while IFS= read -r LINE; do
+  # Select any sweep line carrying a boundary= token (field_of is order-independent,
+  # so a reordered-but-complete line is no longer skipped). The section is already
+  # bounded to the `## Accept-set sweep` block by the awk extractor above.
   case "$LINE" in
-    boundary=*) ;;
+    *boundary=*) ;;
     *) continue ;;
   esac
   B=$(field_of "$LINE" boundary)
+  # Off-grammar boundary label (not A/U/W/K): the A/U astral-depth gate is keyed to
+  # A|U, so a relabeled alphabet boundary would silently dodge it. Surface it on
+  # stderr (fail-toward-observability; not a block, to avoid false-tripping a genuine
+  # W/K-class sweep) so format drift in the only recognition-independent lever is seen.
+  case "$B" in
+    A|U|W|K) ;;
+    "") ;;
+    *) printf '[ACCEPT-SET-VERIFY] off-grammar boundary label=%s in %s\n' "$B" "$(basename "$TOOL_FILE_PATH")" >&2 ;;
+  esac
   TRIG=$(field_of "$LINE" triggered)
   RAN=$(field_of "$LINE" ran)
   ASTRAL=$(field_of "$LINE" astral)

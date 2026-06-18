@@ -80,8 +80,12 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   draws from — a behavioral AC still names one of those four. FAIL gating is
   oracle-authoritative two-tier (force-FAIL only on a strictly-narrower advertised
   contract; otherwise advisory `[MEDIUM]`), and where no runnable artifact exists it
-  is **fail-open** with a Caveat. MR-KEYFAITH is **ASSUMED, not proven**: treat an
-  MR-KEYFAITH divergence as advisory unless a concrete drop / mutation is observed.
+  is **fail-open** with a Caveat. An MR-KEYFAITH divergence (a concrete key drop /
+  overwrite / host-metadata mutation on a keyed boundary the oracle authoritatively
+  narrows) is subject to the SAME two-tier oracle-authoritative FAIL gate as the
+  other relations — force-FAIL when the advertised contract is strictly narrower,
+  advisory `[MEDIUM]` only where the keyed boundary is legitimately WIDE; it is NOT
+  a weaker advisory-only floor.
 - **EC-RUNTIME** — black-box observation through the real public / protocol boundary:
   the real CLI, the real MCP `Client` over a transport, the exported public API, a
   rendered DOM — never internal handlers reached by reflection or by imports a real
