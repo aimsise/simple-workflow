@@ -10287,6 +10287,38 @@ for aasc7_tok in 'implementation-peek' 'shallow sweep'; do
 done
 assert_true "CT-AASC-7 (black-box no-impl-peek + shallow-sweep self-incrimination, both twins): implementation-peek + shallow sweep present in ac-evaluator AND -hi ($aasc7_ok)" "$aasc7_ok"
 
+# CT-AASC-8 (worked MR-KEYFAITH (b) shape: reflection-derived key generator + round-trip-faithfulness oracle; v8.5.0+).
+# LOAD-BEARING per charter section H: a (b) dogfood self-elicited the MR-KEYFAITH / K-axis sweep but executed a HAND-PICKED
+# key-literal corpus because the doc shipped a worked example ONLY for MR-ALPHABET and left MR-KEYFAITH bare prose. This pins
+# that the harness doc (AASC_DOC handle) now ships a copyable MR-KEYFAITH (b) shape whose generator DERIVES the dangerous keys
+# by reflection (naming NO key literal, exactly as MR-ALPHABET selects by the decimal-digit PROPERTY). Net-new token
+# 'reflection-derived' is HEAD=0 (RED-first; bare 'reflection' pre-exists in the MR-KEYFAITH prose bullet and is NOT what this
+# pins). Stays decontam-clean: the shape names no key-literal denylist token (CT-DECONTAM-1 must remain 0 hits).
+aasc8_phrase=$(grep -cF 'reflection-derived' "$AASC_DOC" 2>/dev/null || true)
+aasc8_result="false"
+if [ "$aasc8_phrase" -ge 1 ]; then aasc8_result="true"; fi
+assert_true \
+  "CT-AASC-8 (worked MR-KEYFAITH (b) shape: reflection-derived generator + round-trip-faithfulness oracle): net-new (b)-shape phrase in harness doc ($aasc8_phrase>=1)" \
+  "$aasc8_result"
+
+# CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive the dangerous-key corpus BY REFLECTION, both twins; v8.5.0+).
+# LOAD-BEARING per charter section H: a (b) dogfood self-elicited the MR-KEYFAITH / K-axis sweep but executed a HAND-PICKED
+# key-literal corpus because the LENS shipped MR-KEYFAITH as bare/advisory prose while MR-ALPHABET (c) carried a strong
+# enumerate-by-PROPERTY/names-NO-script directive (which reached astral breadth in dogfood47). This brings the MR-KEYFAITH
+# CORPUS directive to (c)-parity: a MUST to DERIVE the candidate key corpus BY REFLECTION (naming NO key literal, exactly as
+# MR-ALPHABET selects by the decimal-digit PROPERTY) so every reserved / accessor / colliding key is covered for ALL inputs.
+# The GATING qualifier (**ASSUMED, not proven** ... advisory) is UNCHANGED this round. Net-new token
+# 'DERIVE the candidate key corpus BY REFLECTION' is HEAD=0 (RED-first). Twins byte-identical. Stays decontam-clean: the
+# directive names no key-literal denylist token (CT-DECONTAM-1 must remain 0 hits).
+aasc9_tok='DERIVE the candidate key corpus BY REFLECTION'
+aasc9_a=$(grep -cF "$aasc9_tok" "$ACEV_EV" || true)
+aasc9_b=$(grep -cF "$aasc9_tok" "$ACEVHI_EV" || true)
+aasc9_result="false"
+if [ "$aasc9_a" -ge 1 ] && [ "$aasc9_b" -ge 1 ]; then aasc9_result="true"; fi
+assert_true \
+  "CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive-by-reflection, both twins): directive present in ac-evaluator ($aasc9_a>=1) AND -hi ($aasc9_b>=1)" \
+  "$aasc9_result"
+
 
 echo ""
 

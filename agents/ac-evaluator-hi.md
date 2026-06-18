@@ -437,7 +437,16 @@ single pass under-checks:
   never emit must be rejected or normalized-idempotent), and **MR-KEYFAITH** (a
   reserved / accessor / colliding key must not mutate host-structure metadata or
   be silently dropped — **ASSUMED, not proven**: treat an MR-KEYFAITH divergence
-  as advisory unless a concrete drop / mutation is observed). **FAIL gating
+  as advisory unless a concrete drop / mutation is observed. For the CORPUS you
+  MUST DERIVE the candidate key corpus BY REFLECTION over the structure's own
+  type / prototype — its reserved, accessor, and method names — so your generator
+  names NO key and hard-codes NO key list; it enumerates via reflection, so every
+  reserved / accessor / colliding key is covered for ALL inputs, plus the generic
+  structural hostiles (an empty key, a duplicate of an existing key, a key that
+  collides after the structure's normalization), and you diff against an
+  independent round-trip-faithfulness oracle
+  (`skills/impl/references/accept-set-conformance-harness.md`). A single
+  hand-picked key list is NOT a conformant corpus). **FAIL gating
   (oracle-authoritative two-tier, NO false-positive storm):** FAIL the AC on an
   accept-set divergence ONLY when the hand-coded oracle AUTHORITATIVELY reflects a
   spec that is STRICTLY NARROWER than the unit's accept-set (the advertised

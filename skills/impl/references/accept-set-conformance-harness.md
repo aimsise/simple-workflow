@@ -114,7 +114,111 @@ def make_corpus():
   in a K-axis structure must not mutate host-structure metadata or be silently
   dropped. The structural-key reflection this hypothesises is unverified; treat
   an MR-KEYFAITH divergence as advisory unless a concrete drop / mutation is
-  observed.
+  observed. The copyable shape for this class lives in
+  [§ The worked MR-KEYFAITH (b) shape](#the-worked-mr-keyfaith-b-shape-reflection-derived-keyed-structure)
+  below — a reflection-derived key generator paired with an independent
+  round-trip-faithfulness oracle. Reaching for it does **not** upgrade the gating:
+  the generated divergence stays advisory (`authoritative=n`, a Caveat) unless the
+  black-box diff exhibits a concrete drop / overwrite / host-metadata mutation.
+
+## The worked MR-KEYFAITH (b) shape reflection-derived keyed structure
+
+The MR-ALPHABET module above derives its corpus from a **property** (the Unicode
+decimal-digit category) and names no script or codepoint. The K-axis class needs
+the same move so the self-elicited sweep DERIVES the dangerous keys instead of
+naming literals: a hand-picked reserved-key list is the keyed-structure analogue
+of hard-coding a per-script digit table — it tests only the keys the author
+happened to recall, and the one that ships the leak is the one nobody listed.
+This subsection gives MR-KEYFAITH the same copyable structure as MR-ALPHABET, for
+a K-axis structure built from untrusted `(key, value)` input pairs. It is
+**illustrative only** on both the domain axis and the language axis; transcribe
+the ROLES (independent round-trip-faithfulness oracle; reflection-derived
+generator; black-box diff), not the surface domain. Gating is unchanged: the
+divergence this produces is advisory unless the diff shows a concrete drop /
+overwrite / host-metadata mutation (see the MR-KEYFAITH bullet above).
+
+The oracle is **round-trip-faithfulness** and is INDEPENDENT of the builder: it
+reasons only from the input PAIRS and never calls the builder under test to
+decide what is correct.
+
+```python
+# ILLUSTRATIVE ONLY (neutral domain, Python): round-trip faithfulness for a
+# structure rebuilt from untrusted (key, value) pairs. SPEC-DERIVED and
+# INDEPENDENT of the builder: the expectation is computed from the INPUT PAIRS by
+# last-write-wins, never by asking the builder what it produced.
+#   build(pairs) -> the structure under test;  get(struct, k) -> value or a
+#   sentinel if absent;  serialize(struct) -> the structure's wire form.
+def oracle_faithful(pairs, build, get, serialize, MISSING=object()):
+    # 1. last-write-wins truth, derived only from the inputs.
+    expected = {}
+    for k, v in pairs:
+        expected[k] = v                      # later pair for a repeated key wins
+    built = build(pairs)
+    # 2. every key the inputs asked for returns ITS value unchanged (no drop /
+    #    overwrite / host-metadata bleed) — read back through the public getter.
+    for k, want in expected.items():
+        if get(built, k) != want:
+            return False                     # silent drop or wrong-value overwrite
+    # 3. round-trip: build(serialize(x)) preserves the same observable mapping.
+    again = build(serialize(built))
+    for k, want in expected.items():
+        if get(again, k) != want:
+            return False
+    return True
+```
+
+The generator DERIVES the host structure's own reserved / accessor key names BY
+REFLECTION at runtime and names no key literal — exactly as MR-ALPHABET selects
+by the decimal-digit PROPERTY and names no script. The reflection API calls
+(below) are introspection plumbing, not key literals; the dangerous names are
+whatever the live host happens to expose, so the source stays decontaminated.
+
+```python
+# ILLUSTRATIVE ONLY: derive the hostile key corpus BY REFLECTION over the live
+# host structure — name NO key literal. The accessor / reserved names are read
+# off the runtime type at sweep time, so this generator is portable across hosts
+# and stays free of any product-specific key denylist.
+#
+#   JS  illustration : keys = new Set(Object.getOwnPropertySymbols(target));
+#                      for (let p = target; p; p = Object.getPrototypeOf(p))
+#                        Object.getOwnPropertyNames(p).forEach(n => keys.add(n));
+#                      // climb the ancestor chain via getPrototypeOf to its root,
+#                      // adding each level's own names — names the accessor /
+#                      // reserved set by reflection, no literal.
+#   Py  illustration : as below, via dir(type(target)) over the live type
+def reflect_hostile_keys(target):
+    keys = set()
+    t = type(target)
+    keys.update(dir(t))                       # the type's own method + dunder names
+    for base in t.__mro__:                    # walk the resolution order to the root
+        keys.update(vars(base).keys())        # each ancestor's own attribute names
+    return keys
+
+def make_key_corpus(target, existing_keys):
+    hostile = reflect_hostile_keys(target)    # reflection-derived accessor names
+    generic = set()
+    generic.add('')                           # empty key (generic structural hostile)
+    if existing_keys:
+        generic.add(next(iter(existing_keys)))  # duplicate of an existing key
+    # a key that COLLIDES only after the structure's own normalization (the
+    # structure decides the fold; we derive a colliding partner from an existing
+    # key rather than naming a literal collision pair).
+    for k in existing_keys:
+        if isinstance(k, str) and k != k.casefold():
+            generic.add(k.casefold())         # normalized-collision partner
+            break
+    return hostile | generic
+```
+
+Run the REAL builder black-box over `make_key_corpus(...)` as `(key, value)`
+pairs (synthetic values, so the only variable is the key), then DIFF against
+`oracle_faithful`. A non-faithful build — a reflection-derived accessor name that
+overwrites host-structure metadata, an empty / duplicate / normalized-collision
+key that silently drops a value, or a round-trip that loses a mapping — is the
+catch; name the offending class in Feedback so the producer round can pin it. A
+faithful builder returns a clean zero over the whole reflected corpus (no
+false-positive storm), because the oracle accepts exactly the last-write-wins
+mapping the inputs demanded.
 
 ## Black-box diff under a watchdog (the executed step)
 
