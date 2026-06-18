@@ -26,19 +26,25 @@
 # sweep. Catching structural self-incrimination, not fabrication, is the ceiling.
 #
 # Predicates (per `boundary=` line in the section):
-#   P1 stand-down  (all axes):  triggered=y ran=n                       -> NON-CONFORMANT
-#   P2 shallow     (A,U axes):  triggered=y ran=y astral=n              -> NON-CONFORMANT
-#   P3 sliced      (A,U axes):  triggered=y ran=y corpus-size < FLOOR   -> NON-CONFORMANT
-#   P4 gating      (all axes):  authoritative=y divergences>0 while Status not FAIL/FAIL-CRITICAL -> NON-CONFORMANT
+#   P1 stand-down  (all axes):  triggered=y ran=n                       -> BLOCK
+#   P2 shallow     (A,U axes):  triggered=y ran=y astral=n              -> BLOCK
+#   P4 gating      (all axes):  authoritative=y divergences>0 while Status not FAIL/FAIL-CRITICAL -> BLOCK
+#   P3 thin-corpus (A,U axes):  triggered=y ran=y corpus-size < FLOOR   -> ADVISORY ONLY (never blocks)
+# P3 is ADVISORY, not a gate (dogfood51): corpus-size is a weak proxy for sweep
+# depth — a handful of astral probes can be deeper than hundreds of ASCII ones —
+# so flooring it would false-trip a legitimately-thin-but-conformant sweep on a
+# wide-spec subject (002-r1 A=5, 003-r2 A=105, both astral=y divergences=0, one a
+# PASS report). astral (P2) is the real A/U depth gate; P3 only SURFACES the
+# run-to-run depth variance as a note. SW_AASC_CORPUS_FLOOR tunes the threshold.
 # The `caveat=no-runnable-artifact` escape (a compiled language / no exec
-# harness: triggered but the sweep could not be executed) exempts P1/P2/P3 for
-# that line — a legit fail-OPEN degradation, NOT a violation. P4 still applies.
-# P2/P3 are scoped to the alphabet (A) and unicode-transform (U) axes, where a
-# large astral-inclusive complement corpus is the mandated breadth. The keyed (K)
-# and canonical-writer (W) axes legitimately enumerate a small reflection-derived
-# corpus (a structure's reserved/accessor/private-slot names are a handful of
-# ASCII identifiers, never hundreds, never astral), so flooring them would
-# false-trip. P1 and P4 are axis-independent.
+# harness: triggered but the sweep could not be executed) exempts P1/P2 (and the
+# P3 advisory) for that line — a legit fail-OPEN degradation. P4 still applies.
+# P2/P3 are scoped to the alphabet (A) and unicode-transform (U) axes; the keyed
+# (K) and canonical-writer (W) axes legitimately enumerate a small reflection-
+# derived corpus (reserved/accessor/private-slot names — a handful of ASCII
+# identifiers, never astral), so the astral/corpus checks do not apply to them.
+# P1 and P4 are axis-independent. The `## Accept-set sweep` header is matched
+# case-insensitively (a mis-cased header must not let a whole report skip the gate).
 #
 # Kill switch SW_ACCEPT_SET_CONFORMANCE_MODE:
 #   metric-only (DEFAULT) -> observe: log `[ACCEPT-SET-VERIFY] metric-only: would block ...`, ALLOW.
@@ -46,8 +52,9 @@
 #   off                   -> explicit opt-out: silent skip.
 #   unknown               -> collapses to metric-only (a typo neither enforces nor silently disables).
 #
-# Corpus floor SW_AASC_CORPUS_FLOOR (default 256) — the P3 minimum corpus size
-# for an A/U-axis triggered+run sweep; env-tunable per host/subject.
+# Corpus floor SW_AASC_CORPUS_FLOOR (default 256) — the P3 ADVISORY threshold for
+# an A/U-axis triggered+run sweep; a thinner corpus is NOTED (never blocked), and
+# the threshold is env-tunable per host/subject.
 #
 # Fail-OPEN iron rule: this hook MUST NEVER break the host Write/Edit. jq
 # missing, an unreadable report, a non-eval path, a skeleton (IN_PROGRESS) write,
@@ -89,8 +96,10 @@ case "$FIRST_STATUS" in
 esac
 
 # Gate 2b: no `## Accept-set sweep` section -> nothing persisted to verify
-# (sweep not in scope, or a pre-v8.5.0 / degraded report). Fail-OPEN.
-grep -qE '^## Accept-set sweep[[:space:]]*$' "$TOOL_FILE_PATH" 2>/dev/null || exit 0
+# (sweep not in scope, or a pre-v8.5.0 / degraded report). Fail-OPEN. Matched
+# case-insensitively so a mis-cased header (`## Accept-set Sweep`) cannot let a
+# whole report skip the gate (dogfood51: 001-r2 used a capital-S header).
+grep -qiE '^## accept-set sweep[[:space:]]*$' "$TOOL_FILE_PATH" 2>/dev/null || exit 0
 
 # Gate 3: kill switch. Unknown collapses to metric-only.
 MODE_RAW="${SW_ACCEPT_SET_CONFORMANCE_MODE:-metric-only}"
@@ -108,7 +117,7 @@ esac
 # Extract the `## Accept-set sweep` section body (heading exclusive, up to the
 # next `## ` heading or EOF).
 SECTION=$(awk '
-  /^## Accept-set sweep[[:space:]]*$/ { f=1; next }
+  /^## [Aa]ccept-set [Ss]weep[[:space:]]*$/ { f=1; next }
   /^## / { f=0 }
   f
 ' "$TOOL_FILE_PATH" 2>/dev/null || true)
@@ -132,7 +141,8 @@ field_of() {
   printf '%s' "${v#*=}"
 }
 
-VIOLATIONS=""
+BLOCKING=""
+ADVISORY=""
 while IFS= read -r LINE; do
   case "$LINE" in
     boundary=*) ;;
@@ -146,31 +156,36 @@ while IFS= read -r LINE; do
   DIV=$(field_of "$LINE" divergences)
   AUTH=$(field_of "$LINE" authoritative)
   CAVEAT=$(field_of "$LINE" caveat)
+  # corpus-size may carry a descriptive suffix (dogfood51: `10-non-ascii-decimal`);
+  # take the leading integer so an annotation cannot dodge the P3 advisory.
+  CORPUS_INT="${CORPUS%%-*}"
 
   REASON=""
   # The no-runnable-artifact caveat is the documented fail-OPEN escape (a
   # compiled language / no exec harness: the boundary was triggered but the
   # sweep could not be executed). It exempts the execution + depth predicates
-  # P1/P2/P3 (ran=n / astral=n / corpus=0 are then justified, not violations);
-  # the gating-consistency predicate P4 still applies.
+  # P1/P2 (and the P3 advisory); the gating-consistency predicate P4 still applies.
   if [ "$CAVEAT" != "no-runnable-artifact" ]; then
-    # P1 stand-down (all axes): a triggered boundary that was not run.
+    # P1 stand-down (all axes): a triggered boundary that was not run -> BLOCK.
     if [ "$TRIG" = "y" ] && [ "$RAN" = "n" ]; then
       REASON="P1-stand-down"
     elif [ "$TRIG" = "y" ] && [ "$RAN" = "y" ]; then
-      # P2 shallow astral (A,U axes): astral complement skipped.
+      # P2 shallow astral (A,U axes): astral complement skipped -> BLOCK (astral
+      # is the real A/U depth gate; the planes are the mandated alphabet complement).
       if { [ "$B" = "A" ] || [ "$B" = "U" ]; } && [ "$ASTRAL" = "n" ]; then
         REASON="P2-shallow-astral"
-      # P3 sliced corpus (A,U axes): corpus below the floor.
+      # P3 thin corpus (A,U axes): corpus below the floor -> ADVISORY ONLY, never
+      # blocks (corpus-size is a weak depth proxy; flooring it false-trips a
+      # legitimately-thin conformant sweep on a wide-spec subject — dogfood51).
       elif { [ "$B" = "A" ] || [ "$B" = "U" ]; } \
-        && printf '%s' "$CORPUS" | grep -qE '^[0-9]+$' \
-        && [ "$CORPUS" -lt "$CORPUS_FLOOR" ]; then
-        REASON="P3-sliced-corpus(<$CORPUS_FLOOR)"
+        && printf '%s' "$CORPUS_INT" | grep -qE '^[0-9]+$' \
+        && [ "$CORPUS_INT" -lt "$CORPUS_FLOOR" ]; then
+        ADVISORY="${ADVISORY}boundary=${B} triggered=${TRIG} ran=${RAN} astral=${ASTRAL} corpus-size=${CORPUS} note=P3-thin-corpus(<$CORPUS_FLOOR)"$'\n'
       fi
     fi
   fi
   # P4 gating-consistency (all axes): an authoritative boundary with divergences
-  # must drive the verdict to FAIL.
+  # must drive the verdict to FAIL -> BLOCK.
   if [ -z "$REASON" ] && [ "$AUTH" = "y" ] \
     && printf '%s' "$DIV" | grep -qE '^[0-9]+$' \
     && [ "$DIV" -gt 0 ] && [ "$STATUS_IS_FAIL" = "0" ]; then
@@ -178,21 +193,36 @@ while IFS= read -r LINE; do
   fi
 
   [ -n "$REASON" ] || continue
-  VIOLATIONS="${VIOLATIONS}boundary=${B} triggered=${TRIG} ran=${RAN} astral=${ASTRAL} corpus-size=${CORPUS} reason=${REASON}"$'\n'
+  BLOCKING="${BLOCKING}boundary=${B} triggered=${TRIG} ran=${RAN} astral=${ASTRAL} corpus-size=${CORPUS} reason=${REASON}"$'\n'
 done <<EOF
 $SECTION
 EOF
 
-[ -n "$VIOLATIONS" ] || exit 0
+# Nothing flagged at all -> silent pass.
+[ -n "$BLOCKING$ADVISORY" ] || exit 0
 
 BASENAME=$(basename "$TOOL_FILE_PATH")
+
+# Advisory notes (P3 thin-corpus) are emitted in BOTH modes and NEVER block —
+# corpus depth is subject-dependent, so this is observability, not a gate.
+if [ -n "$ADVISORY" ]; then
+  while IFS= read -r V; do
+    [ -n "$V" ] || continue
+    echo "[ACCEPT-SET-VERIFY] advisory: $BASENAME $V" >&2
+  done <<EOF
+$ADVISORY
+EOF
+fi
+
+# No blocking violation -> exit 0 (an advisory-only report is not a block).
+[ -n "$BLOCKING" ] || exit 0
 
 if [ "$MODE" = "metric-only" ]; then
   while IFS= read -r V; do
     [ -n "$V" ] || continue
     echo "[ACCEPT-SET-VERIFY] metric-only: would block (file=$BASENAME $V)" >&2
   done <<EOF
-$VIOLATIONS
+$BLOCKING
 EOF
   exit 0
 fi
@@ -205,9 +235,9 @@ while IFS= read -r V; do
   [ -n "$V" ] || continue
   echo "[ACCEPT-SET-VERIFY] block (file=$BASENAME $V)" >&2
 done <<EOF
-$VIOLATIONS
+$BLOCKING
 EOF
-REASON_TEXT=$(printf '%s' "$VIOLATIONS" | tr '\n' ';' | sed 's/;$//')
-jq -n --arg r "Accept-set conformance gate (AASC): the persisted '## Accept-set sweep' in $BASENAME records a NON-CONFORMANT sweep — $REASON_TEXT. A triggered boundary must be EXECUTED (ran=y); an alphabet/unicode sweep must include the astral complement (astral=y) over a corpus >= the floor; an authoritative divergence must drive the verdict to FAIL. Re-run the EXECUTED accept-set sweep per agents/ac-evaluator.md and rewrite the report." \
+REASON_TEXT=$(printf '%s' "$BLOCKING" | tr '\n' ';' | sed 's/;$//')
+jq -n --arg r "Accept-set conformance gate (AASC): the persisted '## Accept-set sweep' in $BASENAME records a NON-CONFORMANT sweep — $REASON_TEXT. A triggered boundary must be EXECUTED (ran=y); an alphabet/unicode sweep must include the astral complement (astral=y); an authoritative divergence must drive the verdict to FAIL. Re-run the EXECUTED accept-set sweep per agents/ac-evaluator.md and rewrite the report." \
   '{decision:"block", reason:$r}'
 exit 0

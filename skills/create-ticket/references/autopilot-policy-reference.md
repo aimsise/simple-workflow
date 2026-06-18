@@ -303,9 +303,10 @@ ADVISORY PASS-WITH-CAVEATS (the EC-SELFDOC fail-open posture). The evaluator
 persists one `## Accept-set sweep` line per inspected boundary, and
 `hooks/accept-set-verify.sh` deterministically verifies that line — a triggered
 boundary not run, an alphabet/unicode (A/U-axis) sweep that skipped the astral
-complement or used a sliced corpus, or an authoritative divergence not driven to
-FAIL is flagged (metric-only by default; see CLAUDE.md
-`SW_ACCEPT_SET_CONFORMANCE_MODE`). When `off`, the EXECUTED sweep and the hook
+complement, or an authoritative divergence not driven to FAIL is BLOCKED, and a
+thin A/U corpus is NOTED (advisory only, never blocked — corpus-size is a weak
+depth proxy; see CLAUDE.md `SW_ACCEPT_SET_CONFORMANCE_MODE` / `SW_AASC_CORPUS_FLOOR`),
+all metric-only by default. When `off`, the EXECUTED sweep and the hook
 gate stand down: the evaluator verifies the boundary by the prior read-only
 strictness reasoning and records a one-line Caveat — the byte-for-byte revert.
 This is the per-brief kill switch for the Advertised-Accept-Set Conformance
