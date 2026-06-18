@@ -8,6 +8,29 @@ The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for **e
 
 Built on a **Harness for long-running AI agents** that brings *loop engineering* to the development lifecycle — a rigorous, closed *inner loop* (act → verify → correct → continue) bounded by contract stopping conditions — with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brief-chain-overview-dark.png">
+    <img src="docs/brief-chain-overview.png" alt="How /brief chain=on runs: /brief then /create-ticket then /autopilot, then a per-ticket loop of /scout, /impl (with an inner verify loop) and /ship, ending in pull requests" width="860">
+  </picture>
+  <br>
+  <sub><i>The default <code>/brief chain=on</code> flow at a glance: skills (blue) drive subagents (green); the per-ticket loop and the in-<code>/impl</code> verify loop are red; lifecycle hooks drive and guard every step. The full flow — agents · hooks · harness — is in the collapsible below.</i></sub>
+</p>
+
+<details>
+<summary><b>Full flow — every skill, agent, hook &amp; harness mechanism</b></summary>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brief-chain-flow-dark.png">
+    <img src="docs/brief-chain-flow.png" alt="Detailed /brief chain=on execution flow: each phase's work, subagents and artifacts; the handoff and harness applied between phases; the lifecycle hooks; the per-ticket and verify loops; and a summary of the harness mechanisms" width="860">
+  </picture>
+</p>
+
+<sub>Regenerate: <code>python3 docs/gen-brief-chain-overview.py</code> · <code>python3 docs/gen-brief-chain-flow.py</code></sub>
+
+</details>
+
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
