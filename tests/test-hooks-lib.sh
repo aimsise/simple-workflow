@@ -1049,9 +1049,14 @@ printf 'phases:\n  scout: {status: completed}\n  impl: {status: completed}\n  sh
 sa_ac5_out="$(bash -c "source '$SA_PATH' && resolve_active_state_file '$SA_T5'")"
 assert_eq "AC-5: rejects done-incomplete (empty stdout)" "" "$sa_ac5_out"
 
-# AC-6: HOOK_OWNED_FIELDS empty by default
+# AC-6 (proposal 4 / Foundation 3): HOOK_OWNED_FIELDS ships with exactly ONE
+# entry, .runtime_metrics (the append-only telemetry list). The resulting DENY is
+# gated by SW_STATE_FIELD_GUARD_MODE in pre-write/pre-edit (default metric-only),
+# so a non-empty registry does not change the shipped allow-by-default behaviour.
 sa_ac6_count="$(bash -c "source '$SA_PATH' && echo \${#HOOK_OWNED_FIELDS[@]}")"
-assert_eq "AC-6: registry empty by default" "0" "$sa_ac6_count"
+assert_eq "AC-6: registry ships with exactly 1 entry (.runtime_metrics)" "1" "$sa_ac6_count"
+sa_ac6_key="$(bash -c "source '$SA_PATH' && printf '%s\n' \"\${!HOOK_OWNED_FIELDS[@]}\"")"
+assert_eq "AC-6: the registered field is .runtime_metrics" ".runtime_metrics" "$sa_ac6_key"
 
 # AC-7: is_hook_owned_field returns 1 on unknown
 set +e
@@ -1126,6 +1131,19 @@ sa_ac13_exit=$?
 set -e
 assert_exit_nonzero "AC-13: initial set is allowed" "$sa_ac13_exit"
 
+# AC-OWN-RM (proposal 4 / Foundation 3): with the SHIPPED registry (no temp
+# injection), state_field_change_blocked BLOCKS a .runtime_metrics change and
+# echoes the violated key on stdout; a non-owned field change still allows.
+set +e
+sa_ownrm_field="$(bash -c "source '$SA_PATH'; state_field_change_blocked /tmp/x 'runtime_metrics: []' 'runtime_metrics: [{boundary: x}]'")"
+sa_ownrm_exit=$?
+bash -c "source '$SA_PATH'; state_field_change_blocked /tmp/x 'status: pending' 'status: completed'" >/dev/null 2>&1
+sa_ownrm_other_exit=$?
+set -e
+assert_exit_zero "AC-OWN-RM: shipped registry blocks a .runtime_metrics change" "$sa_ownrm_exit"
+assert_eq "AC-OWN-RM: blocked field echoed is .runtime_metrics" ".runtime_metrics" "$sa_ownrm_field"
+assert_exit_nonzero "AC-OWN-RM: a non-owned field change still allows" "$sa_ownrm_other_exit"
+
 # Negative AC-1: exactly 3 new public functions + HOOK_OWNED_FIELDS public var
 sa_neg_ac1_before_funcs="$(declare -F | awk '{print $3}' | sort -u)"
 # shellcheck disable=SC1090
@@ -1135,11 +1153,13 @@ sa_neg_ac1_new_funcs="$(comm -13 <(printf '%s\n' "$sa_neg_ac1_before_funcs") <(p
 sa_neg_ac1_new_func_count="$(printf '%s\n' "$sa_neg_ac1_new_funcs" | grep -c '[^[:space:]]' || true)"
 assert_eq "Negative-AC-1: exactly 3 new public functions (no _ prefix)" "3" "$sa_neg_ac1_new_func_count"
 
-# Negative AC-2: no per-key insertions in the lib
+# Negative AC-2: no STRAY per-key registry insertions. The single controlled
+# entry (.runtime_metrics) is set inline in the `declare -A HOOK_OWNED_FIELDS=(...)`
+# line, NOT via `HOOK_OWNED_FIELDS[k]=` — so there must still be zero of those.
 set +e
 sa_neg_ac2_count="$(grep -cnE '^HOOK_OWNED_FIELDS\[' "$SA_PATH")"
 set -e
-assert_eq "Negative-AC-2: no registry pre-population" "0" "$sa_neg_ac2_count"
+assert_eq "Negative-AC-2: no stray per-key registry insertions (controlled inline entry only)" "0" "$sa_neg_ac2_count"
 
 # Negative AC-3: no scheduler-coupling identifiers in the lib file.
 # Pattern assembled from hex parts to prevent this script itself from matching.

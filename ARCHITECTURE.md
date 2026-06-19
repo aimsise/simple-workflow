@@ -15,7 +15,7 @@ Treats the context window as a consumable resource and systematically conserves 
 
 A **Generator** writes code, independent **Evaluators** verify it, and failures trigger automatic retry with specific feedback — up to 9 rounds by default (configurable per invocation or per ticket via policy). The information firewall is asymmetric: Evaluators never see the Generator's self-assessment and judge solely from `git diff` and test results, while the Generator does receive Evaluator feedback on retry.
 
-Even though both sides run the same model, **weights × context = output** — by excluding the Generator's trial-and-error history from the Evaluator's context, sunk-cost bias is structurally eliminated rather than merely discouraged by prompt. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
+The two sides may run different models by policy — the Generator is always opus, while Evaluators are sonnet by default and escalate to opus for critical or exhaustive work — so independence is enforced by **context separation (the information firewall)**, not by weight uniformity: excluding the Generator's trial-and-error history from the Evaluator's context eliminates sunk-cost bias structurally rather than merely discouraging it by prompt. FAIL-CRITICAL violations halt execution immediately, and after ticket completion evaluation logs feed into the Knowledge Base, closing a cross-session feedback loop.
 
 ## Knowledge Base (Cross-Session Learning)
 

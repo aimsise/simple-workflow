@@ -6,7 +6,7 @@ tools:
   - Grep
   - Glob
   - Skill
-model: opus
+model: inherit
 maxTurns: 20
 ---
 
@@ -65,6 +65,10 @@ For EACH ticket above, ALSO surface a peer-set hint (Gate 10 upstream signal for
 
 - peer_set: true | false  — `true` when this ticket's scope creates `>=2` analogous sibling units in ONE category (peer tools / endpoints / subcommands / functions sharing an output surface); `false` for a single-unit ticket or units that form no analogous sibling set.
   shared_conventions: <1-line hint, ONLY when peer_set is true> — the cross-unit convention the peers should share (e.g. "single error envelope across the 3 parse tools", "one success wrapper for the 4 list endpoints"). Omit this sub-line entirely when peer_set is false.
+
+AFTER the per-ticket list, ALWAYS surface ONE cross-ticket input-boundary hint spanning the WHOLE ticket set (the Gate 7 sibling-guard / Gate 9 upstream signal — you are the only agent that sees every ticket at once, so only you can observe this across ticket boundaries). This line is MANDATORY-PRESENT (emit `shared_input_boundary: none` when nothing is shared — never omit it), mirroring how `peer_set:` is mandatory per ticket; it is an advisory hint emitted UNCONDITIONALLY (you read no policy), exactly like `peer_set:`:
+
+- shared_input_boundary: <none, OR one line per shared external input class> — emit a class line when `>=2` DIFFERENT tickets above each create a unit that consumes ONE common external input class (the same parsed format / value-type / wire shape), INCLUDING the case where each such ticket creates only a SINGLE unit (so `peer_set` is `false` for each) — this is the cross-ticket sibling set the per-ticket `peer_set` cannot see. Each class line names the shared input class abstractly + the sibling ticket ids: `<input-class name>: [<parent-slug>-part-N, <parent-slug>-part-M, ...]`. A sibling that DELEGATES the input handling to a shared parser created in another ticket STILL belongs on this line (delegation does not remove it from the shared-input-class family). NOTE (model-judgment caveat, same fragility class as the Gate 9 / Gate 10 evaluator notes): 'which tickets share an input class' is your judgment over the free-text scopes, not a grep — a downstream reader MUST NOT treat the presence or absence of a class line as mechanically authoritative.
 
 ## Decomposition principles
 

@@ -6,7 +6,30 @@
 
 The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin for **end-to-end AI development workflows**. From idea to pull request: structured interview, codebase investigation, multi-agent implementation, security audit, code review, and PR creation, all automated.
 
-Built on a **Harness for long-running AI agents** with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
+Built on a **Harness for long-running AI agents** that brings *loop engineering* to the development lifecycle — a rigorous, closed *inner loop* (act → verify → correct → continue) bounded by contract stopping conditions — with strict context management, information firewalls, and a cross-session knowledge base that improves accuracy with every completed ticket.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brief-chain-overview-dark.png">
+    <img src="docs/brief-chain-overview.png" alt="How /brief chain=on runs: /brief then /create-ticket then /autopilot, then a per-ticket loop of /scout, /impl (with an inner verify loop) and /ship, ending in pull requests" width="860">
+  </picture>
+  <br>
+  <sub><i>The default <code>/brief chain=on</code> flow at a glance: skills (blue) drive subagents (green); the per-ticket loop and the in-<code>/impl</code> verify loop are red; lifecycle hooks drive and guard every step. The full flow — agents · hooks · harness — is in the collapsible below.</i></sub>
+</p>
+
+<details>
+<summary><b>Full flow — every skill, agent, hook &amp; harness mechanism</b></summary>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brief-chain-flow-dark.png">
+    <img src="docs/brief-chain-flow.png" alt="Detailed /brief chain=on execution flow: each phase's work, subagents and artifacts; the handoff and harness applied between phases; the lifecycle hooks; the per-ticket and verify loops; and a summary of the harness mechanisms" width="860">
+  </picture>
+</p>
+
+<sub>Regenerate: <code>python3 docs/gen-brief-chain-overview.py</code> · <code>python3 docs/gen-brief-chain-flow.py</code></sub>
+
+</details>
 
 ## Prerequisites
 
@@ -51,12 +74,12 @@ claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
 
 Inside an active Claude Code session, type `/brief <idea>` and the plugin handles the rest end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
 
-Full argument signature: `/brief <what-to-build> [mode=auto|manual]` (default `mode=auto`).
+Full argument signature: `/brief <what-to-build> [chain=on|off]` (default `chain=on`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`).
 
 | Mode | Command | Result |
 |------|---------|--------|
-| Full automation (default) | `/brief <idea>` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
-| Brief-assisted manual | `/brief <idea> mode=manual` | Structured brief and decision policy are produced; you drive each subsequent step |
+| Full automation (default, `chain=on`) | `/brief <idea>` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
+| Brief-assisted manual (`chain=off`) | `/brief <idea> chain=off` | Structured brief and decision policy are produced; you drive each subsequent step (legacy alias: `mode=manual`) |
 | Resume an interrupted run | `/autopilot <slug>` | Pick up where a previous automated run left off using state files under `.simple-workflow/backlog/` |
 
 ### Execution chains
@@ -65,24 +88,27 @@ Three typical execution patterns:
 
 ```text
 # 1. Brief-assisted manual (type each command; repeat scout→impl→ship per ticket):
-/brief <idea> mode=manual
+/brief <idea> chain=off
 /create-ticket
 /scout
 /impl
 /ship   # → PR
 
-# 2. Brief manually, then hand off to autopilot for the per-ticket loop:
-/brief <idea> mode=manual
-/create-ticket
+# 2. Brief manually, then switch to autopilot for the per-ticket loop:
+/brief <idea> chain=off
+# ...inspect the brief, then opt into autopilot: set `chain: on` in the brief file and
+# re-run /create-ticket so each ticket dir receives autopilot-policy.yaml (re-propagation):
+/create-ticket brief=.simple-workflow/backlog/briefs/active/<slug>/brief.md
 /autopilot <slug>
-# autopilot then loops: /scout → /impl → /ship per ticket → PR
+# autopilot then loops: /scout → /impl → /ship per ticket → PR   ← loop engineering fires (the closed inner loop self-drives)
+# (running /autopilot directly on a chain=off brief stops with a re-propagation directive)
 
 # 3. Full automation (one command):
-/brief <idea> mode=auto
-# brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR
+/brief <idea>
+# brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR   ← loop engineering fires once /autopilot takes over
 ```
 
-> **Caveat — full automation works best on focused, well-scoped ideas.** On overly broad or ambiguous input, the model can break output contracts, fabricate intermediate state, and continue past failures without surfacing them. Full automation has fewer human-in-the-loop checkpoints than the brief-assisted manual flow, so this kind of misbehaviour is easier to miss. For large or exploratory work, prefer `mode=manual` (you inspect artifacts at each step) or split the work into smaller, focused briefs.
+> **Caveat — full automation works best on focused, well-scoped ideas.** On overly broad or ambiguous input, the model can break output contracts, fabricate intermediate state, and continue past failures without surfacing them. Full automation has fewer human-in-the-loop checkpoints than the brief-assisted manual flow, so this kind of misbehaviour is easier to miss. For large or exploratory work, prefer `chain=off` (you inspect artifacts at each step) or split the work into smaller, focused briefs.
 
 For phase-by-phase workflows on an existing backlog (skipping the brief), run `/help` inside Claude Code to discover the individual slash commands, or browse `skills/` in this repository.
 
@@ -90,9 +116,9 @@ Tickets carry a `### Capabilities` section that records which user Skills and MC
 
 ## Why simple-workflow?
 
-simple-workflow stands on three pillars:
+simple-workflow stands on three pillars — together they form the closed *inner loop* of *loop engineering* and the engineering around it that makes the loop trustworthy enough to run unattended:
 
-- **Harness Engineering**: structural constraints — an asymmetric information firewall between code authors and code judges (the Generator-Evaluator pattern), bounded sub-agent returns, ticket-confined artifacts, and safe-clear `[SW-CHECKPOINT]` markers — enforce quality by architecture rather than by prompt instructions
+- **Harness Engineering**: an asymmetric information firewall between code authors and code judges (the Generator-Evaluator pattern), ticket-confined artifacts, and safe-clear `[SW-CHECKPOINT]` markers are enforced *structurally* — by lifecycle hooks, fresh sub-agent contexts, and on-disk artifacts that hold regardless of model behavior. The bounded sub-agent return budget (< 500 tokens) is a *prompt-level contract* pinned by contract tests, not a runtime-truncation guarantee
 - **Context Conservation**: the context window is treated as a consumable resource — sub-agents return < 500-token summaries, artifacts live on disk, and state survives compaction
 - **Cross-session learning**: evaluation logs are distilled into reusable patterns that future implementations inject into their prompts, so the system gets better at your project the more tickets it completes
 
@@ -105,7 +131,7 @@ These pillars exist because Claude Code is powerful, but its context window is f
 | **Contamination** | Biasing information leaks into contexts where it distorts judgment | Information firewall + ticket directory confinement (see [Harness Engineering](ARCHITECTURE.md#harness-engineering)) |
 | **Bloat** | Unbounded intermediate output crowds out critical instructions | Artifacts written to files, structured summaries returned to orchestrator |
 
-simple-workflow addresses each threat with architectural constraints that hold regardless of model behavior — not prompt-level instructions that the model might rationalize away. For a deeper walkthrough of each pillar — Context Conservation Protocol, Harness Engineering, Knowledge Base, and Ticket Management state machine — see [ARCHITECTURE.md](ARCHITECTURE.md).
+simple-workflow addresses the **structural** threats — Loss, Contamination, Bloat — with architectural constraints that hold regardless of model behavior: automatic snapshots, the information firewall + ticket confinement, and artifacts-to-disk. **Exhaustion** is mitigated by a mix of structural measures (fresh sub-agent contexts, phase-aware context release) and a prompt-level return-size contract (< 500 tokens) pinned by contract tests rather than enforced by runtime truncation. For a deeper walkthrough of each pillar — Context Conservation Protocol, Harness Engineering, Knowledge Base, and Ticket Management state machine — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Setup & Configuration
 
@@ -166,9 +192,12 @@ When injection cannot fire, the hook surfaces a one-line diagnostic via `inject_
 - Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
 - Pull-request creation requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
-- Sub-agents consume API tokens independently. Large tickets (L/XL) using Opus may result in higher API costs.
+- Sub-agents consume API tokens independently. The Generator (implementer) always runs on Opus, and the evaluator escalates to Opus for critical/exhaustive work, so larger or higher-risk tickets may incur higher API costs.
 - Built-in test/lint detection covers JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator falls back to static code analysis only.
 - Some recovery paths require interactive mode; running in `claude -p` or CI may stop with an explanatory message rather than complete the recovery.
+- **Operating system support**: macOS and Linux are verified (the hook layer is `bash` + `jq`, with optional `yq` / `python3`). Windows is **not** verified — the `bash`+`jq` hook layer requires a POSIX environment (Git Bash, WSL, or Cygwin); native Windows is unsupported.
+- **Global command blocks (installation footprint)**: a `v8.0.0` defense-in-depth `Bash` pre-hook unconditionally blocks four command classes in **every** project and session where the plugin is active — network egress (`curl`, `wget`, `scp`, `rsync … ssh`), identity spoofing (`git config user.email|user.name|core.hooksPath`), privilege escalation (`sudo`, `chmod 777`, `chown root`), and commit subversion (`git commit --amend`, `git stash drop`, `git reflog expire`, `git push … --no-verify`). A blocked command exits 2 with a `Blocked: … (v8.0.0 defense-in-depth)` message; there is currently no per-project opt-out knob. Installing the plugin at **project scope** rather than user scope confines these hooks (and all others) to a single repository.
+- **Automatic git setup at session start**: under a user-scope install the `SessionStart` setup (see [Setup & Configuration](#setup--configuration)) runs in **any** working directory the session opens — so opening a non-project directory (e.g. `$HOME`) once will `git init` it and add an initial commit. Install at project scope to confine setup to one repository.
 
 ## Contributing
 

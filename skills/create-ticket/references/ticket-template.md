@@ -36,7 +36,7 @@ Generate the ticket in the following format:
 | Failure class | AC(s) or n/a justification |
 |------|------|
 | R1 FULL-DOMAIN INVARIANT (whole valid domain incl. min/max/empty/singleton/max-length/just-inside-each-boundary) | AC-... \| n/a: ... |
-| R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP (malformed/oversized/empty/out-of-domain -> bounded error in bounded time/space; no hang, no non-error success) | AC-... \| n/a: ... |
+| R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP (malformed/oversized/empty/out-of-domain -> bounded error in bounded time/space; no hang, no non-error success; when this unit is a member of a cross-ticket `shared_input_boundary` family it owes this row even if it DELEGATES to a shared parser — 'delegates to the shared parser' is not an acceptable n/a) | AC-... \| n/a: ... |
 | R3 DESCRIPTION-MATCHES-BEHAVIOR (runtime matches the unit's own docstring/declared invariant) | AC-... \| n/a: ... |
 | R4 DOC/INTERFACE TRUTHFULNESS (each advertised example reproduces on a real build; advertised boundary == enforced boundary) | AC-... \| n/a: ... |
 

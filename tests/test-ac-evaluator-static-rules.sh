@@ -97,9 +97,11 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# NAC #4: language/framework names must not appear outside example blocks.
+# NAC #4: language/framework names must not appear in PROSE (outside fenced
+# example blocks). Fenced code blocks are exempt — a worked example may legitimately
+# carry a runner token — mirroring the fence-aware scan in hooks/pre-write-safety.sh.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-NAC4_HITS=$(grep -ciE 'vitest|jest|pytest|junit' "$RULES_FILE" || true)
+NAC4_HITS=$(awk '/^[[:space:]]*```/{f=1-f;next} !f{print}' "$RULES_FILE" | grep -ciE 'vitest|jest|pytest|junit' || true)
 if [ "$NAC4_HITS" -eq 0 ]; then
   echo -e "  ${GREEN}PASS${NC} NAC #4: rules file is framework-agnostic"
   TESTS_PASSED=$((TESTS_PASSED + 1))

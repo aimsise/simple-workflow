@@ -100,10 +100,11 @@ rather than against an INDEPENDENT oracle (a reference library that does not
 share the implementation's core, a published formula, or a hand-computed truth
 table). The assertion passes whenever the code is self-consistent, even when
 the code is wrong, so it cannot observe a correctness regression in the quantity
-it claims to check. This is the defect class that let a WCAG contrast solver
-accept on a 2-decimal ROUNDED ratio — falsely reporting a target as met — past
-a green suite, because every test re-measured with the same rounded value the
-code produced.
+it claims to check. This is the defect class that lets a test re-derive its
+"expected" value from the implementation's own rounded / formatted output and
+then assert against it — passing a green suite even when the underlying quantity
+is wrong, because every test re-measures with the same rounded value the code
+produced.
 
 Canonical signature: `assert_close(impl(x), K)` where `K` is derived from `impl`
 (e.g. `expected = impl.raw(x)`, or `expected = round(impl(x))`), OR the
@@ -123,15 +124,15 @@ rule does NOT fire — see Limitations.
 
 <example lang="javascript">
 BAD:
-  const r = solveForContrast(bg, target);         // engine rounds ratio to 2dp
-  expect(r.ratio).toBeGreaterThanOrEqual(target); // R4: re-thresholds the code's own rounded field
-  const expected = Math.round(impl.contrast(a, b) * 100) / 100;
-  expect(impl.contrast(a, b)).toBeCloseTo(expected); // R4: expected derived from the SUT
+  const r = impl.solve(input, target);            // engine rounds its result to 2dp
+  expect(r.value).toBeGreaterThanOrEqual(target); // R4: re-thresholds the code's own rounded field
+  const expected = Math.round(impl.compute(x) * 100) / 100;
+  expect(impl.compute(x)).toBeCloseTo(expected);  // R4: expected derived from the SUT
 
 GOOD:
-  import Color from 'colorjs.io';                  // independent oracle, no shared core
-  const oracle = Color.contrast(a, b, 'WCAG21');
-  expect(rawContrast(a, b)).toBeCloseTo(oracle, 3); // raw value vs independent oracle, explicit tolerance
+  import { reference } from 'independent-oracle';  // distinct oracle, no shared core
+  const oracle = reference(x);
+  expect(impl.computeRaw(x)).toBeCloseTo(oracle, 3); // raw value vs independent oracle, explicit tolerance
 </example>
 
 ## Hint Expressions

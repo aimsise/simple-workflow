@@ -66,6 +66,8 @@ The caller (`/create-ticket` orchestrator) is responsible for:
 
 Both forms produce the same `## Result` block (status / parent slug / tickets / topological order / rationale) bounded by the agent's Context Conservation Protocol (< 500 tokens). Cycle detection, the 8-ticket cap, and the `Status: partial` overflow path apply identically across forms.
 
+The `## Result` block additionally carries two upstream signals for the planner: the per-ticket `peer_set:` / `shared_conventions:` output-uniformity hint (Gate 10), and ONE mandatory-present cross-ticket `shared_input_boundary:` hint (Gate 7 sibling-guard / Gate 9) naming each external input class consumed by `>=2` DIFFERENT tickets together with the sibling ticket ids — emitted even when each consuming ticket creates only a single unit (per-ticket `peer_set: false`) and even when a consuming ticket merely delegates the input handling to a shared parser created in another ticket. Both signals are advisory and emitted unconditionally; see `agents/decomposer.md` for the exact shape.
+
 ## Failure modes
 
 - Missing `Input form:` header → return `Status: failed` with rationale `missing input form header`.

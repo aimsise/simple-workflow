@@ -24,7 +24,10 @@ tickets:
   - logical_id: {parent-slug}-part-{N}   # one entry per split-plan ticket, in topological order
     ticket_dir: {ticket-dir from split-plan}
     status: pending
-    steps: {scout: pending, impl: pending, ship: pending}
+    steps:                                 # canonical FLAT/block form — `steps.<phase>` is a STRING on its own line
+      scout: pending
+      impl: pending
+      ship: pending
     invocation_method: {scout: unknown, impl: unknown, ship: unknown}
 runtime_metrics: []                      # append-only, written by Stop / PreCompact hooks
 # Sample entry (one full session_end snapshot, all 7 canonical keys):
@@ -196,12 +199,17 @@ half-finished run that was moved by mistake.
 ## `runtime_metrics:` schema
 
 `runtime_metrics:` is an **append-only** list written exclusively by the
-Stop hook (`hooks/autopilot-continue.sh`) and the PreCompact hook
-(`hooks/pre-compact-save.sh`). The list survives ticket completion
-(Split State File Cleanup keeps it intact when moving the state file to
-`briefs/done/`). Skills MUST NOT write `runtime_metrics:` directly —
-hook-only ownership keeps the schema observable from a single audit
-point.
+following six hooks (the canonical writer set is the `Sourced by:` header of
+`hooks/lib/runtime-metrics.sh`, kept in sync by a contract test):
+`hooks/autopilot-continue.sh` (session_end), `hooks/pre-compact-save.sh`
+(session_compaction), `hooks/impl-checkpoint-guard.sh` (session_end),
+`hooks/scout-checkpoint-guard.sh` (session_end),
+`hooks/pre-next-scout-auto-compact.sh` (auto_compact_inject), and
+`hooks/post-ship-state-auto-compact.sh` (auto_compact_inject). The list
+survives ticket completion (Split State File Cleanup keeps it intact when
+moving the state file to `briefs/done/`). Skills MUST NOT write
+`runtime_metrics:` directly — hook-only ownership keeps the schema observable
+from a single audit point.
 
 Value domains for `boundary` and `stop_reason`, plus the Stop hook's
 discrimination heuristic, are defined in

@@ -5,9 +5,9 @@ file when writing tests). This is the POSITIVE counterpart to
 [`tautological-assertion-rules.md`](tautological-assertion-rules.md) — that file
 says what NOT to write; this one says what a STRONG test looks like, scoped by
 AC type. It exists because a green suite proves the code is self-consistent, not
-that it is correct: a dogfood build shipped a WCAG contrast solver that accepted
-on a 2-decimal ROUNDED ratio and falsely reported a target as met, past 93
-passing tests, because every test re-measured with the same rounded value the
+that it is correct: a dogfood build shipped a computed-value validator that
+accepted on a rounded intermediate and falsely reported a target as met, past a
+green suite, because every test re-measured with the same rounded value the
 code itself produced.
 
 ## When each technique applies
@@ -26,9 +26,9 @@ exit code) needs only a direct assertion.
 
 1. **Independent oracle (computational ACs).** Compare the implementation
    against an oracle that does NOT share its core: a third-party reference
-   library (e.g. `colorjs.io` cross-checking a culori-based engine), a published
-   formula / standard applied from first principles, or a hand-computed truth
-   table with a cited source. NEVER take the implementation's own output —
+   library (e.g. a second, independently-authored library cross-checking the
+   engine under test), a published formula / standard applied from first
+   principles, or a hand-computed truth table with a cited source. NEVER take the implementation's own output —
    directly, via an alias, or by re-reading a field the code already rounded —
    as the expected value. That circularity is rejected by tautological rule R4.
    At the `thorough` / `exhaustive` depth tier, for a standard-backed
@@ -50,12 +50,12 @@ exit code) needs only a direct assertion.
 
 3. **Property / invariant tests.** For math / transform / algorithm code, assert
    the laws, not just point values: monotonicity, symmetry, idempotence,
-   round-trip (`decode(encode(x)) == x`), gamut / range containment, and
+   round-trip (`decode(encode(x)) == x`), range / gamut containment, and
    conservation. A property holds across a distribution; a point test holds at
    one point.
-   When a second INDEPENDENT ALGORITHM for the same contract exists (e.g.
-   CSS-MINDE vs chroma-clamping gamut mapping, two independent sorts), at the
-   `thorough` / `exhaustive` depth tier add an **algorithm-vs-algorithm**
+   When a second INDEPENDENT ALGORITHM for the same contract exists (two
+   independent algorithms computing the same result, e.g. two independent sorts),
+   at the `thorough` / `exhaustive` depth tier add an **algorithm-vs-algorithm**
    differential within an explicit tolerance — a membership / containment check
    alone is necessary-not-sufficient, because a wrong result can still be
    in-range. Degrade to property coverage + a note where no second algorithm
@@ -63,8 +63,8 @@ exit code) needs only a direct assertion.
 
 4. **Adversarial / non-finite / out-of-range inputs by default.** For any
    function taking external or untrusted input, include empty, `NaN`,
-   `Infinity`, negative, zero, overflow, malformed, and out-of-gamut /
-   out-of-range cases as STANDARD cases, not afterthoughts. These catch DoS
+   `Infinity`, negative, zero, overflow, malformed, and out-of-range cases as
+   STANDARD cases, not afterthoughts. These catch DoS
    hangs (e.g. an unbounded binary search on `Infinity`) and contract-violating
    outputs (e.g. impossible channel values) that happy-path fixtures miss.
 
@@ -77,8 +77,9 @@ exit code) needs only a direct assertion.
    tokens (`NaN` / `Infinity` as literal keywords, malformed syntax) that the parser / validator
    rejects at the door: these exercise the cheap early-return error path, usually already correct.
    (b) *Parse-accepted-then-overflows* values that pass syntactic parsing but produce a
-   non-finite / out-of-range INTERMEDIATE deeper in the algorithm — e.g. `oklch(0.5 1e400 30)`
-   (scientific notation that parses to Infinity chroma), extreme-but-finite magnitudes, denormals,
+   non-finite / out-of-range INTERMEDIATE deeper in the algorithm — i.e. an input the parser
+   ACCEPTS that yields a non-finite / out-of-range intermediate after a conversion (e.g. scientific
+   notation that parses to an Infinity component), extreme-but-finite magnitudes, denormals,
    or values that overflow only after a multiply. Class (b) is where real DoS hangs and
    corrupt-success bugs live (an unbounded binary-search / clamp loop on an Infinity intermediate);
    a suite that tests only class (a) passes green while shipping the class-(b) bug. For every numeric
@@ -87,19 +88,23 @@ exit code) needs only a direct assertion.
    never returns a non-error success carrying null / NaN fields.
 
    **Sibling-guard symmetry.** When the function under test shares an input parser / validation
-   boundary with sibling tools (e.g. several MCP tools that each parse the same color string), the
-   input-validation guard (finiteness / range / gamut) MUST either live in the SHARED parse /
+   boundary with sibling tools (e.g. several tools / endpoints parsing the same input class), the
+   input-validation guard (finiteness / range) MUST either live in the SHARED parse /
    validation path so every sibling inherits it, OR be replicated AND adversarially tested in EVERY
    sibling tool that accepts that input class. A guard wired into one tool but absent from its
    analogous siblings is exactly the `CLAUDE.md ## Modifications` sibling-artifact miss — a dogfood
-   build added a finite-components guard to the solver but not the analogous `gamut_map` /
-   `parse_color` tools, shipping a live DoS hang reachable through the unguarded siblings while the
-   guarded solver passed. Write the class-(b) adversarial test against EACH sibling tool, not only
-   the one tool the AC names.
+   build added a finiteness guard to one tool but not the analogous sibling tools parsing the same
+   input class, shipping a live DoS hang reachable through the unguarded siblings while the
+   guarded tool passed. Write the class-(b) adversarial test against EACH sibling tool, not only
+   the one tool the AC names. When the ac-evaluator's EXECUTED accept-set conformance sweep (see
+   [`accept-set-conformance-harness.md`](accept-set-conformance-harness.md)) reports an accept-set
+   leak across this shared input class, commit a fixed rejection characterization test for that
+   leaking input class (leaking input as the RED case, validator fix GREEN) — gated by
+   `constraints.accept_set_conformance` and always-on, not depth-gated.
 
 5. **Spec-completeness.** Assert every output field and guarantee the spec
-   promises — a missing field, an absent `inGamut` flag, a dropped `deltaE`, or
-   a "base color preserved" guarantee that no test checks is an untested
+   promises — a missing field, an absent status flag, a dropped metric field, or
+   a "base input preserved" guarantee that no test checks is an untested
    contract. Enumerate the promised outputs and assert each.
 
 6. **Black-box over white-box.** Exercise the public / protocol boundary (the

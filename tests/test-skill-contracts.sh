@@ -2470,6 +2470,26 @@ fi
 
 echo ""
 
+# CT-MODE-17 (README execution-chain #2 re-propagation, proposal 6): the README
+# "Brief manually, then switch to autopilot" execution chain must show the
+# chain=off -> set chain: on -> re-run /create-ticket brief=<path> -> /autopilot
+# re-propagation sequence (aligned with brief Step 3 + the autopilot manual-brief
+# hard-stop), NOT the old /create-ticket -> /autopilot dead-end, and the stale
+# `/brief <idea> mode=manual|auto` execution-chain commands must be gone.
+echo "--- CT-MODE-17 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF 're-run /create-ticket so each ticket dir receives autopilot-policy.yaml' "$REPO_DIR/README.md" \
+   && grep -qF '/create-ticket brief=.simple-workflow/backlog/briefs/active/<slug>/brief.md' "$REPO_DIR/README.md" \
+   && ! grep -qE '/brief <idea> mode=(manual|auto)' "$REPO_DIR/README.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-17: README execution chain #2 documents the /create-ticket re-propagation sequence (chain=off -> chain: on -> re-run /create-ticket -> /autopilot); stale mode= execution chains removed"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-17: README execution chain #2 must show the re-propagation sequence (re-run /create-ticket brief=<path> before /autopilot) and drop the mode= execution-chain commands"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # =============================================================================
 # Category AD: /audit per-Category checklist references contract
 # Diff: New category. Verifies that the canonical per-Category checklist
@@ -5124,6 +5144,31 @@ else
 fi
 rm -rf "$AC12_TMP"
 
+# CT-AC-12b (proposal 4 / ST-02): product_backlog-form ticket_dir state-lie. A
+# fabricated `ship: completed` on a NEVER-SCOUTED ticket whose ticket_dir still
+# holds the initial `product_backlog/` form must be caught by Gate 5: the
+# product_backlog -> done/ rewrite makes the -d existence check fail (no done/
+# dir) so the state-lie protection fires. Without that rewrite arm the
+# product_backlog/ dir existed and the lie passed (false negative), so this
+# assertion FAILs on the pre-fix code.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC12B_TMP=$(mktemp -d)
+mkdir -p "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC12B_TMP/.simple-workflow/backlog/product_backlog/dummy/001-fakery"
+# done/ deliberately NOT created — the ticket was never actually shipped.
+AC12B_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/product_backlog/dummy/001-fakery\n    status: completed\n    steps:\n      scout: completed\n      impl: completed\n      ship: completed\n')
+printf '%s' "$AC12B_NEW" > "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC12B_INPUT=$(jq -n --arg fp "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12B_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC12B_OUT=$(cd "$AC12B_TMP" && INPUT="$AC12B_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC12B_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12B_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-12b: product_backlog-form ticket_dir state-lie caught (no inject)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-12b: product_backlog state-lie NOT caught. Output: $AC12B_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC12B_TMP"
+
 # CT-AC-13: dedup — fresh sentinel present -> no-op (Gate 6). When the
 # primary already fired and wrote .auto-compact-pending, the safety-net
 # must short-circuit so the user only sees ONE /compact per boundary.
@@ -5164,6 +5209,29 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 rm -rf "$AC14_TMP"
+
+# CT-AC-14b (proposal 3 / ST-11): inline-flow ship-completed payload reaches the
+# dispatcher. The Gate-2 payload detector must accept the template-seeded inline
+# `steps: {…, ship: completed}` shape, not only the flat `ship: completed`.
+# Reverting the `completed([[:space:],}]|$)` trailing class makes the flat grep
+# miss `ship: completed}`, Gate 2 short-circuits via `|| exit 0`, and the
+# dispatcher is never reached — so this assertion FAILs on the pre-fix code.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+AC14B_TMP=$(mktemp -d)
+mkdir -p "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy"
+mkdir -p "$AC14B_TMP/.simple-workflow/backlog/done/dummy/001-shipped"
+touch "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
+AC14B_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps: {scout: completed, impl: completed, ship: completed}\n')
+AC14B_INPUT=$(jq -n --arg fp "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC14B_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
+AC14B_OUT=$(cd "$AC14B_TMP" && INPUT="$AC14B_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
+if echo "$AC14B_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+  echo -e "  ${GREEN}PASS${NC} CT-AC-14b: safety-net — inline-flow ship-completed payload reaches dispatcher (Gate 2 flow tolerance)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-AC-14b: inline-flow ship-completed payload did NOT reach dispatcher. Output: $AC14B_OUT" >&2
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$AC14B_TMP"
 
 rm -rf "$AC_STUB_DIR"
 
@@ -9845,6 +9913,102 @@ assert_true \
   "CT-EV-PANEL-ROBUST-1 (L-ROBUSTNESS + Gate 9 R2 adversarial-key vector): ac-evaluator ($ev_protopol_acev>=1) + -hi mirror ($ev_protopol_hi>=1) + orchestration ($ev_protopol_orch>=1) + Gate 9 R2 ($ev_protopol_acqc>=1)" \
   "$ev_protopol_result"
 
+# CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector,
+# dogfood42-hardening): where a boundary is advertised strict/canonical/exact or
+# parses a number through a lenient primitive (int()/Number()/parseInt), the panel
+# lens AND the canonical Gate 9 R2 row now require probing inputs that satisfy the
+# rules' letter yet exceed the advertised surface (non-ASCII/Unicode-digit numerals,
+# leading-sign/whitespace forms, valid-but-non-canonical 01h / 1d0h0m0s). The shared
+# token 'strictness-leniency' is wired into the ac-evaluator body + its byte-identical
+# -hi twin + the orchestration panel section + Gate 9 R2. 'strictness-leniency' is
+# net-new (a revert flips each to FAIL). Closes the durfmt dogfood miss (a
+# 'strict-canonical' parser accepted a full-width-digit token / +5 / 01h / 1d0h0m0s).
+ev_strlen_acev=$(grep -cF 'strictness-leniency' "$ACEV_EV" || true)
+ev_strlen_hi=$(grep -cF 'strictness-leniency' "$ACEVHI_EV" || true)
+ev_strlen_orch=$(grep -cF 'strictness-leniency' "$ORCH_EV" || true)
+ev_strlen_acqc=$(grep -cF 'strictness-leniency' "$ACQC_EV" || true)
+ev_strlen_result="false"
+if [ "$ev_strlen_acev" -ge 1 ] && [ "$ev_strlen_hi" -ge 1 ] && [ "$ev_strlen_orch" -ge 1 ] && [ "$ev_strlen_acqc" -ge 1 ]; then ev_strlen_result="true"; fi
+assert_true \
+  "CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector): ac-evaluator ($ev_strlen_acev>=1) + -hi mirror ($ev_strlen_hi>=1) + orchestration ($ev_strlen_orch>=1) + Gate 9 R2 ($ev_strlen_acqc>=1)" \
+  "$ev_strlen_result"
+
+# CT-DECONTAM-1 (product-instance recidivism guard, decontamination phase). This
+# guard forbids product-INSTANCE tokens from leaking into the normative evaluation
+# content (the rubric, the two ac-evaluator twins, the orchestration / authoring /
+# evidence references, and the planner/implementer/test-writer/ticket-evaluator
+# agents). Concrete product instances (e.g. a specific color-space call, a named
+# third-party library, a one-off durfmt literal) belong in transient dogfood
+# transcripts, NOT baked into the generic evaluation guidance, where they bias every
+# future ticket toward the colour/duration domains they came from. The denylist is
+# product instances ONLY: abstract failure-class names (prototype-pollution,
+# strictness-leniency) and bare colour-space / gamut / constructor vocabulary are
+# DELIBERATELY excluded so this guard never collides with the CT-pinned tokens that
+# CT-EV-PANEL-ROBUST-1 / -2 and their kin assert MUST be present. RED-first: on the
+# contaminated tree this FAILs with a nonzero hit count and names each file+token;
+# it turns green only once the later de-contamination phases strip the instances.
+# NOTE: test-skill-contracts.sh itself is intentionally NOT in the normative set —
+# it legitimately carries every denylist literal below.
+decontam_norm_files=(
+  "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+  "$REPO_DIR/agents/ac-evaluator.md"
+  "$REPO_DIR/agents/ac-evaluator-hi.md"
+  "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
+  "$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
+  "$REPO_DIR/skills/impl/references/evidence-channels.md"
+  "$REPO_DIR/agents/planner.md"
+  "$REPO_DIR/agents/implementer.md"
+  "$REPO_DIR/agents/test-writer.md"
+  "$REPO_DIR/agents/ticket-evaluator.md"
+  "$REPO_DIR/skills/impl/references/verification-depth.md"
+  "$REPO_DIR/skills/impl/references/tautological-assertion-rules.md"
+  "$REPO_DIR/skills/impl/references/independent-oracle-harness.md"
+  "$REPO_DIR/skills/impl/references/accept-set-conformance-harness.md"
+)
+decontam_denylist=(
+  'oklch('
+  '1e400'
+  'culori'
+  'colorjs.io'
+  'CSS-MINDE'
+  'srgbToLinear'
+  '0.2126'
+  'WCAG21'
+  'clampChroma'
+  'deltaE'
+  'toGamut'
+  'inGamut'
+  'gamut_map'
+  'parse_color'
+  'U+FF11'
+  'Arabic-Indic'
+  '01h'
+  '1d0h0m0s'
+  '__proto__'
+)
+decontam_total=0
+decontam_hits=""
+for decontam_tok in "${decontam_denylist[@]}"; do
+  for decontam_f in "${decontam_norm_files[@]}"; do
+    [ -f "$decontam_f" ] || continue
+    decontam_c=$(grep -cF -- "$decontam_tok" "$decontam_f" 2>/dev/null || true)
+    decontam_c=${decontam_c:-0}
+    if [ "$decontam_c" -gt 0 ]; then
+      decontam_total=$((decontam_total + decontam_c))
+      decontam_hits="${decontam_hits}
+       hit ($decontam_c) [$decontam_tok] in ${decontam_f#"$REPO_DIR"/}"
+    fi
+  done
+done
+decontam_result="false"
+if [ "$decontam_total" -eq 0 ]; then decontam_result="true"; fi
+if [ -n "$decontam_hits" ]; then
+  echo -e "  CT-DECONTAM-1 product-instance leaks ($decontam_total total):${decontam_hits}" >&2
+fi
+assert_true \
+  "CT-DECONTAM-1 (product-instance recidivism guard): no product-INSTANCE tokens in the ${#decontam_norm_files[@]}-file normative set (total hits=$decontam_total, expected 0)" \
+  "$decontam_result"
+
 # CT-EV-GATE10-1 (Gate 10 peer-set uniformity, canonical + author + grader 3-file
 # symmetry, v8.4.0+): the new gate section exists in the canonical rubric AND the
 # planner self-audit names it AND the ticket-evaluator Gate-Results row names it.
@@ -9883,6 +10047,48 @@ if [ "$ev_g10_3_acqc" -ge 1 ] && [ "$ev_g10_3_apr" -ge 1 ] && [ "$ev_g10_3_plann
 assert_true \
   "CT-EV-GATE10-3 (Gate 10 kill switch wired): canonical gate ($ev_g10_3_acqc>=1) + policy doc ($ev_g10_3_apr>=1) + planner audit ($ev_g10_3_planner>=1) + policy template ($ev_g10_3_pt>=1)" \
   "$ev_g10_3_result"
+
+# CT-EV-SHARED-INPUT-XTICKET (cross-ticket shared-input-boundary signal + delegation-not-n/a
+# sibling-guard clause, P-A). Both net-new tokens are HEAD=0 (RED-first). PART A pins the structured
+# decomposer cross-ticket signal across producer + schema-SoT + forwarder; PART B pins the
+# delegation-not-n/a clause across canonical + both byte-identical ac-evaluator twins + planner
+# self-audit + ticket-evaluator grade-line. The decomposer emits the signal UNCONDITIONALLY
+# (mirrors the existing unconditional peer_set: hint — decomposer.md reads no policy); downstream
+# Gate 7/9 grading reuses constraints.failure_class_coverage (CT-EV-GATE9-3), so no new knob CT.
+SHIN_DECOMP="$REPO_DIR/agents/decomposer.md"
+SHIN_SPEC="$REPO_DIR/skills/create-ticket/references/spec-decomposer-input.md"
+SHIN_SKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+shin_a_decomp=$(grep -cF 'shared_input_boundary:' "$SHIN_DECOMP" || true)
+shin_a_spec=$(grep -cF 'shared_input_boundary:' "$SHIN_SPEC" || true)
+shin_a_skill=$(grep -cF 'shared_input_boundary:' "$SHIN_SKILL" || true)
+shin_a_result="false"
+if [ "$shin_a_decomp" -ge 1 ] && [ "$shin_a_spec" -ge 1 ] && [ "$shin_a_skill" -ge 1 ]; then shin_a_result="true"; fi
+assert_true \
+  "CT-EV-SHARED-INPUT-XTICKET PART A (decomposer cross-ticket shared_input_boundary signal: producer+schema+forwarder): decomposer ($shin_a_decomp>=1) + spec-decomposer-input ($shin_a_spec>=1) + create-ticket SKILL ($shin_a_skill>=1)" \
+  "$shin_a_result"
+shin_b_acqc=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACQC_EV" || true)
+shin_b_acev=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACEV_EV" || true)
+shin_b_acevhi=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACEVHI_EV" || true)
+shin_b_planner=$(grep -ciF 'delegation is NOT an automatic n/a' "$PLANNER_EV" || true)
+shin_b_tev=$(grep -ciF 'delegation is NOT an automatic n/a' "$TEV_EV" || true)
+shin_b_result="false"
+if [ "$shin_b_acqc" -ge 1 ] && [ "$shin_b_acev" -ge 1 ] && [ "$shin_b_acevhi" -ge 1 ] && [ "$shin_b_planner" -ge 1 ] && [ "$shin_b_tev" -ge 1 ]; then shin_b_result="true"; fi
+assert_true \
+  "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+both twins+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + ac-evaluator-hi ($shin_b_acevhi>=1) + planner ($shin_b_planner>=1) + ticket-evaluator ($shin_b_tev>=1)" \
+  "$shin_b_result"
+
+# CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe scratch carve-out clarification,
+# AASC prereq). Reconciles the :199 "single exception ... computational AC" wording with
+# point 5's already-directed behavioral watchdog probe (an existing inconsistency); names
+# NO accept-set sweep (that is the gated AASC mechanism). Net-new token HEAD=0; byte-identical
+# in both twins (CT-EV-MODEL-1 covers the identity).
+scev_acev=$(grep -ciF 'behavioral evidence probe' "$ACEV_EV" || true)
+scev_acevhi=$(grep -ciF 'behavioral evidence probe' "$ACEVHI_EV" || true)
+scev_result="false"
+if [ "$scev_acev" -ge 1 ] && [ "$scev_acevhi" -ge 1 ]; then scev_result="true"; fi
+assert_true \
+  "CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe carve-out clarification, both twins): ac-evaluator ($scev_acev>=1) + ac-evaluator-hi ($scev_acevhi>=1)" \
+  "$scev_result"
 
 # CT-EV-SELFDOC-1 (EC-SELFDOC channel + both failure modes, v8.4.0+). HEAD=0.
 ev_sd1_channel=$(grep -cF '**EC-SELFDOC**' "$ECH_EV" || true)
@@ -9990,6 +10196,199 @@ assert_true \
   "$ev_sd6_result"
 
 
+# CT-AASC-1 (accept-set conformance EXECUTED sweep + persisted observability, both twins, v8.5.0+).
+# Load-bearing per charter section H: the ONLY truly additive element is the evaluator ACTUALLY
+# EXECUTING the grammar-complement sweep in scratch (not more prose contract). Pins (a) the
+# executed-sweep mandate (net-new phrase 'accept-set conformance' + the EXECUTE verb), and (b) the
+# [ACCEPT-SET-SWEEP] marker routed into the PERSISTED report body (the M8 falsifiability fix).
+# Both net-new tokens are HEAD=0 (verified RED-first: grep returns 0 files); byte-identical in both
+# twins (CT-EV-MODEL-1 strip-then-diff covers the identity). A revert flips each grep to FAIL.
+aasc1_acev_phrase=$(grep -ciF 'accept-set conformance' "$ACEV_EV" || true)
+aasc1_hi_phrase=$(grep -ciF 'accept-set conformance' "$ACEVHI_EV" || true)
+aasc1_acev_marker=$(grep -cF '[ACCEPT-SET-SWEEP]' "$ACEV_EV" || true)
+aasc1_hi_marker=$(grep -cF '[ACCEPT-SET-SWEEP]' "$ACEVHI_EV" || true)
+aasc1_acev_exec=$(grep -cF 'EXECUTE' "$ACEV_EV" || true)
+aasc1_hi_exec=$(grep -cF 'EXECUTE' "$ACEVHI_EV" || true)
+aasc1_result="false"
+if [ "$aasc1_acev_phrase" -ge 1 ] && [ "$aasc1_hi_phrase" -ge 1 ] && [ "$aasc1_acev_marker" -ge 1 ] && [ "$aasc1_hi_marker" -ge 1 ] && [ "$aasc1_acev_exec" -ge 1 ] && [ "$aasc1_hi_exec" -ge 1 ]; then aasc1_result="true"; fi
+assert_true \
+  "CT-AASC-1 (executed accept-set sweep + observability, both twins): ac-evaluator phrase ($aasc1_acev_phrase>=1) marker ($aasc1_acev_marker>=1) EXECUTE ($aasc1_acev_exec>=1) + -hi phrase ($aasc1_hi_phrase>=1) marker ($aasc1_hi_marker>=1) EXECUTE ($aasc1_hi_exec>=1)" \
+  "$aasc1_result"
+
+# CT-AASC-2 (four metamorphic relations + no-runnable-artifact caveat, both twins, v8.5.0+).
+# Pins the executed sweep's four MR-* relations (MR-ALPHABET enumerates the Unicode decimal-digit
+# complement BMP+astral naming no script) and the compiled-language Caveat arm (blocker 2: a built
+# Rust/Go artifact cannot be run black-box, so a null must be distinguishable from a clean sweep).
+# All five tokens HEAD=0 (verified RED-first); byte-identical in both twins.
+aasc2_ok="true"
+for aasc2_tok in 'MR-FINITE' 'MR-ALPHABET' 'MR-CANONICAL' 'MR-KEYFAITH' 'no-runnable-artifact'; do
+  aasc2_a=$(grep -cF "$aasc2_tok" "$ACEV_EV" || true)
+  aasc2_b=$(grep -cF "$aasc2_tok" "$ACEVHI_EV" || true)
+  if [ "$aasc2_a" -lt 1 ] || [ "$aasc2_b" -lt 1 ]; then aasc2_ok="false"; echo "  CT-AASC-2 missing [$aasc2_tok] acev=$aasc2_a hi=$aasc2_b" >&2; fi
+done
+assert_true \
+  "CT-AASC-2 (4 metamorphic relations + no-runnable-artifact caveat, both twins): MR-FINITE/ALPHABET/CANONICAL/KEYFAITH + caveat present in ac-evaluator AND -hi ($aasc2_ok)" \
+  "$aasc2_ok"
+
+# CT-AASC-3 (producer-side accept-set retained-corpus obligation, both producers, v8.5.0+).
+# Load-bearing per charter section H clause (iii) + blocker 9: the ac-evaluator is read-only and
+# cannot write PRODUCT tests, so the fixed rejection characterization test MUST be a producer
+# obligation. Pins the net-new phrase in implementer + test-writer (byte-symmetric per CLAUDE.md
+# ## Modifications). HEAD=0 (verified RED-first). Reuses the existing IMPLAGENT_EV / TW_EV handles
+# (declared upstream at lines 9621/9620 and 9736/9735) — NOT a fresh IMPL_AGENT_EV (Review naming-nit).
+aasc3_impl=$(grep -ciF 'accept-set conformance retained corpus' "$IMPLAGENT_EV" || true)
+aasc3_tw=$(grep -ciF 'accept-set conformance retained corpus' "$TW_EV" || true)
+aasc3_result="false"
+if [ "$aasc3_impl" -ge 1 ] && [ "$aasc3_tw" -ge 1 ]; then aasc3_result="true"; fi
+assert_true \
+  "CT-AASC-3 (producer-side retained-corpus obligation, both producers): implementer ($aasc3_impl>=1) + test-writer ($aasc3_tw>=1)" \
+  "$aasc3_result"
+
+# CT-AASC-5 (accept-set-conformance-harness.md exists + wired; EC-METAMORPHIC + Grammar Card,
+# v8.5.0+). Mirrors CT-EV-13 (independent-oracle-harness exists+linked). Prose-support scaffold
+# (charter section H: a doc is recognition-gated), pinned so the wiring cannot silently rot. Net-new
+# tokens 'accept-set-conformance-harness', 'EC-METAMORPHIC', 'Grammar Card' all HEAD=0 (verified).
+AASC_DOC="$REPO_DIR/skills/impl/references/accept-set-conformance-harness.md"
+aasc5_exists=0; if [ -f "$AASC_DOC" ]; then aasc5_exists=1; fi
+aasc5_link_acev=$(grep -cF 'accept-set-conformance-harness' "$ACEV_EV" || true)
+aasc5_link_hi=$(grep -cF 'accept-set-conformance-harness' "$ACEVHI_EV" || true)
+aasc5_link_ech=$(grep -cF 'accept-set-conformance-harness' "$ECH_EV" || true)
+aasc5_ecmeta=$(grep -cF 'EC-METAMORPHIC' "$ECH_EV" || true)
+aasc5_grammar=$(grep -cF 'Grammar Card' "$AASC_DOC" 2>/dev/null || true)
+aasc5_result="false"
+if [ "$aasc5_exists" -eq 1 ] && [ "$aasc5_link_acev" -ge 1 ] && [ "$aasc5_link_hi" -ge 1 ] && [ "$aasc5_link_ech" -ge 1 ] && [ "$aasc5_ecmeta" -ge 1 ] && [ "$aasc5_grammar" -ge 1 ]; then aasc5_result="true"; fi
+assert_true \
+  "CT-AASC-5 (harness doc exists + wired + EC-METAMORPHIC + Grammar Card): exists ($aasc5_exists=1), linked from ac-evaluator ($aasc5_link_acev>=1) + -hi ($aasc5_link_hi>=1) + evidence-channels ($aasc5_link_ech>=1), EC-METAMORPHIC in evidence-channels ($aasc5_ecmeta>=1), Grammar Card in doc ($aasc5_grammar>=1)" \
+  "$aasc5_result"
+
+# CT-AASC-6 (deterministic accept-set trigger: orchestrator computes + inlines triggered-on=, both twins read it; v8.5.0+).
+# LOAD-BEARING per charter section H: moves the strict/canonical/lossless/limit + shared_input_boundary recognition out of
+# the evaluator (dogfood46 non-uniformity) into a deterministic Step-15 computation inlined as triggered-on=. Net-new tokens
+# 'triggered-on=' and (in SKILL.md) 'accept_set_conformance' are HEAD=0 (RED-first; bare 'triggered='/'accept-set' pre-exist
+# from STEP 5 and are NOT what this pins). Twins byte-identical.
+aasc6_skill_constraint=$(grep -cF 'accept_set_conformance' "$IMPL_EV" || true)
+aasc6_skill_field=$(grep -cF 'triggered-on=' "$IMPL_EV" || true)
+aasc6_skill_emit=$(grep -cF '[ACCEPT-SET-TRIGGER]' "$IMPL_EV" || true)
+aasc6_acev_read=$(grep -cF 'triggered-on=' "$ACEV_EV" || true)
+aasc6_hi_read=$(grep -cF 'triggered-on=' "$ACEVHI_EV" || true)
+aasc6_result="false"
+if [ "$aasc6_skill_constraint" -ge 1 ] && [ "$aasc6_skill_field" -ge 1 ] && [ "$aasc6_skill_emit" -ge 1 ] && [ "$aasc6_acev_read" -ge 1 ] && [ "$aasc6_hi_read" -ge 1 ]; then aasc6_result="true"; fi
+assert_true "CT-AASC-6 (deterministic trigger triggered-on= computed+inlined+read): SKILL constraint ($aasc6_skill_constraint>=1) field ($aasc6_skill_field>=1) emit ($aasc6_skill_emit>=1) + ac-evaluator reads ($aasc6_acev_read>=1) + -hi reads ($aasc6_hi_read>=1)" "$aasc6_result"
+
+# CT-AASC-7 (black-box no-impl-peek + self-incriminating shallow-sweep record, both twins; v8.5.0+).
+# LOAD-BEARING per charter section H: dogfood46 skipped astral via an implementation-peek and recorded astral=n as a neutral
+# field. Pins the two GENUINELY-NEW anti-cues (the astral/no-script/property-enumeration prose already existed in STEP 5 and
+# is deliberately NOT re-pinned here to avoid accretion-pinning). Both tokens HEAD=0 (RED-first). Twins byte-identical.
+aasc7_ok="true"
+for aasc7_tok in 'implementation-peek' 'shallow sweep'; do
+  aasc7_a=$(grep -cF "$aasc7_tok" "$ACEV_EV" || true)
+  aasc7_b=$(grep -cF "$aasc7_tok" "$ACEVHI_EV" || true)
+  if [ "$aasc7_a" -lt 1 ] || [ "$aasc7_b" -lt 1 ]; then aasc7_ok="false"; echo "  CT-AASC-7 missing twin token [$aasc7_tok] acev=$aasc7_a hi=$aasc7_b" >&2; fi
+done
+assert_true "CT-AASC-7 (black-box no-impl-peek + shallow-sweep self-incrimination, both twins): implementation-peek + shallow sweep present in ac-evaluator AND -hi ($aasc7_ok)" "$aasc7_ok"
+
+# CT-AASC-8 (worked MR-KEYFAITH (b) shape: reflection-derived key generator + round-trip-faithfulness oracle; v8.5.0+).
+# LOAD-BEARING per charter section H: a (b) dogfood self-elicited the MR-KEYFAITH / K-axis sweep but executed a HAND-PICKED
+# key-literal corpus because the doc shipped a worked example ONLY for MR-ALPHABET and left MR-KEYFAITH bare prose. This pins
+# that the harness doc (AASC_DOC handle) now ships a copyable MR-KEYFAITH (b) shape whose generator DERIVES the dangerous keys
+# by reflection (naming NO key literal, exactly as MR-ALPHABET selects by the decimal-digit PROPERTY). Net-new token
+# 'reflection-derived' is HEAD=0 (RED-first; bare 'reflection' pre-exists in the MR-KEYFAITH prose bullet and is NOT what this
+# pins). Stays decontam-clean: the shape names no key-literal denylist token (CT-DECONTAM-1 must remain 0 hits).
+aasc8_phrase=$(grep -cF 'reflection-derived' "$AASC_DOC" 2>/dev/null || true)
+aasc8_result="false"
+if [ "$aasc8_phrase" -ge 1 ]; then aasc8_result="true"; fi
+assert_true \
+  "CT-AASC-8 (worked MR-KEYFAITH (b) shape: reflection-derived generator + round-trip-faithfulness oracle): net-new (b)-shape phrase in harness doc ($aasc8_phrase>=1)" \
+  "$aasc8_result"
+
+# CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive the dangerous-key corpus BY REFLECTION, both twins; v8.5.0+).
+# LOAD-BEARING per charter section H: a (b) dogfood self-elicited the MR-KEYFAITH / K-axis sweep but executed a HAND-PICKED
+# key-literal corpus because the LENS shipped MR-KEYFAITH as bare/advisory prose while MR-ALPHABET (c) carried a strong
+# enumerate-by-PROPERTY/names-NO-script directive (which reached astral breadth in dogfood47). This brings the MR-KEYFAITH
+# CORPUS directive to (c)-parity: a MUST to DERIVE the candidate key corpus BY REFLECTION (naming NO key literal, exactly as
+# MR-ALPHABET selects by the decimal-digit PROPERTY) so every reserved / accessor / colliding key is covered for ALL inputs.
+# The GATING qualifier was upgraded to the shared two-tier gate in a later round (see CT-AASC-10). Net-new token
+# 'DERIVE the candidate key corpus BY REFLECTION' is HEAD=0 (RED-first). Twins byte-identical. Stays decontam-clean: the
+# directive names no key-literal denylist token (CT-DECONTAM-1 must remain 0 hits).
+aasc9_tok='DERIVE the candidate key corpus BY REFLECTION'
+aasc9_a=$(grep -cF "$aasc9_tok" "$ACEV_EV" || true)
+aasc9_b=$(grep -cF "$aasc9_tok" "$ACEVHI_EV" || true)
+aasc9_result="false"
+if [ "$aasc9_a" -ge 1 ] && [ "$aasc9_b" -ge 1 ]; then aasc9_result="true"; fi
+assert_true \
+  "CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive-by-reflection, both twins): directive present in ac-evaluator ($aasc9_a>=1) AND -hi ($aasc9_b>=1)" \
+  "$aasc9_result"
+
+# CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins; (b)-finish round).
+# LOAD-BEARING: the MR-KEYFAITH lens shipped its divergence as **ASSUMED, not proven** / advisory-only, a WEAKER
+# floor than the other MRs. A concrete round-trip-faithfulness violation (a drop / overwrite / host-metadata mutation)
+# on a lossless / strict keyed boundary is now folded into the SAME standard two-tier oracle-authoritative FAIL gating
+# as MR-FINITE / MR-ALPHABET / MR-CANONICAL. This pins the folded-gate phrase present in BOTH twins AND the removal of
+# the old **ASSUMED, not proven** qualifier (RED-first: HEAD ships the ASSUMED text and not the folded phrase).
+aasc10_tok='SAME standard two-tier oracle-authoritative FAIL gating as the'
+aasc10_a=$(grep -cF "$aasc10_tok" "$ACEV_EV" || true)
+aasc10_b=$(grep -cF "$aasc10_tok" "$ACEVHI_EV" || true)
+aasc10_old_a=$(grep -cF 'ASSUMED, not proven' "$ACEV_EV" || true)
+aasc10_old_b=$(grep -cF 'ASSUMED, not proven' "$ACEVHI_EV" || true)
+# Sibling-artifact uniformity (CLAUDE.md Modifications rule): the cross-linked EC-taxonomy
+# reference both evaluators point to must NOT carry the stale ASSUMED/advisory-only posture,
+# else a reader there downgrades a genuine narrow-keyed-boundary leak the twins now FAIL-gate.
+aasc10_old_ech=$(grep -cF 'ASSUMED, not proven' "$ECH_EV" || true)
+aasc10_result="false"
+if [ "$aasc10_a" -ge 1 ] && [ "$aasc10_b" -ge 1 ] && [ "$aasc10_old_a" -eq 0 ] && [ "$aasc10_old_b" -eq 0 ] && [ "$aasc10_old_ech" -eq 0 ]; then aasc10_result="true"; fi
+assert_true "CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins + EC ref): folded-gate phrase acev ($aasc10_a>=1) hi ($aasc10_b>=1), ASSUMED removed acev ($aasc10_old_a=0) hi ($aasc10_old_b=0) evidence-channels ($aasc10_old_ech=0)" "$aasc10_result"
+
+# CT-AASC-11 (round-trip oracle from input-pairs last-write-wins; harness doc).
+# LOAD-BEARING: the worked MR-KEYFAITH (b) oracle must compute its expectation FROM THE INPUT PAIRS by last-write-wins,
+# never by reading it back out of the builder (the dogfood-50 circular-oracle trap). This pins the net-new phrase in the
+# harness doc (RED-first: HEAD=0 for the phrase).
+aasc11_c=$(grep -cF 'computed from the INPUT PAIRS by last-write-wins' "$AASC_DOC" 2>/dev/null || true)
+aasc11_result="false"
+if [ "$aasc11_c" -ge 1 ]; then aasc11_result="true"; fi
+assert_true "CT-AASC-11 (round-trip oracle from input-pairs last-write-wins): net-new phrase in harness doc ($aasc11_c>=1)" "$aasc11_result"
+
+# CT-AASC-12 (reflection corpus incl private/internal slots + FULL set; doc + both twins).
+# LOAD-BEARING: a private-slot collision (an input key shadowing the structure's own internal storage slot) is a real
+# drop / overwrite class reflection already exposes, so the reflected corpus MUST be the FULL reflected set (never sliced)
+# and MUST include private / internal slot names. Pins both net-new tokens ('private / internal slot' + 'FULL reflected
+# set') across the harness doc AND both twins (RED-first: HEAD=0). Stays decontam-clean: no key-literal denylist token.
+aasc12_doc=$(grep -cF 'private / internal slot names' "$AASC_DOC" 2>/dev/null || true)
+aasc12_acev=$(grep -cF 'private / internal slot' "$ACEV_EV" || true)
+aasc12_hi=$(grep -cF 'private / internal slot' "$ACEVHI_EV" || true)
+aasc12_doc_full=$(grep -cF 'FULL reflected set' "$AASC_DOC" 2>/dev/null || true)
+aasc12_acev_full=$(grep -cF 'FULL reflected set' "$ACEV_EV" || true)
+aasc12_hi_full=$(grep -cF 'FULL reflected set' "$ACEVHI_EV" || true)
+aasc12_result="false"
+if [ "$aasc12_doc" -ge 1 ] && [ "$aasc12_acev" -ge 1 ] && [ "$aasc12_hi" -ge 1 ] && [ "$aasc12_doc_full" -ge 1 ] && [ "$aasc12_acev_full" -ge 1 ] && [ "$aasc12_hi_full" -ge 1 ]; then aasc12_result="true"; fi
+assert_true "CT-AASC-12 (reflection corpus incl private/internal slots + FULL set, doc+both twins): private-slot doc ($aasc12_doc) acev ($aasc12_acev) hi ($aasc12_hi); FULL-set doc ($aasc12_doc_full) acev ($aasc12_acev_full) hi ($aasc12_hi_full)" "$aasc12_result"
+
+# CT-AASC-13 (AASC verification hook registered: deterministic post-hoc conformance gate; v8.5.0+).
+# LOAD-BEARING per charter section H: the AASC sweep + its self-incrimination rule are ALREADY normative MUST in the
+# ac-evaluator lens ("an `## Accept-set sweep` line with `ran=n`, or with `ran=y astral=n`, is a NON-CONFORMANT shallow
+# sweep"), yet live dogfoods leaked them run-to-run because the rule is honoured only by model RECOGNITION.
+# hooks/accept-set-verify.sh reads the EMITTED `## Accept-set sweep` line from the persisted eval-round-{n}.md and applies
+# the SAME rule deterministically (P1 stand-down / P2 shallow-astral / P3 sliced-corpus / P4 gating), with zero model
+# recall — the only recognition-independent lever. This pins the hook wired as >=2 PostToolUse entries (Write + Edit).
+# RED-first: HEAD=0 (hook absent / unwired). Behaviour is covered by tests/test-accept-set-verify.sh (not a grep CT).
+aasc13_wired=$(grep -cF 'hooks/accept-set-verify.sh' "$REPO_DIR/hooks/hooks.json" || true)
+aasc13_result="false"
+if [ "$aasc13_wired" -ge 2 ]; then aasc13_result="true"; fi
+assert_true "CT-AASC-13 (AASC verification hook registered, Write+Edit PostToolUse): hooks.json registration count ($aasc13_wired>=2)" "$aasc13_result"
+
+# CT-AASC-14 (accept_set_conformance kill switch documented across the 3 spawner surfaces; v8.5.0+).
+# The ac-evaluator already honours an `Accept-set conformance: off` short-circuit and /impl Step 15 already reads
+# `constraints.accept_set_conformance` (absent->auto), but the per-brief policy field was undocumented on every spawner
+# surface, so operators could not set it — a half-wired L1/L2/L3 gap. This closes it symmetrically (CLAUDE.md ## Plans
+# enumerate-every-spawner rule), mirroring CT-EV-REFUTE-2. RED-first: HEAD=0 on all three tokens. DECONTAM-clean: the
+# field name is an abstract property, no product/key literal.
+aasc14_pt=$(grep -ciF 'accept_set_conformance: auto' "$REPO_DIR/skills/brief/references/policy-template.md" || true)
+aasc14_apr=$(grep -ciF 'constraints.accept_set_conformance' "$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md" || true)
+aasc14_orch=$(grep -ciF 'constraints.accept_set_conformance: auto|off' "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md" || true)
+aasc14_result="false"
+if [ "$aasc14_pt" -ge 1 ] && [ "$aasc14_apr" -ge 1 ] && [ "$aasc14_orch" -ge 1 ]; then aasc14_result="true"; fi
+assert_true "CT-AASC-14 (accept_set_conformance kill switch documented): policy-template ($aasc14_pt>=1) + policy-reference ($aasc14_apr>=1) + orchestration block ($aasc14_orch>=1)" "$aasc14_result"
+
+
 echo ""
 
 # =============================================================================
@@ -10065,6 +10464,77 @@ if [ "$evm4_vd" -ge 1 ] && [ "$evm4_impl" -ge 1 ]; then evm4_result="true"; fi
 assert_true \
   "CT-EV-MODEL-4 (criticality scalar): verification-depth 'criticality = blast_radius' ($evm4_vd>=1) + impl SKILL [CRITICALITY] stderr ($evm4_impl>=1)" \
   "$evm4_result"
+
+# =============================================================================
+# Category GEN-MODEL: Generator model policy (proposal 1').
+# sonnet_size_threshold retired; implementer = opus always; planner/decomposer =
+# explicit `model: inherit`. Each assertion FAILs when the proposal-1' change is
+# reverted (knob restored / inherit reverted to opus / size-routed description
+# restored).
+# =============================================================================
+GENM_PLANNER="$REPO_DIR/agents/planner.md"
+GENM_DECOMP="$REPO_DIR/agents/decomposer.md"
+GENM_IMPL_AGENT="$REPO_DIR/agents/implementer.md"
+
+# CT-GEN-MODEL-1: the sonnet_size_threshold knob is retired — zero reference files
+# across skills/ and agents/ — AND the successor `Generator model policy` section
+# exists in the canonical policy reference.
+genm1_files=$( { grep -rln 'sonnet_size_threshold' "$REPO_DIR/skills" "$REPO_DIR/agents" 2>/dev/null || true; } | wc -l | tr -d ' ')
+genm1_policy=$(grep -cF '## Generator model policy' "$APR_EVM" || true)
+genm1_result="false"
+if [ "$genm1_files" -eq 0 ] && [ "$genm1_policy" -ge 1 ]; then genm1_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-1 (sonnet_size_threshold retired): 0 ref files in skills/+agents/ (got $genm1_files) AND 'Generator model policy' section present ($genm1_policy>=1)" \
+  "$genm1_result"
+
+# CT-GEN-MODEL-2: planner carries an EXPLICIT `model: inherit` (an omitted/implicit
+# inherit is not accepted — self-documentation + CT verifiability).
+genm2_count=$(grep -c '^model: inherit' "$GENM_PLANNER" || true)
+genm2_result="false"
+if [ "$genm2_count" -ge 1 ]; then genm2_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-2 (planner model: inherit explicit): agents/planner.md '^model: inherit' ($genm2_count>=1)" \
+  "$genm2_result"
+
+# CT-GEN-MODEL-3: decomposer carries an EXPLICIT `model: inherit`.
+genm3_count=$(grep -c '^model: inherit' "$GENM_DECOMP" || true)
+genm3_result="false"
+if [ "$genm3_count" -ge 1 ]; then genm3_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-3 (decomposer model: inherit explicit): agents/decomposer.md '^model: inherit' ($genm3_count>=1)" \
+  "$genm3_result"
+
+# CT-GEN-MODEL-4: implementer stays pinned to `model: opus` AND no longer advertises
+# the retired size-routed description ("Opus model for L/XL tickets, Sonnet for S/M").
+genm4_opus=$(grep -c '^model: opus' "$GENM_IMPL_AGENT" || true)
+genm4_olddesc=$(grep -cF 'Opus model for L/XL tickets, Sonnet for S/M' "$GENM_IMPL_AGENT" || true)
+genm4_result="false"
+if [ "$genm4_opus" -ge 1 ] && [ "$genm4_olddesc" -eq 0 ]; then genm4_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-4 (implementer opus pinned, size-routed description removed): '^model: opus' ($genm4_opus>=1) AND old size-routing description absent ($genm4_olddesc==0)" \
+  "$genm4_result"
+
+# =============================================================================
+# CT-RM-WRITERS (proposal 4 / ST-03): runtime_metrics writer enumeration sync.
+# The writer list in skills/autopilot/references/state-file.md must name EVERY
+# hook in the canonical `Sourced by:` header of hooks/lib/runtime-metrics.sh. A
+# writer added to the lib header but not reflected in state-file.md FAILs (and
+# the stale 2-of-6 enumeration this CT replaces would FAIL too).
+# =============================================================================
+RMW_LIB="$REPO_DIR/hooks/lib/runtime-metrics.sh"
+RMW_DOC="$REPO_DIR/skills/autopilot/references/state-file.md"
+rmw_canonical=$( { sed -n '/^# Sourced by:/,/^# Public contract:/p' "$RMW_LIB" 2>/dev/null | grep -oE 'hooks/[a-z0-9-]+\.sh' || true; } | sort -u)
+rmw_count=$(printf '%s\n' "$rmw_canonical" | grep -c '[^[:space:]]' || true)
+rmw_missing=""
+while IFS= read -r _rmw_h; do
+  [ -z "$_rmw_h" ] && continue
+  grep -qF "$_rmw_h" "$RMW_DOC" || rmw_missing="$rmw_missing $_rmw_h"
+done <<< "$rmw_canonical"
+rmw_result="false"
+if [ "$rmw_count" -ge 6 ] && [ -z "$rmw_missing" ]; then rmw_result="true"; fi
+assert_true \
+  "CT-RM-WRITERS (runtime_metrics writer sync): state-file.md names all $rmw_count runtime-metrics.sh writers (missing:${rmw_missing:- none})" \
+  "$rmw_result"
 
 echo ""
 

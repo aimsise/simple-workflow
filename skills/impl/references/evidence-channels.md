@@ -53,9 +53,9 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   reference implementation of the same contract. *Independent because* a second
   implementation would have to share the exact same bug to agree. Strongest as
   **algorithm-vs-algorithm**: when a second, INDEPENDENT ALGORITHM for the same
-  contract exists (e.g. CSS-MINDE vs chroma-clamping gamut mapping), cross-check
+  contract exists (two independent algorithms for the same contract), cross-check
   the two within an explicit tolerance — a membership / invariant test alone
-  (`inGamut`, "is sorted") is **necessary-not-sufficient** because a wrong
+  (a containment check, "is sorted") is **necessary-not-sufficient** because a wrong
   result can still satisfy it. At `thorough` / `exhaustive` use the
   second-algorithm differential where one is identifiable; degrade to membership
   / property coverage + a Caveat where no second algorithm exists.
@@ -68,6 +68,24 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   a hand-picked grid — see
   [`independent-oracle-harness.md`](independent-oracle-harness.md); it degrades
   to deterministic coverage + a Caveat where no PRNG idiom exists.
+- **EC-METAMORPHIC** — a **specialization layered on EC-PROPERTY**: when a boundary
+  advertises **strict / canonical / lossless / limit** or a same-input-class sibling
+  exists, an EXECUTED generative grammar-complement sweep whose accept-set is diffed
+  black-box against an INDEPENDENT hand-coded spec oracle (the four metamorphic
+  relations MR-FINITE / MR-ALPHABET / MR-CANONICAL / MR-KEYFAITH — see
+  [`accept-set-conformance-harness.md`](accept-set-conformance-harness.md)).
+  *Independent because* the oracle derives the spec accept-set without ever calling
+  the unit's own validator. It is NOT a member of the four-channel naming set
+  `{EC-ORACLE, EC-DIFFERENTIAL, EC-PROPERTY, EC-RUNTIME}` the Gate 8 binding rule
+  draws from — a behavioral AC still names one of those four. FAIL gating is
+  oracle-authoritative two-tier (force-FAIL only on a strictly-narrower advertised
+  contract; otherwise advisory `[MEDIUM]`), and where no runnable artifact exists it
+  is **fail-open** with a Caveat. An MR-KEYFAITH divergence (a concrete key drop /
+  overwrite / host-metadata mutation on a keyed boundary the oracle authoritatively
+  narrows) is subject to the SAME two-tier oracle-authoritative FAIL gate as the
+  other relations — force-FAIL when the advertised contract is strictly narrower,
+  advisory `[MEDIUM]` only where the keyed boundary is legitimately WIDE; it is NOT
+  a weaker advisory-only floor.
 - **EC-RUNTIME** — black-box observation through the real public / protocol boundary:
   the real CLI, the real MCP `Client` over a transport, the exported public API, a
   rendered DOM — never internal handlers reached by reflection or by imports a real
@@ -124,8 +142,8 @@ namespace rule above).
 - **RT-ABUSE** — misuse of the public contract: out-of-order calls, illegal state
   transitions, authorization bypass, contract-violating argument combinations.
 - **RT-MALFORMED** — structurally invalid or adversarial payloads (overlong, mixed
-  encoding, injection, parse-accepted-then-overflows values such as
-  `oklch(0.5 1e400 30)`).
+  encoding, injection, parse-accepted-then-overflows values: an input the parser
+  ACCEPTS that yields a non-finite / out-of-range intermediate after a conversion).
 - **RT-EXHAUST** — resource exhaustion: unbounded allocation, pathological recursion,
   timeouts, rate-limit / quota pressure.
 - **RT-CONCURRENCY** — races, re-entrancy, shared-state corruption, ordering hazards

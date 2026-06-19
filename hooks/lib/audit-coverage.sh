@@ -127,6 +127,8 @@ audit_coverage_emit() {
   # one that will be committed, not the on-disk file contents).
   local entries=""
   local count=0
+  # 'line' is an unused read placeholder; the other names are consumed in the loop below.
+  # shellcheck disable=SC2034
   local line raw_status path_new path_old status_letter blob
   # Use a process substitution to avoid the subshell trap of `| while`.
   while IFS=$'\t' read -r raw_status path_new path_old; do
@@ -277,6 +279,8 @@ if isinstance(files, list):
 PYEOF
 ) || py_out=""
     if [ -n "$py_out" ]; then
+      # 'py_line' is an unused read placeholder; the other names are consumed below.
+      # shellcheck disable=SC2034
       local py_line py_kind py_a py_b py_c
       while IFS=$'\t' read -r py_kind py_a py_b py_c; do
         case "$py_kind" in
@@ -361,6 +365,8 @@ PYEOF
   local total_cov=${#cov_paths[@]}
 
   # Index coverage entries by path for lookup.
+  # Reserved lookup placeholders, intentionally unassigned here.
+  # shellcheck disable=SC2034
   local cov_blob_for cov_status_for
   local idx=0
   declare -A cov_idx=()
@@ -370,6 +376,8 @@ PYEOF
   done
 
   # 1. For each commit-side file: must be covered AND blob must match.
+  # 'reason' is reserved for future diagnostics; the others are consumed below.
+  # shellcheck disable=SC2034
   local commit_file head_blob audit_blob audit_status reason
   local short_audit short_head
   if [ -n "$commit_changes" ]; then
@@ -399,6 +407,8 @@ PYEOF
   idx=0
   while [ "$idx" -lt "$total_cov" ]; do
     audit_blob="${cov_blobs[$idx]}"
+    # 'audit_status' is captured for symmetry/future use; not read on this path.
+    # shellcheck disable=SC2034
     audit_status="${cov_statuses[$idx]}"
     local cov_path="${cov_paths[$idx]}"
     head_blob=$(git rev-parse "HEAD:$cov_path" 2>/dev/null) || head_blob="__deleted__"

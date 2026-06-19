@@ -18,6 +18,17 @@ assert_blocked "BLOCK: rm -rf /path" \
 assert_blocked "BLOCK: rm -fr /path (reversed flags)" \
   "rm -fr /some/path"
 
+# F-HOOKS-04: separated short flags `-r -f` / `-f -r` were a blind spot — the
+# combined (`-rf`/`-fr`) and long-form (`-r --force`) alternatives missed them.
+assert_blocked "BLOCK: rm -r -f /path (separated short flags)" \
+  "rm -r -f /some/path"
+
+assert_blocked "BLOCK: rm -f -r /path (separated short flags, reversed)" \
+  "rm -f -r /some/path"
+
+assert_blocked "BLOCK: rm -r -i -f /path (separated flags with intervening -i)" \
+  "rm -r -i -f /some/path"
+
 assert_blocked "BLOCK: rm -rfi /path (extra flags mixed)" \
   "rm -rfi /some/path"
 
@@ -676,6 +687,44 @@ assert_allowed "ALLOW: echo with curl in literal" \
   "echo 'see the curl docs'"
 assert_allowed "ALLOW: git push origin some--no-verify-branch (no-verify in branch name)" \
   "git push origin some--no-verify-branch"
+
+echo ""
+
+# ============================================================
+# UX-11 (proposal 5): jq-missing fail-close is knob-gated
+# (SW_SAFETY_JQ_MISSING_MODE). PATH-restricted — an empty dir as PATH hides jq
+# while bash is invoked by absolute path so the guard reaches its jq preflight.
+# ============================================================
+_JQ_BASH="$(command -v bash)"
+_JQ_NOPATH="$(mktemp -d)"
+_JQ_HOOK="$HOOK_DIR/pre-bash-safety.sh"
+
+set +e
+_jq_on_out="$(printf '{"tool_input":{"command":"echo hi"}}' | env PATH="$_JQ_NOPATH" SW_SAFETY_JQ_MISSING_MODE=on "$_JQ_BASH" "$_JQ_HOOK" 2>&1)"
+_jq_on_rc=$?
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$_jq_on_rc" -eq 2 ] && printf '%s' "$_jq_on_out" | grep -qF '[SAFETY-JQ-MISSING]'; then
+  echo -e "  ${GREEN}PASS${NC} jq-missing + knob=on: fail-closed (exit 2) with [SAFETY-JQ-MISSING] message"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} jq-missing + knob=on: expected exit 2 + message (rc=$_jq_on_rc, out=${_jq_on_out:0:80})"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+set +e
+_jq_def_out="$(printf '{"tool_input":{"command":"echo hi"}}' | env PATH="$_JQ_NOPATH" "$_JQ_BASH" "$_JQ_HOOK" 2>&1)"
+_jq_def_rc=$?
+set -e
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$_jq_def_rc" -eq 0 ] && printf '%s' "$_jq_def_out" | grep -qF 'metric-only'; then
+  echo -e "  ${GREEN}PASS${NC} jq-missing + default: metric-only allows (exit 0) with message"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} jq-missing + default: expected exit 0 + metric-only message (rc=$_jq_def_rc)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rmdir "$_JQ_NOPATH" 2>/dev/null || true
 
 echo ""
 

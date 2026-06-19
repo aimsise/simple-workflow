@@ -110,7 +110,7 @@ on the raw value + a parse-accepted-overflow vector). Substitute `{i}` ∈
 
 - **V1 — runtime / black-box lens (EC-RUNTIME)**: `--- lens: 1/3 runtime/EC-RUNTIME --- Gather evidence through the REAL public / protocol boundary only: drive the actual CLI, the actual MCP Client over a transport, or the exported public API — never internal handlers reached by reflection or imports the real consumer cannot use. A green project suite is necessary but NOT sufficient: confirm the AC's behaviour is observable at the public boundary, and FAIL any AC whose only evidence is a white-box test that bypasses the schema / serialization / transport layer where real consumers fail.`
 - **V2 — differential / property lens (EC-DIFFERENTIAL or EC-PROPERTY)**: `--- lens: 2/3 differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY --- Establish evidence INDEPENDENT of the implementation's own output. When a reference implementation of the same contract exists, cross-check the implementation against it (EC-DIFFERENTIAL). Otherwise drive a seeded random sweep over the input space (fixed seed → reproducible) and assert the invariants the output must hold — monotonicity, symmetry, idempotence, round-trip, range/gamut containment (EC-PROPERTY). FAIL an AC whose tests assert only a handful of fixed points the code itself could have produced, with no reference cross-check and no property coverage across the distribution. At thorough / exhaustive, where a SECOND independent ALGORITHM for the same contract exists, compare algorithm-vs-algorithm within tolerance (membership / invariant satisfaction is necessary-not-sufficient — a wrong result can still be in-range); and require a committed, fixed-seed property-fuzz loop across the distribution.`
-- **V3 — independent-oracle / targeted-fuzz lens (EC-ORACLE + adversarial)**: `--- lens: 3/3 oracle-or-fuzz/EC-ORACLE --- For any computational AC, independently derive at least one expected value from an oracle that does NOT share the implementation's core (a third-party reference library, a published formula applied from first principles, or a cited hand-computed constant) and compare against the implementation's RAW, pre-rounding output with an explicit tolerance — this is the Gate 7 oracle probe, applied with full force. Additionally fuzz at least one parse-accepted-then-overflows vector (a value the parser ACCEPTS that yields a non-finite / out-of-range intermediate, e.g. `oklch(0.5 1e400 30)`) through the tool under a time-bounded watchdog; FAIL if it hangs or returns a non-error success carrying null / NaN fields. A scratch oracle probe under .simple-workflow/scratch/ is permitted. At thorough / exhaustive for a standard-backed computational AC, derive two mutually-validated oracles (>=1 first-principles) and trust a value only when they agree within tolerance, backed by a committed, fixed-seed seeded fuzz; degrade to one oracle + a Caveat where no second oracle / second algorithm exists.`
+- **V3 — independent-oracle / targeted-fuzz lens (EC-ORACLE + adversarial)**: `--- lens: 3/3 oracle-or-fuzz/EC-ORACLE --- For any computational AC, independently derive at least one expected value from an oracle that does NOT share the implementation's core (a third-party reference library, a published formula applied from first principles, or a cited hand-computed constant) and compare against the implementation's RAW, pre-rounding output with an explicit tolerance — this is the Gate 7 oracle probe, applied with full force. Additionally fuzz at least one parse-accepted-then-overflows vector (a value the parser ACCEPTS that yields a non-finite / out-of-range intermediate, e.g. a numeric field whose magnitude overflows to Infinity once arithmetic is applied) through the tool under a time-bounded watchdog; FAIL if it hangs or returns a non-error success carrying null / NaN fields. A scratch oracle probe under .simple-workflow/scratch/ is permitted. At thorough / exhaustive for a standard-backed computational AC, derive two mutually-validated oracles (>=1 first-principles) and trust a value only when they agree within tolerance, backed by a committed, fixed-seed seeded fuzz; degrade to one oracle + a Caveat where no second oracle / second algorithm exists.`
 
 The lens header mirrors the `--- partition: <i>/2 ---` convention so the
 agent recognises its role; the `ac-evaluator` body documents the three
@@ -212,10 +212,15 @@ grader systematically under-checks):
   lens rather than only per computational AC. When the unit builds a structure
   (object / map / record) from untrusted input (keys from CSV headers, parsed
   JSON, form / query / YAML fields), this lens also probes hostile KEYS, not only
-  hostile values: prototype-pollution / accessor keys (`__proto__`,
-  `constructor`, `prototype`), duplicate / colliding keys, empty / non-string
-  keys — a silently-dropped column, a mutated prototype, or a swallowed key is a
-  robustness defect.
+  hostile values: an accessor / reserved key the host structure treats
+  specially (the prototype-pollution class), duplicate / colliding keys, empty /
+  non-string keys — a silently-dropped column, a structure-metadata mutation, or
+  a swallowed key is a robustness defect. It also probes **strictness-leniency** at any boundary
+  advertised strict / canonical / exact or parsing a value via a lenient
+  numeric primitive: an out-of-alphabet symbol a permissive matcher accepts; a
+  sign / whitespace decoration a lenient primitive strips; and a
+  structurally-valid-but-non-canonical form the canonical writer would never
+  emit — an enforced surface wider than the advertised strictness is a defect.
 - **L-CONTRACT-CONFORMANCE** — does each generated unit's observable behaviour
   match its OWN stated description / declared schema / documented contract (a
   function that does not do what its name and doc-comment claim; a tool whose
@@ -308,6 +313,32 @@ observability — see `agents/ac-evaluator.md` `## Failure-class panel (default
 lenses)`) UNLESS the panel resolved `off`. `eval_panel` is independent of
 `verification_depth` (which scales tier/depth), `oracle_verification` (the
 EC-ORACLE sub-case), and `independent_evidence` (the per-AC evidence floor).
+
+**Kill switch `constraints.accept_set_conformance: auto|off`** (absent file /
+field / unknown → `auto`, active). Resolved by the orchestrator at `/impl`
+Step 15 (the per-AC deterministic trigger) and enforced post-hoc by
+`hooks/accept-set-verify.sh`:
+
+- `auto` — Advertised-Accept-Set Conformance is in force: the orchestrator
+  computes `triggered-on=` per AC (a boundary lexically advertising **strict /
+  canonical / lossless / limit**, OR a `shared_input_boundary` sibling — a keyed
+  structure built from untrusted input triggers the K axis even with no lexical
+  word), inlines `Accept-set conformance: auto triggered-on={ids}` into the
+  evaluator spawn, and the evaluator EXECUTES the generative grammar-complement
+  sweep (black-box, vs an independent hand-coded spec oracle) for exactly those
+  ACs, persisting one `## Accept-set sweep` line per inspected boundary.
+- `off` — DISABLE the EXECUTED sweep: the evaluator verifies the boundary by the
+  prior read-only strictness reasoning and records a one-line Caveat, and the
+  `hooks/accept-set-verify.sh` gate has no sweep line to verify — reverting
+  byte-for-byte to the pre-v8.5.0 read-only path.
+
+The switch is independent of `verification_depth`, `oracle_verification`,
+`eval_panel`, and `independent_evidence`. The post-hoc gate
+`hooks/accept-set-verify.sh` ships `on` by default from v8.5.0 (enforce — emit a
+PostToolUse `decision:block` on a non-conformant persisted sweep; set
+`SW_ACCEPT_SET_CONFORMANCE_MODE=metric-only` to observe-only, `off` to disable —
+CLAUDE.md); the EXECUTED sweep itself runs whenever this policy switch is not
+`off`.
 
 ## Independent-evidence channels (all evaluator modes)
 

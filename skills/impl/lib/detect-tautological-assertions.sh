@@ -15,10 +15,16 @@
 #   one line per finding, in the form
 #     R<N>: <file>:<line> — <line content>
 #
-# This detector is intentionally grep-based and language/framework-agnostic
-# at the regex level. See the rules file's `## Limitations` section for the
-# documented out-of-scope cases (variable resolution, type inference,
-# cross-file analysis, AST-level algebraic simplification).
+# This detector is grep-based and JS/Jest-Vitest-targeted: its regexes match the
+# `expect(...).toBe* / toEqual` matcher family and JS numeric literals
+# (`Number.MAX_VALUE`, `Infinity`, ...), so it only fires on JavaScript/TypeScript
+# tests written for Jest/Vitest. It does NOT detect tautological assertions in
+# other languages or test frameworks (pytest, JUnit, Go testing, ...); their
+# tautological-assertion / oracle-circularity coverage comes from the
+# `ac-evaluator`'s semantic pass (`agents/ac-evaluator.md`), not from this static
+# helper. See the rules file's `## Limitations` section for the documented
+# out-of-scope cases (variable resolution, type inference, cross-file analysis,
+# AST-level algebraic simplification).
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then

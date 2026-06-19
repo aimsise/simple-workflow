@@ -105,8 +105,11 @@ esac
 TOOL_PAYLOAD=$(echo "$INPUT" | jq -r '.tool_input.new_string // .tool_input.content // ""' 2>/dev/null || echo "")
 _detect_ship_completed_in_payload() {
   local payload="$1"
-  # Flat form: same line "ship: completed"
-  if printf '%s' "$payload" | grep -qE '(^|[[:space:]])ship:[[:space:]]+completed([[:space:]]|$)'; then
+  # Flat form: same line "ship: completed". The trailing class also accepts the
+  # inline-flow shape `steps: {…, ship: completed}` / `ship: completed,` (ST-11):
+  # `}` and `,` are valid YAML flow-mapping terminators, so without them the gate
+  # silently missed a template-seeded flow-form ship-completed write.
+  if printf '%s' "$payload" | grep -qE '(^|[[:space:]])ship:[[:space:]]+completed([[:space:],}]|$)'; then
     return 0
   fi
   # Nested form: a line ending in `ship:` followed within 4 lines by
@@ -181,6 +184,13 @@ while IFS= read -r TICKET_DIR; do
     */backlog/done/*) ;;
     */backlog/active/*)
       RESOLVED_TICKET_DIR="${RESOLVED_TICKET_DIR//\/backlog\/active\//\/backlog\/done\/}"
+      ;;
+    */backlog/product_backlog/*)
+      # ST-02: a never-scouted ticket whose ticket_dir still holds the initial
+      # product_backlog form would otherwise pass the -d check (the dir exists in
+      # product_backlog/) and let a fabricated ship: completed inject. Rewrite to
+      # the done/ form so the existence check catches the state-lie.
+      RESOLVED_TICKET_DIR="${RESOLVED_TICKET_DIR//\/backlog\/product_backlog\//\/backlog\/done\/}"
       ;;
   esac
   if [ ! -d "$RESOLVED_TICKET_DIR" ]; then
@@ -259,6 +269,11 @@ if [ "$PSI_MODE" != "off" ]; then
       */backlog/done/*) ;;
       */backlog/active/*)
         PSI_RESOLVED="${PSI_RESOLVED//\/backlog\/active\//\/backlog\/done\/}"
+        ;;
+      */backlog/product_backlog/*)
+        # ST-02: same product_backlog-form rewrite as Gate 5 so the per-ticket
+        # phase-state.yaml lookup resolves to the done/ location.
+        PSI_RESOLVED="${PSI_RESOLVED//\/backlog\/product_backlog\//\/backlog\/done\/}"
         ;;
     esac
     # Strip any trailing slash so we can append /phase-state.yaml uniformly.
