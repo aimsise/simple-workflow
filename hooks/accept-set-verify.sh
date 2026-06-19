@@ -48,10 +48,12 @@
 # nor a mis-leveled header can let a whole report silently skip the gate.
 #
 # Kill switch SW_ACCEPT_SET_CONFORMANCE_MODE:
-#   metric-only (DEFAULT) -> observe: log `[ACCEPT-SET-VERIFY] metric-only: would block ...`, ALLOW.
-#   on                    -> enforce: emit a PostToolUse `decision: block` with the reason.
-#   off                   -> explicit opt-out: silent skip.
-#   unknown               -> collapses to metric-only (a typo neither enforces nor silently disables).
+#   on (DEFAULT, v8.5.0 promotion) -> enforce: emit a PostToolUse `decision: block` with the reason.
+#   metric-only                    -> observe: log `[ACCEPT-SET-VERIFY] metric-only: would block ...`, ALLOW.
+#   off                            -> explicit opt-out: silent skip.
+#   unknown                        -> collapses to metric-only (the default is `on`, so the var is set
+#                                     ONLY to downgrade; a typo on a downgrade value falls back to the
+#                                     safe observe mode — never a surprise enforce, never a silent disable).
 #
 # Corpus floor SW_AASC_CORPUS_FLOOR (default 256) — the P3 ADVISORY threshold for
 # an A/U-axis triggered+run sweep; a thinner corpus is NOTED (never blocked), and
@@ -103,7 +105,7 @@ esac
 grep -qiE '^#{1,6}[[:space:]]+accept-set sweep[[:space:]]*$' "$TOOL_FILE_PATH" 2>/dev/null || exit 0
 
 # Gate 3: kill switch. Unknown collapses to metric-only.
-MODE_RAW="${SW_ACCEPT_SET_CONFORMANCE_MODE:-metric-only}"
+MODE_RAW="${SW_ACCEPT_SET_CONFORMANCE_MODE:-on}"
 case "$MODE_RAW" in
   on|metric-only|off) MODE="$MODE_RAW" ;;
   *)                  MODE="metric-only" ;;

@@ -334,10 +334,11 @@ Step 15 (the per-AC deterministic trigger) and enforced post-hoc by
 
 The switch is independent of `verification_depth`, `oracle_verification`,
 `eval_panel`, and `independent_evidence`. The post-hoc gate
-`hooks/accept-set-verify.sh` ships `metric-only` (observe, never block) and is
-promoted to `on` after a clean dogfood (CLAUDE.md
-`SW_ACCEPT_SET_CONFORMANCE_MODE`); the EXECUTED sweep itself runs whenever this
-switch is not `off`.
+`hooks/accept-set-verify.sh` ships `on` by default from v8.5.0 (enforce — emit a
+PostToolUse `decision:block` on a non-conformant persisted sweep; set
+`SW_ACCEPT_SET_CONFORMANCE_MODE=metric-only` to observe-only, `off` to disable —
+CLAUDE.md); the EXECUTED sweep itself runs whenever this policy switch is not
+`off`.
 
 ## Independent-evidence channels (all evaluator modes)
 

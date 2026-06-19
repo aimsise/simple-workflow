@@ -172,8 +172,8 @@ run_fix eval-round-Fhash.md;   expect_block    "Fhash mis-leveled header (### Ac
 run_fix eval-round-Ftab.md;    expect_block    "Ftab tab-separated sweep line + P1 -> fields extracted (whitespace-bounded class) + block"
 run_fix eval-round-Fcaps.md;   expect_block    "Fcaps all-caps header (## ACCEPT-SET SWEEP) + P1 -> READ (awk tolower == Gate2b -i) + block"
 
-# ---- MODE=metric-only (default; observe only) -----------------------------
-echo "--- MODE=metric-only (default: observe, never block) ---"
+# ---- MODE=metric-only (explicit downgrade; observe only) ------------------
+echo "--- MODE=metric-only (explicit: observe, never block) ---"
 export SW_ACCEPT_SET_CONFORMANCE_MODE=metric-only SW_AASC_CORPUS_FLOOR=256
 run_fix eval-round-F1.md; expect_metric "F1 -> metric-only would-block stderr"
 run_fix eval-round-F2.md; expect_metric "F2 -> metric-only would-block stderr"
@@ -193,6 +193,12 @@ echo "--- MODE=typo (unknown collapses to metric-only) ---"
 export SW_ACCEPT_SET_CONFORMANCE_MODE=enforce SW_AASC_CORPUS_FLOOR=256
 run_fix eval-round-F1.md; expect_metric "F1 unknown-mode -> metric-only (not enforce, not off)"
 unset SW_ACCEPT_SET_CONFORMANCE_MODE SW_AASC_CORPUS_FLOOR
+
+# ---- DEFAULT (no env var) -> on (v8.5.0 promotion) ------------------------
+echo "--- DEFAULT (env unset) -> on: the hook ENFORCES by default (v8.5.0) ---"
+run_fix eval-round-F1.md;    expect_block    "F1 with NO env var -> on by DEFAULT (v8.5.0 promotion) -> block"
+run_fix eval-round-Fthin.md; expect_advisory "Fthin with NO env var -> on default, thin corpus -> advisory (not block)"
+run_fix eval-round-F6.md;    expect_noblock  "F6 with NO env var -> on default, clean -> no block"
 
 # ---- jq-absent (fail-OPEN) ------------------------------------------------
 echo "--- jq-absent (fail-OPEN exit 0) ---"

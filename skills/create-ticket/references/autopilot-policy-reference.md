@@ -306,7 +306,8 @@ boundary not run, an alphabet/unicode (A/U-axis) sweep that skipped the astral
 complement, or an authoritative divergence not driven to FAIL is BLOCKED, and a
 thin A/U corpus is NOTED (advisory only, never blocked — corpus-size is a weak
 depth proxy; see CLAUDE.md `SW_ACCEPT_SET_CONFORMANCE_MODE` / `SW_AASC_CORPUS_FLOOR`),
-all metric-only by default. When `off`, the EXECUTED sweep and the hook
+enforced (`on`) by default from v8.5.0 — set `SW_ACCEPT_SET_CONFORMANCE_MODE=metric-only`
+for observe-only or `off` to disable the hook. When the policy field `off`, the EXECUTED sweep and the hook
 gate stand down: the evaluator verifies the boundary by the prior read-only
 strictness reasoning and records a one-line Caveat — the byte-for-byte revert.
 This is the per-brief kill switch for the Advertised-Accept-Set Conformance
