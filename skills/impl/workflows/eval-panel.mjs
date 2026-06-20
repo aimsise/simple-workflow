@@ -1,9 +1,12 @@
 // PRODUCT-Workflow: high-assurance multi-verifier eval panel for /impl Step 15.
 //
 // This is the PRODUCT-Workflow (the committed script the shipped /impl Step 15
-// invokes at runtime when uc=on AND verification_depth == exhaustive). It is
-// DISTINCT from any DEV-Workflow (a meta-layer Workflow used to BUILD this
-// feature, where agents edit tracked files). This file is product runtime code.
+// invokes at runtime when uc=on AND verification_depth is thorough or exhaustive
+// AND AC_COUNT < 30; v8.6.0 widened the gate from exhaustive-only so non-S
+// (M/L/XL) tickets use it, with a tier-appropriate model: sonnet at thorough,
+// opus at exhaustive). It is DISTINCT from any DEV-Workflow (a meta-layer
+// Workflow used to BUILD this feature, where agents edit tracked files). This
+// file is product runtime code.
 //
 // It runs in the Claude Code Workflow sandbox. FORBIDDEN here: Date.now(),
 // Math.random(), argless new Date(), the filesystem, any Node API, and importing
@@ -284,7 +287,17 @@ function mergeAcVerdicts(verifiers, { refuteMerge } = {}) {
 // Workflow body (runs in an async context; top-level await is allowed).
 // =====================================================================
 
-const a = args || {};
+// ARGS MARSHALLING (dogfood54 fix): the caller (/impl Step 15) passes `args`
+// as a JSON object, but the Workflow tool call can serialise it to a JSON
+// STRING before it reaches this script's `args` global (observed in dogfood54:
+// a.evaluator_model came back undefined -> silent opus->sonnet downgrade on the
+// exhaustive tier). Be defensive: if `args` arrived as a string, parse it back
+// to an object so every field (evaluator_model, refute_merge, ...) resolves.
+let a = args || {};
+if (typeof a === "string") {
+  try { a = JSON.parse(a); } catch { a = {}; }
+}
+if (!a || typeof a !== "object") a = {};
 
 // agentType is selected by the evaluator model (twin agent files), NOT by
 // opts.model: opus => the high-assurance twin, otherwise the default evaluator.
@@ -292,6 +305,9 @@ const agentType =
   a.evaluator_model === "opus"
     ? "simple-workflow:ac-evaluator-hi"
     : "simple-workflow:ac-evaluator";
+if (a.evaluator_model !== "opus" && a.evaluator_model !== "sonnet") {
+  log(`eval-panel: WARNING evaluator_model unresolved (got ${JSON.stringify(a.evaluator_model)}); defaulting agentType=${agentType} — check the Step 15 args marshalling`);
+}
 
 const refuteMode = a.refute_merge === "off" ? "off" : "auto";
 

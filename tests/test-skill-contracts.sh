@@ -10444,10 +10444,11 @@ uco2_meta=$(grep -cF 'export const meta' "$UCO_PANEL" 2>/dev/null || true)
 uco2_acev=$(grep -cF 'simple-workflow:ac-evaluator' "$UCO_PANEL" 2>/dev/null || true)
 uco2_hi=$(grep -cF 'simple-workflow:ac-evaluator-hi' "$UCO_PANEL" 2>/dev/null || true)
 uco2_schema=$(grep -cF 'EVAL_SCHEMA' "$UCO_PANEL" 2>/dev/null || true)
-uco2_gateintent=$(grep -cF 'uc=on AND verification_depth == exhaustive' "$UCO_PANEL" 2>/dev/null || true)
+uco2_gateintent=$(grep -cF 'uc=on AND verification_depth is thorough or exhaustive' "$UCO_PANEL" 2>/dev/null || true)
 uco2_skill_scriptpath=$(grep -cF 'skills/impl/workflows/eval-panel.mjs' "$UCO_IMPL" || true)
 uco2_skill_gate_uc=$(grep -cF 'UC_ORCH == on' "$UCO_IMPL" || true)
-uco2_skill_gate_exh=$(grep -cF 'VERIFICATION_DEPTH == exhaustive' "$UCO_IMPL" || true)
+# v8.6.0: the Workflow gate widened to {thorough, exhaustive}; SKILL still names exhaustive in the set.
+uco2_skill_gate_exh=$(grep -cF 'VERIFICATION_DEPTH ∈ {thorough, exhaustive}' "$UCO_IMPL" || true)
 # Workflow in /impl allowed-tools (frontmatter '  - Workflow' bullet).
 uco2_allowtool=$(grep -cE '^[[:space:]]*-[[:space:]]Workflow[[:space:]]*$' "$UCO_IMPL" || true)
 uco2_result="false"
@@ -10474,6 +10475,24 @@ if [ "$uco3_statefile_doc" -ge 1 ] && [ "$uco3_autopilot_field" -ge 1 ] && [ "$u
 assert_true \
   "CT-UC-ORCH-3 (run-scoped continuity ultracode_mode): state-file documents field ($uco3_statefile_doc>=1); autopilot field ($uco3_autopilot_field>=1) re-read on resume ($uco3_autopilot_resume>=1) state-init section ($uco3_autopilot_init>=1) forwards uc to /impl ($uco3_autopilot_fwd>=1)" \
   "$uco3_result"
+
+# CT-UC-ORCH-4 (v8.6.0 M-widening Form B + dogfood54 bug fixes). /impl Step 3a must
+# carry the UC-FLOOR (uc=on AND Size != S floors VERIFICATION_DEPTH to thorough) +
+# emit [UC-ORCH-FLOOR]; Step 15 must gate the Workflow on {thorough, exhaustive} AND
+# AC_COUNT < 30 (so S stays Agent and large-AC defers to partition); eval-panel.mjs
+# must defend against a stringified args (JSON.parse) so evaluator_model resolves
+# (the dogfood54 opus->sonnet downgrade fix).
+uco4_floor=$(grep -cF 'UC-FLOOR' "$UCO_IMPL" || true)
+uco4_floor_marker=$(grep -cF '[UC-ORCH-FLOOR]' "$UCO_IMPL" || true)
+uco4_gate_thorough=$(grep -cF 'VERIFICATION_DEPTH ∈ {thorough, exhaustive}' "$UCO_IMPL" || true)
+uco4_gate_accap=$(grep -cF 'AC_COUNT < 30' "$UCO_IMPL" || true)
+uco4_args_parse=$(grep -cF 'JSON.parse(a)' "$UCO_PANEL" 2>/dev/null || true)
+uco4_result="false"
+if [ "$uco4_floor" -ge 1 ] && [ "$uco4_floor_marker" -ge 1 ] && [ "$uco4_gate_thorough" -ge 1 ] \
+  && [ "$uco4_gate_accap" -ge 1 ] && [ "$uco4_args_parse" -ge 1 ]; then uco4_result="true"; fi
+assert_true \
+  "CT-UC-ORCH-4 (M-widening Form B + bug fixes): UC-FLOOR ($uco4_floor>=1) [UC-ORCH-FLOOR] marker ($uco4_floor_marker>=1) gate {thorough,exhaustive} ($uco4_gate_thorough>=1) AC_COUNT<30 partition guard ($uco4_gate_accap>=1) eval-panel args JSON.parse defense ($uco4_args_parse>=1)" \
+  "$uco4_result"
 
 
 echo ""
