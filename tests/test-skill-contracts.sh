@@ -10388,6 +10388,93 @@ aasc14_result="false"
 if [ "$aasc14_pt" -ge 1 ] && [ "$aasc14_apr" -ge 1 ] && [ "$aasc14_orch" -ge 1 ]; then aasc14_result="true"; fi
 assert_true "CT-AASC-14 (accept_set_conformance kill switch documented): policy-template ($aasc14_pt>=1) + policy-reference ($aasc14_apr>=1) + orchestration block ($aasc14_orch>=1)" "$aasc14_result"
 
+# =============================================================================
+# Cat UC-ORCH: ultracode-orchestration run-scoped opt-in (uc= arg surface,
+# committed Workflow eval-panel, run-scoped continuity in autopilot-state.yaml).
+# Diff: NEW category (v8.6.0). The uc= path is ADDITIVE — the no-uc / uc=off
+#       default is byte-identical to v8.5.0 — so these CTs pin the NET-NEW
+#       surface only (the arg grammar, the [UC-ORCH-MODE] marker, the chain=off
+#       ignore warning, the committed eval-panel.mjs + its EVAL_SCHEMA + twin
+#       agentTypes, the Step-15 UC_ORCH==on && exhaustive gating, and the
+#       run-scoped ultracode_mode write/re-read/forward). No overlap with the
+#       AASC family above (which pins the accept-set sweep, not the dispatch
+#       mechanism) nor Cat M (Workflow Isolation). Reuses the IMPL_EV handle
+#       (declared at line 9487) for skills/impl/SKILL.md.
+# =============================================================================
+echo "--- Cat UC-ORCH: ultracode-orchestration opt-in (v8.6.0) ---"
+
+UCO_IMPL="$IMPL_EV"
+UCO_AUTOPILOT="$REPO_DIR/skills/autopilot/SKILL.md"
+UCO_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+UCO_STATEFILE="$REPO_DIR/skills/autopilot/references/state-file.md"
+UCO_PANEL="$REPO_DIR/skills/impl/workflows/eval-panel.mjs"
+
+# CT-UC-ORCH-1 (uc= argument surface + cross-skill propagation). The SHARED CONTRACT
+# arg grammar (token uc=, values on|off|metric-only) must be documented on all three
+# spawner surfaces (/impl, /autopilot, /brief); the [UC-ORCH-MODE] resolution marker
+# must appear in /impl + /autopilot; /brief must carry the chain=off ignore WARNING;
+# and the propagation chain must be wired (autopilot forwards uc={UC_ORCH} to /impl,
+# brief forwards uc={resolved_uc} to /autopilot). Every token verified present in the
+# landed files (grep -cF, fixed-string, matching the idiom of CT-AASC-* above).
+uco1_impl_arg=$(grep -cF 'uc=on|off|metric-only' "$UCO_IMPL" || true)
+uco1_autopilot_arg=$(grep -cF 'on` | `off` | `metric-only' "$UCO_AUTOPILOT" || true)
+uco1_brief_arg=$(grep -cF 'uc=on|off|metric-only' "$UCO_BRIEF" || true)
+uco1_impl_marker=$(grep -cF '[UC-ORCH-MODE]' "$UCO_IMPL" || true)
+uco1_autopilot_marker=$(grep -cF '[UC-ORCH-MODE]' "$UCO_AUTOPILOT" || true)
+uco1_brief_warn=$(grep -cF 'uc=on ignored when chain=off' "$UCO_BRIEF" || true)
+uco1_autopilot_fwd=$(grep -cF 'uc={UC_ORCH}' "$UCO_AUTOPILOT" || true)
+uco1_brief_fwd=$(grep -cF '/autopilot {slug} uc={resolved_uc}' "$UCO_BRIEF" || true)
+uco1_result="false"
+if [ "$uco1_impl_arg" -ge 1 ] && [ "$uco1_autopilot_arg" -ge 1 ] && [ "$uco1_brief_arg" -ge 1 ] \
+  && [ "$uco1_impl_marker" -ge 1 ] && [ "$uco1_autopilot_marker" -ge 1 ] \
+  && [ "$uco1_brief_warn" -ge 1 ] && [ "$uco1_autopilot_fwd" -ge 1 ] && [ "$uco1_brief_fwd" -ge 1 ]; then uco1_result="true"; fi
+assert_true \
+  "CT-UC-ORCH-1 (uc= arg surface + propagation): arg documented impl ($uco1_impl_arg>=1) autopilot ($uco1_autopilot_arg>=1) brief ($uco1_brief_arg>=1); [UC-ORCH-MODE] marker impl ($uco1_impl_marker>=1) autopilot ($uco1_autopilot_marker>=1); brief chain=off warning ($uco1_brief_warn>=1); autopilot->impl forward ($uco1_autopilot_fwd>=1) + brief->autopilot forward ($uco1_brief_fwd>=1)" \
+  "$uco1_result"
+
+# CT-UC-ORCH-2 (committed PRODUCT-Workflow eval-panel script). The script file must
+# EXIST, declare `export const meta`, reference BOTH twin agentTypes
+# (simple-workflow:ac-evaluator + simple-workflow:ac-evaluator-hi), reference
+# EVAL_SCHEMA and the gating intent (the uc=on AND exhaustive condition documented in
+# its header). /impl Step 15 must reference the eval-panel.mjs scriptPath and gate the
+# dispatch on UC_ORCH==on AND VERIFICATION_DEPTH==exhaustive, and Workflow must be in
+# /impl allowed-tools. agentType selects the model (twin files), NOT opts.model.
+uco2_exists=0; if [ -f "$UCO_PANEL" ]; then uco2_exists=1; fi
+uco2_meta=$(grep -cF 'export const meta' "$UCO_PANEL" 2>/dev/null || true)
+uco2_acev=$(grep -cF 'simple-workflow:ac-evaluator' "$UCO_PANEL" 2>/dev/null || true)
+uco2_hi=$(grep -cF 'simple-workflow:ac-evaluator-hi' "$UCO_PANEL" 2>/dev/null || true)
+uco2_schema=$(grep -cF 'EVAL_SCHEMA' "$UCO_PANEL" 2>/dev/null || true)
+uco2_gateintent=$(grep -cF 'uc=on AND verification_depth == exhaustive' "$UCO_PANEL" 2>/dev/null || true)
+uco2_skill_scriptpath=$(grep -cF 'skills/impl/workflows/eval-panel.mjs' "$UCO_IMPL" || true)
+uco2_skill_gate_uc=$(grep -cF 'UC_ORCH == on' "$UCO_IMPL" || true)
+uco2_skill_gate_exh=$(grep -cF 'VERIFICATION_DEPTH == exhaustive' "$UCO_IMPL" || true)
+# Workflow in /impl allowed-tools (frontmatter '  - Workflow' bullet).
+uco2_allowtool=$(grep -cE '^[[:space:]]*-[[:space:]]Workflow[[:space:]]*$' "$UCO_IMPL" || true)
+uco2_result="false"
+if [ "$uco2_exists" -eq 1 ] && [ "$uco2_meta" -ge 1 ] && [ "$uco2_acev" -ge 1 ] && [ "$uco2_hi" -ge 1 ] \
+  && [ "$uco2_schema" -ge 1 ] && [ "$uco2_gateintent" -ge 1 ] && [ "$uco2_skill_scriptpath" -ge 1 ] \
+  && [ "$uco2_skill_gate_uc" -ge 1 ] && [ "$uco2_skill_gate_exh" -ge 1 ] && [ "$uco2_allowtool" -ge 1 ]; then uco2_result="true"; fi
+assert_true \
+  "CT-UC-ORCH-2 (committed Workflow eval-panel): exists ($uco2_exists=1) meta ($uco2_meta>=1) ac-evaluator ($uco2_acev>=1) -hi ($uco2_hi>=1) EVAL_SCHEMA ($uco2_schema>=1) gate-intent ($uco2_gateintent>=1); SKILL scriptPath ($uco2_skill_scriptpath>=1) gate UC_ORCH==on ($uco2_skill_gate_uc>=1) exhaustive ($uco2_skill_gate_exh>=1); Workflow allowed-tool ($uco2_allowtool>=1)" \
+  "$uco2_result"
+
+# CT-UC-ORCH-3 (run-scoped continuity: ultracode_mode in autopilot-state.yaml). The
+# state-file schema reference must DOCUMENT the top-level `ultracode_mode:` field;
+# /autopilot must WRITE ultracode_mode at state init, RE-READ it on resume (Phase 1
+# Step 5), and FORWARD uc to each per-ticket /impl. This is kind-2 run-scoped state
+# (NOT a permanent policy flag), pinned via the literal tokens that landed.
+uco3_statefile_doc=$(grep -cF 'ultracode_mode' "$UCO_STATEFILE" || true)
+uco3_autopilot_field=$(grep -cF 'ultracode_mode' "$UCO_AUTOPILOT" || true)
+uco3_autopilot_resume=$(grep -cF 'reason=resume' "$UCO_AUTOPILOT" || true)
+uco3_autopilot_init=$(grep -cF 'State file initialization' "$UCO_AUTOPILOT" || true)
+uco3_autopilot_fwd=$(grep -cF 'uc={UC_ORCH}' "$UCO_AUTOPILOT" || true)
+uco3_result="false"
+if [ "$uco3_statefile_doc" -ge 1 ] && [ "$uco3_autopilot_field" -ge 1 ] && [ "$uco3_autopilot_resume" -ge 1 ] \
+  && [ "$uco3_autopilot_init" -ge 1 ] && [ "$uco3_autopilot_fwd" -ge 1 ]; then uco3_result="true"; fi
+assert_true \
+  "CT-UC-ORCH-3 (run-scoped continuity ultracode_mode): state-file documents field ($uco3_statefile_doc>=1); autopilot field ($uco3_autopilot_field>=1) re-read on resume ($uco3_autopilot_resume>=1) state-init section ($uco3_autopilot_init>=1) forwards uc to /impl ($uco3_autopilot_fwd>=1)" \
+  "$uco3_result"
+
 
 echo ""
 
