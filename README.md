@@ -74,7 +74,9 @@ claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
 
 Inside an active Claude Code session, type `/brief <idea>` and the plugin handles the rest end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
 
-Full argument signature: `/brief <what-to-build> [chain=on|off]` (default `chain=on`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`).
+Full argument signature: `/brief <what-to-build> [chain=on|off] [uc=on|off]` (default `chain=on`, `uc=off`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`).
+
+Optional **`uc=on`** opts into **ultracode orchestration**: non-trivial (M+) tickets run their AC evaluation as a parallel multi-verifier panel via Claude Code's Workflow tool (forwarded `/brief` → `/autopilot` → each `/impl` and preserved across auto-`/compact`/resume; tier-appropriate model — Sonnet at `thorough`, Opus at `exhaustive`). Default `uc=off` is byte-identical to prior behaviour; `uc=on` requires `chain=on`. Also accepted on `/autopilot <slug> uc=on` and `/impl … uc=on`. Details: `skills/impl/SKILL.md`.
 
 | Mode | Command | Result |
 |------|---------|--------|
@@ -192,7 +194,7 @@ When injection cannot fire, the hook surfaces a one-line diagnostic via `inject_
 - Designed for use with Claude Code CLI. IDE extensions (VS Code, JetBrains) may have limited support for hooks and plugin features.
 - Pull-request creation requires GitHub CLI (`gh`) with authentication. Other Git hosting services are not supported.
 - Ticket management uses the local filesystem (`.simple-workflow/backlog/`). There is no sync with external issue trackers (Jira, Linear, etc.).
-- Sub-agents consume API tokens independently. The Generator (implementer) always runs on Opus, and the evaluator escalates to Opus for critical/exhaustive work, so larger or higher-risk tickets may incur higher API costs.
+- Sub-agents consume API tokens independently. The Generator (implementer) always runs on Opus, and the evaluator escalates to Opus for critical/exhaustive work, so larger or higher-risk tickets may incur higher API costs. With `uc=on` (ultracode orchestration), M+ tickets additionally run a 3-lens parallel evaluator panel (Sonnet at `thorough`, Opus at `exhaustive`), further increasing token cost.
 - Built-in test/lint detection covers JS, Python, Rust, Go, JVM (Gradle/Maven/sbt), .NET, Ruby, Elixir, Swift, Flutter/Dart, PHP, and Make. For other ecosystems, wrap your test/lint commands in a Makefile (`make test` / `make lint`) or the evaluator falls back to static code analysis only.
 - Some recovery paths require interactive mode; running in `claude -p` or CI may stop with an explanatory message rather than complete the recovery.
 - **Operating system support**: macOS and Linux are verified (the hook layer is `bash` + `jq`, with optional `yq` / `python3`). Windows is **not** verified — the `bash`+`jq` hook layer requires a POSIX environment (Git Bash, WSL, or Cygwin); native Windows is unsupported.

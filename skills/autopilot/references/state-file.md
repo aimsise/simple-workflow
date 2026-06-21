@@ -11,7 +11,8 @@ The brief-level / parent-level `autopilot-state.yaml` is distinct from
 each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
 Skip writing it if `resume_mode = true` (state already exists).
 
-The file has 7 top-level fields plus an append-only metrics list:
+The file has 7 top-level fields plus an OPTIONAL run-scoped
+`ultracode_mode:` field and an append-only metrics list:
 
 ```yaml
 version: 1
@@ -19,6 +20,7 @@ parent_slug: {parent-slug}
 started: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
 execution_mode: split
 total_tickets: {N}
+ultracode_mode: off                      # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default off)
 ticket_mapping: {}
 tickets:
   - logical_id: {parent-slug}-part-{N}   # one entry per split-plan ticket, in topological order
@@ -52,6 +54,19 @@ Field summary (the 7 top-level fields plus `runtime_metrics:`):
 - `total_tickets` — `N` from the split-plan.
 - `ticket_mapping` — `{logical_id: ticket_dir}` lookup table seeded from the split-plan.
 - `tickets` — per-ticket entries (logical_id, ticket_dir, status, steps, invocation_method).
+- `ultracode_mode` — OPTIONAL. Run-scoped orchestration mode; value
+  domain `on` | `off` | `metric-only` (default `off` when absent). Set
+  once at Phase 2 state-file initialization from the `uc=` invocation
+  argument resolved in Argument Parsing, re-read on resume at Phase 1
+  Step 5 to reconstruct the run's orchestration mode, and moved to
+  `briefs/done/` with the rest of the file on completion. It is
+  **run-scoped run-state, NOT a permanent policy flag** — it is gone on
+  the next fresh run (a new run with no `uc=` argument writes `off`),
+  and is **distinct from `autopilot-policy.yaml`** (which carries
+  permanent per-ticket policy). Because it lives in `autopilot-state.yaml`
+  it survives auto-compact and resume (Phase 1 Step 5 re-reads it via the
+  same top-level scalar path as the other fields, e.g.
+  `parse_yaml_scalar <file> ultracode_mode`).
 - `runtime_metrics:` — append-only metrics list (see schema below).
 
 The `steps:` / `invocation_method:` maps no longer contain a `create-ticket`
