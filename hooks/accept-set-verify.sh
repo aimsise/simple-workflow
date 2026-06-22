@@ -29,6 +29,7 @@
 #   P1 stand-down  (all axes):  triggered=y ran=n                       -> BLOCK
 #   P2 shallow     (A,U axes):  triggered=y ran=y astral=n              -> BLOCK
 #   P5 shallow-fwd (W axis):    triggered=y ran=y roundtrip=y intermediate-sampled=n -> BLOCK
+#   P6 rt-mislabel (non-W):     triggered=y ran=y (roundtrip=y|intermediate-sampled=y) AND boundary!=W -> BLOCK
 #   P4 gating      (all axes):  authoritative=y divergences>0 while Status not FAIL/FAIL-CRITICAL -> BLOCK
 #   P3 thin-corpus (A,U axes):  triggered=y ran=y corpus-size < FLOOR   -> ADVISORY ONLY (never blocks)
 # P3 is ADVISORY, not a gate (dogfood51): corpus-size is a weak proxy for sweep
@@ -204,6 +205,16 @@ while IFS= read -r LINE; do
       # Absent fields (older reports) are empty, not `n`, so they never trip.
       elif [ "$B" = "W" ] && [ "$ROUNDTRIP" = "y" ] && [ "$INTERSAMPLED" = "n" ]; then
         REASON="P5-shallow-forward"
+      # P6 round-trip mislabel (non-W): a round-trip-bearing sweep (roundtrip=y or
+      # intermediate-sampled=y) recorded under any boundary label OTHER than W is
+      # non-conformant by construction -> BLOCK. A round-trip / invertibility sweep
+      # IS the W axis; an off-grammar label (e.g. numeric-external) or an A/U/K
+      # label carrying real round-trip evidence makes the P5 forward-depth gate
+      # unreachable (dogfood58: a format writer round-trip was labeled
+      # numeric-external, so P5 was structurally inert). Canonical A/U/K lines
+      # carry roundtrip=n/a intermediate-sampled=n/a, so they never trip this.
+      elif [ "$B" != "W" ] && { [ "$ROUNDTRIP" = "y" ] || [ "$INTERSAMPLED" = "y" ]; }; then
+        REASON="P6-roundtrip-mislabel"
       # P3 thin corpus (A,U axes): corpus below the floor -> ADVISORY ONLY, never
       # blocks (corpus-size is a weak depth proxy; flooring it false-trips a
       # legitimately-thin conformant sweep on a wide-spec subject — dogfood51).
@@ -268,6 +279,6 @@ done <<EOF
 $BLOCKING
 EOF
 REASON_TEXT=$(printf '%s' "$BLOCKING" | tr '\n' ';' | sed 's/;$//')
-jq -n --arg r "Accept-set conformance gate (AASC): the persisted '## Accept-set sweep' in $BASENAME records a NON-CONFORMANT sweep — $REASON_TEXT. A triggered boundary must be EXECUTED (ran=y); an alphabet/unicode sweep must include the astral complement (astral=y); a canonical-writer round-trip sweep must sample the inter-anchor intermediate band (intermediate-sampled=y); an authoritative divergence must drive the verdict to FAIL. Re-run the EXECUTED accept-set sweep per agents/ac-evaluator.md and rewrite the report." \
+jq -n --arg r "Accept-set conformance gate (AASC): the persisted '## Accept-set sweep' in $BASENAME records a NON-CONFORMANT sweep — $REASON_TEXT. A triggered boundary must be EXECUTED (ran=y); an alphabet/unicode sweep must include the astral complement (astral=y); a canonical-writer round-trip sweep must sample the inter-anchor intermediate band (intermediate-sampled=y); a round-trip / invertibility sweep MUST be encoded as boundary=W (a round-trip-bearing sweep recorded under a non-W label is non-conformant); an authoritative divergence must drive the verdict to FAIL. Re-run the EXECUTED accept-set sweep per agents/ac-evaluator.md and rewrite the report." \
   '{decision:"block", reason:$r}'
 exit 0

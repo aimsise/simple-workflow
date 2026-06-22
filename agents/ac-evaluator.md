@@ -461,7 +461,14 @@ single pass under-checks:
   no value), and diff against the independent inverse oracle `parse` applied to
   the writer's output. A representable `x` whose canonical output is lossy is the
   catch — invisible to the parse-side MRs because the lossy output is a clean rc=0,
-  not a parse false-accept. **FAIL gating
+  not a parse false-accept. **Encode this sweep as `boundary=W` with `roundtrip=y`
+  (the canonical W label) in the persisted `## Accept-set sweep` line** — a
+  round-trip / invertibility sweep IS the W axis; do NOT record it under an
+  improvised non-canonical label (e.g. `numeric-external`), which makes the hook's
+  forward-depth gate unreachable. When the ticket pairs a reader (parse/decode)
+  with a canonical WRITER (format/serialize/encode) advertising round-trip /
+  lossless / exact / canonical, that boundary is a W-axis MR-ROUNDTRIP boundary
+  even if the only lexical cue sits on the reader. **FAIL gating
   (oracle-authoritative two-tier, NO false-positive storm):** FAIL the AC on an
   accept-set divergence ONLY when the hand-coded oracle AUTHORITATIVELY reflects a
   spec that is STRICTLY NARROWER than the unit's accept-set (the advertised

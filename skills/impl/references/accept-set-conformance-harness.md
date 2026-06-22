@@ -286,9 +286,13 @@ the black-box round-trip diff), never the surface domain.
 def make_value_corpus(anchors, between):
     # anchors: the exact representable points the writer emits crisply (each
     #   scale/term multiple), derived from the grammar — not a hard-coded list.
-    # between(a, b): yields interior values in (a, b), INCLUDING b-1 (the largest
-    #   magnitude still in the lower-granularity term before the writer switches
-    #   scale) — exactly where significant-figure rounding fires.
+    # between(a, b): yields interior values in (a, b), and MUST DETERMINISTICALLY
+    #   include the maximal-mantissa magnitudes that round-trip exactly in the
+    #   lower term just below promotion to `b` — NOT only random mid-band samples
+    #   whose mantissa may cap short of promotion (dogfood58: a capped random
+    #   mantissa left the highest pre-promotion exactly-representable magnitudes
+    #   unsampled — the exact band where significant-figure rounding fires). Place
+    #   those just-below-promotion extremes deterministically, never by chance.
     corpus = list(anchors)
     for a, b in zip(anchors, anchors[1:]):
         corpus += list(between(a, b))            # interior incl. just-below-next-anchor

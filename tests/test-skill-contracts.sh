@@ -10442,6 +10442,31 @@ aasc20_result="false"
 if [ "$aasc20_gate" -ge 1 ] && [ "$aasc20_planner" -ge 1 ]; then aasc20_result="true"; fi
 assert_true "CT-AASC-20 (Gate 4 representation-foreclosure rule + planner wiring): ac-quality ($aasc20_gate>=1) planner ($aasc20_planner>=1)" "$aasc20_result"
 
+# CT-AASC-21 (W-axis writer-pairing trigger clause in the orchestrator handoff; dogfood58 #1a).
+# The K-axis trigger clause had no W-axis sibling, so a paired reader+writer round-trip was encoded under an
+# off-grammar label (numeric-external) and hook P5 went structurally inert. Pins the W-pairing clause. RED-first: HEAD=0.
+aasc21=$(grep -ciF 'for the W axis' "$REPO_DIR/skills/impl/SKILL.md" || true)
+aasc21b=$(grep -ciF 'paired-writer round-trip boundary is itself the trigger' "$REPO_DIR/skills/impl/SKILL.md" || true)
+aasc21_result="false"
+if [ "$aasc21" -ge 1 ] && [ "$aasc21b" -ge 1 ]; then aasc21_result="true"; fi
+assert_true "CT-AASC-21 (W-axis writer-pairing trigger clause): for-the-W-axis ($aasc21>=1) + paired-writer-trigger ($aasc21b>=1)" "$aasc21_result"
+
+# CT-AASC-22 (deterministic canonical-W-label rule on MR-ROUNDTRIP, both twins; dogfood58 #1b).
+# The evaluator MUST encode a round-trip sweep as boundary=W, never an improvised numeric-external label. RED-first: HEAD=0.
+aasc22_acev=$(grep -ciF 'Encode this sweep as' "$REPO_DIR/agents/ac-evaluator.md" || true)
+aasc22_hi=$(grep -ciF 'Encode this sweep as' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+aasc22_result="false"
+if [ "$aasc22_acev" -ge 1 ] && [ "$aasc22_hi" -ge 1 ]; then aasc22_result="true"; fi
+assert_true "CT-AASC-22 (canonical-W-label rule both twins): ac-evaluator ($aasc22_acev>=1) -hi ($aasc22_hi>=1)" "$aasc22_result"
+
+# CT-AASC-23 (hook P6 fail-loud on a round-trip-bearing non-W label; dogfood58 #2).
+# A round-trip-bearing sweep (roundtrip=y or intermediate-sampled=y) under a non-W boundary is non-conformant -> BLOCK,
+# closing the mislabel-bypass of P5 the dogfood surfaced. RED-first: HEAD=0.
+aasc23=$(grep -cF 'P6-roundtrip-mislabel' "$REPO_DIR/hooks/accept-set-verify.sh" || true)
+aasc23_result="false"
+if [ "$aasc23" -ge 1 ]; then aasc23_result="true"; fi
+assert_true "CT-AASC-23 (hook P6 round-trip-mislabel gate): ($aasc23>=1)" "$aasc23_result"
+
 # =============================================================================
 # Cat UC-ORCH: ultracode-orchestration run-scoped opt-in (uc= arg surface,
 # committed Workflow eval-panel, run-scoped continuity in autopilot-state.yaml).
