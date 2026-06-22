@@ -16,7 +16,7 @@ This reference holds the Phase 3 `brief.md` body schema produced by `/brief`. Th
 ### In Scope
 - [items]
 ### Out of Scope
-- [items, or "Not explicitly defined"]
+- [items, or "Not explicitly defined" — state behavioral ENDS that are excluded (a value domain, a use case, a guarantee NOT provided), NOT implementation MEANS (a data type, algorithm, library, or representation); a foreclosed MEANS under an advertised END is a Gate 4 violation downstream. If a representation truly IS the external contract (wire format, ABI, declared arithmetic guarantee), state it under `## Constraints`, not here.]
 ### Edge Cases
 - [case]: [expected behavior]
 

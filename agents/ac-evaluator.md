@@ -424,7 +424,7 @@ single pass under-checks:
   `int()` / `Number()` / `isdigit()`. Derive a per-boundary **Grammar Card** —
   `A` = the advertised input ALPHABET, `U` = any Unicode normalization /
   decimal-digit transform, `W` = the canonical WRITER form, `K` = any KEYED
-  structure built from untrusted input — and run the four machine-generated
+  structure built from untrusted input — and run the machine-generated
   metamorphic relations black-box under a watchdog with a `mulberry32`-seeded
   corpus (shape + worked example:
   `skills/impl/references/accept-set-conformance-harness.md`): **MR-FINITE** (a
@@ -449,7 +449,19 @@ single pass under-checks:
   collides after the structure's normalization), and you diff against an
   independent round-trip-faithfulness oracle
   (`skills/impl/references/accept-set-conformance-harness.md`). A single
-  hand-picked key list is NOT a conformant corpus). **FAIL gating
+  hand-picked key list is NOT a conformant corpus). **MR-ROUNDTRIP**
+  (forward-direction, the W-axis counterpart to MR-CANONICAL): when the boundary
+  advertises **lossless / exact / round-trip** between a value-form and its
+  canonical string-form, an exactly-representable value driven THROUGH the writer
+  MUST round-trip (`parse(format(x)) == x` for every `x` the writer's grammar
+  represents exactly); generate the value corpus from the writer's OWN grammar —
+  each canonical anchor PLUS values sampled in the open interval between adjacent
+  anchors, INCLUDING the just-below-next-anchor extreme where significant-figure /
+  display rounding corrupts an exactly-representable value (name no unit, hard-code
+  no value), and diff against the independent inverse oracle `parse` applied to
+  the writer's output. A representable `x` whose canonical output is lossy is the
+  catch — invisible to the parse-side MRs because the lossy output is a clean rc=0,
+  not a parse false-accept. **FAIL gating
   (oracle-authoritative two-tier, NO false-positive storm):** FAIL the AC on an
   accept-set divergence ONLY when the hand-coded oracle AUTHORITATIVELY reflects a
   spec that is STRICTLY NARROWER than the unit's accept-set (the advertised
@@ -485,7 +497,12 @@ single pass under-checks:
   `triggered-on=` AC, an `## Accept-set sweep` line with `ran=n`, or with `ran=y
   astral=n`, is a NON-CONFORMANT shallow sweep — not a clean pass; record it as
   such (the astral planes are part of the mandated complement, so a genuine run
-  yields `astral=y`). **Caveat arm
+  yields `astral=y`). Likewise on a W-axis boundary advertising
+  lossless / exact / round-trip, a line with `ran=y roundtrip=y
+  intermediate-sampled=n` is a NON-CONFORMANT shallow forward sweep — an
+  anchors-only corpus that never sampled the inter-anchor band where the writer's
+  rounding fires (a genuine MR-ROUNDTRIP run yields `intermediate-sampled=y`).
+  **Caveat arm
   (no-runnable-artifact)**: when the unit is a COMPILED-language artifact you
   cannot run black-box (your scratch allowlist grants `node` / `python3` but, for
   Rust/Go, only `cargo test` / `go test` — no `rustc` / `cargo run` / `go run` /
@@ -544,7 +561,7 @@ The natural execution order of this agent (verify ACs depth-first, then `Write` 
 
 1. **Skeleton write before verification.** As your FIRST action, `Write` the report path with a top-of-file line `## Status: IN_PROGRESS` followed by an AC checklist (one `- [ ] AC-N: <description>` line per AC extracted from the plan). This MUST happen before invoking any Bash, Read, or Grep verification tool. The resulting file is a partial-state marker that the orchestrator can detect even if you terminate mid-verification.
 
-2. **Terminal rewrite before return.** After completing AC verification, rewrite the same file with final verdicts (`- [x] AC-N` or `- [ ] AC-N — FAILED: reason`) and replace the top-of-file `## Status: IN_PROGRESS` with the terminal `## Status: PASS`, `## Status: PASS-WITH-CAVEATS`, `## Status: FAIL`, or `## Status: FAIL-CRITICAL`. The terminal `## Status:` line MUST be the FIRST `## Status:` line in the file (the orchestrator inspects the first match). **Accept-set sweep section (persisted observability, v8.5.0+):** when the EXECUTED accept-set conformance sweep (`## Failure-class panel` L-ROBUSTNESS) is in scope, the terminal rewrite MUST include in the PERSISTED report body a section `## Accept-set sweep` with exactly one line per external-input boundary INSPECTED (not only the ones that triggered) — `boundary={A|U|W|K} triggered={y|n} ran={y|n} astral={y|n} corpus-size={N} divergences={D} authoritative={y|n} caveat={none|no-runnable-artifact}` — so a dogfood greps the persisted `eval-round-N.md` (this report body, NOT the under-500-token `## Result` return envelope) and can tell `triggered=n` (scanned, recognized nothing) apart from a fired sweep apart from feature-absent. Emit `triggered=n` for every boundary you scanned that did not advertise strict/canonical/lossless/limit and has no same-input-class sibling; this UNCONDITIONAL per-boundary line is the falsifiability instrument (mirrors the unconditional `[ORACLE-AUDIT]` contract that survived to the dogfood reader, NOT the conditional `[EVAL-PANEL]` one that did not). Write `## Accept-set sweep\nn/a (no external-input boundary in scope)` when the diff introduces or touches no external-input boundary at all.
+2. **Terminal rewrite before return.** After completing AC verification, rewrite the same file with final verdicts (`- [x] AC-N` or `- [ ] AC-N — FAILED: reason`) and replace the top-of-file `## Status: IN_PROGRESS` with the terminal `## Status: PASS`, `## Status: PASS-WITH-CAVEATS`, `## Status: FAIL`, or `## Status: FAIL-CRITICAL`. The terminal `## Status:` line MUST be the FIRST `## Status:` line in the file (the orchestrator inspects the first match). **Accept-set sweep section (persisted observability, v8.5.0+):** when the EXECUTED accept-set conformance sweep (`## Failure-class panel` L-ROBUSTNESS) is in scope, the terminal rewrite MUST include in the PERSISTED report body a section `## Accept-set sweep` with exactly one line per external-input boundary INSPECTED (not only the ones that triggered) — `boundary={A|U|W|K} triggered={y|n} ran={y|n} astral={y|n} roundtrip={y|n|n/a} intermediate-sampled={y|n|n/a} corpus-size={N} divergences={D} authoritative={y|n} caveat={none|no-runnable-artifact}` — so a dogfood greps the persisted `eval-round-N.md` (this report body, NOT the under-500-token `## Result` return envelope) and can tell `triggered=n` (scanned, recognized nothing) apart from a fired sweep apart from feature-absent. Emit `triggered=n` for every boundary you scanned that did not advertise strict/canonical/lossless/limit and has no same-input-class sibling; this UNCONDITIONAL per-boundary line is the falsifiability instrument (mirrors the unconditional `[ORACLE-AUDIT]` contract that survived to the dogfood reader, NOT the conditional `[EVAL-PANEL]` one that did not). Write `## Accept-set sweep\nn/a (no external-input boundary in scope)` when the diff introduces or touches no external-input boundary at all.
 
 3. **Output path stability.** The `**Output**` field returned to the caller MUST be the same path written in step 1. Do not rename, move, or duplicate the file between the skeleton write and the terminal rewrite.
 
