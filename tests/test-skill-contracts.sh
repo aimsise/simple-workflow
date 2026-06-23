@@ -10388,6 +10388,85 @@ aasc14_result="false"
 if [ "$aasc14_pt" -ge 1 ] && [ "$aasc14_apr" -ge 1 ] && [ "$aasc14_orch" -ge 1 ]; then aasc14_result="true"; fi
 assert_true "CT-AASC-14 (accept_set_conformance kill switch documented): policy-template ($aasc14_pt>=1) + policy-reference ($aasc14_apr>=1) + orchestration block ($aasc14_orch>=1)" "$aasc14_result"
 
+# CT-AASC-15 (MR-ROUNDTRIP forward-direction relation: W-axis counterpart to MR-CANONICAL; harness doc + both twins).
+# P0-1 of the dogfood56/57 forward-lossless fix: a writer that rounds an exactly-representable value to a lossy
+# canonical string (format(x) lossy at rc=0) slipped every parse-side MR. MR-ROUNDTRIP drives a value THROUGH the
+# writer and checks parse(format(x))==x over a grammar-derived inter-anchor band. RED-first: HEAD=0. DECONTAM-clean.
+aasc15_harness=$(grep -cF 'MR-ROUNDTRIP' "$REPO_DIR/skills/impl/references/accept-set-conformance-harness.md" || true)
+aasc15_acev=$(grep -cF 'MR-ROUNDTRIP' "$REPO_DIR/agents/ac-evaluator.md" || true)
+aasc15_hi=$(grep -cF 'MR-ROUNDTRIP' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+aasc15_result="false"
+if [ "$aasc15_harness" -ge 1 ] && [ "$aasc15_acev" -ge 1 ] && [ "$aasc15_hi" -ge 1 ]; then aasc15_result="true"; fi
+assert_true "CT-AASC-15 (MR-ROUNDTRIP forward relation, harness + both twins): harness ($aasc15_harness>=1) ac-evaluator ($aasc15_acev>=1) -hi ($aasc15_hi>=1)" "$aasc15_result"
+
+# CT-AASC-16 (persisted '## Accept-set sweep' forward fields roundtrip=/intermediate-sampled=, both twins; P0-1).
+# The persisted observability line gained the two W-axis forward fields so the determinism hook can enforce the
+# forward-depth gate and a dogfood can grep an anchors-only forward sweep. RED-first: HEAD=0.
+aasc16_acev=$(grep -cF 'intermediate-sampled=' "$REPO_DIR/agents/ac-evaluator.md" || true)
+aasc16_hi=$(grep -cF 'intermediate-sampled=' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+aasc16_result="false"
+if [ "$aasc16_acev" -ge 1 ] && [ "$aasc16_hi" -ge 1 ]; then aasc16_result="true"; fi
+assert_true "CT-AASC-16 (forward sweep fields in both twins): ac-evaluator ($aasc16_acev>=1) -hi ($aasc16_hi>=1)" "$aasc16_result"
+
+# CT-AASC-17 (accept-set-verify hook P5 forward-depth gate: W roundtrip=y intermediate-sampled=n -> BLOCK; P0-1).
+# The recognition-independent enforcement half, parallel to P2 astral, same kill-switch/fail-open. RED-first: HEAD=0.
+aasc17_field=$(grep -cF 'intermediate-sampled' "$REPO_DIR/hooks/accept-set-verify.sh" || true)
+aasc17_gate=$(grep -cF 'P5-shallow-forward' "$REPO_DIR/hooks/accept-set-verify.sh" || true)
+aasc17_result="false"
+if [ "$aasc17_field" -ge 1 ] && [ "$aasc17_gate" -ge 1 ]; then aasc17_result="true"; fi
+assert_true "CT-AASC-17 (hook P5 forward-depth gate): field-parse ($aasc17_field>=1) P5 reason ($aasc17_gate>=1)" "$aasc17_result"
+
+# CT-AASC-18 (Gate 9 R1 forward-direction writer losslessness: inter-anchor intermediate band; P0-2 authoring-side).
+# An anchors-only round-trip grid no longer satisfies R1. RED-first: HEAD=0.
+aasc18=$(grep -cF 'Forward-direction writer losslessness' "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md" || true)
+aasc18_result="false"
+if [ "$aasc18" -ge 1 ]; then aasc18_result="true"; fi
+assert_true "CT-AASC-18 (Gate 9 R1 forward writer-losslessness clause): ($aasc18>=1)" "$aasc18_result"
+
+# CT-AASC-19 (producer GENERATIVE property-test on TRIGGER unconditional, both producers + rubric; P0-3).
+# Closes the generation gap both A/B builds reproduced (a clean-by-construction run committed nothing). The lock-in is
+# now trigger-based + generative, not leak-conditional + literal. Sibling-synced across 3 surfaces. RED-first: HEAD=0.
+aasc19_tw=$(grep -ciF 'GENERATIVE property-test' "$REPO_DIR/agents/test-writer.md" || true)
+aasc19_impl=$(grep -ciF 'GENERATIVE property-test' "$REPO_DIR/agents/implementer.md" || true)
+aasc19_guid=$(grep -ciF 'GENERATIVE grammar-complement property-test' "$REPO_DIR/skills/impl/references/test-authoring-guidance.md" || true)
+aasc19_result="false"
+if [ "$aasc19_tw" -ge 1 ] && [ "$aasc19_impl" -ge 1 ] && [ "$aasc19_guid" -ge 1 ]; then aasc19_result="true"; fi
+assert_true "CT-AASC-19 (producer generative property-test lock-in, 3 surfaces): test-writer ($aasc19_tw>=1) implementer ($aasc19_impl>=1) guidance ($aasc19_guid>=1)" "$aasc19_result"
+
+# CT-AASC-20 (Gate 4 representation-foreclosure rule + planner self-audit wiring; P1 confound from dogfood56/57).
+# A foreclosed internal representation (numeric type / precision model) under an advertised lossless/exact END is a
+# Gate 4 FAIL. Wired into ac-quality-criteria Gate 4 + the planner Pre-emit Self-Audit. RED-first: HEAD=0.
+aasc20_gate=$(grep -ciF 'Representation foreclosure' "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md" || true)
+aasc20_planner=$(grep -ciF 'representation-foreclosure' "$REPO_DIR/agents/planner.md" || true)
+aasc20_result="false"
+if [ "$aasc20_gate" -ge 1 ] && [ "$aasc20_planner" -ge 1 ]; then aasc20_result="true"; fi
+assert_true "CT-AASC-20 (Gate 4 representation-foreclosure rule + planner wiring): ac-quality ($aasc20_gate>=1) planner ($aasc20_planner>=1)" "$aasc20_result"
+
+# CT-AASC-21 (W-axis writer-pairing trigger clause in the orchestrator handoff; dogfood58 #1a).
+# The K-axis trigger clause had no W-axis sibling, so a paired reader+writer round-trip was encoded under an
+# off-grammar label (numeric-external) and hook P5 went structurally inert. Pins the W-pairing clause. RED-first: HEAD=0.
+aasc21=$(grep -ciF 'for the W axis' "$REPO_DIR/skills/impl/SKILL.md" || true)
+aasc21b=$(grep -ciF 'paired-writer round-trip boundary is itself the trigger' "$REPO_DIR/skills/impl/SKILL.md" || true)
+aasc21_result="false"
+if [ "$aasc21" -ge 1 ] && [ "$aasc21b" -ge 1 ]; then aasc21_result="true"; fi
+assert_true "CT-AASC-21 (W-axis writer-pairing trigger clause): for-the-W-axis ($aasc21>=1) + paired-writer-trigger ($aasc21b>=1)" "$aasc21_result"
+
+# CT-AASC-22 (deterministic canonical-W-label rule on MR-ROUNDTRIP, both twins; dogfood58 #1b).
+# The evaluator MUST encode a round-trip sweep as boundary=W, never an improvised numeric-external label. RED-first: HEAD=0.
+aasc22_acev=$(grep -ciF 'Encode this sweep as' "$REPO_DIR/agents/ac-evaluator.md" || true)
+aasc22_hi=$(grep -ciF 'Encode this sweep as' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+aasc22_result="false"
+if [ "$aasc22_acev" -ge 1 ] && [ "$aasc22_hi" -ge 1 ]; then aasc22_result="true"; fi
+assert_true "CT-AASC-22 (canonical-W-label rule both twins): ac-evaluator ($aasc22_acev>=1) -hi ($aasc22_hi>=1)" "$aasc22_result"
+
+# CT-AASC-23 (hook P6 fail-loud on a round-trip-bearing non-W label; dogfood58 #2).
+# A round-trip-bearing sweep (roundtrip=y or intermediate-sampled=y) under a non-W boundary is non-conformant -> BLOCK,
+# closing the mislabel-bypass of P5 the dogfood surfaced. RED-first: HEAD=0.
+aasc23=$(grep -cF 'P6-roundtrip-mislabel' "$REPO_DIR/hooks/accept-set-verify.sh" || true)
+aasc23_result="false"
+if [ "$aasc23" -ge 1 ]; then aasc23_result="true"; fi
+assert_true "CT-AASC-23 (hook P6 round-trip-mislabel gate): ($aasc23>=1)" "$aasc23_result"
+
 # =============================================================================
 # Cat UC-ORCH: ultracode-orchestration run-scoped opt-in (uc= arg surface,
 # committed Workflow eval-panel, run-scoped continuity in autopilot-state.yaml).

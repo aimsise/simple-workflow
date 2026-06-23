@@ -48,7 +48,11 @@ Read the boundary's spec and fill the four axes; each axis drives one MR:
   applies before validation (e.g. NFC, a digit-folding numeric parse). Drives the
   astral span of MR-ALPHABET.
 - **W — canonical Writer**: the single canonical output form the boundary
-  promises (e.g. no leading zero). Drives MR-CANONICAL.
+  promises (e.g. no leading zero). Drives MR-CANONICAL (parse-side: a
+  non-canonical INPUT is rejected or normalized-idempotent) AND, when the
+  boundary advertises **lossless / exact / round-trip** between a value-form and
+  its canonical string-form, MR-ROUNDTRIP (write-side: an exactly-representable
+  value must survive `parse(format(x)) == x`).
 - **K — Keyed structure**: any map / record built from untrusted input. Drives
   MR-KEYFAITH.
 
@@ -110,6 +114,24 @@ def make_corpus():
 - **MR-CANONICAL** — a structurally-valid-but-non-canonical form the canonical
   Writer would never emit (`01`, `0255`) must be rejected OR be
   normalized-idempotent (`f(f(x)) == f(x)` and `f(x)` is the canonical form).
+- **MR-ROUNDTRIP** (the forward-direction W-axis counterpart to MR-CANONICAL) —
+  when the boundary advertises **lossless / exact / round-trip** between a
+  value-form and its canonical string-form, an exactly-representable value driven
+  THROUGH the writer must round-trip: `parse(format(x)) == x` for every `x` the
+  writer's grammar can represent exactly. The value corpus is generated from the
+  writer's OWN grammar — each canonical anchor PLUS values sampled in the open
+  interval between adjacent anchors, INCLUDING the just-below-next-anchor extreme
+  where significant-figure / display rounding corrupts an exactly-representable
+  value — the generator names no unit and hard-codes no value. The independent
+  oracle is `parse` applied to the writer's output (round-trip identity), never
+  `format`'s own internals. A representable `x` whose canonical output is lossy
+  (`parse(format(x)) != x`) is subject to the SAME oracle-authoritative two-tier
+  FAIL gating: FAIL when lossless / exact / canonical is advertised and the
+  round-trip breaks on a representable `x`; ADVISORY when the output grammar
+  genuinely cannot hold the value (a real cross-representation lossy case the
+  writer documents). This catches the writer that rounds an exactly-representable
+  value to a lossy canonical string — invisible to the parse-side MRs because the
+  lossy output is a clean rc=0, not a parse false-accept.
 - **MR-KEYFAITH** — a reserved / accessor / colliding key in a K-axis structure
   must not mutate host-structure metadata or be silently dropped. A CONCRETE
   round-trip-faithfulness violation (a drop, an overwrite, or a host-metadata
@@ -234,6 +256,66 @@ catch; name the offending class in Feedback so the producer round can pin it. A
 faithful builder returns a clean zero over the whole reflected corpus (no
 false-positive storm), because the oracle accepts exactly the last-write-wins
 mapping the inputs demanded.
+
+## The worked MR-ROUNDTRIP shape forward-direction canonical-writer losslessness
+
+MR-CANONICAL above checks the PARSE side (a non-canonical INPUT is rejected or
+normalized). MR-ROUNDTRIP is its FORWARD counterpart: it drives an
+exactly-representable VALUE through the REAL writer and checks the canonical
+string round-trips. The miss it closes is a writer that applies
+significant-figure / display rounding to a value that is exactly representable in
+its own output grammar — `format(x)` returns a lossy string at a clean rc=0, so
+the parse-side MRs (which only diff accept/reject of INPUTS) never see it. The
+corpus is generated from the writer's OWN grammar and names no value: each
+canonical anchor PLUS values sampled in the open interval between adjacent
+anchors, INCLUDING the just-below-next-anchor extreme — the largest magnitude
+still representable in the lower-granularity output term before the writer
+switches term/scale, which is exactly where round-to-N-significant-figures
+corrupts an exactly-representable value. It is **illustrative only** on both the
+domain and language axes; transcribe the ROLES (grammar-derived anchor +
+inter-anchor sampling; the REAL writer; the independent `parse` inverse oracle;
+the black-box round-trip diff), never the surface domain.
+
+```python
+# ILLUSTRATIVE ONLY (neutral domain, Python): forward round-trip losslessness for
+# a writer that renders a non-negative integer into a compact canonical string and
+# a parser that reads it back. The writer ADVERTISES lossless round-trip. The
+# generator derives the corpus from the writer's OWN grammar — naming no literal
+# value — and the oracle is `parse` applied to the writer's output (round-trip
+# identity), INDEPENDENT of format's internals.
+def make_value_corpus(anchors, between):
+    # anchors: the exact representable points the writer emits crisply (each
+    #   scale/term multiple), derived from the grammar — not a hard-coded list.
+    # between(a, b): yields interior values in (a, b), and MUST DETERMINISTICALLY
+    #   include the maximal-mantissa magnitudes that round-trip exactly in the
+    #   lower term just below promotion to `b` — NOT only random mid-band samples
+    #   whose mantissa may cap short of promotion (dogfood58: a capped random
+    #   mantissa left the highest pre-promotion exactly-representable magnitudes
+    #   unsampled — the exact band where significant-figure rounding fires). Place
+    #   those just-below-promotion extremes deterministically, never by chance.
+    corpus = list(anchors)
+    for a, b in zip(anchors, anchors[1:]):
+        corpus += list(between(a, b))            # interior incl. just-below-next-anchor
+    return corpus
+
+def run_writer_roundtrip(format_fn, parse_fn, value_corpus):
+    # drive each representable value through the REAL writer, parse it back, and
+    # FAIL when parse(format(x)) != x for an x the grammar represents exactly.
+    lossy = []
+    for x in value_corpus:
+        s = format_fn(x)                         # the REAL writer boundary
+        back = parse_fn(s)                       # independent inverse (round-trip identity)
+        if back != x:
+            lossy.append((x, s, back))           # an exactly-representable value the writer rounded
+    return lossy
+```
+
+A non-empty `lossy` on a writer that advertises lossless / exact / round-trip is
+the catch — name the offending value class in Feedback so the producer round can
+pin it. A writer that genuinely cannot hold the value (a documented
+cross-representation lossy case) is advisory (`authoritative=n`), under the same
+two-tier gate as the other MRs. A correct lossless writer returns a clean empty
+`lossy` over the whole grammar-derived corpus.
 
 ## Black-box diff under a watchdog (the executed step)
 

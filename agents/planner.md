@@ -21,6 +21,12 @@ When the caller asks you to emit a ticket draft (typically the `create-ticket` s
 4. Cross-check: every numeric file-count claim in Background prose MUST equal the Scope-table row count from step 1, and every numeric AC-count claim in Background prose MUST equal the AC-list entry count from step 2. The declared Size letter (S/M/L/XL) is **not** re-judged here — Gate 5 size adjudication (including the single-axis-with-rationale tiebreak in `ac-quality-criteria.md`) is the ticket-evaluator's responsibility against that rubric, and this self-audit MUST NOT pre-empt that judgment.
 5. **On mismatch**: do NOT emit the draft as-is. Revise the offending text — either the Background prose, the Scope table, the AC list, or the Size letter (whichever is wrong) — until step 4 holds, then re-run steps 1-4. Only emit the draft once the cross-check passes. Mismatches detected post-emit are a contract violation that the ticket-evaluator's Gate 5 will surface.
 
+## Pre-emit Self-Audit (ticket drafts: Gate 4 representation foreclosure)
+
+After the numeric cross-check, also verify Gate 4's representation-foreclosure rule (`skills/create-ticket/references/ac-quality-criteria.md` `### Representation foreclosure`):
+
+- **Gate 4 representation-foreclosure cross-check**. For each constraint anywhere in the ticket draft (`### Scope`, `### Out of Scope`, or Implementation Notes) that forecloses an internal **representation** (a numeric type, precision model, container, or storage encoding) or an algorithm, check whether any in-scope AC advertises a behavioral **END** (exactness / losslessness / a round-trip / a bounded range / a canonical form) that the foreclosed representation would be REQUIRED to satisfy. If so, REWRITE the AC to assert the END and DROP the foreclosure — or move it to a Caveat naming why the representation IS the external contract (a wire / on-disk format, a declared arithmetic guarantee, an interop ABI). Re-run until no foreclosure shadows an advertised END. (A WHAT-domain bound — "values beyond N are out of scope" — is legitimate; a MEANS foreclosure under an advertised END is the Gate 4 FAIL.)
+
 ## Pre-emit Self-Audit (ticket drafts: Gate 6 binding for `### Capabilities`)
 
 After the numeric cross-check above passes, also run this capability-binding cross-check before emitting:

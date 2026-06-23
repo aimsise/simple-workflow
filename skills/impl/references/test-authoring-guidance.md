@@ -96,11 +96,17 @@ exit code) needs only a direct assertion.
    build added a finiteness guard to one tool but not the analogous sibling tools parsing the same
    input class, shipping a live DoS hang reachable through the unguarded siblings while the
    guarded tool passed. Write the class-(b) adversarial test against EACH sibling tool, not only
-   the one tool the AC names. When the ac-evaluator's EXECUTED accept-set conformance sweep (see
-   [`accept-set-conformance-harness.md`](accept-set-conformance-harness.md)) reports an accept-set
-   leak across this shared input class, commit a fixed rejection characterization test for that
-   leaking input class (leaking input as the RED case, validator fix GREEN) — gated by
-   `constraints.accept_set_conformance` and always-on, not depth-gated.
+   the one tool the AC names. When a boundary **TRIGGERED** (`triggered-on=` names the AC — strict / canonical / lossless /
+   limit or a same-input-class sibling), commit — ONCE per triggered boundary, **UNCONDITIONAL on a
+   found leak** — a committed GENERATIVE grammar-complement property-test (the property-selected
+   complement corpus + independent hand-coded oracle of
+   [`accept-set-conformance-harness.md`](accept-set-conformance-harness.md), naming no script /
+   codepoint / value, seeded) asserting the boundary rejects the whole complement, and — for a
+   canonical Writer advertising lossless / exact / round-trip — that `parse(format(x)) == x` across a
+   grammar-derived corpus sampling the inter-anchor intermediate band (not only the exact anchors). A
+   found leak adds that specific input as an ADDITIONAL fixed RED pin (validator fix GREEN). This
+   generative complement test is the always-on, NOT-depth-gated sibling of the depth-gated seeded-fuzz
+   loop (rule 7) — gated by `constraints.accept_set_conformance`, always-on, not depth-gated.
 
 5. **Spec-completeness.** Assert every output field and guarantee the spec
    promises — a missing field, an absent status flag, a dropped metric field, or

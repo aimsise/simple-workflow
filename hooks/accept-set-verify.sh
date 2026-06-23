@@ -28,6 +28,8 @@
 # Predicates (per `boundary=` line in the section):
 #   P1 stand-down  (all axes):  triggered=y ran=n                       -> BLOCK
 #   P2 shallow     (A,U axes):  triggered=y ran=y astral=n              -> BLOCK
+#   P5 shallow-fwd (W axis):    triggered=y ran=y roundtrip=y intermediate-sampled=n -> BLOCK
+#   P6 rt-mislabel (non-W):     triggered=y ran=y (roundtrip=y|intermediate-sampled=y) AND boundary!=W -> BLOCK
 #   P4 gating      (all axes):  authoritative=y divergences>0 while Status not FAIL/FAIL-CRITICAL -> BLOCK
 #   P3 thin-corpus (A,U axes):  triggered=y ran=y corpus-size < FLOOR   -> ADVISORY ONLY (never blocks)
 # P3 is ADVISORY, not a gate (dogfood51): corpus-size is a weak proxy for sweep
@@ -43,7 +45,13 @@
 # (K) and canonical-writer (W) axes legitimately enumerate a small reflection-
 # derived corpus (reserved/accessor/private-slot names — a handful of ASCII
 # identifiers, never astral), so the astral/corpus checks do not apply to them.
-# P1 and P4 are axis-independent. The `## Accept-set sweep` header is matched
+# The canonical-writer (W) axis additionally carries the P5 forward-direction
+# depth gate (the MR-ROUNDTRIP counterpart to P2's astral complement): a triggered
+# W boundary advertises a value-form <-> string-form round-trip, so an executed
+# sweep that left the inter-anchor INTERMEDIATE band unsampled (roundtrip=y
+# intermediate-sampled=n) is a shallow forward sweep -> BLOCK. Older reports
+# predate the roundtrip= / intermediate-sampled= fields; a W line lacking them is
+# n/a and never trips P5. P1 and P4 are axis-independent. The `## Accept-set sweep` header is matched
 # case-insensitively AND at any hash depth (`#`..`######`), so neither a mis-cased
 # nor a mis-leveled header can let a whole report silently skip the gate.
 #
@@ -167,6 +175,8 @@ while IFS= read -r LINE; do
   TRIG=$(field_of "$LINE" triggered)
   RAN=$(field_of "$LINE" ran)
   ASTRAL=$(field_of "$LINE" astral)
+  ROUNDTRIP=$(field_of "$LINE" roundtrip)
+  INTERSAMPLED=$(field_of "$LINE" intermediate-sampled)
   CORPUS=$(field_of "$LINE" corpus-size)
   DIV=$(field_of "$LINE" divergences)
   AUTH=$(field_of "$LINE" authoritative)
@@ -189,6 +199,22 @@ while IFS= read -r LINE; do
       # is the real A/U depth gate; the planes are the mandated alphabet complement).
       if { [ "$B" = "A" ] || [ "$B" = "U" ]; } && [ "$ASTRAL" = "n" ]; then
         REASON="P2-shallow-astral"
+      # P5 shallow forward (W axis): an executed MR-ROUNDTRIP sweep that
+      # round-tripped but never sampled the inter-anchor INTERMEDIATE band
+      # (anchors-only) -> BLOCK. The forward counterpart to P2's astral gate.
+      # Absent fields (older reports) are empty, not `n`, so they never trip.
+      elif [ "$B" = "W" ] && [ "$ROUNDTRIP" = "y" ] && [ "$INTERSAMPLED" = "n" ]; then
+        REASON="P5-shallow-forward"
+      # P6 round-trip mislabel (non-W): a round-trip-bearing sweep (roundtrip=y or
+      # intermediate-sampled=y) recorded under any boundary label OTHER than W is
+      # non-conformant by construction -> BLOCK. A round-trip / invertibility sweep
+      # IS the W axis; an off-grammar label (e.g. numeric-external) or an A/U/K
+      # label carrying real round-trip evidence makes the P5 forward-depth gate
+      # unreachable (dogfood58: a format writer round-trip was labeled
+      # numeric-external, so P5 was structurally inert). Canonical A/U/K lines
+      # carry roundtrip=n/a intermediate-sampled=n/a, so they never trip this.
+      elif [ "$B" != "W" ] && { [ "$ROUNDTRIP" = "y" ] || [ "$INTERSAMPLED" = "y" ]; }; then
+        REASON="P6-roundtrip-mislabel"
       # P3 thin corpus (A,U axes): corpus below the floor -> ADVISORY ONLY, never
       # blocks (corpus-size is a weak depth proxy; flooring it false-trips a
       # legitimately-thin conformant sweep on a wide-spec subject — dogfood51).
@@ -208,7 +234,7 @@ while IFS= read -r LINE; do
   fi
 
   [ -n "$REASON" ] || continue
-  BLOCKING="${BLOCKING}boundary=${B} triggered=${TRIG} ran=${RAN} astral=${ASTRAL} corpus-size=${CORPUS} reason=${REASON}"$'\n'
+  BLOCKING="${BLOCKING}boundary=${B} triggered=${TRIG} ran=${RAN} astral=${ASTRAL} roundtrip=${ROUNDTRIP} intermediate-sampled=${INTERSAMPLED} corpus-size=${CORPUS} reason=${REASON}"$'\n'
 done <<EOF
 $SECTION
 EOF
@@ -253,6 +279,6 @@ done <<EOF
 $BLOCKING
 EOF
 REASON_TEXT=$(printf '%s' "$BLOCKING" | tr '\n' ';' | sed 's/;$//')
-jq -n --arg r "Accept-set conformance gate (AASC): the persisted '## Accept-set sweep' in $BASENAME records a NON-CONFORMANT sweep — $REASON_TEXT. A triggered boundary must be EXECUTED (ran=y); an alphabet/unicode sweep must include the astral complement (astral=y); an authoritative divergence must drive the verdict to FAIL. Re-run the EXECUTED accept-set sweep per agents/ac-evaluator.md and rewrite the report." \
+jq -n --arg r "Accept-set conformance gate (AASC): the persisted '## Accept-set sweep' in $BASENAME records a NON-CONFORMANT sweep — $REASON_TEXT. A triggered boundary must be EXECUTED (ran=y); an alphabet/unicode sweep must include the astral complement (astral=y); a canonical-writer round-trip sweep must sample the inter-anchor intermediate band (intermediate-sampled=y); a round-trip / invertibility sweep MUST be encoded as boundary=W (a round-trip-bearing sweep recorded under a non-W label is non-conformant); an authoritative divergence must drive the verdict to FAIL. Re-run the EXECUTED accept-set sweep per agents/ac-evaluator.md and rewrite the report." \
   '{decision:"block", reason:$r}'
 exit 0
