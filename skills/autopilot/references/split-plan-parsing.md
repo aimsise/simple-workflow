@@ -90,6 +90,53 @@ Emit one `Processing order: {NNN-slug}` line per ticket at the top of
 Phase 2 (`{NNN-slug}` is the basename of `ticket_dir`, e.g.
 `005-add-user-auth`).
 
+## Wave layering (level-synchronous Kahn) — `PARALLEL_MODE != off` only
+
+When `PARALLEL_MODE != off`, `/autopilot` ALSO groups the tickets into
+**topological waves** so non-blocked tickets can be executed together
+(Phase 2 parallelism; emit/test-only at Phase 1 concurrency 1). A wave is
+one level of the dependency DAG: wave 0 is every root, wave k+1 is every
+ticket whose `depends_on` are all in waves ≤ k.
+
+Level-synchronous Kahn — the same in-degree + lexicographic-tiebreak
+machinery as the linear sort above, but peel a whole in-degree-0 LEVEL
+per round instead of one node:
+
+1. Compute in-degree per node.
+2. **Wave 0** = all nodes with in-degree 0 (roots), listed in ascending
+   lexicographic `ticket_dir` order.
+3. Remove the current wave's nodes; decrement each dependent's in-degree.
+4. **Wave k+1** = all nodes whose in-degree has now reached 0 and were
+   not placed in any earlier wave, again in lexicographic order.
+5. Repeat until every node is placed. If some node never reaches
+   in-degree 0 the graph had a cycle — use the same ERROR path as the
+   cycle edge (already detected by the linear sort above, which runs
+   first).
+
+Emit one line per wave, AFTER the existing `Processing order:` block:
+
+```
+Wave 0: {NNN-slug}, {NNN-slug}
+Wave 1: {NNN-slug}
+```
+
+`{NNN-slug}` is the basename of `ticket_dir`; entries within a wave are
+listed lexicographically.
+
+**Relationship to `Processing order:`.** The linear `Processing order:`
+(per-node Kahn, authoritative for serial / concurrency-1 execution) is
+**unchanged** — wave layering is purely additive, and both honour every
+`depends_on` edge. For the common layout where a dependent ticket is
+numbered (hence sorts) after the tickets it depends on, reading the waves
+in order and each wave lexicographically reproduces `Processing order:`
+exactly. The two diverge only when a dependent sorts lexicographically
+*before* an unrelated independent ticket; in that case `Processing
+order:` stays authoritative for serial execution and the wave grouping is
+authoritative for Phase 2 parallel execution (a ticket is spawned only
+once all its `depends_on` sit in completed waves). At Phase 1 concurrency
+1, execution follows `Processing order:` and the wave lines are
+emit/test-only.
+
 ## Mapping table
 
 If `resume_mode`, use `ticket_mapping` from `autopilot-state.yaml`.

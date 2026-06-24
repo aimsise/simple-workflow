@@ -11,8 +11,8 @@ The brief-level / parent-level `autopilot-state.yaml` is distinct from
 each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
 Skip writing it if `resume_mode = true` (state already exists).
 
-The file has 7 top-level fields plus an OPTIONAL run-scoped
-`ultracode_mode:` field and an append-only metrics list:
+The file has 7 top-level fields plus two OPTIONAL run-scoped mode fields
+(`ultracode_mode:` and `parallel_mode:`) and an append-only metrics list:
 
 ```yaml
 version: 1
@@ -21,6 +21,7 @@ started: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
 execution_mode: split
 total_tickets: {N}
 ultracode_mode: off                      # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default off)
+parallel_mode: on                        # OPTIONAL run-scoped parallel exec mode: on | metric-only — WRITTEN ONLY when != off; ABSENT (-> off) on a default serial run
 ticket_mapping: {}
 tickets:
   - logical_id: {parent-slug}-part-{N}   # one entry per split-plan ticket, in topological order
@@ -67,6 +68,25 @@ Field summary (the 7 top-level fields plus `runtime_metrics:`):
   it survives auto-compact and resume (Phase 1 Step 5 re-reads it via the
   same top-level scalar path as the other fields, e.g.
   `parse_yaml_scalar <file> ultracode_mode`).
+- `parallel_mode` — OPTIONAL. Run-scoped parallel execution mode; value
+  domain `on` | `off` | `metric-only` (default `off` when absent). A near-
+  complete mirror of `ultracode_mode` with the same lifecycle: set once at
+  Phase 2 state-file initialization from the `parallel=` invocation argument
+  resolved in Argument Parsing **but written ONLY when `!= off`**, re-read on
+  resume at Phase 1 Step 5 (`parse_yaml_scalar <file> parallel_mode`) to
+  reconstruct the run's execution path, and moved to `briefs/done/` with the
+  rest of the file on completion. It is **run-scoped run-state, NOT a
+  permanent policy flag** — a fresh run with no `parallel=` argument (or
+  `parallel=off`) **OMITS the field entirely**, keeping the state file
+  byte-identical to a pre-parallel version, and resume reconstructs `off`
+  from the absent field; it never lives in `autopilot-policy.yaml`. The one
+  deliberate difference from `ultracode_mode` (which is written even for
+  `off`) is exactly this omit-on-`off`, required by the `parallel=off`
+  byte-identical-state guarantee. At Phase 2 it selects whether each ticket
+  runs through the current inline serial branch (`off` / absent) or a
+  `ticket-executor` subagent (`on` / `metric-only`); it is **orthogonal to
+  `ultracode_mode`** (the two compose). The `SW_PARALLEL_TICKETS_MODE`
+  environment knob can force it to `off` as a run kill switch.
 - `runtime_metrics:` — append-only metrics list (see schema below).
 
 The `steps:` / `invocation_method:` maps no longer contain a `create-ticket`
@@ -184,6 +204,46 @@ write being blocked. Field evidence: `test_simple_workflow28` produced
 the map form (`pomodoro-timer-web-app-part-1: {...}`) and broke the
 pre-WI-4 LIST-only parsers in both `parse_ticket_statuses` and
 `parse_proposed_tickets` silently.
+
+## `[TICKET-EXECUTOR-RESULT]` envelope + single-writer contract (`PARALLEL_MODE != off`)
+
+When `PARALLEL_MODE != off`, each ticket's `/scout`→`/impl`→`/ship`
+pipeline runs inside a `ticket-executor` subagent
+(`agents/ticket-executor.md`) rather than inline in the main loop. Two
+contracts govern the state file on that path:
+
+**Single writer.** The `ticket-executor` MUST NOT write
+`autopilot-state.yaml`. The main loop is the sole writer: it writes
+`status: in_progress` for a ticket *before* spawning its executor, and
+transcribes the terminal `steps` / `status` / PR URL *after* receiving the
+executor's envelope. The executor owns only the per-ticket
+`phase-state.yaml` writes that `/scout` / `/impl` / `/ship` perform
+internally (a disjoint per-ticket inode). This keeps the brief-level state
+file free of concurrent writers, so no lost-update is possible once
+concurrency > 1 (Phase 2). At Phase 1 concurrency 1 the per-ticket boundary
+coincides with the wave boundary, so the single-writer rule holds cleanly
+under serial execution too.
+
+**Envelope.** The executor's FINAL message is a fixed-format envelope the
+main loop parses to perform its single write:
+
+```
+[TICKET-EXECUTOR-RESULT]
+logical_id: {parent-slug}-part-N
+status: {completed|failed|skipped}
+steps.scout: {pending|completed|failed}
+steps.impl: {pending|completed|failed}
+steps.ship: {pending|completed|failed}
+pr_url: {url or null}
+failure_reason: {null or a short snake_case reason}
+```
+
+The main loop maps the envelope onto the canonical FLAT `steps:` schema
+(each `steps.<phase>` a string on its own line) and the ticket's `status`.
+A `null` `pr_url` is NOT a failure (a local-only ship with no remote still
+reports `steps.ship: completed`). The `branch` / `head_sha` fields are
+added with worktree isolation (Phase 2); they are absent at Phase 1
+concurrency 1 (no worktree, main checkout).
 
 ## `autopilot-state.yaml` location precedence
 

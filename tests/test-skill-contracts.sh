@@ -10577,6 +10577,120 @@ assert_true \
 echo ""
 
 # =============================================================================
+# Cat PARALLEL: parallel ticket-execution opt-in (parallel= arg surface,
+# parallel_mode run-scoped state, wave layering emit, ticket-executor contract,
+# execution-path routing, SW_PARALLEL_TICKETS_MODE kill switch).
+# Diff: NEW category (Phase 1 / T-001). The parallel= path is ADDITIVE — the
+#       no-parallel / parallel=off default is byte-identical (the inline serial
+#       loop) — so these CTs pin the NET-NEW surface only: the arg grammar +
+#       [PARALLEL-MODE] marker, the chain=off ignore WARNING + brief->autopilot
+#       forward, the parallel_mode write/re-read, the Wave layering contract,
+#       the ticket-executor agent contract (tools-omitted / no-state-write /
+#       envelope), the Execution-path routing branch, and the env kill switch.
+#       Mirrors Cat UC-ORCH (the uc= peer this surface is uniform with).
+# =============================================================================
+echo "--- Cat PARALLEL: parallel ticket-execution opt-in (T-001) ---"
+
+PAR_AUTOPILOT="$REPO_DIR/skills/autopilot/SKILL.md"
+PAR_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+PAR_STATEFILE="$REPO_DIR/skills/autopilot/references/state-file.md"
+PAR_SPLITPARSE="$REPO_DIR/skills/autopilot/references/split-plan-parsing.md"
+PAR_EXECUTOR="$REPO_DIR/agents/ticket-executor.md"
+PAR_CLAUDEMD="$REPO_DIR/CLAUDE.md"
+
+# CT-PARALLEL-1 (parallel= argument surface + [PARALLEL-MODE] marker + brief forward).
+# The arg grammar (token parallel=, values on|off|metric-only) is documented on the two
+# spawner surfaces that START autopilot (/autopilot + /brief; /impl does NOT parse parallel=,
+# that asymmetry is correct — parallel lives at the autopilot layer); the [PARALLEL-MODE]
+# resolution marker appears in /autopilot; /brief carries the chain=off ignore WARNING and
+# forwards parallel={resolved_parallel} to the chained /autopilot.
+par1_autopilot_arg=$(grep -cF 'parallel=<value>' "$PAR_AUTOPILOT" || true)
+par1_autopilot_marker=$(grep -cF '[PARALLEL-MODE]' "$PAR_AUTOPILOT" || true)
+par1_brief_arg=$(grep -cF 'parallel=on|off|metric-only' "$PAR_BRIEF" || true)
+par1_brief_warn=$(grep -cF 'parallel=on ignored when chain=off' "$PAR_BRIEF" || true)
+par1_brief_fwd=$(grep -cF 'parallel={resolved_parallel}' "$PAR_BRIEF" || true)
+par1_result="false"
+if [ "$par1_autopilot_arg" -ge 1 ] && [ "$par1_autopilot_marker" -ge 1 ] && [ "$par1_brief_arg" -ge 1 ] \
+  && [ "$par1_brief_warn" -ge 1 ] && [ "$par1_brief_fwd" -ge 1 ]; then par1_result="true"; fi
+assert_true \
+  "CT-PARALLEL-1 (parallel= arg surface + propagation): autopilot arg ($par1_autopilot_arg>=1) [PARALLEL-MODE] marker ($par1_autopilot_marker>=1); brief arg ($par1_brief_arg>=1) chain=off warning ($par1_brief_warn>=1) brief->autopilot forward ($par1_brief_fwd>=1)" \
+  "$par1_result"
+
+# CT-PARALLEL-2 (run-scoped continuity: parallel_mode in autopilot-state.yaml). The
+# state-file schema reference DOCUMENTS the top-level parallel_mode: field; /autopilot
+# WRITES it at state init and RE-READS it on resume (Phase 1 Step 5) via parse_yaml_scalar.
+# Mirror of ultracode_mode (kind-2 run-scoped state, NOT a permanent policy flag).
+par2_statefile_doc=$(grep -cF 'parallel_mode' "$PAR_STATEFILE" || true)
+par2_autopilot_field=$(grep -cF 'parallel_mode' "$PAR_AUTOPILOT" || true)
+par2_autopilot_init=$(grep -cF 'top-level field `parallel_mode: {on|metric-only}`' "$PAR_AUTOPILOT" || true)
+par2_autopilot_resume=$(grep -cF 'parse_yaml_scalar <file> parallel_mode' "$PAR_AUTOPILOT" || true)
+par2_result="false"
+if [ "$par2_statefile_doc" -ge 1 ] && [ "$par2_autopilot_field" -ge 1 ] \
+  && [ "$par2_autopilot_init" -ge 1 ] && [ "$par2_autopilot_resume" -ge 1 ]; then par2_result="true"; fi
+assert_true \
+  "CT-PARALLEL-2 (run-scoped continuity parallel_mode): state-file documents field ($par2_statefile_doc>=1); autopilot field ($par2_autopilot_field>=1) state-init write ($par2_autopilot_init>=1) re-read on resume ($par2_autopilot_resume>=1)" \
+  "$par2_result"
+
+# CT-PARALLEL-3 (wave layering emit contract). split-plan-parsing.md documents the
+# level-synchronous Kahn wave layering and the `Wave k:` emit format; /autopilot calls it
+# (emits the wave lines when PARALLEL_MODE != off; emit-only at concurrency 1).
+par3_wave_section=$(grep -cF 'Wave layering' "$PAR_SPLITPARSE" || true)
+par3_level_sync=$(grep -cF 'level-synchronous Kahn' "$PAR_SPLITPARSE" || true)
+par3_wave_emit=$(grep -cF 'Wave 0:' "$PAR_SPLITPARSE" || true)
+par3_autopilot_wave=$(grep -cF 'Wave {k}:' "$PAR_AUTOPILOT" || true)
+par3_result="false"
+if [ "$par3_wave_section" -ge 1 ] && [ "$par3_level_sync" -ge 1 ] \
+  && [ "$par3_wave_emit" -ge 1 ] && [ "$par3_autopilot_wave" -ge 1 ]; then par3_result="true"; fi
+assert_true \
+  "CT-PARALLEL-3 (wave layering emit): split-parse section ($par3_wave_section>=1) level-synchronous ($par3_level_sync>=1) Wave-emit format ($par3_wave_emit>=1); autopilot emits waves ($par3_autopilot_wave>=1)" \
+  "$par3_result"
+
+# CT-PARALLEL-4 (ticket-executor agent contract). agents/ticket-executor.md EXISTS and
+# pins the load-bearing contract strings: tools OMITTED (full inherit incl Agent), MUST NOT
+# write autopilot-state.yaml (single-writer), and the fixed [TICKET-EXECUTOR-RESULT] envelope.
+par4_exists=0; if [ -f "$PAR_EXECUTOR" ]; then par4_exists=1; fi
+par4_tools_omit=$(grep -cF 'tools:` field is intentionally omitted' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_no_write=$(grep -cF 'MUST NOT write `autopilot-state.yaml`' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_envelope=$(grep -cF '[TICKET-EXECUTOR-RESULT]' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_fields=$(grep -cF 'failure_reason' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_result="false"
+if [ "$par4_exists" -eq 1 ] && [ "$par4_tools_omit" -ge 1 ] && [ "$par4_no_write" -ge 1 ] \
+  && [ "$par4_envelope" -ge 1 ] && [ "$par4_fields" -ge 1 ]; then par4_result="true"; fi
+assert_true \
+  "CT-PARALLEL-4 (ticket-executor contract): exists ($par4_exists=1) tools-omitted ($par4_tools_omit>=1) no-state-write ($par4_no_write>=1) envelope ($par4_envelope>=1) fields ($par4_fields>=1)" \
+  "$par4_result"
+
+# CT-PARALLEL-5 (autopilot execution-path routing). /autopilot Phase 2 carries the
+# Execution-path routing branch (PARALLEL_MODE == off -> inline serial byte-identical;
+# != off -> executor-routed), spawns simple-workflow:ticket-executor as the single writer,
+# and pins concurrency 1 for Phase 1.
+par5_routing=$(grep -cF 'Execution-path routing' "$PAR_AUTOPILOT" || true)
+par5_executor_subsec=$(grep -cF 'Executor-routed per-ticket pipeline' "$PAR_AUTOPILOT" || true)
+par5_spawn=$(grep -cF 'simple-workflow:ticket-executor' "$PAR_AUTOPILOT" || true)
+par5_single_writer=$(grep -cF 'single writer' "$PAR_AUTOPILOT" || true)
+par5_conc1=$(grep -cF 'concurrency 1' "$PAR_AUTOPILOT" || true)
+par5_result="false"
+if [ "$par5_routing" -ge 1 ] && [ "$par5_executor_subsec" -ge 1 ] && [ "$par5_spawn" -ge 1 ] \
+  && [ "$par5_single_writer" -ge 1 ] && [ "$par5_conc1" -ge 1 ]; then par5_result="true"; fi
+assert_true \
+  "CT-PARALLEL-5 (execution-path routing): routing branch ($par5_routing>=1) executor subsection ($par5_executor_subsec>=1) spawn ticket-executor ($par5_spawn>=1) single-writer ($par5_single_writer>=1) concurrency-1 ($par5_conc1>=1)" \
+  "$par5_result"
+
+# CT-PARALLEL-6 (env kill switch + (B) harness-own). CLAUDE.md documents
+# SW_PARALLEL_TICKETS_MODE (default off = prior serial behaviour) as the run kill switch and
+# marks it (B) harness-own substrate.
+par6_knob=$(grep -cF 'SW_PARALLEL_TICKETS_MODE' "$PAR_CLAUDEMD" || true)
+par6_killswitch=$(grep -cF 'run kill switch for the run-scoped parallel ticket-execution' "$PAR_CLAUDEMD" || true)
+par6_bsubstrate=$(grep -cF '(B) harness-own' "$PAR_CLAUDEMD" || true)
+par6_result="false"
+if [ "$par6_knob" -ge 1 ] && [ "$par6_killswitch" -ge 1 ] && [ "$par6_bsubstrate" -ge 1 ]; then par6_result="true"; fi
+assert_true \
+  "CT-PARALLEL-6 (env kill switch): SW_PARALLEL_TICKETS_MODE documented ($par6_knob>=1) kill-switch prose ($par6_killswitch>=1) (B) harness-own ($par6_bsubstrate>=1)" \
+  "$par6_result"
+
+echo ""
+
+# =============================================================================
 # Category EV-MODEL: M5 criticality scalar + evaluator-model allocation (v8.3.0)
 # Diff: New category (M5). Drift-guards the criticality scalar
 #       (criticality = blast_radius x irreversibility), the irreversibility axis +
