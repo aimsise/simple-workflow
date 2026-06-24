@@ -20,7 +20,7 @@ parent_slug: {parent-slug}
 started: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
 execution_mode: split
 total_tickets: {N}
-ultracode_mode: off                      # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default off)
+ultracode_mode: on                       # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default on)
 parallel_mode: on                        # OPTIONAL run-scoped parallel exec mode: on | metric-only — WRITTEN ONLY when != off; ABSENT (-> off) on a default serial run
 ticket_mapping: {}
 tickets:
@@ -56,15 +56,16 @@ Field summary (the 7 top-level fields plus `runtime_metrics:`):
 - `ticket_mapping` — `{logical_id: ticket_dir}` lookup table seeded from the split-plan.
 - `tickets` — per-ticket entries (logical_id, ticket_dir, status, steps, invocation_method).
 - `ultracode_mode` — OPTIONAL. Run-scoped orchestration mode; value
-  domain `on` | `off` | `metric-only` (default `off` when absent). Set
+  domain `on` | `off` | `metric-only` (default `on` when absent). Set
   once at Phase 2 state-file initialization from the `uc=` invocation
   argument resolved in Argument Parsing, re-read on resume at Phase 1
   Step 5 to reconstruct the run's orchestration mode, and moved to
   `briefs/done/` with the rest of the file on completion. It is
   **run-scoped run-state, NOT a permanent policy flag** — it is gone on
-  the next fresh run (a new run with no `uc=` argument writes `off`),
-  and is **distinct from `autopilot-policy.yaml`** (which carries
-  permanent per-ticket policy). Because it lives in `autopilot-state.yaml`
+  the next fresh run (a new run with no `uc=` argument writes `on`, the
+  default; pass `uc=off` to restore the v8.7.0 Agent path), and is
+  **distinct from `autopilot-policy.yaml`** (which carries permanent
+  per-ticket policy). Because it lives in `autopilot-state.yaml`
   it survives auto-compact and resume (Phase 1 Step 5 re-reads it via the
   same top-level scalar path as the other fields, e.g.
   `parse_yaml_scalar <file> ultracode_mode`).

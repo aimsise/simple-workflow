@@ -10573,6 +10573,24 @@ assert_true \
   "CT-UC-ORCH-4 (M-widening Form B + bug fixes): UC-FLOOR ($uco4_floor>=1) [UC-ORCH-FLOOR] marker ($uco4_floor_marker>=1) gate {thorough,exhaustive} ($uco4_gate_thorough>=1) AC_COUNT<30 partition guard ($uco4_gate_accap>=1) eval-panel args JSON.parse defense ($uco4_args_parse>=1)" \
   "$uco4_result"
 
+# CT-UC-ORCH-5 (uc default off->on flip + explicit-off byte-identity preserved). The uc=
+# absent-token default is now `on` at all four sites (autopilot Argument Parsing, impl
+# Step 1a-uc, impl Step 3a UC_ORCH resolution, brief uc= bullet) + the state-file doc; the
+# explicit-`off` "byte-identical to v8.5.0" literal MUST survive verbatim (R-c1 drift guard:
+# the flip rewords only the absent/default clause, never the explicit-off byte-identity literal).
+uco5_autopilot_default=$(grep -cF 'is absent, `UC_ORCH = on`' "$UCO_AUTOPILOT" || true)
+uco5_impl_1a_default=$(grep -cF 'Default when the token is absent = `on`' "$UCO_IMPL" || true)
+uco5_impl_3a_flip=$(grep -cF 'on-by-default path floors non-S' "$UCO_IMPL" || true)
+uco5_brief_default=$(grep -cF 'ELSE `on` (the default' "$UCO_BRIEF" || true)
+uco5_statefile_default=$(grep -cF 'default `on` when absent' "$UCO_STATEFILE" || true)
+uco5_off_byteident=$(grep -cF 'byte-identical to v8.5.0' "$UCO_IMPL" || true)
+uco5_result="false"
+if [ "$uco5_autopilot_default" -ge 1 ] && [ "$uco5_impl_1a_default" -ge 1 ] && [ "$uco5_impl_3a_flip" -ge 1 ] \
+  && [ "$uco5_brief_default" -ge 1 ] && [ "$uco5_statefile_default" -ge 1 ] && [ "$uco5_off_byteident" -ge 2 ]; then uco5_result="true"; fi
+assert_true \
+  "CT-UC-ORCH-5 (uc default on flip + off byte-identity preserved): autopilot default-on ($uco5_autopilot_default>=1) impl-1a default-on ($uco5_impl_1a_default>=1) impl-3a flip ($uco5_impl_3a_flip>=1) brief default-on ($uco5_brief_default>=1) state-file default-on ($uco5_statefile_default>=1); explicit-off byte-identical literal preserved ($uco5_off_byteident>=2)" \
+  "$uco5_result"
+
 
 echo ""
 
