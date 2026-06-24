@@ -107,6 +107,17 @@
 #       three-tier strategy as the other helpers in this lib (yq ->
 #       python3+PyYAML -> awk).
 #
+#   resolve_parallel_mode <state_file>
+#     - The single parallel-execution mode resolver shared by every
+#       parallel-aware hook (the T-004/5/6 rework). Precedence:
+#       SW_PARALLEL_HOOKS_MODE (env override; unknown SET value -> off, no
+#       fall-through) > `parallel_mode:` scalar in <state_file> (absent /
+#       null / unknown -> off) > `off`. Prints exactly one of
+#       `on` / `metric-only` / `off`, NEVER empty; every ambiguity fails
+#       CLOSED to `off` (the proven serial / byte-identical path). A
+#       missing / unreadable <state_file> resolves `off`. (B) harness-own
+#       plumbing — consumed by hooks, not by any agent.
+#
 # Implementation strategy: prefer `yq` (mikefarah v4), fall back to
 # `python3 + PyYAML`, and finally to a portable `awk` shell parser. This
 # matches the graceful-degrade contract documented in CLAUDE.md
@@ -1002,7 +1013,53 @@ PY
   esac
 }
 
+# ---------------------------------------------------------------------------
+# Public function: resolve_parallel_mode
+# Usage: resolve_parallel_mode <state_file>
+#
+# The single parallel-execution mode resolver that every parallel-aware hook
+# reads identically (the T-004/5/6 rework consumes it; it is (B) harness-own
+# plumbing, used by hooks, not by any agent). Resolves with precedence:
+#   1. SW_PARALLEL_HOOKS_MODE  (env override; a SET-but-unknown value -> off)
+#   2. parallel_mode: scalar in <state_file>  (absent / null / unknown -> off)
+#   3. off  (the default / fail-closed direction)
+#
+# Prints EXACTLY one of `on` / `metric-only` / `off` to stdout, NEVER empty.
+# Every ambiguity fails CLOSED to `off` — the proven serial / byte-identical
+# path (the conservative direction, mirroring the tri-value
+# SW_AUTOPILOT_POLICY_STOP_HONOR / SW_SCOUT_CHECKPOINT_MODE convention and the
+# `get_risk_tolerance` case-validator above). Env precedence: a SET env value
+# is authoritative and an unknown SET value returns `off` WITHOUT falling
+# through to the state scalar (an explicit-but-garbage override must not
+# silently re-enable a state mode the operator was trying to suppress); an
+# unset / empty env value falls through to the state scalar (the documented
+# "default = follow parallel_mode"). A missing / unreadable <state_file>
+# resolves `off` at the state tier.
+# ---------------------------------------------------------------------------
+resolve_parallel_mode() {
+  local state_file="$1"
+  local env_mode="${SW_PARALLEL_HOOKS_MODE:-}"
+
+  # Tier 1: env override. A non-empty env value is authoritative.
+  if [ -n "$env_mode" ]; then
+    case "$env_mode" in
+      on|metric-only|off) printf '%s\n' "$env_mode"; return 0 ;;
+      *) printf '%s\n' "off"; return 0 ;;   # unknown SET value -> off (no fall-through)
+    esac
+  fi
+
+  # Tier 2: parallel_mode: scalar in the state file (unset/empty env falls here).
+  local state_mode=""
+  if [ -n "$state_file" ] && [ -f "$state_file" ]; then
+    state_mode="$(parse_yaml_scalar "$state_file" parallel_mode 2>/dev/null || true)"
+  fi
+  case "$state_mode" in
+    on|metric-only|off) printf '%s\n' "$state_mode"; return 0 ;;
+    *) printf '%s\n' "off"; return 0 ;;   # absent / null / unknown / missing-file -> off
+  esac
+}
+
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file find_done_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance 2>/dev/null || true
+export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file find_done_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance resolve_parallel_mode 2>/dev/null || true

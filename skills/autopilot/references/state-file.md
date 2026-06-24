@@ -12,7 +12,10 @@ each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
 Skip writing it if `resume_mode = true` (state already exists).
 
 The file has 7 top-level fields plus two OPTIONAL run-scoped mode fields
-(`ultracode_mode:` and `parallel_mode:`) and an append-only metrics list:
+(`ultracode_mode:` and `parallel_mode:`), four OPTIONAL wave-cursor fields
+(`wave_count` / `current_wave` / `wave_status` / `main_checkout_root`,
+written only on the `PARALLEL_MODE != off` path), and an append-only
+metrics list:
 
 ```yaml
 version: 1
@@ -22,6 +25,10 @@ execution_mode: split
 total_tickets: {N}
 ultracode_mode: on                       # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default on)
 parallel_mode: on                        # OPTIONAL run-scoped parallel exec mode: on | metric-only — WRITTEN ONLY when != off; ABSENT (-> off) on a default serial run
+wave_count: 3                            # OPTIONAL wave cursor (PARALLEL_MODE != off only): total topological waves
+current_wave: 1                          # OPTIONAL wave cursor: 0-based index of the wave just spawned (-1 before the first spawn)
+wave_status: in_flight                   # OPTIONAL wave cursor: in_flight | drained (of current_wave)
+main_checkout_root: {abs path to main checkout}  # OPTIONAL: main-checkout repo root (single-writer; lets a guard under a worktree resolve state)
 ticket_mapping: {}
 tickets:
   - logical_id: {parent-slug}-part-{N}   # one entry per split-plan ticket, in topological order
@@ -245,6 +252,47 @@ A `null` `pr_url` is NOT a failure (a local-only ship with no remote still
 reports `steps.ship: completed`). The `branch` / `head_sha` fields are
 added with worktree isolation (Phase 2); they are absent at Phase 1
 concurrency 1 (no worktree, main checkout).
+
+## Wave cursor (`PARALLEL_MODE != off`) — orchestrator-written, hook-read
+
+When `PARALLEL_MODE != off`, the main loop persists a tiny single-writer
+wave cursor so the parallel-aware hooks never re-derive Kahn waves in shell.
+Four OPTIONAL top-level fields, all written by the main loop ONLY (the
+`ticket-executor` NEVER writes them — the same single-writer rule as
+`steps`/`status`):
+
+- `wave_count` — integer; the total number of topological waves computed
+  for this run (the level-synchronous Kahn layering in
+  `split-plan-parsing.md`). Written once at wave computation.
+- `current_wave` — integer; the 0-based index of the wave just spawned.
+  `-1` before the first wave is spawned. Written immediately BEFORE spawning
+  each wave's executors.
+- `wave_status` — `in_flight` | `drained`. `in_flight` from the moment a
+  wave's executors are spawned until the barrier has collected them all;
+  `drained` once every executor in `current_wave` has returned and the main
+  loop has written their terminal `steps`/`status`. A hook reading
+  `in_flight` knows a wave is still running; `drained` means the wave
+  boundary was crossed.
+- `main_checkout_root` — string; the absolute path of the MAIN-checkout repo
+  root (`git rev-parse --show-toplevel` at Phase 2 init). Single-writer. It
+  lets a guard running inside a per-ticket worktree resolve the authoritative
+  state location when the `_psf_repo_root` ancestor-walk is insufficient (a
+  worktree layout outside the main tree). `null` / absent on a fresh
+  non-worktree run — guards fall back to `_psf_repo_root` (today's behaviour).
+
+**Resume semantics.** The cursor is run-scoped and recomputed on each
+`/autopilot` entry: `wave_count` is recomputed from the (unchanged)
+dependency graph, and `current_wave` / `wave_status` are re-derived from the
+per-ticket terminal statuses already in `tickets[]` (the wave whose tickets
+are all terminal is `drained`; the first wave with a non-terminal ticket is
+the resumed `current_wave`, `in_flight`). The cursor is therefore a
+convenience / observability projection of the authoritative per-ticket
+`status` — never a second source of truth. It moves to `briefs/done/` with
+the rest of the file on completion.
+
+**No behaviour change yet.** These fields are additive and unread by any
+hook until the T-004/5/6 rework; a legacy or serial (`PARALLEL_MODE == off`)
+run omits them entirely (a byte-identical state file).
 
 ## `autopilot-state.yaml` location precedence
 

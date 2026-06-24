@@ -219,6 +219,14 @@ For each ticket in `PROCESSING_ORDER` (`i` = 0-based), at **concurrency 1** in P
 
 **Concurrency in Phase 1 is fixed at 1** (serial-equivalent): the main loop spawns the next executor only AFTER the previous envelope is received and state is written. Real per-wave parallel spawning and a `parallel_max=` cap are added in Phase 2; the wave layering is computed and emitted now (Split Execution Flow) but does not yet drive concurrent spawns.
 
+**Wave-cursor single-writer obligation (`PARALLEL_MODE != off`).** The main loop is the SOLE writer of the wave cursor in `autopilot-state.yaml`, with the same rigor as the canonical FLAT `steps.ship: completed` invariant — the `ticket-executor` NEVER writes any cursor field. The obligations:
+- At Phase 2 State file initialization, write `main_checkout_root` ONCE = `git rev-parse --show-toplevel` (the main-checkout repo root).
+- At wave computation (the level-synchronous Kahn layering), write `wave_count` (total waves).
+- Immediately BEFORE spawning a wave's executors, write `current_wave` (0-based; `-1` before the first spawn) and `wave_status: in_flight`.
+- Immediately AFTER the wave barrier has collected every executor envelope and the main loop has written their terminal `steps`/`status`, write `wave_status: drained`.
+
+These are additive optional fields read by the parallel-aware hooks (the Phase 2 rework); they are recomputed on each entry and are a projection of the authoritative per-ticket `status`, never a second source of truth. Schema + resume semantics in [references/state-file.md](references/state-file.md). On the serial path (`PARALLEL_MODE == off`) none of these fields are written (byte-identical).
+
 ### Split Autopilot Log
 
 Write overall `autopilot-log.md` at `briefs/active/{parent-slug}/` (or `briefs/done/` post-move; no brief dir → `product_backlog/{parent-slug}/`) AND per-ticket logs in each ticket dir (`done/...` if `/ship` Step 5 reached, else `active/...`). Per-ticket logs required. Frontmatter + per-ticket subsection + six common sections (`## Pipeline Execution`, `## Warnings`, `## Human Overrides`, `## KB Overrides`, `## Decisions Made`, `## Unreached Gates`) + Manual Bash Fallback rendering (`manual_bash_fallbacks[]` SSoT in `autopilot-state.yaml`; per-step `invocation_method == manual-bash` derived) live in [references/autopilot-log.md](references/autopilot-log.md).

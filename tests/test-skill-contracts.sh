@@ -10706,6 +10706,40 @@ assert_true \
   "CT-PARALLEL-6 (env kill switch): SW_PARALLEL_TICKETS_MODE documented ($par6_knob>=1) kill-switch prose ($par6_killswitch>=1) (B) harness-own ($par6_bsubstrate>=1)" \
   "$par6_result"
 
+PAR_PSF="$REPO_DIR/hooks/lib/parse-state-file.sh"
+
+# CT-PARALLEL-CURSOR-1 (wave-cursor schema + cursor-write obligation + hook kill switch, T-003).
+# state-file.md documents the four optional wave-cursor fields; autopilot SKILL.md carries the
+# single-writer cursor-write obligation prose (incl. the post-barrier `wave_status: drained`
+# write); CLAUDE.md documents SW_PARALLEL_HOOKS_MODE.
+pcur1_wave_count=$(grep -cF 'wave_count' "$PAR_STATEFILE" || true)
+pcur1_current_wave=$(grep -cF 'current_wave' "$PAR_STATEFILE" || true)
+pcur1_wave_status=$(grep -cF 'wave_status' "$PAR_STATEFILE" || true)
+pcur1_main_root=$(grep -cF 'main_checkout_root' "$PAR_STATEFILE" || true)
+pcur1_skill_oblig=$(grep -cF 'Wave-cursor single-writer obligation' "$PAR_AUTOPILOT" || true)
+pcur1_skill_drained=$(grep -cF 'wave_status: drained' "$PAR_AUTOPILOT" || true)
+pcur1_claude_knob=$(grep -cF 'SW_PARALLEL_HOOKS_MODE' "$PAR_CLAUDEMD" || true)
+pcur1_result="false"
+if [ "$pcur1_wave_count" -ge 1 ] && [ "$pcur1_current_wave" -ge 1 ] && [ "$pcur1_wave_status" -ge 1 ] \
+  && [ "$pcur1_main_root" -ge 1 ] && [ "$pcur1_skill_oblig" -ge 1 ] && [ "$pcur1_skill_drained" -ge 1 ] \
+  && [ "$pcur1_claude_knob" -ge 1 ]; then pcur1_result="true"; fi
+assert_true \
+  "CT-PARALLEL-CURSOR-1 (wave-cursor schema + obligation + knob): state-file fields wave_count ($pcur1_wave_count>=1) current_wave ($pcur1_current_wave>=1) wave_status ($pcur1_wave_status>=1) main_checkout_root ($pcur1_main_root>=1); SKILL obligation ($pcur1_skill_oblig>=1) drained-write ($pcur1_skill_drained>=1); CLAUDE.md SW_PARALLEL_HOOKS_MODE ($pcur1_claude_knob>=1)" \
+  "$pcur1_result"
+
+# CT-PARALLEL-CURSOR-2 (resolve_parallel_mode helper presence + export, T-003). The shared
+# resolver is defined in parse-state-file.sh, reads the SW_PARALLEL_HOOKS_MODE env override,
+# and is on the export -f line so a sourcing hook can call it. (Behaviour is unit-tested in
+# test-hooks-lib.sh; this CT is the drift guard for its presence + export.)
+pcur2_resolver_def=$(grep -cE '^resolve_parallel_mode\(\)' "$PAR_PSF" || true)
+pcur2_resolver_env=$(grep -cF 'SW_PARALLEL_HOOKS_MODE' "$PAR_PSF" || true)
+pcur2_resolver_export=$(grep -cE '^export -f .*resolve_parallel_mode' "$PAR_PSF" || true)
+pcur2_result="false"
+if [ "$pcur2_resolver_def" -ge 1 ] && [ "$pcur2_resolver_env" -ge 1 ] && [ "$pcur2_resolver_export" -ge 1 ]; then pcur2_result="true"; fi
+assert_true \
+  "CT-PARALLEL-CURSOR-2 (resolve_parallel_mode helper): defined ($pcur2_resolver_def>=1) reads SW_PARALLEL_HOOKS_MODE ($pcur2_resolver_env>=1) exported ($pcur2_resolver_export>=1)" \
+  "$pcur2_result"
+
 echo ""
 
 # =============================================================================
