@@ -10954,6 +10954,195 @@ assert_true \
   "CT-WAVE-6 (empty-wave resume skip + parallel_max WARNING gated to != off): empty-wave ($ctw6_emptywave>=1) no-spawnable ($ctw6_nospawn>=1) WARNING-gated ($ctw6_warn_gated>=1) silent-off ($ctw6_warn_silent>=1)" \
   "$ctw6_result"
 
+# =============================================================================
+# CT-WORKTREE-* (T-008): per-executor worktree isolation + cross-wave integration.
+# Each sub-check is NON-vacuous (HEAD=0; removing its target prose flips it). Modelled
+# on the CT-WAVE-* set above (same Cat PARALLEL surfaces + assert_true idiom).
+# =============================================================================
+PAR_SHIP="$REPO_DIR/skills/ship/SKILL.md"
+PAR_ACEVAL="$REPO_DIR/agents/ac-evaluator.md"
+
+# CT-WORKTREE-1 (the single most important mechanical decision: explicit `git worktree add <ref>`,
+# NOT EnterWorktree/baseRef). The wave loop pre-creates per-ticket worktrees off the integration
+# branch via an EXPLICIT `git worktree add -b ... <BASE_REF>` and DOCUMENTS that baseRef cannot
+# target an arbitrary ref. Both halves must be present (the positive add-prose + the negative
+# baseRef rejection).
+ctwt1_explicit_add=$(grep -cF 'git worktree add -b ap/<parent>/<T-NNN-slug>' "$PAR_AUTOPILOT" || true)
+ctwt1_not_baseref=$(grep -ciE 'NOT .EnterWorktree./baseRef|baseRef is a binary .* git config and cannot target' "$PAR_AUTOPILOT" || true)
+ctwt1_base_ref=$(grep -cF 'BASE_REF' "$PAR_AUTOPILOT" || true)
+ctwt1_result="false"
+if [ "$ctwt1_explicit_add" -ge 1 ] && [ "$ctwt1_not_baseref" -ge 1 ] && [ "$ctwt1_base_ref" -ge 1 ]; then ctwt1_result="true"; fi
+assert_true \
+  "CT-WORKTREE-1 (explicit git worktree add <ref>, NOT baseRef): explicit-add ($ctwt1_explicit_add>=1) baseRef-rejected ($ctwt1_not_baseref>=1) BASE_REF ($ctwt1_base_ref>=1)" \
+  "$ctwt1_result"
+
+# CT-WORKTREE-2 (H3: per-ticket AND integration worktree paths BOTH pinned under .claude/worktrees/).
+# A path outside .claude/worktrees/ is rejected at runtime by EnterWorktree(path=) and caught by NO
+# test, so the prose pin is the only guard. Assert the per-ticket pin, the integration-worktree pin,
+# and the H3 platform-acceptance note all appear in SKILL.md.
+ctwt2_perticket=$(grep -cF '<MAIN_REPO>/.claude/worktrees/ap-<parent>-<NNN-slug>' "$PAR_AUTOPILOT" || true)
+ctwt2_integration=$(grep -cF '<MAIN_REPO>/.claude/worktrees/ap-integration-<parent>' "$PAR_AUTOPILOT" || true)
+ctwt2_h3=$(grep -ciE 'H3 platform-acceptance|rejected by the executor.s .EnterWorktree' "$PAR_AUTOPILOT" || true)
+# The executor side ALSO documents the .claude/worktrees/ pin + the acceptance constraint.
+ctwt2_exec_pin=$(grep -cF '.claude/worktrees/ap-<parent>-<NNN-slug>' "$PAR_EXECUTOR" || true)
+ctwt2_result="false"
+if [ "$ctwt2_perticket" -ge 1 ] && [ "$ctwt2_integration" -ge 1 ] && [ "$ctwt2_h3" -ge 1 ] \
+  && [ "$ctwt2_exec_pin" -ge 1 ]; then ctwt2_result="true"; fi
+assert_true \
+  "CT-WORKTREE-2 (H3 .claude/worktrees/ pin both worktrees): per-ticket ($ctwt2_perticket>=1) integration ($ctwt2_integration>=1) H3-note ($ctwt2_h3>=1) executor-pin ($ctwt2_exec_pin>=1)" \
+  "$ctwt2_result"
+
+# CT-WORKTREE-3 (state/artifact resolution via the .simple-workflow symlink + main_checkout_root init).
+# The gitignored .simple-workflow/ tree is ABSENT in a worktree, so the scheduler creates a
+# .simple-workflow -> <MAIN_REPO> symlink (step 2a) and the pipeline's relative .simple-workflow/...
+# paths resolve to the shared main checkout through it; main_checkout_root is written ONCE at init;
+# W-8 (.worktreeinclude copy) is rejected in favour of the symlink (shared inode, no lost-update).
+ctwt3_symlink=$(grep -cF 'ln -s <MAIN_REPO>/.simple-workflow' "$PAR_AUTOPILOT" || true)
+ctwt3_main_root_write=$(grep -ciE 'write .main_checkout_root. ONCE' "$PAR_AUTOPILOT" || true)
+ctwt3_exec_symlink=$(grep -ciE 'State symlink|follow the symlink' "$PAR_EXECUTOR" || true)
+ctwt3_w8=$(grep -ciE 'worktreeinclude' "$PAR_AUTOPILOT" || true)
+ctwt3_result="false"
+if [ "$ctwt3_symlink" -ge 1 ] && [ "$ctwt3_main_root_write" -ge 1 ] && [ "$ctwt3_exec_symlink" -ge 1 ] \
+  && [ "$ctwt3_w8" -ge 1 ]; then ctwt3_result="true"; fi
+assert_true \
+  "CT-WORKTREE-3 (state/artifact via .simple-workflow symlink + main_checkout_root init + W-8): symlink-create ($ctwt3_symlink>=1) main_checkout_root-write ($ctwt3_main_root_write>=1) executor-symlink ($ctwt3_exec_symlink>=1) .worktreeinclude-rejected ($ctwt3_w8>=1)" \
+  "$ctwt3_result"
+
+# CT-WORKTREE-4 (wave-boundary integration: --no-ff --no-edit, topo/lex order, conflict ->
+# integration_conflict_<other-NNN> + cascade-skip + run continues, idempotent merge-base --is-ancestor,
+# advance BASE_REF). The integration sequence prose in SKILL.md.
+ctwt4_noff=$(grep -cF 'merge --no-ff --no-edit' "$PAR_AUTOPILOT" || true)
+ctwt4_conflict=$(grep -cF 'integration_conflict_<other-NNN>' "$PAR_AUTOPILOT" || true)
+ctwt4_idempotent=$(grep -cF 'git merge-base --is-ancestor' "$PAR_AUTOPILOT" || true)
+ctwt4_continues=$(grep -ciE 'run CONTINUES|run continues' "$PAR_AUTOPILOT" || true)
+ctwt4_result="false"
+if [ "$ctwt4_noff" -ge 1 ] && [ "$ctwt4_conflict" -ge 1 ] && [ "$ctwt4_idempotent" -ge 1 ] \
+  && [ "$ctwt4_continues" -ge 1 ]; then ctwt4_result="true"; fi
+assert_true \
+  "CT-WORKTREE-4 (wave-boundary integration): --no-ff --no-edit ($ctwt4_noff>=1) conflict-reason ($ctwt4_conflict>=1) idempotent-is-ancestor ($ctwt4_idempotent>=1) run-continues ($ctwt4_continues>=1)" \
+  "$ctwt4_result"
+
+# CT-WORKTREE-5 (integration-branch local-only doc + no-merge=true + per-ticket-PR preservation).
+# ap-integration/<parent> is NOT pushed / NOT the PR target; each ticket ships its OWN PR with no
+# merge=true. Asserted on BOTH SKILL.md and state-file.md (the doc surface).
+ctwt5_localonly=$(grep -ciE 'local-only orchestration (artifact|branch)' "$PAR_AUTOPILOT" || true)
+ctwt5_notpushed=$(grep -ciE 'NOT pushed' "$PAR_AUTOPILOT" || true)
+ctwt5_nomerge=$(grep -cF 'NO `merge=true`' "$PAR_AUTOPILOT" || true)
+ctwt5_statefile=$(grep -ciE 'local-only orchestration (artifact|branch)' "$PAR_STATEFILE" || true)
+ctwt5_result="false"
+if [ "$ctwt5_localonly" -ge 1 ] && [ "$ctwt5_notpushed" -ge 1 ] && [ "$ctwt5_nomerge" -ge 1 ] \
+  && [ "$ctwt5_statefile" -ge 1 ]; then ctwt5_result="true"; fi
+assert_true \
+  "CT-WORKTREE-5 (integration-branch local-only + no-merge + per-ticket PR): local-only ($ctwt5_localonly>=1) not-pushed ($ctwt5_notpushed>=1) no-merge=true ($ctwt5_nomerge>=1) state-file-doc ($ctwt5_statefile>=1)" \
+  "$ctwt5_result"
+
+# CT-WORKTREE-6 (three-tier cleanup + parent-scoped stale-sweep). (1) per-ticket worktree remove
+# --force on success + dirty-anomaly leave-and-log, (2) integration worktree removed post-loop
+# (branches kept), (3) startup stale-sweep prune + remove ONLY this parent's ap-<parent>-* (never
+# unrelated). SW_PARALLEL_WORKTREE_KEEP=on skips tiers 1+2.
+ctwt6_remove_force=$(grep -cF 'git worktree remove --force' "$PAR_AUTOPILOT" || true)
+ctwt6_dirty=$(grep -cF '[PARALLEL] worktree-remove: dirty' "$PAR_AUTOPILOT" || true)
+ctwt6_prune=$(grep -cF 'git worktree prune' "$PAR_AUTOPILOT" || true)
+ctwt6_parent_scoped=$(grep -ciE 'Never touch unrelated worktrees|this parent.s ap-<parent>-' "$PAR_AUTOPILOT" || true)
+ctwt6_keep_knob=$(grep -cF 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_AUTOPILOT" || true)
+ctwt6_branches_kept=$(grep -ciE 'KEEP the branches|branches are ALWAYS kept|never the branch' "$PAR_AUTOPILOT" || true)
+ctwt6_result="false"
+if [ "$ctwt6_remove_force" -ge 1 ] && [ "$ctwt6_dirty" -ge 1 ] && [ "$ctwt6_prune" -ge 1 ] \
+  && [ "$ctwt6_parent_scoped" -ge 1 ] && [ "$ctwt6_keep_knob" -ge 1 ] && [ "$ctwt6_branches_kept" -ge 1 ]; then ctwt6_result="true"; fi
+assert_true \
+  "CT-WORKTREE-6 (three-tier cleanup + parent-scoped sweep): remove-force ($ctwt6_remove_force>=1) dirty-log ($ctwt6_dirty>=1) prune ($ctwt6_prune>=1) parent-scoped ($ctwt6_parent_scoped>=1) KEEP-knob ($ctwt6_keep_knob>=1) branches-kept ($ctwt6_branches_kept>=1)" \
+  "$ctwt6_result"
+
+# CT-WORKTREE-7 (SW_PARALLEL_WORKTREE_KEEP knob in CLAUDE.md, (B) harness-own co-located WITH the
+# knob line — like CT-WAVE-3 was tightened: dropping the label on THIS entry while pre-existing
+# entries keep theirs still fails the sub-check, not a bare repo-wide harness-own count).
+ctwt7_knob=$(grep -cF 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_CLAUDEMD" || true)
+ctwt7_bsub=$(grep -iE 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_CLAUDEMD" | grep -ciE 'harness-own' || true)
+ctwt7_default_off=$(grep -iE 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_CLAUDEMD" | grep -ciE 'default .off.' || true)
+ctwt7_result="false"
+if [ "$ctwt7_knob" -ge 1 ] && [ "$ctwt7_bsub" -ge 1 ] && [ "$ctwt7_default_off" -ge 1 ]; then ctwt7_result="true"; fi
+assert_true \
+  "CT-WORKTREE-7 (SW_PARALLEL_WORKTREE_KEEP knob in CLAUDE.md): knob ($ctwt7_knob>=1) (B)harness-own-colocated ($ctwt7_bsub>=1) default-off ($ctwt7_default_off>=1)" \
+  "$ctwt7_result"
+
+# CT-WORKTREE-8 (ticket-executor worktree grant mirrors ac-evaluator). ac-evaluator carries the
+# scoped Bash(git worktree add/remove/list) grant (NOT prune/lock); the executor mirrors that intent.
+# Compare the two grants: ac-evaluator has all three scoped sub-commands in its tools: list; the
+# executor documents the SAME add/list/remove scoping (NOT prune/lock) + the EnterWorktree pipeline.
+acev_add=$(grep -cF 'Bash(git worktree add:*)' "$PAR_ACEVAL" || true)
+acev_remove=$(grep -cF 'Bash(git worktree remove:*)' "$PAR_ACEVAL" || true)
+acev_list=$(grep -cF 'Bash(git worktree list:*)' "$PAR_ACEVAL" || true)
+exec_mirror=$(grep -ciE 'mirror.*ac-evaluator|ac-evaluator.s scoped' "$PAR_EXECUTOR" || true)
+exec_scope=$(grep -ciE 'add. / .remove. / .list. (ONLY|only)|add/list/remove' "$PAR_EXECUTOR" || true)
+exec_not_prune=$(grep -ciE 'NOT prune|never .prune|never .{0,4}prune' "$PAR_EXECUTOR" || true)
+exec_enter=$(grep -cF 'EnterWorktree(path=<WORKTREE_PATH>)' "$PAR_EXECUTOR" || true)
+ctwt8_result="false"
+if [ "$acev_add" -ge 1 ] && [ "$acev_remove" -ge 1 ] && [ "$acev_list" -ge 1 ] \
+  && [ "$exec_mirror" -ge 1 ] && [ "$exec_scope" -ge 1 ] && [ "$exec_not_prune" -ge 1 ] \
+  && [ "$exec_enter" -ge 1 ]; then ctwt8_result="true"; fi
+assert_true \
+  "CT-WORKTREE-8 (executor worktree grant mirrors ac-evaluator): acev add ($acev_add>=1) remove ($acev_remove>=1) list ($acev_list>=1); executor mirror-note ($exec_mirror>=1) add/list/remove-scope ($exec_scope>=1) NOT-prune ($exec_not_prune>=1) EnterWorktree ($exec_enter>=1)" \
+  "$ctwt8_result"
+
+# CT-WORKTREE-9 (envelope branch/head_sha additions, flipped to PRESENT). The ticket-executor envelope
+# now carries branch + head_sha (T-008); the "NOT yet part of the envelope" note is FLIPPED to "ARE
+# part". Asserted on BOTH ticket-executor.md and state-file.md.
+ctwt9_exec_branch=$(grep -cF 'branch: {ap/<parent>/<NNN-slug> or null}' "$PAR_EXECUTOR" || true)
+ctwt9_exec_headsha=$(grep -ciE 'head_sha:' "$PAR_EXECUTOR" || true)
+ctwt9_exec_flip=$(grep -ciE 'ARE part of the envelope as of T-008' "$PAR_EXECUTOR" || true)
+ctwt9_state_branch=$(grep -ciE 'branch. / .head_sha. fields ARE part' "$PAR_STATEFILE" || true)
+ctwt9_result="false"
+if [ "$ctwt9_exec_branch" -ge 1 ] && [ "$ctwt9_exec_headsha" -ge 1 ] && [ "$ctwt9_exec_flip" -ge 1 ] \
+  && [ "$ctwt9_state_branch" -ge 1 ]; then ctwt9_result="true"; fi
+assert_true \
+  "CT-WORKTREE-9 (envelope branch/head_sha PRESENT, flipped): executor branch ($ctwt9_exec_branch>=1) head_sha ($ctwt9_exec_headsha>=1) flip-note ($ctwt9_exec_flip>=1) state-file ($ctwt9_state_branch>=1)" \
+  "$ctwt9_result"
+
+# CT-WORKTREE-10 (parallel=off byte-identity: ALL worktree code is inside the PARALLEL_MODE == on
+# branch). The dedicated worktree subsection declares the off/metric-only forks add NO worktree code;
+# the integration/cleanup steps are gated to PARALLEL_MODE == on only.
+ctwt10_subsection=$(grep -cF 'Worktree isolation + cross-wave integration (`PARALLEL_MODE == on`)' "$PAR_AUTOPILOT" || true)
+ctwt10_off_noworktree=$(grep -ciE 'add(s)? NO worktree code' "$PAR_AUTOPILOT" || true)
+ctwt10_byte_identical=$(grep -ciE 'non-parallel run is byte-identical' "$PAR_AUTOPILOT" || true)
+ctwt10_on_only=$(grep -cF 'PARALLEL_MODE == on` only' "$PAR_AUTOPILOT" || true)
+ctwt10_result="false"
+if [ "$ctwt10_subsection" -ge 1 ] && [ "$ctwt10_off_noworktree" -ge 1 ] && [ "$ctwt10_byte_identical" -ge 1 ] \
+  && [ "$ctwt10_on_only" -ge 1 ]; then ctwt10_result="true"; fi
+assert_true \
+  "CT-WORKTREE-10 (parallel=off byte-identity, worktree code inside == on): subsection ($ctwt10_subsection>=1) off-no-worktree ($ctwt10_off_noworktree>=1) byte-identical ($ctwt10_byte_identical>=1) on-only-gated ($ctwt10_on_only>=1)" \
+  "$ctwt10_result"
+
+# CT-WORKTREE-11 (/ship path-resolution audit pins .simple-workflow/ to <MAIN_REPO> under a worktree,
+# W-3). ship/SKILL.md Step 5 documents that EVERY .simple-workflow/... path (5.b move, 5.d rewrite,
+# no-remote) resolves to <MAIN_REPO> absolute, NOT a worktree-relative path; per-ticket PR + no-remote
+# carve-out unchanged.
+ctwt11_w3=$(grep -ciE 'Worktree path-resolution .W-3' "$PAR_SHIP" || true)
+ctwt11_symlink=$(grep -ciE 'follows the symlink to the shared main checkout|resolve to .<MAIN_REPO>. via the symlink' "$PAR_SHIP" || true)
+ctwt11_nochange=$(grep -ciE 'Step 5 therefore needs NO change|NO .ARTIFACT_ROOT. argument' "$PAR_SHIP" || true)
+ctwt11_unchanged=$(grep -ciE 'carve-out are untouched' "$PAR_SHIP" || true)
+ctwt11_result="false"
+if [ "$ctwt11_w3" -ge 1 ] && [ "$ctwt11_symlink" -ge 1 ] && [ "$ctwt11_nochange" -ge 1 ] \
+  && [ "$ctwt11_unchanged" -ge 1 ]; then ctwt11_result="true"; fi
+assert_true \
+  "CT-WORKTREE-11 (/ship Step 5 symlink-resolution W-3): W-3-note ($ctwt11_w3>=1) symlink-resolve ($ctwt11_symlink>=1) Step5-no-change ($ctwt11_nochange>=1) PR/no-remote-untouched ($ctwt11_unchanged>=1)" \
+  "$ctwt11_result"
+
+# CT-WORKTREE-12 (T-008 verify-round fixes: the user-chosen .simple-workflow symlink mechanism [W-3]
+# + integration reordered BEFORE the post-wave write so an integration-conflict status flip IS
+# persisted [cascade-skip correctness] + the integration-worktree mid-merge recovery guard). All on
+# the autopilot SKILL.md. The adversarial T-008 review (lens 2 FAIL on W-3 doc-only; my own
+# integration-ordering finding; lens 1 mid-merge nit) required all three; removing any one fails this.
+ctwt12_symlink_nocopy=$(grep -ciE 'NOT a .\.worktreeinclude. copy|share a single' "$PAR_AUTOPILOT" || true)
+ctwt12_integration_order=$(grep -ciE 'runs AFTER the barrier but BEFORE the post-wave write' "$PAR_AUTOPILOT" || true)
+ctwt12_flip_persist=$(grep -cF 'apply the integration-conflict status flips from step 4a' "$PAR_AUTOPILOT" || true)
+ctwt12_recovery=$(grep -cF 'Recovery (resume after an interrupted merge)' "$PAR_AUTOPILOT" || true)
+ctwt12_result="false"
+if [ "$ctwt12_symlink_nocopy" -ge 1 ] && [ "$ctwt12_integration_order" -ge 1 ] && [ "$ctwt12_flip_persist" -ge 1 ] \
+  && [ "$ctwt12_recovery" -ge 1 ]; then ctwt12_result="true"; fi
+assert_true \
+  "CT-WORKTREE-12 (verify-round: symlink-no-copy + integration-before-postwrite + conflict-flip-persist + mid-merge-recovery): symlink-no-copy ($ctwt12_symlink_nocopy>=1) integration-order ($ctwt12_integration_order>=1) flip-persist ($ctwt12_flip_persist>=1) mid-merge-recovery ($ctwt12_recovery>=1)" \
+  "$ctwt12_result"
+
 echo ""
 
 # =============================================================================

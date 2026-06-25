@@ -243,15 +243,44 @@ steps.scout: {pending|completed|failed}
 steps.impl: {pending|completed|failed}
 steps.ship: {pending|completed|failed}
 pr_url: {url or null}
+branch: {ap/<parent>/<NNN-slug> or null}
+head_sha: {worktree branch HEAD sha or null}
 failure_reason: {null or a short snake_case reason}
 ```
 
 The main loop maps the envelope onto the canonical FLAT `steps:` schema
 (each `steps.<phase>` a string on its own line) and the ticket's `status`.
 A `null` `pr_url` is NOT a failure (a local-only ship with no remote still
-reports `steps.ship: completed`). The `branch` / `head_sha` fields are
-added with worktree isolation (Phase 2); they are absent at Phase 1
-concurrency 1 (no worktree, main checkout).
+reports `steps.ship: completed`). The `branch` / `head_sha` fields ARE part
+of the envelope as of T-008 (worktree isolation):
+
+- `branch` — the per-ticket isolation branch `ap/<parent>/<NNN-slug>` the
+  executor's worktree was created on. `null` on the serial / concurrency-1
+  path (no worktree = main checkout). On the `PARALLEL_MODE == on` wave
+  scheduler the main loop reads it at the wave boundary to integrate the
+  ticket's branch into `ap-integration/<parent>` (wave-loop step 4a).
+- `head_sha` — the HEAD sha of that branch after `/ship` committed
+  (`git rev-parse HEAD` in the worktree); `null` when there was no commit or
+  no worktree. Lets the main loop record / verify the integrated tip.
+
+### `ap-integration/<parent>` — local-only orchestration branch (`PARALLEL_MODE == on`)
+
+The wave scheduler creates a per-parent integration branch
+`ap-integration/<parent>` at Phase 2 init from the session start ref. It is a
+**local-only orchestration artifact**: it is **NOT pushed** to any remote and
+is **NOT the PR target** (each ticket still ships its OWN PR against the repo
+default branch via `/ship <default-branch> ticket-dir=<NNN-slug>`, no
+`merge=true`). At each wave boundary the main loop merges every
+`status: completed` ticket's `ap/<parent>/<NNN-slug>` branch into
+`ap-integration/<parent>` (`--no-ff --no-edit`, topo/lex order, idempotent via
+`git merge-base --is-ancestor`), so wave `k>0`'s per-ticket worktrees base on
+the integrated tip and a cross-wave dependent sees its dependency's committed
+changes (shared object store). A genuine conflict fails THAT ticket
+(`failure_reason=integration_conflict_<other-NNN>`) + cascade-skips its
+dependents; the run continues (no auto-resolve). The branch and every
+per-ticket `ap/<parent>/<NNN-slug>` branch are KEPT after the run (cleanup
+removes only the worktrees); on the serial (`PARALLEL_MODE == off`) path no
+integration branch is created (byte-identical).
 
 ## Wave cursor (`PARALLEL_MODE != off`) — orchestrator-written, hook-read
 
@@ -295,9 +324,12 @@ wave-parallel scheduler performs **exactly TWO** `autopilot-state.yaml`
 writes per wave: a **pre-wave write** (`READY_k` → `in_progress`,
 `current_wave` advanced, `wave_status: in_flight`) immediately before the
 wave's executors are spawned, and a **post-wave write** (transcribe each
-returned envelope's `status`/`steps`/`pr_url`, fold the wave's
-dependency-skips, set `wave_status: drained`) immediately after the
-foreground barrier collects every envelope. The concurrently-running
+returned envelope's `status`/`steps`/`pr_url`/`branch`/`head_sha`, apply any
+integration-conflict status flip, fold the wave's dependency-skips, set
+`wave_status: drained`) after the wave-boundary integration (SKILL.md step
+4a) completes — which itself runs after the foreground barrier has collected
+every envelope, so the post-wave write is the SINGLE persistence of both the
+executor outcomes and the integration result. The concurrently-running
 `ticket-executor` subagents NEVER write `autopilot-state.yaml` — the main
 loop is the SOLE writer, so there is no concurrent-write window even though
 the wave's members are `in_progress` in parallel. An oversized wave
