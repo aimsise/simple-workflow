@@ -24,7 +24,7 @@ started: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
 execution_mode: split
 total_tickets: {N}
 ultracode_mode: on                       # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default on)
-parallel_mode: on                        # OPTIONAL run-scoped parallel exec mode: on | metric-only — WRITTEN ONLY when != off; ABSENT (-> off) on a default serial run
+parallel_mode: on                        # OPTIONAL run-scoped parallel exec mode: on | metric-only — default on (absent on a fresh run writes on); WRITTEN ONLY when != off; ABSENT (-> off) on an explicit parallel=off opt-out run
 wave_count: 3                            # OPTIONAL wave cursor (PARALLEL_MODE != off only): total topological waves
 current_wave: 1                          # OPTIONAL wave cursor: 0-based index of the wave just spawned (-1 before the first spawn)
 wave_status: in_flight                   # OPTIONAL wave cursor: in_flight | drained (of current_wave)
@@ -77,22 +77,25 @@ Field summary (the 7 top-level fields plus `runtime_metrics:`):
   same top-level scalar path as the other fields, e.g.
   `parse_yaml_scalar <file> ultracode_mode`).
 - `parallel_mode` — OPTIONAL. Run-scoped parallel execution mode; value
-  domain `on` | `off` | `metric-only` (default `off` when absent). A near-
+  domain `on` | `off` | `metric-only`. **Default `on` (run-scoped; absent on a
+  fresh run writes `on`)** as of v9.0.0 — a bare `/autopilot` run now persists
+  `parallel_mode: on`. A near-
   complete mirror of `ultracode_mode` with the same lifecycle: set once at
   Phase 2 state-file initialization from the `parallel=` invocation argument
   resolved in Argument Parsing **but written ONLY when `!= off`**, re-read on
   resume at Phase 1 Step 5 (`parse_yaml_scalar <file> parallel_mode`) to
   reconstruct the run's execution path, and moved to `briefs/done/` with the
   rest of the file on completion. It is **run-scoped run-state, NOT a
-  permanent policy flag** — a fresh run with no `parallel=` argument (or
-  `parallel=off`) **OMITS the field entirely**, keeping the state file
+  permanent policy flag** — only an explicit `parallel=off` opt-out (or the
+  `SW_PARALLEL_TICKETS_MODE=off` kill switch resolving the run to `off`)
+  **OMITS the field entirely**, keeping the state file
   byte-identical to a pre-parallel version, and resume reconstructs `off`
   from the absent field; it never lives in `autopilot-policy.yaml`. The one
   deliberate difference from `ultracode_mode` (which is written even for
   `off`) is exactly this omit-on-`off`, required by the `parallel=off`
   byte-identical-state guarantee. At Phase 2 it selects whether each ticket
-  runs through the current inline serial branch (`off` / absent) or a
-  `ticket-executor` subagent (`on` / `metric-only`); it is **orthogonal to
+  runs through the current inline serial branch (explicit `off`) or a
+  `ticket-executor` subagent (`on` / absent-default / `metric-only`); it is **orthogonal to
   `ultracode_mode`** (the two compose). The `SW_PARALLEL_TICKETS_MODE`
   environment knob can force it to `off` as a run kill switch.
 - `runtime_metrics:` — append-only metrics list (see schema below).

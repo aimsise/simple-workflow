@@ -10695,16 +10695,93 @@ assert_true \
   "$par5_result"
 
 # CT-PARALLEL-6 (env kill switch + (B) harness-own). CLAUDE.md documents
-# SW_PARALLEL_TICKETS_MODE (default off = prior serial behaviour) as the run kill switch and
-# marks it (B) harness-own substrate.
+# SW_PARALLEL_TICKETS_MODE (default off env-knob = byte-identical serial-revert opt-out; the run
+# default is now ON in v9.0.0) as the serial kill switch and marks it (B) harness-own substrate.
 par6_knob=$(grep -cF 'SW_PARALLEL_TICKETS_MODE' "$PAR_CLAUDEMD" || true)
-par6_killswitch=$(grep -cF 'run kill switch for the run-scoped parallel ticket-execution' "$PAR_CLAUDEMD" || true)
+par6_killswitch=$(grep -ciE 'serial-revert kill switch.*byte-identical opt-out.*forces the v8\.7\.0 inline serial loop' "$PAR_CLAUDEMD" || true)
 par6_bsubstrate=$(grep -cF '(B) harness-own' "$PAR_CLAUDEMD" || true)
 par6_result="false"
 if [ "$par6_knob" -ge 1 ] && [ "$par6_killswitch" -ge 1 ] && [ "$par6_bsubstrate" -ge 1 ]; then par6_result="true"; fi
 assert_true \
   "CT-PARALLEL-6 (env kill switch): SW_PARALLEL_TICKETS_MODE documented ($par6_knob>=1) kill-switch prose ($par6_killswitch>=1) (B) harness-own ($par6_bsubstrate>=1)" \
   "$par6_result"
+
+# -----------------------------------------------------------------------------
+# T-009: parallel default off->on flip (RELOCATE branch) + opt-out byte-identity
+#        + unknown->off fail-safe. The four CTs below pin the v9.0.0 default flip:
+#        (7) the absent-token default is now `on` and emits reason=default;
+#        (8) the explicit parallel=off lane stays byte-identical (omits the state
+#            field + adds no code path — the serial-fork literals survive verbatim);
+#        (9) a bare /autopilot (default, now on) is NOT byte-identical (it routes
+#            through the executor + wave-parallel path);
+#        (10) an unknown parallel=<garbage> resolves to off (L3) and SURFACES it
+#             via reason=invocation-unknown-value-failsafe (the conservative
+#             fail-safe direction, uniform with uc= unknown->off).
+# -----------------------------------------------------------------------------
+
+# CT-PARALLEL-7 (parallel default off->on flip, RELOCATE branch). The absent-token
+# default is now `on` at the two spawner sites (autopilot Argument Parsing absent clause,
+# brief parallel= bullet) + the state-file doc; the absent-default path EMITS the
+# `reason=default` resolution line (matching the uc= peer convention).
+par7_autopilot_default=$(grep -cF 'the `parallel=` token is absent, `PARALLEL_MODE = on`' "$PAR_AUTOPILOT" || true)
+par7_autopilot_reason_default=$(grep -cF 'when the token was absent (the on-by-default path — emit `[PARALLEL-MODE] mode=on active=y reason=default`)' "$PAR_AUTOPILOT" || true)
+par7_brief_default=$(grep -cF 'ELSE `on` (the v9.0.0 default' "$PAR_BRIEF" || true)
+par7_statefile_default=$(grep -ciE 'Default .on. .run-scoped; absent on a' "$PAR_STATEFILE" || true)
+par7_result="false"
+if [ "$par7_autopilot_default" -ge 1 ] && [ "$par7_autopilot_reason_default" -ge 1 ] \
+  && [ "$par7_brief_default" -ge 1 ] && [ "$par7_statefile_default" -ge 1 ]; then par7_result="true"; fi
+assert_true \
+  "CT-PARALLEL-7 (parallel default off->on flip): autopilot absent-default-on ($par7_autopilot_default>=1) reason=default emit ($par7_autopilot_reason_default>=1) brief default-on ($par7_brief_default>=1) state-file default-on ($par7_statefile_default>=1)" \
+  "$par7_result"
+
+# CT-PARALLEL-8 (explicit parallel=off byte-identity opt-out, R-c1 drift guard). The
+# explicit `parallel=off` lane MUST stay byte-identical: it OMITS the parallel_mode: state
+# field, adds NO code path (the serial loop is untouched), and the worktree/wave machinery is
+# entirely inside the PARALLEL_MODE == on branch. These serial-fork literals survive the flip
+# verbatim — only the absent/default clause was reworded (off was NEVER the load-bearing carrier
+# of the default before; it is the opt-out now).
+par8_omit_field=$(grep -cF 'OMIT the `parallel_mode:` field entirely' "$PAR_AUTOPILOT" || true)
+par8_no_code_path=$(grep -ciE 'parallel=off.* adds NO code path' "$PAR_AUTOPILOT" || true)
+par8_serial_untouched=$(grep -cF 'the serial loop is untouched' "$PAR_AUTOPILOT" || true)
+par8_off_byteident=$(grep -cF 'byte-identical to prior versions' "$PAR_AUTOPILOT" || true)
+par8_statefile_omit=$(grep -cF 'OMITS the field entirely' "$PAR_STATEFILE" || true)
+par8_result="false"
+if [ "$par8_omit_field" -ge 1 ] && [ "$par8_no_code_path" -ge 1 ] && [ "$par8_serial_untouched" -ge 1 ] \
+  && [ "$par8_off_byteident" -ge 1 ] && [ "$par8_statefile_omit" -ge 1 ]; then par8_result="true"; fi
+assert_true \
+  "CT-PARALLEL-8 (explicit parallel=off byte-identity opt-out): omit field ($par8_omit_field>=1) no-code-path ($par8_no_code_path>=1) serial-untouched ($par8_serial_untouched>=1) byte-identical ($par8_off_byteident>=1) state-file omit ($par8_statefile_omit>=1)" \
+  "$par8_result"
+
+# CT-PARALLEL-9 (bare /autopilot default-on is NOT byte-identical — it routes through the
+# executor + wave-parallel path). The default-on path must genuinely select the executor-routed
+# wave-parallel branch (NOT the inline serial loop): the absent-token resolution defaults to `on`
+# and Phase 2 takes the executor-routed wave-parallel path. This is the inverse of the opt-out
+# byte-identity CT above — it pins that the NEW default actually engages the parallel machinery.
+par9_default_routes=$(grep -cF 'With no `parallel=` token the resolution defaults to `on`, Phase 2 takes the executor-routed wave-parallel path' "$PAR_AUTOPILOT" || true)
+par9_wave_pipeline=$(grep -cF 'Wave-parallel pipeline (`PARALLEL_MODE == on`)' "$PAR_AUTOPILOT" || true)
+par9_spawn_concurrent=$(grep -cF 'Spawn the wave concurrently' "$PAR_AUTOPILOT" || true)
+par9_result="false"
+if [ "$par9_default_routes" -ge 1 ] && [ "$par9_wave_pipeline" -ge 1 ] && [ "$par9_spawn_concurrent" -ge 1 ]; then par9_result="true"; fi
+assert_true \
+  "CT-PARALLEL-9 (bare default-on routes to wave-parallel, NOT byte-identical): default-routes-on ($par9_default_routes>=1) wave-pipeline section ($par9_wave_pipeline>=1) concurrent spawn ($par9_spawn_concurrent>=1)" \
+  "$par9_result"
+
+# CT-PARALLEL-10 (unknown parallel=<garbage> -> off fail-safe, L3 / R4). An unknown value
+# coerces to off (the proven serial path — the SAME conservative direction as uc= unknown->off
+# and resolve_parallel_mode's own unknown->off) AND surfaces it via the observable
+# reason=invocation-unknown-value-failsafe emit. Documented in autopilot SKILL.md (the resolver)
+# + CLAUDE.md (the R4 posture). This removes the prior deliberate asymmetry (parallel unknown->on
+# would have inverted the conservative direction).
+par10_autopilot_failsafe=$(grep -cF 'reason=invocation-unknown-value-failsafe' "$PAR_AUTOPILOT" || true)
+par10_autopilot_safe_off=$(grep -cF 'An unknown `parallel=<value>` resolves **safe to `off`**' "$PAR_AUTOPILOT" || true)
+par10_claude_failsafe=$(grep -cF 'reason=invocation-unknown-value-failsafe' "$PAR_CLAUDEMD" || true)
+par10_claude_coerce_off=$(grep -ciE 'unknown .parallel=<garbage>.* coerces to .*off' "$PAR_CLAUDEMD" || true)
+par10_result="false"
+if [ "$par10_autopilot_failsafe" -ge 1 ] && [ "$par10_autopilot_safe_off" -ge 1 ] \
+  && [ "$par10_claude_failsafe" -ge 1 ] && [ "$par10_claude_coerce_off" -ge 1 ]; then par10_result="true"; fi
+assert_true \
+  "CT-PARALLEL-10 (unknown parallel=<garbage> -> off fail-safe L3): autopilot failsafe-emit ($par10_autopilot_failsafe>=1) autopilot safe-to-off ($par10_autopilot_safe_off>=1) CLAUDE.md failsafe-emit ($par10_claude_failsafe>=1) CLAUDE.md coerce-off ($par10_claude_coerce_off>=1)" \
+  "$par10_result"
 
 PAR_PSF="$REPO_DIR/hooks/lib/parse-state-file.sh"
 
