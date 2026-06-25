@@ -46,6 +46,14 @@
 # memory; the underlying trigger semantics are different but the user-
 # facing knob is the same.
 #
+# **Parallel stand-down (T-006):** under `parallel_mode != off` (resolved
+# via `resolve_parallel_mode`, Gate 2.5) this hook STANDS DOWN — a whole
+# wave drains together and `/scout` runs inside the executor, so
+# `post-ship-state-auto-compact.sh` (which re-keys to the `wave_status:
+# drained` transition) is the SOLE wave-trigger. `parallel_mode=on` exits
+# 0 immediately; `metric-only` logs "would stand down" and falls through;
+# `off` (default) keeps the existing serial path byte-identical.
+#
 # Queue-drain coordination (Sentinel + Stop hook yield + SessionStart resume):
 # Identical to the v6 design — only the trigger event moves. On successful
 # inject: touch `<state_dir>/.auto-compact-pending` (UNIX timestamp).
@@ -85,6 +93,32 @@ SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // ""' 2>/dev/null || echo
 # Gate 2: autopilot context. Outside an autopilot pipeline, /scout
 # invocations are ad-hoc and must not trigger auto-compact.
 is_autopilot_context || exit 0
+
+# Gate 2.5 (T-006 parallel stand-down — Peer-Set Uniformity / Gate 10):
+# Under parallel execution a whole wave of N tickets drains together and
+# `/scout` runs INSIDE the executor, so this PreToolUse(Skill:scout) hook
+# never fires on the main transcript at all. To make `post-ship` the SOLE
+# wave-trigger (the 2-peer auto-compact set adopts one consistent posture),
+# this hook STANDS DOWN under `parallel_mode != off`. Every parallel
+# addition is gated behind `!= off` so the serial path is byte-identical:
+# with `parallel_mode` absent/off NO new stderr line is emitted and the
+# existing Gate 3 → Gate 5 path runs verbatim.
+#
+# The state file is resolved here only to read `parallel_mode:`; the
+# existing Gate 4 re-resolves it for the serial path, so this lookup does
+# not perturb the off path. `resolve_parallel_mode` returns `off` for a
+# missing/unreadable state file (fail-closed), preserving byte-identity.
+PNS_PARALLEL_STATE_FILE="$(find_any_autopilot_state_file 2>/dev/null || true)"
+PARALLEL_MODE="$(resolve_parallel_mode "$PNS_PARALLEL_STATE_FILE")"
+if [ "$PARALLEL_MODE" != "off" ]; then
+  if [ "$PARALLEL_MODE" = "metric-only" ]; then
+    echo "[PRE-NEXT-SCOUT-AUTO-COMPACT] metric-only parallel: would stand down (post-ship is the sole wave-trigger); falling through to serial path" >&2
+  else
+    echo "[PRE-NEXT-SCOUT-AUTO-COMPACT] parallel stand-down: post-ship-state-auto-compact.sh is the sole wave-trigger under parallel_mode=on. Skipping." >&2
+    exit 0
+  fi
+fi
+unset PNS_PARALLEL_STATE_FILE
 
 # Gate 3: kill-switch resolution. Default `on` inside autopilot context.
 MODE="${SW_AUTO_COMPACT_ON_SHIP_MODE:-on}"

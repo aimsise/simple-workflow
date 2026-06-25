@@ -10740,6 +10740,52 @@ assert_true \
   "CT-PARALLEL-CURSOR-2 (resolve_parallel_mode helper): defined ($pcur2_resolver_def>=1) reads SW_PARALLEL_HOOKS_MODE ($pcur2_resolver_env>=1) exported ($pcur2_resolver_export>=1)" \
   "$pcur2_result"
 
+PAR_HOOKSJSON="$REPO_DIR/hooks/hooks.json"
+PAR_SCOUTGUARD="$REPO_DIR/hooks/scout-checkpoint-guard.sh"
+PAR_IMPLGUARD="$REPO_DIR/hooks/impl-checkpoint-guard.sh"
+PAR_POSTSHIP="$REPO_DIR/hooks/post-ship-state-auto-compact.sh"
+PAR_PRENEXT="$REPO_DIR/hooks/pre-next-scout-auto-compact.sh"
+
+# CT-PARALLEL-SUBSTOP-1 (T-005): the checkpoint guards relocate to SubagentStop. hooks.json gains a
+# SubagentStop array with EXACTLY two top-level entries (impl + scout checkpoint guards as separate
+# entries per the Anthropic ordering rule), autopilot-continue is ABSENT from it, and both guards
+# carry the symmetric `[<HOOK>-CHECKPOINT] parallel stand-down` prose + read hook_event_name.
+psub1_substop_len=$(jq -r '(.hooks.SubagentStop | length) // 0' "$PAR_HOOKSJSON" 2>/dev/null || echo 0)
+psub1_has_impl=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | any(test("impl-checkpoint-guard"))' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
+psub1_has_scout=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | any(test("scout-checkpoint-guard"))' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
+psub1_no_apc=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | all(test("autopilot-continue")|not)' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
+psub1_scout_sd=$(grep -cF '[SCOUT-CHECKPOINT] parallel stand-down' "$PAR_SCOUTGUARD" || true)
+psub1_impl_sd=$(grep -cF '[IMPL-CHECKPOINT] parallel stand-down' "$PAR_IMPLGUARD" || true)
+psub1_scout_he=$(grep -cF 'hook_event_name' "$PAR_SCOUTGUARD" || true)
+psub1_impl_he=$(grep -cF 'hook_event_name' "$PAR_IMPLGUARD" || true)
+psub1_result="false"
+if [ "$psub1_substop_len" = "2" ] && [ "$psub1_has_impl" = "true" ] && [ "$psub1_has_scout" = "true" ] \
+  && [ "$psub1_no_apc" = "true" ] && [ "$psub1_scout_sd" -ge 1 ] && [ "$psub1_impl_sd" -ge 1 ] \
+  && [ "$psub1_scout_he" -ge 1 ] && [ "$psub1_impl_he" -ge 1 ]; then psub1_result="true"; fi
+assert_true \
+  "CT-PARALLEL-SUBSTOP-1 (checkpoint guards -> SubagentStop): hooks.json SubagentStop len ($psub1_substop_len=2) impl ($psub1_has_impl) scout ($psub1_has_scout) autopilot-continue-absent ($psub1_no_apc); scout stand-down ($psub1_scout_sd>=1) impl stand-down ($psub1_impl_sd>=1); scout hook_event ($psub1_scout_he>=1) impl hook_event ($psub1_impl_he>=1)" \
+  "$psub1_result"
+
+# CT-AC-WAVE-1 (T-006): the auto-compact hooks re-key from per-ticket-boundary to per-wave-drained.
+# post-ship carries the _detect_wave_drained_in_payload supplant detector + the wave-{N}: marker +
+# IS_LAST_WAVE + the resolver; pre-next-scout carries the parallel stand-down + the resolver.
+pacw1_drained_detector=$(grep -cF '_detect_wave_drained_in_payload' "$PAR_POSTSHIP" || true)
+pacw1_wave_marker=$(grep -cF 'wave-${' "$PAR_POSTSHIP" || true)
+# IS_LAST_WAVE: pin the EXECUTABLE last-wave arithmetic (G7_CURRENT_WAVE_LW, used only in the
+# parallel `current_wave+1 >= wave_count && wave_status==drained` block that sets IS_LAST_TICKET),
+# NOT the string "IS_LAST_WAVE" which appears only in comments — a deleted parallel last-wave block
+# must flip this CT (the prior comment-only grep was vacuous; Wave-2 adversarial-verify finding).
+pacw1_last_wave=$(grep -cF 'G7_CURRENT_WAVE_LW' "$PAR_POSTSHIP" || true)
+pacw1_postship_resolver=$(grep -cF 'resolve_parallel_mode' "$PAR_POSTSHIP" || true)
+pacw1_prenext_sd=$(grep -cF '[PRE-NEXT-SCOUT-AUTO-COMPACT] parallel stand-down' "$PAR_PRENEXT" || true)
+pacw1_prenext_resolver=$(grep -cF 'resolve_parallel_mode' "$PAR_PRENEXT" || true)
+pacw1_result="false"
+if [ "$pacw1_drained_detector" -ge 1 ] && [ "$pacw1_wave_marker" -ge 1 ] && [ "$pacw1_last_wave" -ge 1 ] \
+  && [ "$pacw1_postship_resolver" -ge 1 ] && [ "$pacw1_prenext_sd" -ge 1 ] && [ "$pacw1_prenext_resolver" -ge 1 ]; then pacw1_result="true"; fi
+assert_true \
+  "CT-AC-WAVE-1 (auto-compact wave-drained re-key): post-ship drained-detector ($pacw1_drained_detector>=1) wave-{N} marker ($pacw1_wave_marker>=1) last-wave-arith G7_CURRENT_WAVE_LW ($pacw1_last_wave>=1) resolver ($pacw1_postship_resolver>=1); pre-next-scout stand-down ($pacw1_prenext_sd>=1) resolver ($pacw1_prenext_resolver>=1)" \
+  "$pacw1_result"
+
 echo ""
 
 # =============================================================================
