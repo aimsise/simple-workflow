@@ -10786,6 +10786,174 @@ assert_true \
   "CT-AC-WAVE-1 (auto-compact wave-drained re-key): post-ship drained-detector ($pacw1_drained_detector>=1) wave-{N} marker ($pacw1_wave_marker>=1) last-wave-arith G7_CURRENT_WAVE_LW ($pacw1_last_wave>=1) resolver ($pacw1_postship_resolver>=1); pre-next-scout stand-down ($pacw1_prenext_sd>=1) resolver ($pacw1_prenext_resolver>=1)" \
   "$pacw1_result"
 
+# CT-WAVE-1 (T-007: wave-parallel pipeline scheduler prose). /autopilot SKILL.md carries
+# the new `##### Wave-parallel pipeline (PARALLEL_MODE == on)` subsection that builds READY_k,
+# spawns min(|READY_k|, CONCURRENCY_CAP) executors in ONE message behind a foreground barrier,
+# and sub-batches oversized waves lex-ordered. Split Execution Flow notes the wave layering
+# DRIVES the scheduler under == on.
+ctw1_subsection=$(grep -cF 'Wave-parallel pipeline (`PARALLEL_MODE == on`)' "$PAR_AUTOPILOT" || true)
+ctw1_ready_k=$(grep -cF 'READY_k' "$PAR_AUTOPILOT" || true)
+ctw1_one_message=$(grep -ciE 'in ONE message' "$PAR_AUTOPILOT" || true)
+ctw1_min_cap=$(grep -cF 'min(|READY_k|, CONCURRENCY_CAP)' "$PAR_AUTOPILOT" || true)
+ctw1_barrier=$(grep -ciE 'foreground barrier' "$PAR_AUTOPILOT" || true)
+ctw1_subbatch=$(grep -ciE 'lex-ordered sub-batch' "$PAR_AUTOPILOT" || true)
+ctw1_drives=$(grep -cF 'DRIVES the wave-parallel scheduler' "$PAR_AUTOPILOT" || true)
+ctw1_result="false"
+if [ "$ctw1_subsection" -ge 1 ] && [ "$ctw1_ready_k" -ge 1 ] && [ "$ctw1_one_message" -ge 1 ] \
+  && [ "$ctw1_min_cap" -ge 1 ] && [ "$ctw1_barrier" -ge 1 ] && [ "$ctw1_subbatch" -ge 1 ] \
+  && [ "$ctw1_drives" -ge 1 ]; then ctw1_result="true"; fi
+assert_true \
+  "CT-WAVE-1 (wave-parallel pipeline emit): subsection ($ctw1_subsection>=1) READY_k ($ctw1_ready_k>=1) one-message ($ctw1_one_message>=1) min-cap ($ctw1_min_cap>=1) barrier ($ctw1_barrier>=1) sub-batch ($ctw1_subbatch>=1) drives-scheduler ($ctw1_drives>=1)" \
+  "$ctw1_result"
+
+# CT-WAVE-2 (T-007: single-writer at the wave boundary = exactly two writes per wave). Both
+# SKILL.md and state-file.md carry the pre-wave/post-wave two-writes-per-wave contract; the
+# executor NEVER writes autopilot-state.yaml; the post-wave write happens ONCE after the last
+# sub-batch (sub-batch count does not multiply the write count).
+ctw2_skill_pre=$(grep -ciE 'Pre-wave single-writer state write' "$PAR_AUTOPILOT" || true)
+ctw2_skill_post=$(grep -ciE 'Post-wave single-writer state write' "$PAR_AUTOPILOT" || true)
+ctw2_statefile_two=$(grep -ciE 'exactly \*\*TWO\*\*|exactly TWO' "$PAR_STATEFILE" || true)
+ctw2_statefile_never=$(grep -ciE 'NEVER write|never write' "$PAR_STATEFILE" || true)
+ctw2_skill_once=$(grep -ciE 'ONCE after the LAST sub-batch' "$PAR_AUTOPILOT" || true)
+ctw2_result="false"
+if [ "$ctw2_skill_pre" -ge 1 ] && [ "$ctw2_skill_post" -ge 1 ] && [ "$ctw2_statefile_two" -ge 1 ] \
+  && [ "$ctw2_statefile_never" -ge 1 ] && [ "$ctw2_skill_once" -ge 1 ]; then ctw2_result="true"; fi
+assert_true \
+  "CT-WAVE-2 (single-writer at wave boundary): SKILL pre-write ($ctw2_skill_pre>=1) post-write ($ctw2_skill_post>=1); state-file exactly-two ($ctw2_statefile_two>=1) executor-never-writes ($ctw2_statefile_never>=1); post-write-once-after-last-sub-batch ($ctw2_skill_once>=1)" \
+  "$ctw2_result"
+
+# CT-WAVE-3 (T-007: parallel_max= parse + arg>env>default precedence + coercion). SKILL.md
+# Argument Parsing documents the parallel_max= token (case-insensitive key=value, integer >=1,
+# default 4, non-integer/<1 -> default 4 + [PARALLEL-MODE] WARNING) with arg > env > default
+# precedence; CLAUDE.md documents SW_PARALLEL_MAX_CONCURRENCY as (B) harness-own.
+ctw3_arg_token=$(grep -cF 'parallel_max=' "$PAR_AUTOPILOT" || true)
+ctw3_precedence=$(grep -ciE 'arg > env > default|arg .* env .* default' "$PAR_AUTOPILOT" || true)
+ctw3_default4=$(grep -ciE 'default .*4' "$PAR_AUTOPILOT" || true)
+ctw3_warning=$(grep -cF '[PARALLEL-MODE] WARNING' "$PAR_AUTOPILOT" || true)
+ctw3_claude_knob=$(grep -cF 'SW_PARALLEL_MAX_CONCURRENCY' "$PAR_CLAUDEMD" || true)
+# Co-locate the (B) harness-own label WITH the new knob line (the SW_PARALLEL_MAX_CONCURRENCY
+# entry is a single physical line carrying both tokens) so dropping the label on THIS entry while
+# pre-existing entries keep theirs still fails the sub-check (not a bare repo-wide harness-own count).
+ctw3_claude_bsub=$(grep -iE 'SW_PARALLEL_MAX_CONCURRENCY' "$PAR_CLAUDEMD" | grep -ciE 'harness-own' || true)
+ctw3_result="false"
+if [ "$ctw3_arg_token" -ge 1 ] && [ "$ctw3_precedence" -ge 1 ] && [ "$ctw3_default4" -ge 1 ] \
+  && [ "$ctw3_warning" -ge 1 ] && [ "$ctw3_claude_knob" -ge 1 ] && [ "$ctw3_claude_bsub" -ge 1 ]; then ctw3_result="true"; fi
+assert_true \
+  "CT-WAVE-3 (parallel_max= parse + precedence + coercion): arg token ($ctw3_arg_token>=1) precedence ($ctw3_precedence>=1) default-4 ($ctw3_default4>=1) WARNING ($ctw3_warning>=1); CLAUDE.md knob ($ctw3_claude_knob>=1) (B)harness-own ($ctw3_claude_bsub>=1)" \
+  "$ctw3_result"
+
+# CT-WAVE-4 (T-007: cap-1 == serial regression anchor + wave auto-compact exception + parallel=off
+# byte-identical fork + per-wave dependency reason format). The wave loop with CONCURRENCY_CAP=1
+# degenerates to the concurrency-1 serial sequence; the wave-variant auto-compact exception emits
+# the "do NOT spawn WAVE_{k+1}" string; the parallel=off serial fork is present (byte-identical);
+# the per-wave dependency re-eval reuses dependency_{dep-slug}_{status}.
+ctw4_cap1=$(grep -ciE 'parallel_max=1 . serial|CONCURRENCY_CAP = 1' "$PAR_AUTOPILOT" || true)
+ctw4_ac_exception=$(grep -cF 'do NOT spawn `WAVE_{k+1}`' "$PAR_AUTOPILOT" || true)
+ctw4_off_fork=$(grep -ciE 'parallel=off.* adds NO code path|the serial loop is untouched' "$PAR_AUTOPILOT" || true)
+ctw4_dep_format=$(grep -cF 'dependency_{dep-slug}_{status}' "$PAR_AUTOPILOT" || true)
+ctw4_metric_serial=$(grep -ciE 'metric-only.* logs the .Wave|metric-only.* executes the serial' "$PAR_AUTOPILOT" || true)
+ctw4_result="false"
+if [ "$ctw4_cap1" -ge 1 ] && [ "$ctw4_ac_exception" -ge 1 ] && [ "$ctw4_off_fork" -ge 1 ] \
+  && [ "$ctw4_dep_format" -ge 1 ] && [ "$ctw4_metric_serial" -ge 1 ]; then ctw4_result="true"; fi
+assert_true \
+  "CT-WAVE-4 (cap-1 serial anchor + auto-compact exception + off byte-identical + dep-format): cap-1 ($ctw4_cap1>=1) WAVE_{k+1} exception ($ctw4_ac_exception>=1) off-serial-fork ($ctw4_off_fork>=1) dependency_{slug}_{status} ($ctw4_dep_format>=1) metric-only-serial ($ctw4_metric_serial>=1)" \
+  "$ctw4_result"
+
+# CT-WAVE-5 (T-007 H2 carve-out, DIRECT hook invocation): the cascade-skip carve-out in
+# hooks/pre-state-transition.sh must NOT block a slug-interpolated `dependency_002-bar_failed`
+# skip-write with active (in_progress) siblings (no unauthorized_skip_with_active_siblings), AND
+# the bare `dependency_failed` form must still match (back-compat). Models the direct JSON-stdin
+# invocation on CT-AC-51 above.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CTW5_OK=1
+CTW5_MISSING=""
+CTW5_HOOK="$REPO_DIR/hooks/pre-state-transition.sh"
+
+# Helper-free inline: build a minimal autopilot tree per sub-case so
+# is_autopilot_context() returns true, then drive the hook with a Write payload.
+_ctw5_drive() {
+  # $1 = skip_reason; echoes "BLOCKED" or "ALLOWED"
+  local reason="$1"
+  local tmp slug sf content payload out
+  tmp=$(mktemp -d)
+  slug="wave-h2"
+  mkdir -p "$tmp/.simple-workflow/backlog/briefs/active/$slug"
+  sf="$tmp/.simple-workflow/backlog/briefs/active/$slug/autopilot-state.yaml"
+  {
+    printf 'version: 1\n'
+    printf 'parent_slug: %s\n' "$slug"
+    printf 'execution_mode: split\n'
+    printf 'total_tickets: 3\n'
+    printf 'tickets:\n'
+    printf '  - logical_id: 001-foo\n    status: in_progress\n'
+    printf '  - logical_id: 002-bar\n    status: in_progress\n'
+    printf '  - logical_id: 003-baz\n    status: skipped\n    skip_reason: %s\n' "$reason"
+  } >"$sf"
+  content=$(cat "$sf")
+  payload=$(jq -n --arg fp "$sf" --arg c "$content" --arg cwd "$tmp" \
+    '{tool_name:"Write", tool_input:{file_path:$fp, content:$c}, cwd:$cwd, session_id:"test-CTW5", transcript_path:""}')
+  out=$(printf '%s' "$payload" | bash "$CTW5_HOOK" 2>/dev/null || true)
+  rm -rf "$tmp"
+  if printf '%s' "$out" | grep -q 'unauthorized_skip_with_active_siblings'; then
+    echo "BLOCKED"
+  else
+    echo "ALLOWED"
+  fi
+}
+
+# (a) slug-interpolated dependency_002-bar_failed WITH active siblings -> ALLOWED (the H2 fix).
+CTW5_SLUG=$(_ctw5_drive 'dependency_002-bar_failed')
+if [ "$CTW5_SLUG" != "ALLOWED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} slug-interpolated-BLOCKED(=$CTW5_SLUG)"
+fi
+# (b) bare dependency_failed WITH active siblings -> ALLOWED (back-compat preserved).
+CTW5_BARE_F=$(_ctw5_drive 'dependency_failed')
+if [ "$CTW5_BARE_F" != "ALLOWED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} bare-failed-BLOCKED(=$CTW5_BARE_F)"
+fi
+# (c) bare dependency_skipped WITH active siblings -> ALLOWED (back-compat preserved).
+CTW5_BARE_S=$(_ctw5_drive 'dependency_skipped')
+if [ "$CTW5_BARE_S" != "ALLOWED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} bare-skipped-BLOCKED(=$CTW5_BARE_S)"
+fi
+# (d) NEGATIVE control: a non-dependency rationale WITH active siblings MUST still be BLOCKED
+#     (proves the carve-out is not vacuously allowing every skip).
+CTW5_NEG=$(_ctw5_drive 'arbitrary non-dependency rationale')
+if [ "$CTW5_NEG" != "BLOCKED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} negative-control-ALLOWED(=$CTW5_NEG)"
+fi
+# (e) the hook source carries the dependency_ PREFIX regex (drift guard on the literal fix).
+CTW5_REGEX=$(grep -cF 'dependency_([^[:space:]]*_)?(failed|skipped)' "$CTW5_HOOK" || true)
+if [ "$CTW5_REGEX" -lt 1 ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} prefix-regex-absent"
+fi
+
+if [ "$CTW5_OK" -eq 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-WAVE-5 (H2 carve-out direct hook): slug-interpolated ALLOWED + bare-failed/skipped ALLOWED (back-compat) + negative-control BLOCKED + prefix-regex present"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-WAVE-5 (H2 carve-out direct hook):${CTW5_MISSING}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-WAVE-6 (T-007 verify-round fixes: empty-wave resume skip + parallel_max WARNING gated to
+# PARALLEL_MODE != off). The wave-parallel pipeline documents skipping a SPAWN-LESS wave on resume
+# (realising Phase 1 Step 5 — a fully-completed earlier wave performs ZERO autopilot-state.yaml
+# writes); the parallel_max= coercion WARNING is SUPPRESSED on the byte-identical parallel=off serial
+# lane (so a global SW_PARALLEL_MAX_CONCURRENCY=garbage cannot leak a [PARALLEL-MODE] WARNING into a
+# serial rollback run). Both sentences were required by the adversarial T-007 review (PASS_WITH_NITS);
+# removing either fails this CT.
+ctw6_emptywave=$(grep -cF 'Empty-wave skip' "$PAR_AUTOPILOT" || true)
+ctw6_nospawn=$(grep -cF 'no spawnable' "$PAR_AUTOPILOT" || true)
+ctw6_warn_gated=$(grep -cF 'WARNING is emitted ONLY when' "$PAR_AUTOPILOT" || true)
+ctw6_warn_silent=$(grep -cF 'byte-identical serial lane' "$PAR_AUTOPILOT" || true)
+ctw6_result="false"
+if [ "$ctw6_emptywave" -ge 1 ] && [ "$ctw6_nospawn" -ge 1 ] \
+  && [ "$ctw6_warn_gated" -ge 1 ] && [ "$ctw6_warn_silent" -ge 1 ]; then ctw6_result="true"; fi
+assert_true \
+  "CT-WAVE-6 (empty-wave resume skip + parallel_max WARNING gated to != off): empty-wave ($ctw6_emptywave>=1) no-spawnable ($ctw6_nospawn>=1) WARNING-gated ($ctw6_warn_gated>=1) silent-off ($ctw6_warn_silent>=1)" \
+  "$ctw6_result"
+
 echo ""
 
 # =============================================================================

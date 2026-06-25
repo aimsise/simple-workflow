@@ -290,6 +290,30 @@ convenience / observability projection of the authoritative per-ticket
 `status` — never a second source of truth. It moves to `briefs/done/` with
 the rest of the file on completion.
 
+**Single-writer at the wave boundary (`PARALLEL_MODE == on`).** The
+wave-parallel scheduler performs **exactly TWO** `autopilot-state.yaml`
+writes per wave: a **pre-wave write** (`READY_k` → `in_progress`,
+`current_wave` advanced, `wave_status: in_flight`) immediately before the
+wave's executors are spawned, and a **post-wave write** (transcribe each
+returned envelope's `status`/`steps`/`pr_url`, fold the wave's
+dependency-skips, set `wave_status: drained`) immediately after the
+foreground barrier collects every envelope. The concurrently-running
+`ticket-executor` subagents NEVER write `autopilot-state.yaml` — the main
+loop is the SOLE writer, so there is no concurrent-write window even though
+the wave's members are `in_progress` in parallel. An oversized wave
+(`|READY_k| > CONCURRENCY_CAP`) processes in lex-ordered sub-batches, but
+the post-wave write still happens ONCE after the LAST sub-batch (the
+two-writes-per-wave count is per wave, not per sub-batch).
+
+**`parallel_max` is NOT persisted.** The concurrency cap
+(`parallel_max=<N>` arg → `SW_PARALLEL_MAX_CONCURRENCY` env → default 4) is
+a per-invocation knob: it is resolved fresh in Argument Parsing on every
+`/autopilot` entry and is NEVER written to `autopilot-state.yaml`. Likewise
+the wave layering itself is recomputed from the (unchanged) dependency graph
+on every entry — no wave index is persisted. Only `wave_count` /
+`current_wave` / `wave_status` / `main_checkout_root` (observability
+projections) are written.
+
 **No behaviour change yet.** These fields are additive and unread by any
 hook until the T-004/5/6 rework; a legacy or serial (`PARALLEL_MODE == off`)
 run omits them entirely (a byte-identical state file).
@@ -452,8 +476,17 @@ exactly like any other gate divergence.
 `/autopilot` MUST NOT mark a ticket `skipped` while any sibling is
 `pending` or `in_progress`, unless one of:
 
-- **Dependency cascade**: the ticket's `skip_reason` contains
-  `dependency_failed` or `dependency_skipped`.
+- **Dependency cascade**: the ticket's `skip_reason` matches the
+  `dependency_` PREFIX form — `dependency_<dep-slug>_failed` or
+  `dependency_<dep-slug>_skipped` (the autopilot Dependency check
+  interpolates the dep slug between `dependency_` and `_<status>`, so the
+  carve-out regex tolerates the slug). The bare-token `dependency_failed` /
+  `dependency_skipped` forms still match for back-compat. This is the H2
+  fix: under `PARALLEL_MODE != off` a whole wave's members are
+  `in_progress` simultaneously, so a slug-interpolated cascade-skip like
+  `dependency_002-bar_failed` would have been BLOCKED as
+  `unauthorized_skip_with_active_siblings` had the carve-out stayed pinned
+  to the exact bare tokens.
 - **Explicit override**: `override_skip: true` appears at the same
   indentation as `status:` AND the `skip_reason` does NOT match any
   pattern in `hooks/lib/forbidden-rationale-patterns.sh`.

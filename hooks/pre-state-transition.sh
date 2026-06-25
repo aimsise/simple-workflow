@@ -37,8 +37,10 @@
 #     least one OTHER ticket in the SAME write payload (or the existing
 #     state file on disk) is `pending` / `in_progress` AND the skipped
 #     ticket does NOT carry an inline `override_skip: true` flag and
-#     does NOT carry a dependency-cascade `skip_reason`
-#     (`dependency_failed` / `dependency_skipped`) -> BLOCK.
+#     does NOT carry a dependency-cascade `skip_reason` matching the
+#     `dependency_` PREFIX form (`dependency_<dep-slug>_failed` /
+#     `dependency_<dep-slug>_skipped`; the bare-token
+#     `dependency_failed` / `dependency_skipped` still match) -> BLOCK.
 #
 #   Rule 2 (`unauthorized_skip_with_forbidden_rationale`):
 #     If the new content marks any ticket as `status: skipped` and a
@@ -53,8 +55,14 @@
 #     indentation level as the ticket's `status:` line; a top-level or
 #     comment-block placement does NOT count (NAC #3, AC #6 case (e)).
 #   - Existing dependency-cascade skip logic is left intact -- a
-#     `skip_reason` containing `dependency_failed` / `dependency_skipped`
-#     bypasses Rule 1 (NAC #4). Rule 2 still applies on top.
+#     `skip_reason` matching the `dependency_` PREFIX form
+#     (`dependency_<dep-slug>_failed` / `dependency_<dep-slug>_skipped`,
+#     with the bare `dependency_failed` / `dependency_skipped` tokens
+#     still matching for back-compat) bypasses Rule 1 (NAC #4). The
+#     autopilot orchestrator interpolates the dep slug between
+#     `dependency_` and `_<status>` (skills/autopilot/SKILL.md Dependency
+#     check), so the carve-out tolerates the slug. Rule 2 still applies
+#     on top.
 #   - No AskUserQuestion path; the hook either allows or emits
 #     decision: block (NAC #6).
 #   - ASCII only (no non-ASCII characters in this script).
@@ -475,7 +483,7 @@ fi
 remaining_plain=0
 if [ "${#SKIPPED_PLAIN_REASONS[@]}" -gt 0 ]; then
   for reason in "${SKIPPED_PLAIN_REASONS[@]}"; do
-    if printf '%s' "$reason" | grep -qE 'dependency_failed|dependency_skipped'; then
+    if printf '%s' "$reason" | grep -qE 'dependency_([^[:space:]]*_)?(failed|skipped)'; then
       continue
     fi
     remaining_plain=$((remaining_plain + 1))
@@ -484,7 +492,7 @@ fi
 
 if [ "$remaining_plain" -gt 0 ]; then
   emit_block "unauthorized_skip_with_active_siblings" \
-    "Cannot transition a ticket to status: skipped while a sibling is pending/in_progress without an explicit override_skip: true placed at the ticket level (and a non-forbidden skip_reason). Dependency-cascade skips (skip_reason containing dependency_failed / dependency_skipped) are exempt. See skills/autopilot/SKILL.md Per-ticket pipeline / Dependency check."
+    "Cannot transition a ticket to status: skipped while a sibling is pending/in_progress without an explicit override_skip: true placed at the ticket level (and a non-forbidden skip_reason). Dependency-cascade skips (skip_reason matching the dependency_ prefix form dependency_<dep-slug>_failed / dependency_<dep-slug>_skipped, bare dependency_failed / dependency_skipped still matching) are exempt. See skills/autopilot/SKILL.md Per-ticket pipeline / Dependency check."
 fi
 
 # ---------------------------------------------------------------------------

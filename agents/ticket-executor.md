@@ -16,10 +16,12 @@ Your `tools:` field is intentionally omitted: you inherit the full parent tool i
 
 - `logical_id` — the ticket's logical id (e.g. `{parent-slug}-part-N`).
 - `parent_slug` — the parent slug.
-- `ticket_dir` — the ticket dir path; the pipeline starts in `product_backlog/{parent-slug}/{NNN}-{slug}` and `/scout` moves it to `active/`.
+- `ticket_dir` — the ticket dir path **rooted at the MAIN checkout** (`main_checkout_root`); the pipeline starts in `product_backlog/{parent-slug}/{NNN}-{slug}` and `/scout` moves it to `active/`. Under the Phase 2 wave scheduler (`PARALLEL_MODE == on`) you and your same-wave sibling executors run worktree-less on this main checkout — same-wave tickets are independent by construction (no `depends_on` among same-wave members), so their edits are disjoint-file by design. (Per-executor worktree isolation + the envelope `branch` / `head_sha` fields are T-008; they are NOT part of this contract.)
 - `target_branch` — the branch `/ship` targets (the repo default branch).
 - `uc` — the run-scoped orchestration mode to forward to `/impl`, present ONLY when the main loop resolved `UC_ORCH != off`. When absent, OMIT `uc=` from the `/impl` call so it is byte-identical to a default run.
 - `## Bound capabilities (per AC)` — the verbatim capability-binding block, present when the ticket carries a `### Capabilities` section. Pass it through to the pipeline skills unchanged; do NOT re-derive capability relevance yourself.
+
+Under the Phase 2 wave scheduler (`PARALLEL_MODE == on`) the main loop spawns one executor **per ready ticket in the wave, concurrently in one message** (up to the `parallel_max=` concurrency cap), passing EACH executor its own copy of the four fields above (`logical_id`, `ticket_dir`, `uc={UC_ORCH}` when `≠ off`, the `## Bound capabilities (per AC)` block) plus `parent_slug` / `target_branch`. The fields are per-ticket — your envelope is keyed by your own `logical_id` so the single-writer main loop can transcribe each returned envelope into the matching `tickets[]` entry. You still NEVER write `autopilot-state.yaml`.
 
 ## Pipeline (one ticket)
 
