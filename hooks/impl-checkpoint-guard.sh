@@ -65,8 +65,55 @@ source "$SCRIPT_DIR/lib/detect-policy-gate-stop.sh"
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || echo "unknown")
 
+# --- Step 0: parallel-mode resolution (T-005) ------------------------------
+# Net-new event-aware machinery for parallel autopilot. Under parallel_mode=on,
+# /impl runs inside the ticket-executor, so the /audit block + Skill signature
+# land in the EXECUTOR's transcript, delivered to THIS hook on the executor's
+# SubagentStop event — NOT on the main Stop. The dual-event design mirrors
+# scout-checkpoint-guard.sh (Modifications-rule peer symmetry):
+#   - SubagentStop (parallel)         -> enforce on the executor transcript.
+#   - Stop / missing event (parallel) -> stand down (the main Stop never sees
+#                                        the executor signal).
+#
+# This block resolves the mode + the orchestrator-written main_checkout_root
+# (T-003) BEFORE Step 1, because Step 1 HARD-REQUIRES phase-state.yaml and
+# silent-exits when it is absent. Under a worktree the phase-state lives at
+# the main-checkout path, so the main_checkout_root preference is what keeps
+# impl's SubagentStop enforcement (and the main-Stop stand-down log) alive in
+# a worktree — without it, Step 1 would exit before the Step 2b branch.
+#
+# CRITICAL byte-identity invariant: when parallel_mode is absent/off this is
+# inert — PARALLEL_MODE resolves to `off`, PSF_START_DIR stays empty (Step 1
+# uses the default $PWD ancestor-walk), the Step 2b `!= off` guards are false,
+# and the hook behaves EXACTLY as before. The mode resolves via the shared
+# resolve_parallel_mode (T-003): SW_PARALLEL_HOOKS_MODE env > the autopilot
+# state's parallel_mode: scalar > off; a missing state file -> off.
+HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null || echo "")
+# A missing/empty hook_event_name is treated as "Stop" (the safe direction:
+# fail toward standing-down on the main transcript under parallel).
+[ -n "$HOOK_EVENT" ] || HOOK_EVENT="Stop"
+
+PARALLEL_STATE_FILE=$(find_any_autopilot_state_file 2>/dev/null || true)
+PARALLEL_MODE=$(resolve_parallel_mode "${PARALLEL_STATE_FILE:-}")
+
+# Prefer the orchestrator-written main_checkout_root over the _psf_repo_root
+# ancestor-walk for phase-state resolution under parallel. Gated behind
+# `!= off` so the off path is byte-identical (PSF_START_DIR empty).
+PSF_START_DIR=""
+if [ "$PARALLEL_MODE" != "off" ] \
+   && [ -n "${PARALLEL_STATE_FILE:-}" ] && [ -f "$PARALLEL_STATE_FILE" ]; then
+  MAIN_CHECKOUT_ROOT=$(parse_yaml_scalar "$PARALLEL_STATE_FILE" main_checkout_root 2>/dev/null || true)
+  if [ -n "${MAIN_CHECKOUT_ROOT:-}" ] && [ -d "$MAIN_CHECKOUT_ROOT" ]; then
+    PSF_START_DIR="$MAIN_CHECKOUT_ROOT"
+  fi
+fi
+
 # --- Step 1: phase-state.yaml not found → silent exit ---
-STATE_FILE=$(find_phase_state_file 2>/dev/null || true)
+if [ -n "$PSF_START_DIR" ]; then
+  STATE_FILE=$(find_phase_state_file "$PSF_START_DIR" 2>/dev/null || true)
+else
+  STATE_FILE=$(find_phase_state_file 2>/dev/null || true)
+fi
 if [ -z "${STATE_FILE:-}" ] || [ ! -f "$STATE_FILE" ]; then
   exit 0
 fi
@@ -238,6 +285,31 @@ case "$MODE" in
     MODE=block
     ;;
 esac
+
+# --- Step 2b: parallel-mode event branch (T-005) ---------------------------
+# Symmetric to scout-checkpoint-guard.sh Step 2b (Modifications-rule peer
+# uniformity). PARALLEL_MODE / HOOK_EVENT were resolved in Step 0 above (they
+# had to precede Step 1's hard phase-state requirement). Here the actual
+# event branch runs, after the kill switch (Step 2) so SW_IMPL_CHECKPOINT_MODE
+# still wins. Fully inert under parallel_mode=off (byte-identical).
+if [ "$PARALLEL_MODE" != "off" ]; then
+  if [ "$HOOK_EVENT" != "SubagentStop" ]; then
+    # Main Stop (or missing event) under parallel: stand down.
+    if [ "$PARALLEL_MODE" = "metric-only" ]; then
+      echo "[IMPL-CHECKPOINT] parallel stand-down (metric-only): would stand down on main Stop (hook_event=$HOOK_EVENT, parallel_mode=$PARALLEL_MODE); falling through to the serial path." >&2
+      # metric-only: fall through to the existing serial logic below.
+    else
+      echo "[IMPL-CHECKPOINT] parallel stand-down: enforcement is relocated to the executor SubagentStop under parallel_mode=on (hook_event=$HOOK_EVENT); the main Stop does not see the executor signal." >&2
+      exit 0
+    fi
+  else
+    # SubagentStop under parallel: enforce on the executor transcript. Cheap
+    # no-op on unrelated subagent stops (R-SUBSTOP-SERIAL) before any further
+    # I/O. (The main_checkout_root phase-state preference already ran in
+    # Step 0 so Step 1 resolved phase-state from the main checkout.)
+    is_autopilot_context || exit 0
+  fi
+fi
 
 # --- Step 3: phases.impl.status == completed → silent exit ---
 IMPL_STATUS=$(parse_phase_status "$STATE_FILE" "impl" 2>/dev/null || echo "")

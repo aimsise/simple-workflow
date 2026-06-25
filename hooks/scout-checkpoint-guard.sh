@@ -304,6 +304,65 @@ if ! is_autopilot_context; then
   fi
 fi
 
+# --- Step 2b: parallel-mode event branch (T-005) ---------------------------
+# Net-new event-aware branch for parallel autopilot. Under parallel_mode=on,
+# /scout runs inside the ticket-executor, so the ssot-line + Skill signature
+# land in the EXECUTOR's transcript, delivered to THIS hook on the executor's
+# SubagentStop event — NOT on the main Stop. The dual-event design:
+#   - SubagentStop (parallel)     -> enforce on the executor transcript: an
+#                                    early `is_autopilot_context || exit 0`
+#                                    makes unrelated subagent stops a cheap
+#                                    no-op (R-SUBSTOP-SERIAL), then Steps 3-7
+#                                    run verbatim on `.transcript_path`.
+#   - Stop / missing event (parallel) -> stand down (the main Stop never
+#                                    sees the executor's signal; the explicit
+#                                    stand-down keeps a future change from
+#                                    false-blocking the main loop).
+#
+# CRITICAL byte-identity invariant: when parallel_mode is absent/off this
+# whole block is inert — PARALLEL_MODE resolves to `off`, the `!= off` guards
+# are false, and the hook behaves EXACTLY as before (the main Stop runs the
+# existing Steps verbatim; a serial subagent's SubagentStop silent-exits at
+# the existing Step 6/7 signature gate). The mode resolves via the shared
+# resolve_parallel_mode (T-003): SW_PARALLEL_HOOKS_MODE env > the autopilot
+# state's parallel_mode: scalar > off; a missing state file -> off.
+HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null || echo "")
+# A missing/empty hook_event_name is treated as "Stop" (the safe direction:
+# fail toward standing-down on the main transcript under parallel).
+[ -n "$HOOK_EVENT" ] || HOOK_EVENT="Stop"
+
+PARALLEL_STATE_FILE=$(find_any_autopilot_state_file 2>/dev/null || true)
+PARALLEL_MODE=$(resolve_parallel_mode "${PARALLEL_STATE_FILE:-}")
+
+if [ "$PARALLEL_MODE" != "off" ]; then
+  if [ "$HOOK_EVENT" != "SubagentStop" ]; then
+    # Main Stop (or missing event) under parallel: stand down.
+    if [ "$PARALLEL_MODE" = "metric-only" ]; then
+      echo "[SCOUT-CHECKPOINT] parallel stand-down (metric-only): would stand down on main Stop (hook_event=$HOOK_EVENT, parallel_mode=$PARALLEL_MODE); falling through to the serial path." >&2
+      # metric-only: fall through to the existing serial logic below.
+    else
+      echo "[SCOUT-CHECKPOINT] parallel stand-down: enforcement is relocated to the executor SubagentStop under parallel_mode=on (hook_event=$HOOK_EVENT); the main Stop does not see the executor signal." >&2
+      exit 0
+    fi
+  else
+    # SubagentStop under parallel: enforce on the executor transcript. Cheap
+    # no-op on unrelated subagent stops (R-SUBSTOP-SERIAL) before any
+    # transcript I/O.
+    is_autopilot_context || exit 0
+    # Prefer the orchestrator-written main_checkout_root (T-003) over the
+    # _psf_repo_root ancestor-walk for phase-state resolution: under a
+    # worktree the phase-state.yaml lives at the main-checkout path. scout's
+    # phase-state is OPTIONAL, so this only improves the Step 3 short-circuit
+    # accuracy; the 3-AND still fires when the file is absent.
+    if [ -n "${PARALLEL_STATE_FILE:-}" ] && [ -f "$PARALLEL_STATE_FILE" ]; then
+      MAIN_CHECKOUT_ROOT=$(parse_yaml_scalar "$PARALLEL_STATE_FILE" main_checkout_root 2>/dev/null || true)
+      if [ -n "${MAIN_CHECKOUT_ROOT:-}" ] && [ -d "$MAIN_CHECKOUT_ROOT" ]; then
+        STATE_FILE=$(find_phase_state_file "$MAIN_CHECKOUT_ROOT" 2>/dev/null || true)
+      fi
+    fi
+  fi
+fi
+
 # --- Step 3: if phase-state.yaml exists AND scout completed, silent exit ---
 # This is the only branch that consults phase-state.yaml. The hook MUST
 # also fire when the file is absent (legacy product_backlog ticket flow,
