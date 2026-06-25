@@ -443,6 +443,25 @@ if [ "$PARALLEL_MODE" != "off" ]; then
     WAVE_DECISION="spawn_next"
   fi
 
+  # ALL-TERMINAL guard (C1: empty-wave cursor stall). When cascading dependency
+  # failures leave one or more LATER waves EMPTY (every member already
+  # cascade-skipped), `current_wave` is never advanced past the last ACTIVE wave
+  # (per SKILL.md, the cursor advances only by an ACTIVE wave's step 2). The
+  # cursor then sits at wave_status=drained with (current_wave+1) < wave_count,
+  # which selects spawn_next above and would BLOCK forever asking to spawn a
+  # wave that is itself empty — until only the FILE_COUNT loop guard releases it.
+  # If EVERY ticket is already terminal (failed/skipped/completed),
+  # parse_active_steps emits no `<step>:<status>` line; in that case there is
+  # nothing left to spawn, so override to terminal_check and fall through to the
+  # SAME all-terminal exit-0 logic the serial path uses below. This mirrors the
+  # serial path exactly (it reaches parse_active_steps, finds nothing, exits 0).
+  if [ "$WAVE_DECISION" = "spawn_next" ]; then
+    GUARD_ACTIVE_LINES=$(parse_active_steps "$STATE_FILE" 2>/dev/null || true)
+    if [ -z "$GUARD_ACTIVE_LINES" ]; then
+      WAVE_DECISION="terminal_check"
+    fi
+  fi
+
   if [ "$PARALLEL_MODE" = "metric-only" ]; then
     # Observe-only: log the would-be decision and take the existing serial
     # control flow unchanged (no block emitted here, no early exit).

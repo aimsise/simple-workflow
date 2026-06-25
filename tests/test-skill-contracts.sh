@@ -10783,6 +10783,42 @@ assert_true \
   "CT-PARALLEL-10 (unknown parallel=<garbage> -> off fail-safe L3): autopilot failsafe-emit ($par10_autopilot_failsafe>=1) autopilot safe-to-off ($par10_autopilot_safe_off>=1) CLAUDE.md failsafe-emit ($par10_claude_failsafe>=1) CLAUDE.md coerce-off ($par10_claude_coerce_off>=1)" \
   "$par10_result"
 
+# CT-PARALLEL-11 (SW_PARALLEL_TICKETS_MODE run/skill-side kill switch is WIRED in Argument
+# Parsing, C2). The resolver helper reads SW_PARALLEL_HOOKS_MODE (hook side) — NOT
+# SW_PARALLEL_TICKETS_MODE — so the run/skill-side knob MUST be applied by /autopilot's own
+# Argument Parsing block. This CT pins that SKILL.md names SW_PARALLEL_TICKETS_MODE as an ENV
+# OVERRIDE applied BEFORE PARALLEL_MODE is written, that it takes PRECEDENCE over the parallel=
+# arg AND the absent-token default, and that the deterministic precedence chain
+# (env > arg > absent-default `on`, unknown env -> off) is spelled out.
+par11_env_override=$(grep -cF 'ENV OVERRIDE (run/skill-side kill switch — applied BEFORE writing `PARALLEL_MODE`' "$PAR_AUTOPILOT" || true)
+par11_precedence_over_arg=$(grep -cF 'PRECEDENCE over the `parallel=` argument AND over the absent-token default' "$PAR_AUTOPILOT" || true)
+par11_precedence_chain=$(grep -cF 'env `SW_PARALLEL_TICKETS_MODE` (known value) > env `SW_PARALLEL_TICKETS_MODE` (unknown → off) > `parallel=` argument > absent-token default `on`' "$PAR_AUTOPILOT" || true)
+par11_result="false"
+if [ "$par11_env_override" -ge 1 ] && [ "$par11_precedence_over_arg" -ge 1 ] \
+  && [ "$par11_precedence_chain" -ge 1 ]; then par11_result="true"; fi
+assert_true \
+  "CT-PARALLEL-11 (SW_PARALLEL_TICKETS_MODE env override wired in Argument Parsing): env-override step ($par11_env_override>=1) precedence-over-arg ($par11_precedence_over_arg>=1) env>arg>default chain ($par11_precedence_chain>=1)" \
+  "$par11_result"
+
+# CT-PARALLEL-12 (metric-only routes to the inline serial loop + wave-plan log, NOT
+# executor-routed, C4). The routing gate splits the old `!= off` branch into an explicit
+# `== metric-only` (serial dry-run that LOGS the Wave {k}: plan but spawns NO executor) and
+# `== on` (executor-routed) case; the executor-routed section header reads `== on` and excludes
+# metric-only; ticket-executor.md is spawned only on `== on`. This pins the contradiction is
+# resolved in favour of metric-only == serial dry-run.
+par12_metric_serial_case=$(grep -cF '**`PARALLEL_MODE == metric-only`** (a serial dry-run for observability)' "$PAR_AUTOPILOT" || true)
+par12_metric_identical_off=$(grep -cF 'execute the **inline serial per-ticket loop below — identical control flow to `off`**' "$PAR_AUTOPILOT" || true)
+par12_metric_not_executor=$(grep -cF '`metric-only` does NOT take the executor-routed / wave-parallel path' "$PAR_AUTOPILOT" || true)
+par12_executor_header_on=$(grep -cF 'Taken INSTEAD of the inline loop above when `PARALLEL_MODE == on` (NOT on `metric-only`' "$PAR_AUTOPILOT" || true)
+par12_executor_agent_on=$(grep -cF 'parallel_mode == on (NOT on metric-only' "$PAR_EXECUTOR" || true)
+par12_result="false"
+if [ "$par12_metric_serial_case" -ge 1 ] && [ "$par12_metric_identical_off" -ge 1 ] \
+  && [ "$par12_metric_not_executor" -ge 1 ] && [ "$par12_executor_header_on" -ge 1 ] \
+  && [ "$par12_executor_agent_on" -ge 1 ]; then par12_result="true"; fi
+assert_true \
+  "CT-PARALLEL-12 (metric-only -> inline serial loop + wave-plan log, NOT executor-routed): metric-only serial case ($par12_metric_serial_case>=1) identical-to-off ($par12_metric_identical_off>=1) not-executor-routed ($par12_metric_not_executor>=1) executor-header==on ($par12_executor_header_on>=1) executor-agent==on ($par12_executor_agent_on>=1)" \
+  "$par12_result"
+
 PAR_PSF="$REPO_DIR/hooks/lib/parse-state-file.sh"
 
 # CT-PARALLEL-CURSOR-1 (wave-cursor schema + cursor-write obligation + hook kill switch, T-003).

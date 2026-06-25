@@ -1550,6 +1550,75 @@ rm -f /tmp/.autopilot-continue-wave-last /tmp/.autopilot-notool-wave-last
 cleanup_test_repo
 
 # ------------------------------------------------------------
+# T-004-4b: C1 empty-wave cursor stall — drained + waves-remaining BUT every
+# ticket already terminal (cascading failure) → must NOT emit a spawn-next block;
+# falls through to the all-terminal allow, mirroring the serial path.
+# ------------------------------------------------------------
+echo "--- T-004-4b: C1 empty-wave cascade — drained+remaining+all-terminal → allow stop (no spawn-next block) ---"
+setup_test_repo
+# Reproduce the confirmed-critical default-on regression: wave 0 = [A fails],
+# wave 1 = [B cascade-skip], wave 2 = [C cascade-skip]. The cursor advances only
+# by an ACTIVE wave's step 2, so the two empty later waves never advance it:
+# final state is current_wave 0, wave_status drained, wave_count 3, and EVERY
+# ticket terminal (1 failed + 2 dependency-skipped, NO pending/in_progress step).
+# Without the ALL-TERMINAL guard, 0+1 < 3 selects spawn_next and the hook emits a
+# `decision: block` asking to "spawn the next wave" forever (the next wave is
+# itself empty) until the FILE_COUNT loop guard fires [AUTOPILOT-STALL]. With the
+# guard, parse_active_steps emits nothing → WAVE_DECISION overridden to
+# terminal_check → fall through to the same all-terminal exit-0 the serial path
+# reaches.
+mkdir -p ".simple-workflow/backlog/briefs/active/wave-empty-cascade"
+{
+  echo "version: 1"
+  echo "slug: wave-empty-cascade"
+  echo "started: 2026-04-15T00:00:00Z"
+  echo "execution_mode: split"
+  echo "parallel_mode: on"
+  echo "wave_status: drained"
+  echo "current_wave: 0"
+  echo "wave_count: 3"
+  echo "total_tickets: 3"
+  echo "tickets:"
+  echo "  - logical_id: ticket-a"
+  echo "    ticket_dir: 001-a"
+  echo "    status: failed"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: completed"
+  echo "      impl: failed"
+  echo "      ship: skipped"
+  echo "  - logical_id: ticket-b"
+  echo "    ticket_dir: 002-b"
+  echo "    status: skipped"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: skipped"
+  echo "      impl: skipped"
+  echo "      ship: skipped"
+  echo "  - logical_id: ticket-c"
+  echo "    ticket_dir: 003-c"
+  echo "    status: skipped"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: skipped"
+  echo "      impl: skipped"
+  echo "      ship: skipped"
+} > ".simple-workflow/backlog/briefs/active/wave-empty-cascade/autopilot-state.yaml"
+run_autopilot_hook '{"session_id":"wave-empty-cascade"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} empty-wave cascade: no spawn-next block, fell through to all-terminal allow (exit 0)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} empty-wave cascade: expected exit 0 with no spawn-next block (C1 stall regression)"
+  echo -e "       Exit=$LAST_EXIT_CODE Decision='$DECISION' Stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-empty-cascade /tmp/.autopilot-notool-wave-empty-cascade
+cleanup_test_repo
+
+# ------------------------------------------------------------
 # T-004-5: R-ORDER-SENTINEL — fresh sentinel + drained + remaining → YIELD
 # ------------------------------------------------------------
 echo "--- T-004-5: fresh .auto-compact-pending + drained+remaining → YIELD (R-ORDER-SENTINEL) ---"

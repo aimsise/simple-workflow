@@ -116,8 +116,18 @@ fi
 # The contractual invariant in schema doc §6 is "Skills MUST NOT delete
 # phase-state.yaml at any point". An `rm` in a SKILL.md or hook body is
 # a direct violation.
+#
+# The `rm` must be matched at a SHELL COMMAND BOUNDARY, not as a substring
+# of an English word. A naive `rm[[:space:]].*phase-state\.yaml` pattern
+# false-positives on dense prose: the two letters "rm" inside "platform"
+# (or "transform"/"confirm") followed by a space tokenize as "rm ", and a
+# greedy `.*` then spans the rest of the line to reach a far-away
+# "phase-state.yaml" mention. We anchor `rm` to start-of-line or a
+# non-word character before it ([^[:alnum:]_]) so it must be a standalone
+# command token, and we bound the span between `rm` and the filename with
+# [^|;&]* so it cannot leap across shell command separators.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-PHASE_STATE_DELETES=$(grep -rnE 'rm[[:space:]].*phase-state\.yaml' \
+PHASE_STATE_DELETES=$(grep -rnE '(^|[^[:alnum:]_])rm[[:space:]][^|;&]*phase-state\.yaml' \
   "$REPO_DIR/skills/" \
   "$REPO_DIR/hooks/" 2>/dev/null || true)
 if [ -z "$PHASE_STATE_DELETES" ]; then
@@ -132,8 +142,11 @@ fi
 # --- 6. No skill uses `rm` on legacy impl-state.yaml ---
 # Per PR E Task 2 / AC 2.2: cleanup of the legacy file must use the
 # `mv ... .bak` form, never `rm`. This preserves auditability.
+# Same shell-command-boundary anchoring as test 5 so a prose substring
+# ("platform"/"transform"/"confirm" + a later "impl-state.yaml" mention)
+# cannot tokenize as an `rm` command and false-trip the guard.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-IMPL_STATE_DELETES=$(grep -rnE 'rm[[:space:]].*impl-state\.yaml' \
+IMPL_STATE_DELETES=$(grep -rnE '(^|[^[:alnum:]_])rm[[:space:]][^|;&]*impl-state\.yaml' \
   "$REPO_DIR/skills/" 2>/dev/null || true)
 if [ -z "$IMPL_STATE_DELETES" ]; then
   echo -e "  ${GREEN}PASS${NC} no rm on legacy impl-state.yaml in skills/"
