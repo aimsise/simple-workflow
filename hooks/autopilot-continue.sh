@@ -404,6 +404,116 @@ case "$POLICY_STOP_HONOR" in
     ;;
 esac
 
+# --- Wave-aware continuation branch (parallel_mode; T-004) ---
+# PLACEMENT IS LOAD-BEARING (R-ORDER-SENTINEL): this branch sits AFTER the
+# policy-gate-stop honour gate (above — a model hard-stop is honoured
+# identically in parallel) AND AFTER the early `.auto-compact-pending`
+# sentinel yield (L143–177 — a wave-drain `/compact` injection must yield the
+# Stop tick rather than be overridden by a `spawn_next` block), and BEFORE the
+# FILE_COUNT/NOTOOL_COUNT loop guard below (which stays the OUTERMOST backstop
+# for both serial and parallel modes). DO NOT move this block above the
+# sentinel check.
+#
+# The mode resolver is the shared T-003 helper: precedence
+#   SW_PARALLEL_HOOKS_MODE env > `parallel_mode:` state scalar > off
+# A SET-but-unknown env value, an absent/unknown state scalar, and a
+# missing file all resolve to `off`. When `off`, NOTHING below this comment
+# runs and the hook is byte-identical to the serial v8.7.0 path (no
+# `[PARALLEL-*]` stderr, identical decision + exit code).
+PARALLEL_MODE=$(resolve_parallel_mode "$STATE_FILE")
+if [ "$PARALLEL_MODE" != "off" ]; then
+  # Read the wave cursor (top-level scalars written by the orchestrator).
+  WAVE_STATUS=$(parse_yaml_scalar "$STATE_FILE" wave_status 2>/dev/null || true)
+  CURRENT_WAVE=$(parse_yaml_scalar "$STATE_FILE" current_wave 2>/dev/null || true)
+  WAVE_COUNT=$(parse_yaml_scalar "$STATE_FILE" wave_count 2>/dev/null || true)
+  # Numeric coercion: a missing / non-numeric cursor degrades to the safe
+  # terminal_check fall-through (CURRENT_WAVE=0, WAVE_COUNT=0 ⇒ no spawn-next
+  # block; the existing all-terminal logic decides).
+  case "$CURRENT_WAVE" in *[!0-9]*|"") CURRENT_WAVE=0 ;; esac
+  case "$WAVE_COUNT" in *[!0-9]*|"") WAVE_COUNT=0 ;; esac
+
+  # Map the cursor to a decision: in_flight → barrier (collect the wave);
+  # drained + waves-remaining → spawn_next (integrate + spawn next wave);
+  # everything else (drained+last, drained+absent-count, unknown cursor) →
+  # terminal_check (fall through to the existing all-terminal logic below).
+  WAVE_DECISION="terminal_check"
+  if [ "$WAVE_STATUS" = "in_flight" ]; then
+    WAVE_DECISION="barrier"
+  elif [ "$WAVE_STATUS" = "drained" ] && [ "$((CURRENT_WAVE + 1))" -lt "$WAVE_COUNT" ]; then
+    WAVE_DECISION="spawn_next"
+  fi
+
+  # ALL-TERMINAL guard (C1: empty-wave cursor stall). When cascading dependency
+  # failures leave one or more LATER waves EMPTY (every member already
+  # cascade-skipped), `current_wave` is never advanced past the last ACTIVE wave
+  # (per SKILL.md, the cursor advances only by an ACTIVE wave's step 2). The
+  # cursor then sits at wave_status=drained with (current_wave+1) < wave_count,
+  # which selects spawn_next above and would BLOCK forever asking to spawn a
+  # wave that is itself empty — until only the FILE_COUNT loop guard releases it.
+  # If EVERY ticket is already terminal (failed/skipped/completed),
+  # parse_active_steps emits no `<step>:<status>` line; in that case there is
+  # nothing left to spawn, so override to terminal_check and fall through to the
+  # SAME all-terminal exit-0 logic the serial path uses below. This mirrors the
+  # serial path exactly (it reaches parse_active_steps, finds nothing, exits 0).
+  if [ "$WAVE_DECISION" = "spawn_next" ]; then
+    GUARD_ACTIVE_LINES=$(parse_active_steps "$STATE_FILE" 2>/dev/null || true)
+    if [ -z "$GUARD_ACTIVE_LINES" ]; then
+      WAVE_DECISION="terminal_check"
+    fi
+  fi
+
+  if [ "$PARALLEL_MODE" = "metric-only" ]; then
+    # Observe-only: log the would-be decision and take the existing serial
+    # control flow unchanged (no block emitted here, no early exit).
+    echo "[PARALLEL-CONTINUE] metric-only: wave cursor wave_status=${WAVE_STATUS:-<absent>} current_wave=${CURRENT_WAVE} wave_count=${WAVE_COUNT} would=${WAVE_DECISION}" >&2
+  elif [ "$WAVE_DECISION" != "terminal_check" ]; then
+    # The FILE_COUNT loop guard stays the outermost backstop: a stuck wave
+    # whose cursor never advances still RELEASES at FILE_COUNT>=5 &&
+    # NOTOOL>=threshold rather than blocking forever (AC-5).
+    if [ "$FILE_COUNT" -ge 5 ] && [ "$NOTOOL_COUNT" -ge "$NOTOOL_THRESHOLD" ]; then
+      echo "[AUTOPILOT-STALL] wave loop guard released after $FILE_COUNT consecutive blocks (wave_status=${WAVE_STATUS:-<absent>}, current_wave=${CURRENT_WAVE})" >&2
+      echo "[AUTOPILOT-STALL] Wave pipeline halted: $NOTOOL_COUNT consecutive end_turn attempts without tool calls or state progress. Resume with: /autopilot {parent-slug}"
+      _emit_session_end_metrics "loop_guard_release" "$FILE_COUNT"
+      rm -f "$COUNTER_FILE" 2>/dev/null || true
+      rm -f "$NOTOOL_COUNTER_FILE" 2>/dev/null || true
+      exit 0
+    fi
+
+    # Advance the FILE_COUNT counter (mirrors the serial block path below) so
+    # the loop guard can fire on the next stuck tick.
+    FILE_COUNT=$((FILE_COUNT + 1))
+    if [ "$SESSION_ID" != "unknown" ]; then
+      echo "$FILE_COUNT" > "$COUNTER_FILE"
+    fi
+
+    WAVE_STATE_CONTENT=$(cat "$STATE_FILE")
+    if [ "$WAVE_DECISION" = "barrier" ]; then
+      jq -n \
+        --arg state_path "$STATE_FILE" \
+        --arg wave "$CURRENT_WAVE" \
+        --arg state_content "$WAVE_STATE_CONTENT" \
+        '{
+          decision: "block",
+          reason: ("A parallel /autopilot wave (current_wave: " + $wave + ") is IN FLIGHT. Do NOT stop and do NOT run scout/impl/ship inline. As the single writer for this wave: collect every spawned executor'\''s return envelope, then write each ticket'\''s terminal steps.* and status fields into " + $state_path + ", then set wave_status: drained. Only after the barrier is drained does the next Stop tick decide spawn-next vs. completion.\n\nCurrent pipeline state:\n" + $state_content)
+        }'
+    else
+      jq -n \
+        --arg state_path "$STATE_FILE" \
+        --arg wave "$CURRENT_WAVE" \
+        --arg next_wave "$((CURRENT_WAVE + 1))" \
+        --arg wave_count "$WAVE_COUNT" \
+        --arg state_content "$WAVE_STATE_CONTENT" \
+        '{
+          decision: "block",
+          reason: ("The parallel /autopilot wave (current_wave: " + $wave + " of " + $wave_count + ") is DRAINED and waves remain. Do NOT stop. Integrate the completed wave (verify its tickets reached terminal state in " + $state_path + "), then advance the cursor to current_wave: " + $next_wave + " and spawn the next wave'\''s executors. Do NOT run scout/impl/ship inline.\n\nCurrent pipeline state:\n" + $state_content)
+        }'
+    fi
+    exit 0
+  fi
+  # WAVE_DECISION == terminal_check (or metric-only) → fall through to the
+  # existing FILE_COUNT loop guard + all-terminal logic below, unchanged.
+fi
+
 if [ "$FILE_COUNT" -ge 5 ] && [ "$NOTOOL_COUNT" -ge "$NOTOOL_THRESHOLD" ]; then
   echo "[AUTOPILOT-STALL] file-based loop guard released after $FILE_COUNT consecutive blocks" >&2
   echo "[AUTOPILOT-STALL] Pipeline halted: model emitted $NOTOOL_COUNT consecutive end_turn attempts without tool calls or state progress. Resume with: /autopilot {parent-slug}"

@@ -43,6 +43,28 @@
 # short-circuits. Result: exactly one /compact per ticket boundary, injected by
 # this hook.
 #
+# **Parallel wave re-key (T-006):** under `parallel_mode != off` (resolved
+# via `resolve_parallel_mode` BEFORE the L126 ship-detector early-exit) the
+# trigger re-keys from "a ship completed" to "the current wave just fully
+# drained". The L126 `_detect_ship_completed_in_payload || exit 0`
+# early-exit is SUPPLANTED by `_detect_wave_drained_in_payload` (greps the
+# payload for a flat `wave_status: drained`), so a drained write that does
+# NOT also carry `ship: completed` STILL proceeds and injects exactly once
+# per wave — independent of how many ship writes preceded it. (Appending
+# the wave detector AFTER L126 would silently kill auto-compaction under
+# parallel — a drained-only write would exit at L126 first; the resolution
+# MUST precede L126.) The Gate 7 dedup marker is re-keyed to
+# `wave-{CURRENT_WAVE}:{ts}` (HYPHEN in the key, SINGLE colon) so the
+# shared `%%:*`/`##*:` split is byte-UNTOUCHED (R-MARKER-SPLIT eliminated),
+# and `IS_LAST_TICKET` generalizes to `IS_LAST_WAVE`
+# (`current_wave + 1 >= wave_count && wave_status == drained`). Serial
+# (`parallel_mode` absent/off) keeps the L126 ship-detector early-exit and
+# the serial `{shipped_count}:{ts}` marker VERBATIM; `metric-only` parallel
+# logs the would-be wave gate then takes the SERIAL path (serial marker +
+# count-based last check). Every parallel-on behaviour change is inside a
+# `$PARALLEL_MODE` guard (`= off` runs the original path untouched), so the
+# off path is byte-identical (same decision, same exit, no new stderr).
+#
 # Kill-switch (DEFAULT ON within autopilot context, shared with the
 # primary):
 #   SW_AUTO_COMPACT_ON_SHIP_MODE unset (in autopilot) -> on (default)
@@ -123,7 +145,49 @@ _detect_ship_completed_in_payload() {
     END { exit !found }
   '
 }
-_detect_ship_completed_in_payload "$TOOL_PAYLOAD" || exit 0
+
+# T-006 wave-drained detector — a ~6-line sibling of
+# _detect_ship_completed_in_payload. Greps the payload for a flat
+# `wave_status: drained` transition (the single deterministic flip the
+# single-writer orchestrator controls per wave). The same inline-flow
+# terminators (`}` / `,`) are accepted as in the ship detector so a
+# template-seeded flow-form `wave_status: drained` write is not missed.
+_detect_wave_drained_in_payload() {
+  local payload="$1"
+  printf '%s' "$payload" | grep -qE '(^|[[:space:]])wave_status:[[:space:]]+drained([[:space:],}]|$)'
+}
+
+# T-006 M1 (make-or-break): resolve PARALLEL_MODE *before* the L126
+# ship-detector early-exit so the parallel path NEVER hits the ship-only
+# exit. Under `parallel_mode != off` the wave-drained detector SUPPLANTS
+# the `_detect_ship_completed_in_payload || exit 0` gate — a
+# `wave_status: drained` write that does NOT also carry `ship: completed`
+# still proceeds (the N ship writes and the drained flip can be separate
+# writes). Serial (parallel=off) keeps the L126 ship-detector early-exit
+# VERBATIM: every parallel addition is inside `if [ "$PARALLEL_MODE" !=
+# "off" ]`, so with `parallel_mode` absent/off this hook behaves exactly
+# as before (same decision, same exit code, NO new stderr line).
+#
+# `resolve_parallel_mode` reads `parallel_mode:` from the just-written
+# state file (Gate 1 guaranteed `$TOOL_FILE_PATH` is the autopilot-state.yaml
+# the orchestrator wrote); a missing/unreadable file resolves `off`
+# (fail-closed), preserving the serial path.
+PARALLEL_MODE="$(resolve_parallel_mode "$TOOL_FILE_PATH")"
+if [ "$PARALLEL_MODE" = "off" ]; then
+  # Serial path — byte-identical L126 early-exit.
+  _detect_ship_completed_in_payload "$TOOL_PAYLOAD" || exit 0
+elif [ "$PARALLEL_MODE" = "metric-only" ]; then
+  # metric-only parallel: log the would-be wave gate, then take the SERIAL
+  # path (gate on ship-completed) so observation never changes behaviour.
+  echo "[POST-SHIP-STATE-AUTO-COMPACT] metric-only parallel: would gate on wave_status: drained instead of ship: completed" >&2
+  _detect_ship_completed_in_payload "$TOOL_PAYLOAD" || exit 0
+else
+  # parallel_mode=on: the L126 ship-detector early-exit is SUPPLANTED by
+  # the wave-drained detector. A drained-only write (no ship: completed)
+  # still proceeds; a mid-wave ship: completed write whose wave_status is
+  # NOT drained exits here (defer to the wave barrier).
+  _detect_wave_drained_in_payload "$TOOL_PAYLOAD" || exit 0
+fi
 
 # Gate 3: autopilot context (defence-in-depth; Gate 1 already implies it).
 is_autopilot_context || exit 0
@@ -160,6 +224,18 @@ esac
 # fails open. Reading the persisted state guarantees a well-formed YAML
 # document with the canonical `tickets:` root key. The just-written
 # change is already reflected on disk by the time PostToolUse fires.
+#
+# T-006 / parallel precondition (joint obligation with T-007): under
+# `parallel_mode=on` the inject fires on the `wave_status: drained` write,
+# and Gate 5 still walks every `ship: completed` element here. The
+# orchestrator (T-007) MUST therefore complete all ticket-to-`done/` moves
+# for a wave BEFORE it writes `wave_status: drained` — otherwise a drained
+# write whose state still lists a just-shipped ticket under `active/` would
+# be (correctly, from this gate's view) flagged as a state-lie and the
+# inject skipped. Skipping is the SAFE degradation (no auto-compact at that
+# boundary; the FILE_COUNT loop guard + the next drained write recover), so
+# this gate is left UNCHANGED — the ordering obligation lives in the T-007
+# wave-barrier write sequence, not here.
 REPO_ROOT=""
 if [ -n "$TOOL_FILE_PATH" ]; then
   REPO_ROOT="${TOOL_FILE_PATH%%/.simple-workflow/*}"
@@ -406,6 +482,23 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
   # its output is the shipped ticket count.
   G7_SHIPPED_COUNT=$(parse_ticket_ship_dirs "$STATE_FILE_PATH" 2>/dev/null | grep -c . || true)
   G7_SHIPPED_COUNT="${G7_SHIPPED_COUNT:-0}"
+  # T-006 dedup re-key. Serial keeps the `{shipped_count}:{ts}` marker
+  # VERBATIM. ONLY under `parallel_mode = on` does the dedup key become
+  # `wave-{CURRENT_WAVE}:{ts}` — a HYPHEN in the key, a SINGLE colon — so
+  # the shared `%%:*` (key) / `##*:` (ts) split below is byte-UNTOUCHED
+  # and works identically for both forms (R-MARKER-SPLIT eliminated, not
+  # mitigated). `metric-only` parallel deliberately takes the SERIAL marker
+  # (it logged the would-be wave gate above and then ran the serial gate),
+  # so the re-key gates on `= on`, not `!= off`. `current_wave:` is a
+  # top-level scalar in the wave cursor (T-003); a missing/blank value
+  # resolves to `0` so the marker is still well-formed. The whole re-key
+  # lives inside the `= on` gate, so the serial marker is byte-identical.
+  G7_MARKER_KEY="$G7_SHIPPED_COUNT"
+  if [ "$PARALLEL_MODE" = "on" ]; then
+    G7_CURRENT_WAVE="$(parse_yaml_scalar "$STATE_FILE_PATH" current_wave 2>/dev/null || true)"
+    [ -n "$G7_CURRENT_WAVE" ] || G7_CURRENT_WAVE=0
+    G7_MARKER_KEY="wave-${G7_CURRENT_WAVE}"
+  fi
   G7_ATTEMPT_FILE="$(dirname "$STATE_FILE_PATH")/.auto-compact-last-attempt"
   if [ -f "$G7_ATTEMPT_FILE" ]; then
     G7_PREV_LINE=$(cat "$G7_ATTEMPT_FILE" 2>/dev/null || echo "")
@@ -414,12 +507,12 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
     G7_NOW_TS=$(date +%s)
     if [ -n "$G7_PREV_COUNT" ] && [ -n "$G7_PREV_TS" ] \
        && [ "$G7_PREV_TS" -gt 0 ] 2>/dev/null \
-       && [ "$G7_PREV_COUNT" = "$G7_SHIPPED_COUNT" ]; then
+       && [ "$G7_PREV_COUNT" = "$G7_MARKER_KEY" ]; then
       G7_AGE=$((G7_NOW_TS - G7_PREV_TS))
       if [ "$G7_AGE" -ge 0 ] && [ "$G7_AGE" -le 300 ]; then
-        echo "[POST-SHIP-STATE-AUTO-COMPACT] loop-guard: shipped_count=${G7_SHIPPED_COUNT} unchanged since previous attempt ${G7_AGE}s ago. Skipping inject (test_simple_workflow24 double-compact fix)." >&2
-        jq -n --arg cnt "$G7_SHIPPED_COUNT" --arg age "$G7_AGE" \
-          '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:("auto-compact-on-ship: loop suspected — shipped_count (" + $cnt + ") unchanged since previous compact " + $age + "s ago. Skipping inject (shared loop-guard marker).")}}'
+        echo "[POST-SHIP-STATE-AUTO-COMPACT] loop-guard: marker key=${G7_MARKER_KEY} unchanged since previous attempt ${G7_AGE}s ago. Skipping inject (test_simple_workflow24 double-compact fix)." >&2
+        jq -n --arg cnt "$G7_MARKER_KEY" --arg age "$G7_AGE" \
+          '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:("auto-compact-on-ship: loop suspected — marker key (" + $cnt + ") unchanged since previous compact " + $age + "s ago. Skipping inject (shared loop-guard marker).")}}'
         exit 0
       fi
     fi
@@ -427,7 +520,7 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
   # Marker write must happen even when we proceed to inject so the
   # primary trigger can detect this boundary as already-handled on its
   # post-compact-resume PreToolUse(scout) fire.
-  echo "${G7_SHIPPED_COUNT}:$(date +%s)" > "$G7_ATTEMPT_FILE" 2>/dev/null || true
+  echo "${G7_MARKER_KEY}:$(date +%s)" > "$G7_ATTEMPT_FILE" 2>/dev/null || true
   # H7 fix: last-ticket detection. shipped_count == total_tickets means
   # this just-flipped `ship: completed` was for the FINAL ticket; the
   # orchestrator must run the post-loop completion phase (Split Autopilot
@@ -436,20 +529,44 @@ if [ -n "$STATE_FILE_PATH" ] && [ -f "$STATE_FILE_PATH" ]; then
   # tickets the next-ticket preamble follows, so end_turn-now is correct.
   # The primary trigger never fires on the last ticket (no next /scout),
   # so this branch is safety-net-only.
-  G7_TOTAL_TICKETS=$(parse_ticket_statuses "$STATE_FILE_PATH" 2>/dev/null | wc -l | tr -d ' ')
-  G7_TOTAL_TICKETS="${G7_TOTAL_TICKETS:-0}"
+  #
+  # T-006 IS_LAST_TICKET → IS_LAST_WAVE generalization (positive
+  # correctness gain). Under parallel the count-based check
+  # (shipped_count == total_tickets) is WRONG: a failed/skipped ticket
+  # makes shipped_count < total_tickets on the last drained wave, so the
+  # post-loop instruction would never fire. The wave-cursor key keys off
+  # `current_wave + 1 >= wave_count && wave_status == drained` instead.
+  # Serial keeps the count-based IS_LAST_TICKET verbatim (inside `else`);
+  # `metric-only` parallel runs the serial count-based check too (it took
+  # the serial path above), so this gates on `= on`, not `!= off`.
   IS_LAST_TICKET=0
-  if [ "$G7_SHIPPED_COUNT" -ge 1 ] 2>/dev/null \
-     && [ "$G7_TOTAL_TICKETS" -ge 1 ] 2>/dev/null \
-     && [ "$G7_SHIPPED_COUNT" = "$G7_TOTAL_TICKETS" ]; then
-    IS_LAST_TICKET=1
+  if [ "$PARALLEL_MODE" = "on" ]; then
+    G7_WAVE_COUNT="$(parse_yaml_scalar "$STATE_FILE_PATH" wave_count 2>/dev/null || true)"
+    [ -n "$G7_WAVE_COUNT" ] || G7_WAVE_COUNT=0
+    G7_WAVE_STATUS="$(parse_yaml_scalar "$STATE_FILE_PATH" wave_status 2>/dev/null || true)"
+    G7_CURRENT_WAVE_LW="${G7_CURRENT_WAVE:-0}"
+    [ -n "$G7_CURRENT_WAVE_LW" ] || G7_CURRENT_WAVE_LW=0
+    if [ "$G7_CURRENT_WAVE_LW" -ge 0 ] 2>/dev/null \
+       && [ "$G7_WAVE_COUNT" -ge 1 ] 2>/dev/null \
+       && [ "$((G7_CURRENT_WAVE_LW + 1))" -ge "$G7_WAVE_COUNT" ] \
+       && [ "$G7_WAVE_STATUS" = "drained" ]; then
+      IS_LAST_TICKET=1
+    fi
+  else
+    G7_TOTAL_TICKETS=$(parse_ticket_statuses "$STATE_FILE_PATH" 2>/dev/null | wc -l | tr -d ' ')
+    G7_TOTAL_TICKETS="${G7_TOTAL_TICKETS:-0}"
+    if [ "$G7_SHIPPED_COUNT" -ge 1 ] 2>/dev/null \
+       && [ "$G7_TOTAL_TICKETS" -ge 1 ] 2>/dev/null \
+       && [ "$G7_SHIPPED_COUNT" = "$G7_TOTAL_TICKETS" ]; then
+      IS_LAST_TICKET=1
+    fi
   fi
   # M4: preserve the shipped count for the audit-trail metrics write
   # below. The G7_* vars get unset on the next line; copy into a more
   # specific name so the inject branch can reference it.
   SHIPPED_COUNT_FOR_AUDIT="$G7_SHIPPED_COUNT"
 fi
-unset G7_SHIPPED_COUNT G7_ATTEMPT_FILE G7_PREV_LINE G7_PREV_COUNT G7_PREV_TS G7_NOW_TS G7_AGE G7_TOTAL_TICKETS
+unset G7_SHIPPED_COUNT G7_ATTEMPT_FILE G7_PREV_LINE G7_PREV_COUNT G7_PREV_TS G7_NOW_TS G7_AGE G7_TOTAL_TICKETS G7_MARKER_KEY G7_CURRENT_WAVE G7_WAVE_COUNT G7_WAVE_STATUS G7_CURRENT_WAVE_LW
 
 # metric-only branch.
 if [ "$MODE" = "metric-only" ]; then

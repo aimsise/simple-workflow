@@ -10573,6 +10573,688 @@ assert_true \
   "CT-UC-ORCH-4 (M-widening Form B + bug fixes): UC-FLOOR ($uco4_floor>=1) [UC-ORCH-FLOOR] marker ($uco4_floor_marker>=1) gate {thorough,exhaustive} ($uco4_gate_thorough>=1) AC_COUNT<30 partition guard ($uco4_gate_accap>=1) eval-panel args JSON.parse defense ($uco4_args_parse>=1)" \
   "$uco4_result"
 
+# CT-UC-ORCH-5 (uc default off->on flip + explicit-off byte-identity preserved). The uc=
+# absent-token default is now `on` at all four sites (autopilot Argument Parsing, impl
+# Step 1a-uc, impl Step 3a UC_ORCH resolution, brief uc= bullet) + the state-file doc; the
+# explicit-`off` "byte-identical to v8.5.0" literal MUST survive verbatim (R-c1 drift guard:
+# the flip rewords only the absent/default clause, never the explicit-off byte-identity literal).
+uco5_autopilot_default=$(grep -cF 'is absent, `UC_ORCH = on`' "$UCO_AUTOPILOT" || true)
+uco5_impl_1a_default=$(grep -cF 'Default when the token is absent = `on`' "$UCO_IMPL" || true)
+uco5_impl_3a_flip=$(grep -cF 'on-by-default path floors non-S' "$UCO_IMPL" || true)
+uco5_brief_default=$(grep -cF 'ELSE `on` (the default' "$UCO_BRIEF" || true)
+uco5_statefile_default=$(grep -cF 'default `on` when absent' "$UCO_STATEFILE" || true)
+uco5_off_byteident=$(grep -cF 'byte-identical to v8.5.0' "$UCO_IMPL" || true)
+uco5_result="false"
+if [ "$uco5_autopilot_default" -ge 1 ] && [ "$uco5_impl_1a_default" -ge 1 ] && [ "$uco5_impl_3a_flip" -ge 1 ] \
+  && [ "$uco5_brief_default" -ge 1 ] && [ "$uco5_statefile_default" -ge 1 ] && [ "$uco5_off_byteident" -ge 2 ]; then uco5_result="true"; fi
+assert_true \
+  "CT-UC-ORCH-5 (uc default on flip + off byte-identity preserved): autopilot default-on ($uco5_autopilot_default>=1) impl-1a default-on ($uco5_impl_1a_default>=1) impl-3a flip ($uco5_impl_3a_flip>=1) brief default-on ($uco5_brief_default>=1) state-file default-on ($uco5_statefile_default>=1); explicit-off byte-identical literal preserved ($uco5_off_byteident>=2)" \
+  "$uco5_result"
+
+
+echo ""
+
+# =============================================================================
+# Cat PARALLEL: parallel ticket-execution opt-in (parallel= arg surface,
+# parallel_mode run-scoped state, wave layering emit, ticket-executor contract,
+# execution-path routing, SW_PARALLEL_TICKETS_MODE kill switch).
+# Diff: NEW category (Phase 1 / T-001). The parallel= path is ADDITIVE — the
+#       no-parallel / parallel=off default is byte-identical (the inline serial
+#       loop) — so these CTs pin the NET-NEW surface only: the arg grammar +
+#       [PARALLEL-MODE] marker, the chain=off ignore WARNING + brief->autopilot
+#       forward, the parallel_mode write/re-read, the Wave layering contract,
+#       the ticket-executor agent contract (tools-omitted / no-state-write /
+#       envelope), the Execution-path routing branch, and the env kill switch.
+#       Mirrors Cat UC-ORCH (the uc= peer this surface is uniform with).
+# =============================================================================
+echo "--- Cat PARALLEL: parallel ticket-execution opt-in (T-001) ---"
+
+PAR_AUTOPILOT="$REPO_DIR/skills/autopilot/SKILL.md"
+PAR_BRIEF="$REPO_DIR/skills/brief/SKILL.md"
+PAR_STATEFILE="$REPO_DIR/skills/autopilot/references/state-file.md"
+PAR_SPLITPARSE="$REPO_DIR/skills/autopilot/references/split-plan-parsing.md"
+PAR_EXECUTOR="$REPO_DIR/agents/ticket-executor.md"
+PAR_CLAUDEMD="$REPO_DIR/CLAUDE.md"
+
+# CT-PARALLEL-1 (parallel= argument surface + [PARALLEL-MODE] marker + brief forward).
+# The arg grammar (token parallel=, values on|off|metric-only) is documented on the two
+# spawner surfaces that START autopilot (/autopilot + /brief; /impl does NOT parse parallel=,
+# that asymmetry is correct — parallel lives at the autopilot layer); the [PARALLEL-MODE]
+# resolution marker appears in /autopilot; /brief carries the chain=off ignore WARNING and
+# forwards parallel={resolved_parallel} to the chained /autopilot.
+par1_autopilot_arg=$(grep -cF 'parallel=<value>' "$PAR_AUTOPILOT" || true)
+par1_autopilot_marker=$(grep -cF '[PARALLEL-MODE]' "$PAR_AUTOPILOT" || true)
+par1_brief_arg=$(grep -cF 'parallel=on|off|metric-only' "$PAR_BRIEF" || true)
+par1_brief_warn=$(grep -cF 'parallel=on ignored when chain=off' "$PAR_BRIEF" || true)
+par1_brief_fwd=$(grep -cF 'parallel={resolved_parallel}' "$PAR_BRIEF" || true)
+par1_result="false"
+if [ "$par1_autopilot_arg" -ge 1 ] && [ "$par1_autopilot_marker" -ge 1 ] && [ "$par1_brief_arg" -ge 1 ] \
+  && [ "$par1_brief_warn" -ge 1 ] && [ "$par1_brief_fwd" -ge 1 ]; then par1_result="true"; fi
+assert_true \
+  "CT-PARALLEL-1 (parallel= arg surface + propagation): autopilot arg ($par1_autopilot_arg>=1) [PARALLEL-MODE] marker ($par1_autopilot_marker>=1); brief arg ($par1_brief_arg>=1) chain=off warning ($par1_brief_warn>=1) brief->autopilot forward ($par1_brief_fwd>=1)" \
+  "$par1_result"
+
+# CT-PARALLEL-2 (run-scoped continuity: parallel_mode in autopilot-state.yaml). The
+# state-file schema reference DOCUMENTS the top-level parallel_mode: field; /autopilot
+# WRITES it at state init and RE-READS it on resume (Phase 1 Step 5) via parse_yaml_scalar.
+# Mirror of ultracode_mode (kind-2 run-scoped state, NOT a permanent policy flag).
+par2_statefile_doc=$(grep -cF 'parallel_mode' "$PAR_STATEFILE" || true)
+par2_autopilot_field=$(grep -cF 'parallel_mode' "$PAR_AUTOPILOT" || true)
+par2_autopilot_init=$(grep -cF 'top-level field `parallel_mode: {on|metric-only}`' "$PAR_AUTOPILOT" || true)
+par2_autopilot_resume=$(grep -cF 'parse_yaml_scalar <file> parallel_mode' "$PAR_AUTOPILOT" || true)
+par2_result="false"
+if [ "$par2_statefile_doc" -ge 1 ] && [ "$par2_autopilot_field" -ge 1 ] \
+  && [ "$par2_autopilot_init" -ge 1 ] && [ "$par2_autopilot_resume" -ge 1 ]; then par2_result="true"; fi
+assert_true \
+  "CT-PARALLEL-2 (run-scoped continuity parallel_mode): state-file documents field ($par2_statefile_doc>=1); autopilot field ($par2_autopilot_field>=1) state-init write ($par2_autopilot_init>=1) re-read on resume ($par2_autopilot_resume>=1)" \
+  "$par2_result"
+
+# CT-PARALLEL-3 (wave layering emit contract). split-plan-parsing.md documents the
+# level-synchronous Kahn wave layering and the `Wave k:` emit format; /autopilot calls it
+# (emits the wave lines when PARALLEL_MODE != off; emit-only at concurrency 1).
+par3_wave_section=$(grep -cF 'Wave layering' "$PAR_SPLITPARSE" || true)
+par3_level_sync=$(grep -cF 'level-synchronous Kahn' "$PAR_SPLITPARSE" || true)
+par3_wave_emit=$(grep -cF 'Wave 0:' "$PAR_SPLITPARSE" || true)
+par3_autopilot_wave=$(grep -cF 'Wave {k}:' "$PAR_AUTOPILOT" || true)
+par3_result="false"
+if [ "$par3_wave_section" -ge 1 ] && [ "$par3_level_sync" -ge 1 ] \
+  && [ "$par3_wave_emit" -ge 1 ] && [ "$par3_autopilot_wave" -ge 1 ]; then par3_result="true"; fi
+assert_true \
+  "CT-PARALLEL-3 (wave layering emit): split-parse section ($par3_wave_section>=1) level-synchronous ($par3_level_sync>=1) Wave-emit format ($par3_wave_emit>=1); autopilot emits waves ($par3_autopilot_wave>=1)" \
+  "$par3_result"
+
+# CT-PARALLEL-4 (ticket-executor agent contract). agents/ticket-executor.md EXISTS and
+# pins the load-bearing contract strings: tools OMITTED (full inherit incl Agent), MUST NOT
+# write autopilot-state.yaml (single-writer), and the fixed [TICKET-EXECUTOR-RESULT] envelope.
+par4_exists=0; if [ -f "$PAR_EXECUTOR" ]; then par4_exists=1; fi
+par4_tools_omit=$(grep -cF 'tools:` field is intentionally omitted' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_no_write=$(grep -cF 'MUST NOT write `autopilot-state.yaml`' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_envelope=$(grep -cF '[TICKET-EXECUTOR-RESULT]' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_fields=$(grep -cF 'failure_reason' "$PAR_EXECUTOR" 2>/dev/null || true)
+par4_result="false"
+if [ "$par4_exists" -eq 1 ] && [ "$par4_tools_omit" -ge 1 ] && [ "$par4_no_write" -ge 1 ] \
+  && [ "$par4_envelope" -ge 1 ] && [ "$par4_fields" -ge 1 ]; then par4_result="true"; fi
+assert_true \
+  "CT-PARALLEL-4 (ticket-executor contract): exists ($par4_exists=1) tools-omitted ($par4_tools_omit>=1) no-state-write ($par4_no_write>=1) envelope ($par4_envelope>=1) fields ($par4_fields>=1)" \
+  "$par4_result"
+
+# CT-PARALLEL-5 (autopilot execution-path routing). /autopilot Phase 2 carries the
+# Execution-path routing branch (PARALLEL_MODE == off -> inline serial byte-identical;
+# != off -> executor-routed), spawns simple-workflow:ticket-executor as the single writer,
+# and pins concurrency 1 for Phase 1.
+par5_routing=$(grep -cF 'Execution-path routing' "$PAR_AUTOPILOT" || true)
+par5_executor_subsec=$(grep -cF 'Executor-routed per-ticket pipeline' "$PAR_AUTOPILOT" || true)
+par5_spawn=$(grep -cF 'simple-workflow:ticket-executor' "$PAR_AUTOPILOT" || true)
+par5_single_writer=$(grep -cF 'single writer' "$PAR_AUTOPILOT" || true)
+par5_conc1=$(grep -cF 'concurrency 1' "$PAR_AUTOPILOT" || true)
+par5_result="false"
+if [ "$par5_routing" -ge 1 ] && [ "$par5_executor_subsec" -ge 1 ] && [ "$par5_spawn" -ge 1 ] \
+  && [ "$par5_single_writer" -ge 1 ] && [ "$par5_conc1" -ge 1 ]; then par5_result="true"; fi
+assert_true \
+  "CT-PARALLEL-5 (execution-path routing): routing branch ($par5_routing>=1) executor subsection ($par5_executor_subsec>=1) spawn ticket-executor ($par5_spawn>=1) single-writer ($par5_single_writer>=1) concurrency-1 ($par5_conc1>=1)" \
+  "$par5_result"
+
+# CT-PARALLEL-6 (env kill switch + (B) harness-own). CLAUDE.md documents
+# SW_PARALLEL_TICKETS_MODE (default off env-knob = byte-identical serial-revert opt-out; the run
+# default is now ON in v9.0.0) as the serial kill switch and marks it (B) harness-own substrate.
+par6_knob=$(grep -cF 'SW_PARALLEL_TICKETS_MODE' "$PAR_CLAUDEMD" || true)
+par6_killswitch=$(grep -ciE 'serial-revert kill switch.*byte-identical opt-out.*forces the v8\.7\.0 inline serial loop' "$PAR_CLAUDEMD" || true)
+par6_bsubstrate=$(grep -cF '(B) harness-own' "$PAR_CLAUDEMD" || true)
+par6_result="false"
+if [ "$par6_knob" -ge 1 ] && [ "$par6_killswitch" -ge 1 ] && [ "$par6_bsubstrate" -ge 1 ]; then par6_result="true"; fi
+assert_true \
+  "CT-PARALLEL-6 (env kill switch): SW_PARALLEL_TICKETS_MODE documented ($par6_knob>=1) kill-switch prose ($par6_killswitch>=1) (B) harness-own ($par6_bsubstrate>=1)" \
+  "$par6_result"
+
+# -----------------------------------------------------------------------------
+# T-009: parallel default off->on flip (RELOCATE branch) + opt-out byte-identity
+#        + unknown->off fail-safe. The four CTs below pin the v9.0.0 default flip:
+#        (7) the absent-token default is now `on` and emits reason=default;
+#        (8) the explicit parallel=off lane stays byte-identical (omits the state
+#            field + adds no code path — the serial-fork literals survive verbatim);
+#        (9) a bare /autopilot (default, now on) is NOT byte-identical (it routes
+#            through the executor + wave-parallel path);
+#        (10) an unknown parallel=<garbage> resolves to off (L3) and SURFACES it
+#             via reason=invocation-unknown-value-failsafe (the conservative
+#             fail-safe direction, uniform with uc= unknown->off).
+# -----------------------------------------------------------------------------
+
+# CT-PARALLEL-7 (parallel default off->on flip, RELOCATE branch). The absent-token
+# default is now `on` at the two spawner sites (autopilot Argument Parsing absent clause,
+# brief parallel= bullet) + the state-file doc; the absent-default path EMITS the
+# `reason=default` resolution line (matching the uc= peer convention).
+par7_autopilot_default=$(grep -cF 'the `parallel=` token is absent, `PARALLEL_MODE = on`' "$PAR_AUTOPILOT" || true)
+par7_autopilot_reason_default=$(grep -cF 'when the token was absent (the on-by-default path — emit `[PARALLEL-MODE] mode=on active=y reason=default`)' "$PAR_AUTOPILOT" || true)
+par7_brief_default=$(grep -cF 'ELSE `on` (the v9.0.0 default' "$PAR_BRIEF" || true)
+par7_statefile_default=$(grep -ciE 'Default .on. .run-scoped; absent on a' "$PAR_STATEFILE" || true)
+par7_result="false"
+if [ "$par7_autopilot_default" -ge 1 ] && [ "$par7_autopilot_reason_default" -ge 1 ] \
+  && [ "$par7_brief_default" -ge 1 ] && [ "$par7_statefile_default" -ge 1 ]; then par7_result="true"; fi
+assert_true \
+  "CT-PARALLEL-7 (parallel default off->on flip): autopilot absent-default-on ($par7_autopilot_default>=1) reason=default emit ($par7_autopilot_reason_default>=1) brief default-on ($par7_brief_default>=1) state-file default-on ($par7_statefile_default>=1)" \
+  "$par7_result"
+
+# CT-PARALLEL-8 (explicit parallel=off byte-identity opt-out, R-c1 drift guard). The
+# explicit `parallel=off` lane MUST stay byte-identical: it OMITS the parallel_mode: state
+# field, adds NO code path (the serial loop is untouched), and the worktree/wave machinery is
+# entirely inside the PARALLEL_MODE == on branch. These serial-fork literals survive the flip
+# verbatim — only the absent/default clause was reworded (off was NEVER the load-bearing carrier
+# of the default before; it is the opt-out now).
+par8_omit_field=$(grep -cF 'OMIT the `parallel_mode:` field entirely' "$PAR_AUTOPILOT" || true)
+par8_no_code_path=$(grep -ciE 'parallel=off.* adds NO code path' "$PAR_AUTOPILOT" || true)
+par8_serial_untouched=$(grep -cF 'the serial loop is untouched' "$PAR_AUTOPILOT" || true)
+par8_off_byteident=$(grep -cF 'byte-identical to prior versions' "$PAR_AUTOPILOT" || true)
+par8_statefile_omit=$(grep -cF 'OMITS the field entirely' "$PAR_STATEFILE" || true)
+par8_result="false"
+if [ "$par8_omit_field" -ge 1 ] && [ "$par8_no_code_path" -ge 1 ] && [ "$par8_serial_untouched" -ge 1 ] \
+  && [ "$par8_off_byteident" -ge 1 ] && [ "$par8_statefile_omit" -ge 1 ]; then par8_result="true"; fi
+assert_true \
+  "CT-PARALLEL-8 (explicit parallel=off byte-identity opt-out): omit field ($par8_omit_field>=1) no-code-path ($par8_no_code_path>=1) serial-untouched ($par8_serial_untouched>=1) byte-identical ($par8_off_byteident>=1) state-file omit ($par8_statefile_omit>=1)" \
+  "$par8_result"
+
+# CT-PARALLEL-9 (bare /autopilot default-on is NOT byte-identical — it routes through the
+# executor + wave-parallel path). The default-on path must genuinely select the executor-routed
+# wave-parallel branch (NOT the inline serial loop): the absent-token resolution defaults to `on`
+# and Phase 2 takes the executor-routed wave-parallel path. This is the inverse of the opt-out
+# byte-identity CT above — it pins that the NEW default actually engages the parallel machinery.
+par9_default_routes=$(grep -cF 'With no `parallel=` token the resolution defaults to `on`, Phase 2 takes the executor-routed wave-parallel path' "$PAR_AUTOPILOT" || true)
+par9_wave_pipeline=$(grep -cF 'Wave-parallel pipeline (`PARALLEL_MODE == on`)' "$PAR_AUTOPILOT" || true)
+par9_spawn_concurrent=$(grep -cF 'Spawn the wave concurrently' "$PAR_AUTOPILOT" || true)
+par9_result="false"
+if [ "$par9_default_routes" -ge 1 ] && [ "$par9_wave_pipeline" -ge 1 ] && [ "$par9_spawn_concurrent" -ge 1 ]; then par9_result="true"; fi
+assert_true \
+  "CT-PARALLEL-9 (bare default-on routes to wave-parallel, NOT byte-identical): default-routes-on ($par9_default_routes>=1) wave-pipeline section ($par9_wave_pipeline>=1) concurrent spawn ($par9_spawn_concurrent>=1)" \
+  "$par9_result"
+
+# CT-PARALLEL-10 (unknown parallel=<garbage> -> off fail-safe, L3 / R4). An unknown value
+# coerces to off (the proven serial path — the SAME conservative direction as uc= unknown->off
+# and resolve_parallel_mode's own unknown->off) AND surfaces it via the observable
+# reason=invocation-unknown-value-failsafe emit. Documented in autopilot SKILL.md (the resolver)
+# + CLAUDE.md (the R4 posture). This removes the prior deliberate asymmetry (parallel unknown->on
+# would have inverted the conservative direction).
+par10_autopilot_failsafe=$(grep -cF 'reason=invocation-unknown-value-failsafe' "$PAR_AUTOPILOT" || true)
+par10_autopilot_safe_off=$(grep -cF 'An unknown `parallel=<value>` resolves **safe to `off`**' "$PAR_AUTOPILOT" || true)
+par10_claude_failsafe=$(grep -cF 'reason=invocation-unknown-value-failsafe' "$PAR_CLAUDEMD" || true)
+par10_claude_coerce_off=$(grep -ciE 'unknown .parallel=<garbage>.* coerces to .*off' "$PAR_CLAUDEMD" || true)
+par10_result="false"
+if [ "$par10_autopilot_failsafe" -ge 1 ] && [ "$par10_autopilot_safe_off" -ge 1 ] \
+  && [ "$par10_claude_failsafe" -ge 1 ] && [ "$par10_claude_coerce_off" -ge 1 ]; then par10_result="true"; fi
+assert_true \
+  "CT-PARALLEL-10 (unknown parallel=<garbage> -> off fail-safe L3): autopilot failsafe-emit ($par10_autopilot_failsafe>=1) autopilot safe-to-off ($par10_autopilot_safe_off>=1) CLAUDE.md failsafe-emit ($par10_claude_failsafe>=1) CLAUDE.md coerce-off ($par10_claude_coerce_off>=1)" \
+  "$par10_result"
+
+# CT-PARALLEL-11 (SW_PARALLEL_TICKETS_MODE run/skill-side kill switch is WIRED in Argument
+# Parsing, C2). The resolver helper reads SW_PARALLEL_HOOKS_MODE (hook side) — NOT
+# SW_PARALLEL_TICKETS_MODE — so the run/skill-side knob MUST be applied by /autopilot's own
+# Argument Parsing block. This CT pins that SKILL.md names SW_PARALLEL_TICKETS_MODE as an ENV
+# OVERRIDE applied BEFORE PARALLEL_MODE is written, that it takes PRECEDENCE over the parallel=
+# arg AND the absent-token default, and that the deterministic precedence chain
+# (env > arg > absent-default `on`, unknown env -> off) is spelled out.
+par11_env_override=$(grep -cF 'ENV OVERRIDE (run/skill-side kill switch — applied BEFORE writing `PARALLEL_MODE`' "$PAR_AUTOPILOT" || true)
+par11_precedence_over_arg=$(grep -cF 'PRECEDENCE over the `parallel=` argument AND over the absent-token default' "$PAR_AUTOPILOT" || true)
+par11_precedence_chain=$(grep -cF 'env `SW_PARALLEL_TICKETS_MODE` (known value) > env `SW_PARALLEL_TICKETS_MODE` (unknown → off) > `parallel=` argument > absent-token default `on`' "$PAR_AUTOPILOT" || true)
+par11_result="false"
+if [ "$par11_env_override" -ge 1 ] && [ "$par11_precedence_over_arg" -ge 1 ] \
+  && [ "$par11_precedence_chain" -ge 1 ]; then par11_result="true"; fi
+assert_true \
+  "CT-PARALLEL-11 (SW_PARALLEL_TICKETS_MODE env override wired in Argument Parsing): env-override step ($par11_env_override>=1) precedence-over-arg ($par11_precedence_over_arg>=1) env>arg>default chain ($par11_precedence_chain>=1)" \
+  "$par11_result"
+
+# CT-PARALLEL-12 (metric-only routes to the inline serial loop + wave-plan log, NOT
+# executor-routed, C4). The routing gate splits the old `!= off` branch into an explicit
+# `== metric-only` (serial dry-run that LOGS the Wave {k}: plan but spawns NO executor) and
+# `== on` (executor-routed) case; the executor-routed section header reads `== on` and excludes
+# metric-only; ticket-executor.md is spawned only on `== on`. This pins the contradiction is
+# resolved in favour of metric-only == serial dry-run.
+par12_metric_serial_case=$(grep -cF '**`PARALLEL_MODE == metric-only`** (a serial dry-run for observability)' "$PAR_AUTOPILOT" || true)
+par12_metric_identical_off=$(grep -cF 'execute the **inline serial per-ticket loop below — identical control flow to `off`**' "$PAR_AUTOPILOT" || true)
+par12_metric_not_executor=$(grep -cF '`metric-only` does NOT take the executor-routed / wave-parallel path' "$PAR_AUTOPILOT" || true)
+par12_executor_header_on=$(grep -cF 'Taken INSTEAD of the inline loop above when `PARALLEL_MODE == on` (NOT on `metric-only`' "$PAR_AUTOPILOT" || true)
+par12_executor_agent_on=$(grep -cF 'parallel_mode == on (NOT on metric-only' "$PAR_EXECUTOR" || true)
+par12_result="false"
+if [ "$par12_metric_serial_case" -ge 1 ] && [ "$par12_metric_identical_off" -ge 1 ] \
+  && [ "$par12_metric_not_executor" -ge 1 ] && [ "$par12_executor_header_on" -ge 1 ] \
+  && [ "$par12_executor_agent_on" -ge 1 ]; then par12_result="true"; fi
+assert_true \
+  "CT-PARALLEL-12 (metric-only -> inline serial loop + wave-plan log, NOT executor-routed): metric-only serial case ($par12_metric_serial_case>=1) identical-to-off ($par12_metric_identical_off>=1) not-executor-routed ($par12_metric_not_executor>=1) executor-header==on ($par12_executor_header_on>=1) executor-agent==on ($par12_executor_agent_on>=1)" \
+  "$par12_result"
+
+PAR_PSF="$REPO_DIR/hooks/lib/parse-state-file.sh"
+
+# CT-PARALLEL-CURSOR-1 (wave-cursor schema + cursor-write obligation + hook kill switch, T-003).
+# state-file.md documents the four optional wave-cursor fields; autopilot SKILL.md carries the
+# single-writer cursor-write obligation prose (incl. the post-barrier `wave_status: drained`
+# write); CLAUDE.md documents SW_PARALLEL_HOOKS_MODE.
+pcur1_wave_count=$(grep -cF 'wave_count' "$PAR_STATEFILE" || true)
+pcur1_current_wave=$(grep -cF 'current_wave' "$PAR_STATEFILE" || true)
+pcur1_wave_status=$(grep -cF 'wave_status' "$PAR_STATEFILE" || true)
+pcur1_main_root=$(grep -cF 'main_checkout_root' "$PAR_STATEFILE" || true)
+pcur1_skill_oblig=$(grep -cF 'Wave-cursor single-writer obligation' "$PAR_AUTOPILOT" || true)
+pcur1_skill_drained=$(grep -cF 'wave_status: drained' "$PAR_AUTOPILOT" || true)
+pcur1_claude_knob=$(grep -cF 'SW_PARALLEL_HOOKS_MODE' "$PAR_CLAUDEMD" || true)
+pcur1_result="false"
+if [ "$pcur1_wave_count" -ge 1 ] && [ "$pcur1_current_wave" -ge 1 ] && [ "$pcur1_wave_status" -ge 1 ] \
+  && [ "$pcur1_main_root" -ge 1 ] && [ "$pcur1_skill_oblig" -ge 1 ] && [ "$pcur1_skill_drained" -ge 1 ] \
+  && [ "$pcur1_claude_knob" -ge 1 ]; then pcur1_result="true"; fi
+assert_true \
+  "CT-PARALLEL-CURSOR-1 (wave-cursor schema + obligation + knob): state-file fields wave_count ($pcur1_wave_count>=1) current_wave ($pcur1_current_wave>=1) wave_status ($pcur1_wave_status>=1) main_checkout_root ($pcur1_main_root>=1); SKILL obligation ($pcur1_skill_oblig>=1) drained-write ($pcur1_skill_drained>=1); CLAUDE.md SW_PARALLEL_HOOKS_MODE ($pcur1_claude_knob>=1)" \
+  "$pcur1_result"
+
+# CT-PARALLEL-CURSOR-2 (resolve_parallel_mode helper presence + export, T-003). The shared
+# resolver is defined in parse-state-file.sh, reads the SW_PARALLEL_HOOKS_MODE env override,
+# and is on the export -f line so a sourcing hook can call it. (Behaviour is unit-tested in
+# test-hooks-lib.sh; this CT is the drift guard for its presence + export.)
+pcur2_resolver_def=$(grep -cE '^resolve_parallel_mode\(\)' "$PAR_PSF" || true)
+pcur2_resolver_env=$(grep -cF 'SW_PARALLEL_HOOKS_MODE' "$PAR_PSF" || true)
+pcur2_resolver_export=$(grep -cE '^export -f .*resolve_parallel_mode' "$PAR_PSF" || true)
+pcur2_result="false"
+if [ "$pcur2_resolver_def" -ge 1 ] && [ "$pcur2_resolver_env" -ge 1 ] && [ "$pcur2_resolver_export" -ge 1 ]; then pcur2_result="true"; fi
+assert_true \
+  "CT-PARALLEL-CURSOR-2 (resolve_parallel_mode helper): defined ($pcur2_resolver_def>=1) reads SW_PARALLEL_HOOKS_MODE ($pcur2_resolver_env>=1) exported ($pcur2_resolver_export>=1)" \
+  "$pcur2_result"
+
+PAR_HOOKSJSON="$REPO_DIR/hooks/hooks.json"
+PAR_SCOUTGUARD="$REPO_DIR/hooks/scout-checkpoint-guard.sh"
+PAR_IMPLGUARD="$REPO_DIR/hooks/impl-checkpoint-guard.sh"
+PAR_POSTSHIP="$REPO_DIR/hooks/post-ship-state-auto-compact.sh"
+PAR_PRENEXT="$REPO_DIR/hooks/pre-next-scout-auto-compact.sh"
+
+# CT-PARALLEL-SUBSTOP-1 (T-005): the checkpoint guards relocate to SubagentStop. hooks.json gains a
+# SubagentStop array with EXACTLY two top-level entries (impl + scout checkpoint guards as separate
+# entries per the Anthropic ordering rule), autopilot-continue is ABSENT from it, and both guards
+# carry the symmetric `[<HOOK>-CHECKPOINT] parallel stand-down` prose + read hook_event_name.
+psub1_substop_len=$(jq -r '(.hooks.SubagentStop | length) // 0' "$PAR_HOOKSJSON" 2>/dev/null || echo 0)
+psub1_has_impl=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | any(test("impl-checkpoint-guard"))' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
+psub1_has_scout=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | any(test("scout-checkpoint-guard"))' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
+psub1_no_apc=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | all(test("autopilot-continue")|not)' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
+psub1_scout_sd=$(grep -cF '[SCOUT-CHECKPOINT] parallel stand-down' "$PAR_SCOUTGUARD" || true)
+psub1_impl_sd=$(grep -cF '[IMPL-CHECKPOINT] parallel stand-down' "$PAR_IMPLGUARD" || true)
+psub1_scout_he=$(grep -cF 'hook_event_name' "$PAR_SCOUTGUARD" || true)
+psub1_impl_he=$(grep -cF 'hook_event_name' "$PAR_IMPLGUARD" || true)
+psub1_result="false"
+if [ "$psub1_substop_len" = "2" ] && [ "$psub1_has_impl" = "true" ] && [ "$psub1_has_scout" = "true" ] \
+  && [ "$psub1_no_apc" = "true" ] && [ "$psub1_scout_sd" -ge 1 ] && [ "$psub1_impl_sd" -ge 1 ] \
+  && [ "$psub1_scout_he" -ge 1 ] && [ "$psub1_impl_he" -ge 1 ]; then psub1_result="true"; fi
+assert_true \
+  "CT-PARALLEL-SUBSTOP-1 (checkpoint guards -> SubagentStop): hooks.json SubagentStop len ($psub1_substop_len=2) impl ($psub1_has_impl) scout ($psub1_has_scout) autopilot-continue-absent ($psub1_no_apc); scout stand-down ($psub1_scout_sd>=1) impl stand-down ($psub1_impl_sd>=1); scout hook_event ($psub1_scout_he>=1) impl hook_event ($psub1_impl_he>=1)" \
+  "$psub1_result"
+
+# CT-AC-WAVE-1 (T-006): the auto-compact hooks re-key from per-ticket-boundary to per-wave-drained.
+# post-ship carries the _detect_wave_drained_in_payload supplant detector + the wave-{N}: marker +
+# IS_LAST_WAVE + the resolver; pre-next-scout carries the parallel stand-down + the resolver.
+pacw1_drained_detector=$(grep -cF '_detect_wave_drained_in_payload' "$PAR_POSTSHIP" || true)
+pacw1_wave_marker=$(grep -cF 'wave-${' "$PAR_POSTSHIP" || true)
+# IS_LAST_WAVE: pin the EXECUTABLE last-wave arithmetic (G7_CURRENT_WAVE_LW, used only in the
+# parallel `current_wave+1 >= wave_count && wave_status==drained` block that sets IS_LAST_TICKET),
+# NOT the string "IS_LAST_WAVE" which appears only in comments — a deleted parallel last-wave block
+# must flip this CT (the prior comment-only grep was vacuous; Wave-2 adversarial-verify finding).
+pacw1_last_wave=$(grep -cF 'G7_CURRENT_WAVE_LW' "$PAR_POSTSHIP" || true)
+pacw1_postship_resolver=$(grep -cF 'resolve_parallel_mode' "$PAR_POSTSHIP" || true)
+pacw1_prenext_sd=$(grep -cF '[PRE-NEXT-SCOUT-AUTO-COMPACT] parallel stand-down' "$PAR_PRENEXT" || true)
+pacw1_prenext_resolver=$(grep -cF 'resolve_parallel_mode' "$PAR_PRENEXT" || true)
+pacw1_result="false"
+if [ "$pacw1_drained_detector" -ge 1 ] && [ "$pacw1_wave_marker" -ge 1 ] && [ "$pacw1_last_wave" -ge 1 ] \
+  && [ "$pacw1_postship_resolver" -ge 1 ] && [ "$pacw1_prenext_sd" -ge 1 ] && [ "$pacw1_prenext_resolver" -ge 1 ]; then pacw1_result="true"; fi
+assert_true \
+  "CT-AC-WAVE-1 (auto-compact wave-drained re-key): post-ship drained-detector ($pacw1_drained_detector>=1) wave-{N} marker ($pacw1_wave_marker>=1) last-wave-arith G7_CURRENT_WAVE_LW ($pacw1_last_wave>=1) resolver ($pacw1_postship_resolver>=1); pre-next-scout stand-down ($pacw1_prenext_sd>=1) resolver ($pacw1_prenext_resolver>=1)" \
+  "$pacw1_result"
+
+# CT-WAVE-1 (T-007: wave-parallel pipeline scheduler prose). /autopilot SKILL.md carries
+# the new `##### Wave-parallel pipeline (PARALLEL_MODE == on)` subsection that builds READY_k,
+# spawns min(|READY_k|, CONCURRENCY_CAP) executors in ONE message behind a foreground barrier,
+# and sub-batches oversized waves lex-ordered. Split Execution Flow notes the wave layering
+# DRIVES the scheduler under == on.
+ctw1_subsection=$(grep -cF 'Wave-parallel pipeline (`PARALLEL_MODE == on`)' "$PAR_AUTOPILOT" || true)
+ctw1_ready_k=$(grep -cF 'READY_k' "$PAR_AUTOPILOT" || true)
+ctw1_one_message=$(grep -ciE 'in ONE message' "$PAR_AUTOPILOT" || true)
+ctw1_min_cap=$(grep -cF 'min(|READY_k|, CONCURRENCY_CAP)' "$PAR_AUTOPILOT" || true)
+ctw1_barrier=$(grep -ciE 'foreground barrier' "$PAR_AUTOPILOT" || true)
+ctw1_subbatch=$(grep -ciE 'lex-ordered sub-batch' "$PAR_AUTOPILOT" || true)
+ctw1_drives=$(grep -cF 'DRIVES the wave-parallel scheduler' "$PAR_AUTOPILOT" || true)
+ctw1_result="false"
+if [ "$ctw1_subsection" -ge 1 ] && [ "$ctw1_ready_k" -ge 1 ] && [ "$ctw1_one_message" -ge 1 ] \
+  && [ "$ctw1_min_cap" -ge 1 ] && [ "$ctw1_barrier" -ge 1 ] && [ "$ctw1_subbatch" -ge 1 ] \
+  && [ "$ctw1_drives" -ge 1 ]; then ctw1_result="true"; fi
+assert_true \
+  "CT-WAVE-1 (wave-parallel pipeline emit): subsection ($ctw1_subsection>=1) READY_k ($ctw1_ready_k>=1) one-message ($ctw1_one_message>=1) min-cap ($ctw1_min_cap>=1) barrier ($ctw1_barrier>=1) sub-batch ($ctw1_subbatch>=1) drives-scheduler ($ctw1_drives>=1)" \
+  "$ctw1_result"
+
+# CT-WAVE-2 (T-007: single-writer at the wave boundary = exactly two writes per wave). Both
+# SKILL.md and state-file.md carry the pre-wave/post-wave two-writes-per-wave contract; the
+# executor NEVER writes autopilot-state.yaml; the post-wave write happens ONCE after the last
+# sub-batch (sub-batch count does not multiply the write count).
+ctw2_skill_pre=$(grep -ciE 'Pre-wave single-writer state write' "$PAR_AUTOPILOT" || true)
+ctw2_skill_post=$(grep -ciE 'Post-wave single-writer state write' "$PAR_AUTOPILOT" || true)
+ctw2_statefile_two=$(grep -ciE 'exactly \*\*TWO\*\*|exactly TWO' "$PAR_STATEFILE" || true)
+ctw2_statefile_never=$(grep -ciE 'NEVER write|never write' "$PAR_STATEFILE" || true)
+ctw2_skill_once=$(grep -ciE 'ONCE after the LAST sub-batch' "$PAR_AUTOPILOT" || true)
+ctw2_result="false"
+if [ "$ctw2_skill_pre" -ge 1 ] && [ "$ctw2_skill_post" -ge 1 ] && [ "$ctw2_statefile_two" -ge 1 ] \
+  && [ "$ctw2_statefile_never" -ge 1 ] && [ "$ctw2_skill_once" -ge 1 ]; then ctw2_result="true"; fi
+assert_true \
+  "CT-WAVE-2 (single-writer at wave boundary): SKILL pre-write ($ctw2_skill_pre>=1) post-write ($ctw2_skill_post>=1); state-file exactly-two ($ctw2_statefile_two>=1) executor-never-writes ($ctw2_statefile_never>=1); post-write-once-after-last-sub-batch ($ctw2_skill_once>=1)" \
+  "$ctw2_result"
+
+# CT-WAVE-3 (T-007: parallel_max= parse + arg>env>default precedence + coercion). SKILL.md
+# Argument Parsing documents the parallel_max= token (case-insensitive key=value, integer >=1,
+# default 4, non-integer/<1 -> default 4 + [PARALLEL-MODE] WARNING) with arg > env > default
+# precedence; CLAUDE.md documents SW_PARALLEL_MAX_CONCURRENCY as (B) harness-own.
+ctw3_arg_token=$(grep -cF 'parallel_max=' "$PAR_AUTOPILOT" || true)
+ctw3_precedence=$(grep -ciE 'arg > env > default|arg .* env .* default' "$PAR_AUTOPILOT" || true)
+ctw3_default4=$(grep -ciE 'default .*4' "$PAR_AUTOPILOT" || true)
+ctw3_warning=$(grep -cF '[PARALLEL-MODE] WARNING' "$PAR_AUTOPILOT" || true)
+ctw3_claude_knob=$(grep -cF 'SW_PARALLEL_MAX_CONCURRENCY' "$PAR_CLAUDEMD" || true)
+# Co-locate the (B) harness-own label WITH the new knob line (the SW_PARALLEL_MAX_CONCURRENCY
+# entry is a single physical line carrying both tokens) so dropping the label on THIS entry while
+# pre-existing entries keep theirs still fails the sub-check (not a bare repo-wide harness-own count).
+ctw3_claude_bsub=$(grep -iE 'SW_PARALLEL_MAX_CONCURRENCY' "$PAR_CLAUDEMD" | grep -ciE 'harness-own' || true)
+ctw3_result="false"
+if [ "$ctw3_arg_token" -ge 1 ] && [ "$ctw3_precedence" -ge 1 ] && [ "$ctw3_default4" -ge 1 ] \
+  && [ "$ctw3_warning" -ge 1 ] && [ "$ctw3_claude_knob" -ge 1 ] && [ "$ctw3_claude_bsub" -ge 1 ]; then ctw3_result="true"; fi
+assert_true \
+  "CT-WAVE-3 (parallel_max= parse + precedence + coercion): arg token ($ctw3_arg_token>=1) precedence ($ctw3_precedence>=1) default-4 ($ctw3_default4>=1) WARNING ($ctw3_warning>=1); CLAUDE.md knob ($ctw3_claude_knob>=1) (B)harness-own ($ctw3_claude_bsub>=1)" \
+  "$ctw3_result"
+
+# CT-WAVE-4 (T-007: cap-1 == serial regression anchor + wave auto-compact exception + parallel=off
+# byte-identical fork + per-wave dependency reason format). The wave loop with CONCURRENCY_CAP=1
+# degenerates to the concurrency-1 serial sequence; the wave-variant auto-compact exception emits
+# the "do NOT spawn WAVE_{k+1}" string; the parallel=off serial fork is present (byte-identical);
+# the per-wave dependency re-eval reuses dependency_{dep-slug}_{status}.
+ctw4_cap1=$(grep -ciE 'parallel_max=1 . serial|CONCURRENCY_CAP = 1' "$PAR_AUTOPILOT" || true)
+ctw4_ac_exception=$(grep -cF 'do NOT spawn `WAVE_{k+1}`' "$PAR_AUTOPILOT" || true)
+ctw4_off_fork=$(grep -ciE 'parallel=off.* adds NO code path|the serial loop is untouched' "$PAR_AUTOPILOT" || true)
+ctw4_dep_format=$(grep -cF 'dependency_{dep-slug}_{status}' "$PAR_AUTOPILOT" || true)
+ctw4_metric_serial=$(grep -ciE 'metric-only.* logs the .Wave|metric-only.* executes the serial' "$PAR_AUTOPILOT" || true)
+ctw4_result="false"
+if [ "$ctw4_cap1" -ge 1 ] && [ "$ctw4_ac_exception" -ge 1 ] && [ "$ctw4_off_fork" -ge 1 ] \
+  && [ "$ctw4_dep_format" -ge 1 ] && [ "$ctw4_metric_serial" -ge 1 ]; then ctw4_result="true"; fi
+assert_true \
+  "CT-WAVE-4 (cap-1 serial anchor + auto-compact exception + off byte-identical + dep-format): cap-1 ($ctw4_cap1>=1) WAVE_{k+1} exception ($ctw4_ac_exception>=1) off-serial-fork ($ctw4_off_fork>=1) dependency_{slug}_{status} ($ctw4_dep_format>=1) metric-only-serial ($ctw4_metric_serial>=1)" \
+  "$ctw4_result"
+
+# CT-WAVE-5 (T-007 H2 carve-out, DIRECT hook invocation): the cascade-skip carve-out in
+# hooks/pre-state-transition.sh must NOT block a slug-interpolated `dependency_002-bar_failed`
+# skip-write with active (in_progress) siblings (no unauthorized_skip_with_active_siblings), AND
+# the bare `dependency_failed` form must still match (back-compat). Models the direct JSON-stdin
+# invocation on CT-AC-51 above.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+CTW5_OK=1
+CTW5_MISSING=""
+CTW5_HOOK="$REPO_DIR/hooks/pre-state-transition.sh"
+
+# Helper-free inline: build a minimal autopilot tree per sub-case so
+# is_autopilot_context() returns true, then drive the hook with a Write payload.
+_ctw5_drive() {
+  # $1 = skip_reason; echoes "BLOCKED" or "ALLOWED"
+  local reason="$1"
+  local tmp slug sf content payload out
+  tmp=$(mktemp -d)
+  slug="wave-h2"
+  mkdir -p "$tmp/.simple-workflow/backlog/briefs/active/$slug"
+  sf="$tmp/.simple-workflow/backlog/briefs/active/$slug/autopilot-state.yaml"
+  {
+    printf 'version: 1\n'
+    printf 'parent_slug: %s\n' "$slug"
+    printf 'execution_mode: split\n'
+    printf 'total_tickets: 3\n'
+    printf 'tickets:\n'
+    printf '  - logical_id: 001-foo\n    status: in_progress\n'
+    printf '  - logical_id: 002-bar\n    status: in_progress\n'
+    printf '  - logical_id: 003-baz\n    status: skipped\n    skip_reason: %s\n' "$reason"
+  } >"$sf"
+  content=$(cat "$sf")
+  payload=$(jq -n --arg fp "$sf" --arg c "$content" --arg cwd "$tmp" \
+    '{tool_name:"Write", tool_input:{file_path:$fp, content:$c}, cwd:$cwd, session_id:"test-CTW5", transcript_path:""}')
+  out=$(printf '%s' "$payload" | bash "$CTW5_HOOK" 2>/dev/null || true)
+  rm -rf "$tmp"
+  if printf '%s' "$out" | grep -q 'unauthorized_skip_with_active_siblings'; then
+    echo "BLOCKED"
+  else
+    echo "ALLOWED"
+  fi
+}
+
+# (a) slug-interpolated dependency_002-bar_failed WITH active siblings -> ALLOWED (the H2 fix).
+CTW5_SLUG=$(_ctw5_drive 'dependency_002-bar_failed')
+if [ "$CTW5_SLUG" != "ALLOWED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} slug-interpolated-BLOCKED(=$CTW5_SLUG)"
+fi
+# (b) bare dependency_failed WITH active siblings -> ALLOWED (back-compat preserved).
+CTW5_BARE_F=$(_ctw5_drive 'dependency_failed')
+if [ "$CTW5_BARE_F" != "ALLOWED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} bare-failed-BLOCKED(=$CTW5_BARE_F)"
+fi
+# (c) bare dependency_skipped WITH active siblings -> ALLOWED (back-compat preserved).
+CTW5_BARE_S=$(_ctw5_drive 'dependency_skipped')
+if [ "$CTW5_BARE_S" != "ALLOWED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} bare-skipped-BLOCKED(=$CTW5_BARE_S)"
+fi
+# (d) NEGATIVE control: a non-dependency rationale WITH active siblings MUST still be BLOCKED
+#     (proves the carve-out is not vacuously allowing every skip).
+CTW5_NEG=$(_ctw5_drive 'arbitrary non-dependency rationale')
+if [ "$CTW5_NEG" != "BLOCKED" ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} negative-control-ALLOWED(=$CTW5_NEG)"
+fi
+# (e) the hook source carries the dependency_ PREFIX regex (drift guard on the literal fix).
+CTW5_REGEX=$(grep -cF 'dependency_([^[:space:]]*_)?(failed|skipped)' "$CTW5_HOOK" || true)
+if [ "$CTW5_REGEX" -lt 1 ]; then
+  CTW5_OK=0; CTW5_MISSING="${CTW5_MISSING} prefix-regex-absent"
+fi
+
+if [ "$CTW5_OK" -eq 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} CT-WAVE-5 (H2 carve-out direct hook): slug-interpolated ALLOWED + bare-failed/skipped ALLOWED (back-compat) + negative-control BLOCKED + prefix-regex present"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-WAVE-5 (H2 carve-out direct hook):${CTW5_MISSING}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-WAVE-6 (T-007 verify-round fixes: empty-wave resume skip + parallel_max WARNING gated to
+# PARALLEL_MODE != off). The wave-parallel pipeline documents skipping a SPAWN-LESS wave on resume
+# (realising Phase 1 Step 5 — a fully-completed earlier wave performs ZERO autopilot-state.yaml
+# writes); the parallel_max= coercion WARNING is SUPPRESSED on the byte-identical parallel=off serial
+# lane (so a global SW_PARALLEL_MAX_CONCURRENCY=garbage cannot leak a [PARALLEL-MODE] WARNING into a
+# serial rollback run). Both sentences were required by the adversarial T-007 review (PASS_WITH_NITS);
+# removing either fails this CT.
+ctw6_emptywave=$(grep -cF 'Empty-wave skip' "$PAR_AUTOPILOT" || true)
+ctw6_nospawn=$(grep -cF 'no spawnable' "$PAR_AUTOPILOT" || true)
+ctw6_warn_gated=$(grep -cF 'WARNING is emitted ONLY when' "$PAR_AUTOPILOT" || true)
+ctw6_warn_silent=$(grep -cF 'byte-identical serial lane' "$PAR_AUTOPILOT" || true)
+ctw6_result="false"
+if [ "$ctw6_emptywave" -ge 1 ] && [ "$ctw6_nospawn" -ge 1 ] \
+  && [ "$ctw6_warn_gated" -ge 1 ] && [ "$ctw6_warn_silent" -ge 1 ]; then ctw6_result="true"; fi
+assert_true \
+  "CT-WAVE-6 (empty-wave resume skip + parallel_max WARNING gated to != off): empty-wave ($ctw6_emptywave>=1) no-spawnable ($ctw6_nospawn>=1) WARNING-gated ($ctw6_warn_gated>=1) silent-off ($ctw6_warn_silent>=1)" \
+  "$ctw6_result"
+
+# =============================================================================
+# CT-WORKTREE-* (T-008): per-executor worktree isolation + cross-wave integration.
+# Each sub-check is NON-vacuous (HEAD=0; removing its target prose flips it). Modelled
+# on the CT-WAVE-* set above (same Cat PARALLEL surfaces + assert_true idiom).
+# =============================================================================
+PAR_SHIP="$REPO_DIR/skills/ship/SKILL.md"
+PAR_ACEVAL="$REPO_DIR/agents/ac-evaluator.md"
+
+# CT-WORKTREE-1 (the single most important mechanical decision: explicit `git worktree add <ref>`,
+# NOT EnterWorktree/baseRef). The wave loop pre-creates per-ticket worktrees off the integration
+# branch via an EXPLICIT `git worktree add -b ... <BASE_REF>` and DOCUMENTS that baseRef cannot
+# target an arbitrary ref. Both halves must be present (the positive add-prose + the negative
+# baseRef rejection).
+ctwt1_explicit_add=$(grep -cF 'git worktree add -b ap/<parent>/<T-NNN-slug>' "$PAR_AUTOPILOT" || true)
+ctwt1_not_baseref=$(grep -ciE 'NOT .EnterWorktree./baseRef|baseRef is a binary .* git config and cannot target' "$PAR_AUTOPILOT" || true)
+ctwt1_base_ref=$(grep -cF 'BASE_REF' "$PAR_AUTOPILOT" || true)
+ctwt1_result="false"
+if [ "$ctwt1_explicit_add" -ge 1 ] && [ "$ctwt1_not_baseref" -ge 1 ] && [ "$ctwt1_base_ref" -ge 1 ]; then ctwt1_result="true"; fi
+assert_true \
+  "CT-WORKTREE-1 (explicit git worktree add <ref>, NOT baseRef): explicit-add ($ctwt1_explicit_add>=1) baseRef-rejected ($ctwt1_not_baseref>=1) BASE_REF ($ctwt1_base_ref>=1)" \
+  "$ctwt1_result"
+
+# CT-WORKTREE-2 (H3: per-ticket AND integration worktree paths BOTH pinned under .claude/worktrees/).
+# A path outside .claude/worktrees/ is rejected at runtime by EnterWorktree(path=) and caught by NO
+# test, so the prose pin is the only guard. Assert the per-ticket pin, the integration-worktree pin,
+# and the H3 platform-acceptance note all appear in SKILL.md.
+ctwt2_perticket=$(grep -cF '<MAIN_REPO>/.claude/worktrees/ap-<parent>-<NNN-slug>' "$PAR_AUTOPILOT" || true)
+ctwt2_integration=$(grep -cF '<MAIN_REPO>/.claude/worktrees/ap-integration-<parent>' "$PAR_AUTOPILOT" || true)
+ctwt2_h3=$(grep -ciE 'H3 platform-acceptance|rejected by the executor.s .EnterWorktree' "$PAR_AUTOPILOT" || true)
+# The executor side ALSO documents the .claude/worktrees/ pin + the acceptance constraint.
+ctwt2_exec_pin=$(grep -cF '.claude/worktrees/ap-<parent>-<NNN-slug>' "$PAR_EXECUTOR" || true)
+ctwt2_result="false"
+if [ "$ctwt2_perticket" -ge 1 ] && [ "$ctwt2_integration" -ge 1 ] && [ "$ctwt2_h3" -ge 1 ] \
+  && [ "$ctwt2_exec_pin" -ge 1 ]; then ctwt2_result="true"; fi
+assert_true \
+  "CT-WORKTREE-2 (H3 .claude/worktrees/ pin both worktrees): per-ticket ($ctwt2_perticket>=1) integration ($ctwt2_integration>=1) H3-note ($ctwt2_h3>=1) executor-pin ($ctwt2_exec_pin>=1)" \
+  "$ctwt2_result"
+
+# CT-WORKTREE-3 (state/artifact resolution via the .simple-workflow symlink + main_checkout_root init).
+# The gitignored .simple-workflow/ tree is ABSENT in a worktree, so the scheduler creates a
+# .simple-workflow -> <MAIN_REPO> symlink (step 2a) and the pipeline's relative .simple-workflow/...
+# paths resolve to the shared main checkout through it; main_checkout_root is written ONCE at init;
+# W-8 (.worktreeinclude copy) is rejected in favour of the symlink (shared inode, no lost-update).
+ctwt3_symlink=$(grep -cF 'ln -s <MAIN_REPO>/.simple-workflow' "$PAR_AUTOPILOT" || true)
+ctwt3_main_root_write=$(grep -ciE 'write .main_checkout_root. ONCE' "$PAR_AUTOPILOT" || true)
+ctwt3_exec_symlink=$(grep -ciE 'State symlink|follow the symlink' "$PAR_EXECUTOR" || true)
+ctwt3_w8=$(grep -ciE 'worktreeinclude' "$PAR_AUTOPILOT" || true)
+ctwt3_result="false"
+if [ "$ctwt3_symlink" -ge 1 ] && [ "$ctwt3_main_root_write" -ge 1 ] && [ "$ctwt3_exec_symlink" -ge 1 ] \
+  && [ "$ctwt3_w8" -ge 1 ]; then ctwt3_result="true"; fi
+assert_true \
+  "CT-WORKTREE-3 (state/artifact via .simple-workflow symlink + main_checkout_root init + W-8): symlink-create ($ctwt3_symlink>=1) main_checkout_root-write ($ctwt3_main_root_write>=1) executor-symlink ($ctwt3_exec_symlink>=1) .worktreeinclude-rejected ($ctwt3_w8>=1)" \
+  "$ctwt3_result"
+
+# CT-WORKTREE-4 (wave-boundary integration: --no-ff --no-edit, topo/lex order, conflict ->
+# integration_conflict_<other-NNN> + cascade-skip + run continues, idempotent merge-base --is-ancestor,
+# advance BASE_REF). The integration sequence prose in SKILL.md.
+ctwt4_noff=$(grep -cF 'merge --no-ff --no-edit' "$PAR_AUTOPILOT" || true)
+ctwt4_conflict=$(grep -cF 'integration_conflict_<other-NNN>' "$PAR_AUTOPILOT" || true)
+ctwt4_idempotent=$(grep -cF 'git merge-base --is-ancestor' "$PAR_AUTOPILOT" || true)
+ctwt4_continues=$(grep -ciE 'run CONTINUES|run continues' "$PAR_AUTOPILOT" || true)
+ctwt4_result="false"
+if [ "$ctwt4_noff" -ge 1 ] && [ "$ctwt4_conflict" -ge 1 ] && [ "$ctwt4_idempotent" -ge 1 ] \
+  && [ "$ctwt4_continues" -ge 1 ]; then ctwt4_result="true"; fi
+assert_true \
+  "CT-WORKTREE-4 (wave-boundary integration): --no-ff --no-edit ($ctwt4_noff>=1) conflict-reason ($ctwt4_conflict>=1) idempotent-is-ancestor ($ctwt4_idempotent>=1) run-continues ($ctwt4_continues>=1)" \
+  "$ctwt4_result"
+
+# CT-WORKTREE-5 (integration-branch local-only doc + no-merge=true + per-ticket-PR preservation).
+# ap-integration/<parent> is NOT pushed / NOT the PR target; each ticket ships its OWN PR with no
+# merge=true. Asserted on BOTH SKILL.md and state-file.md (the doc surface).
+ctwt5_localonly=$(grep -ciE 'local-only orchestration (artifact|branch)' "$PAR_AUTOPILOT" || true)
+ctwt5_notpushed=$(grep -ciE 'NOT pushed' "$PAR_AUTOPILOT" || true)
+ctwt5_nomerge=$(grep -cF 'NO `merge=true`' "$PAR_AUTOPILOT" || true)
+ctwt5_statefile=$(grep -ciE 'local-only orchestration (artifact|branch)' "$PAR_STATEFILE" || true)
+ctwt5_result="false"
+if [ "$ctwt5_localonly" -ge 1 ] && [ "$ctwt5_notpushed" -ge 1 ] && [ "$ctwt5_nomerge" -ge 1 ] \
+  && [ "$ctwt5_statefile" -ge 1 ]; then ctwt5_result="true"; fi
+assert_true \
+  "CT-WORKTREE-5 (integration-branch local-only + no-merge + per-ticket PR): local-only ($ctwt5_localonly>=1) not-pushed ($ctwt5_notpushed>=1) no-merge=true ($ctwt5_nomerge>=1) state-file-doc ($ctwt5_statefile>=1)" \
+  "$ctwt5_result"
+
+# CT-WORKTREE-6 (three-tier cleanup + parent-scoped stale-sweep). (1) per-ticket worktree remove
+# --force on success + dirty-anomaly leave-and-log, (2) integration worktree removed post-loop
+# (branches kept), (3) startup stale-sweep prune + remove ONLY this parent's ap-<parent>-* (never
+# unrelated). SW_PARALLEL_WORKTREE_KEEP=on skips tiers 1+2.
+ctwt6_remove_force=$(grep -cF 'git worktree remove --force' "$PAR_AUTOPILOT" || true)
+ctwt6_dirty=$(grep -cF '[PARALLEL] worktree-remove: dirty' "$PAR_AUTOPILOT" || true)
+ctwt6_prune=$(grep -cF 'git worktree prune' "$PAR_AUTOPILOT" || true)
+ctwt6_parent_scoped=$(grep -ciE 'Never touch unrelated worktrees|this parent.s ap-<parent>-' "$PAR_AUTOPILOT" || true)
+ctwt6_keep_knob=$(grep -cF 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_AUTOPILOT" || true)
+ctwt6_branches_kept=$(grep -ciE 'KEEP the branches|branches are ALWAYS kept|never the branch' "$PAR_AUTOPILOT" || true)
+ctwt6_result="false"
+if [ "$ctwt6_remove_force" -ge 1 ] && [ "$ctwt6_dirty" -ge 1 ] && [ "$ctwt6_prune" -ge 1 ] \
+  && [ "$ctwt6_parent_scoped" -ge 1 ] && [ "$ctwt6_keep_knob" -ge 1 ] && [ "$ctwt6_branches_kept" -ge 1 ]; then ctwt6_result="true"; fi
+assert_true \
+  "CT-WORKTREE-6 (three-tier cleanup + parent-scoped sweep): remove-force ($ctwt6_remove_force>=1) dirty-log ($ctwt6_dirty>=1) prune ($ctwt6_prune>=1) parent-scoped ($ctwt6_parent_scoped>=1) KEEP-knob ($ctwt6_keep_knob>=1) branches-kept ($ctwt6_branches_kept>=1)" \
+  "$ctwt6_result"
+
+# CT-WORKTREE-7 (SW_PARALLEL_WORKTREE_KEEP knob in CLAUDE.md, (B) harness-own co-located WITH the
+# knob line — like CT-WAVE-3 was tightened: dropping the label on THIS entry while pre-existing
+# entries keep theirs still fails the sub-check, not a bare repo-wide harness-own count).
+ctwt7_knob=$(grep -cF 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_CLAUDEMD" || true)
+ctwt7_bsub=$(grep -iE 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_CLAUDEMD" | grep -ciE 'harness-own' || true)
+ctwt7_default_off=$(grep -iE 'SW_PARALLEL_WORKTREE_KEEP' "$PAR_CLAUDEMD" | grep -ciE 'default .off.' || true)
+ctwt7_result="false"
+if [ "$ctwt7_knob" -ge 1 ] && [ "$ctwt7_bsub" -ge 1 ] && [ "$ctwt7_default_off" -ge 1 ]; then ctwt7_result="true"; fi
+assert_true \
+  "CT-WORKTREE-7 (SW_PARALLEL_WORKTREE_KEEP knob in CLAUDE.md): knob ($ctwt7_knob>=1) (B)harness-own-colocated ($ctwt7_bsub>=1) default-off ($ctwt7_default_off>=1)" \
+  "$ctwt7_result"
+
+# CT-WORKTREE-8 (ticket-executor worktree grant mirrors ac-evaluator). ac-evaluator carries the
+# scoped Bash(git worktree add/remove/list) grant (NOT prune/lock); the executor mirrors that intent.
+# Compare the two grants: ac-evaluator has all three scoped sub-commands in its tools: list; the
+# executor documents the SAME add/list/remove scoping (NOT prune/lock) + the EnterWorktree pipeline.
+acev_add=$(grep -cF 'Bash(git worktree add:*)' "$PAR_ACEVAL" || true)
+acev_remove=$(grep -cF 'Bash(git worktree remove:*)' "$PAR_ACEVAL" || true)
+acev_list=$(grep -cF 'Bash(git worktree list:*)' "$PAR_ACEVAL" || true)
+exec_mirror=$(grep -ciE 'mirror.*ac-evaluator|ac-evaluator.s scoped' "$PAR_EXECUTOR" || true)
+exec_scope=$(grep -ciE 'add. / .remove. / .list. (ONLY|only)|add/list/remove' "$PAR_EXECUTOR" || true)
+exec_not_prune=$(grep -ciE 'NOT prune|never .prune|never .{0,4}prune' "$PAR_EXECUTOR" || true)
+exec_enter=$(grep -cF 'EnterWorktree(path=<WORKTREE_PATH>)' "$PAR_EXECUTOR" || true)
+ctwt8_result="false"
+if [ "$acev_add" -ge 1 ] && [ "$acev_remove" -ge 1 ] && [ "$acev_list" -ge 1 ] \
+  && [ "$exec_mirror" -ge 1 ] && [ "$exec_scope" -ge 1 ] && [ "$exec_not_prune" -ge 1 ] \
+  && [ "$exec_enter" -ge 1 ]; then ctwt8_result="true"; fi
+assert_true \
+  "CT-WORKTREE-8 (executor worktree grant mirrors ac-evaluator): acev add ($acev_add>=1) remove ($acev_remove>=1) list ($acev_list>=1); executor mirror-note ($exec_mirror>=1) add/list/remove-scope ($exec_scope>=1) NOT-prune ($exec_not_prune>=1) EnterWorktree ($exec_enter>=1)" \
+  "$ctwt8_result"
+
+# CT-WORKTREE-9 (envelope branch/head_sha additions, flipped to PRESENT). The ticket-executor envelope
+# now carries branch + head_sha (T-008); the "NOT yet part of the envelope" note is FLIPPED to "ARE
+# part". Asserted on BOTH ticket-executor.md and state-file.md.
+ctwt9_exec_branch=$(grep -cF 'branch: {ap/<parent>/<NNN-slug> or null}' "$PAR_EXECUTOR" || true)
+ctwt9_exec_headsha=$(grep -ciE 'head_sha:' "$PAR_EXECUTOR" || true)
+ctwt9_exec_flip=$(grep -ciE 'ARE part of the envelope as of T-008' "$PAR_EXECUTOR" || true)
+ctwt9_state_branch=$(grep -ciE 'branch. / .head_sha. fields ARE part' "$PAR_STATEFILE" || true)
+ctwt9_result="false"
+if [ "$ctwt9_exec_branch" -ge 1 ] && [ "$ctwt9_exec_headsha" -ge 1 ] && [ "$ctwt9_exec_flip" -ge 1 ] \
+  && [ "$ctwt9_state_branch" -ge 1 ]; then ctwt9_result="true"; fi
+assert_true \
+  "CT-WORKTREE-9 (envelope branch/head_sha PRESENT, flipped): executor branch ($ctwt9_exec_branch>=1) head_sha ($ctwt9_exec_headsha>=1) flip-note ($ctwt9_exec_flip>=1) state-file ($ctwt9_state_branch>=1)" \
+  "$ctwt9_result"
+
+# CT-WORKTREE-10 (parallel=off byte-identity: ALL worktree code is inside the PARALLEL_MODE == on
+# branch). The dedicated worktree subsection declares the off/metric-only forks add NO worktree code;
+# the integration/cleanup steps are gated to PARALLEL_MODE == on only.
+ctwt10_subsection=$(grep -cF 'Worktree isolation + cross-wave integration (`PARALLEL_MODE == on`)' "$PAR_AUTOPILOT" || true)
+ctwt10_off_noworktree=$(grep -ciE 'add(s)? NO worktree code' "$PAR_AUTOPILOT" || true)
+ctwt10_byte_identical=$(grep -ciE 'non-parallel run is byte-identical' "$PAR_AUTOPILOT" || true)
+ctwt10_on_only=$(grep -cF 'PARALLEL_MODE == on` only' "$PAR_AUTOPILOT" || true)
+ctwt10_result="false"
+if [ "$ctwt10_subsection" -ge 1 ] && [ "$ctwt10_off_noworktree" -ge 1 ] && [ "$ctwt10_byte_identical" -ge 1 ] \
+  && [ "$ctwt10_on_only" -ge 1 ]; then ctwt10_result="true"; fi
+assert_true \
+  "CT-WORKTREE-10 (parallel=off byte-identity, worktree code inside == on): subsection ($ctwt10_subsection>=1) off-no-worktree ($ctwt10_off_noworktree>=1) byte-identical ($ctwt10_byte_identical>=1) on-only-gated ($ctwt10_on_only>=1)" \
+  "$ctwt10_result"
+
+# CT-WORKTREE-11 (/ship path-resolution audit pins .simple-workflow/ to <MAIN_REPO> under a worktree,
+# W-3). ship/SKILL.md Step 5 documents that EVERY .simple-workflow/... path (5.b move, 5.d rewrite,
+# no-remote) resolves to <MAIN_REPO> absolute, NOT a worktree-relative path; per-ticket PR + no-remote
+# carve-out unchanged.
+ctwt11_w3=$(grep -ciE 'Worktree path-resolution .W-3' "$PAR_SHIP" || true)
+ctwt11_symlink=$(grep -ciE 'follows the symlink to the shared main checkout|resolve to .<MAIN_REPO>. via the symlink' "$PAR_SHIP" || true)
+ctwt11_nochange=$(grep -ciE 'Step 5 therefore needs NO change|NO .ARTIFACT_ROOT. argument' "$PAR_SHIP" || true)
+ctwt11_unchanged=$(grep -ciE 'carve-out are untouched' "$PAR_SHIP" || true)
+ctwt11_result="false"
+if [ "$ctwt11_w3" -ge 1 ] && [ "$ctwt11_symlink" -ge 1 ] && [ "$ctwt11_nochange" -ge 1 ] \
+  && [ "$ctwt11_unchanged" -ge 1 ]; then ctwt11_result="true"; fi
+assert_true \
+  "CT-WORKTREE-11 (/ship Step 5 symlink-resolution W-3): W-3-note ($ctwt11_w3>=1) symlink-resolve ($ctwt11_symlink>=1) Step5-no-change ($ctwt11_nochange>=1) PR/no-remote-untouched ($ctwt11_unchanged>=1)" \
+  "$ctwt11_result"
+
+# CT-WORKTREE-12 (T-008 verify-round fixes: the user-chosen .simple-workflow symlink mechanism [W-3]
+# + integration reordered BEFORE the post-wave write so an integration-conflict status flip IS
+# persisted [cascade-skip correctness] + the integration-worktree mid-merge recovery guard). All on
+# the autopilot SKILL.md. The adversarial T-008 review (lens 2 FAIL on W-3 doc-only; my own
+# integration-ordering finding; lens 1 mid-merge nit) required all three; removing any one fails this.
+ctwt12_symlink_nocopy=$(grep -ciE 'NOT a .\.worktreeinclude. copy|share a single' "$PAR_AUTOPILOT" || true)
+ctwt12_integration_order=$(grep -ciE 'runs AFTER the barrier but BEFORE the post-wave write' "$PAR_AUTOPILOT" || true)
+ctwt12_flip_persist=$(grep -cF 'apply the integration-conflict status flips from step 4a' "$PAR_AUTOPILOT" || true)
+ctwt12_recovery=$(grep -cF 'Recovery (resume after an interrupted merge)' "$PAR_AUTOPILOT" || true)
+ctwt12_result="false"
+if [ "$ctwt12_symlink_nocopy" -ge 1 ] && [ "$ctwt12_integration_order" -ge 1 ] && [ "$ctwt12_flip_persist" -ge 1 ] \
+  && [ "$ctwt12_recovery" -ge 1 ]; then ctwt12_result="true"; fi
+assert_true \
+  "CT-WORKTREE-12 (verify-round: symlink-no-copy + integration-before-postwrite + conflict-flip-persist + mid-merge-recovery): symlink-no-copy ($ctwt12_symlink_nocopy>=1) integration-order ($ctwt12_integration_order>=1) flip-persist ($ctwt12_flip_persist>=1) mid-merge-recovery ($ctwt12_recovery>=1)" \
+  "$ctwt12_result"
 
 echo ""
 

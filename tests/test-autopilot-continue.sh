@@ -1369,5 +1369,422 @@ fi
 rm -f /tmp/.autopilot-continue-test-nested
 cleanup_test_repo
 
+# ============================================================
+# T-004: Wave-aware continuation (parallel_mode)
+# ============================================================
+echo ""
+echo "=== T-004: Wave-aware continuation (parallel_mode) ==="
+echo ""
+
+# A wave-bearing autopilot-state.yaml. $1=slug, $2=parallel_mode line (may be
+# empty for the absent case), $3=wave_status, $4=current_wave, $5=wave_count.
+# The single ticket carries an in_progress scout step so that, ABSENT any wave
+# branch, the serial path would emit a `block` naming the next step — this is
+# what makes the off/metric-only byte-identity assertions non-trivial.
+create_wave_state() {
+  local slug="$1" pmode_line="$2" wstatus="$3" cwave="$4" wcount="$5"
+  mkdir -p ".simple-workflow/backlog/briefs/active/${slug}"
+  {
+    echo "version: 1"
+    echo "slug: ${slug}"
+    echo "started: 2026-04-15T00:00:00Z"
+    echo "execution_mode: split"
+    [ -n "$pmode_line" ] && echo "$pmode_line"
+    [ -n "$wstatus" ] && echo "wave_status: ${wstatus}"
+    echo "current_wave: ${cwave}"
+    echo "wave_count: ${wcount}"
+    echo "total_tickets: 1"
+    echo "tickets:"
+    echo "  - logical_id: ${slug}"
+    echo "    ticket_dir: 001-test"
+    echo "    status: in_progress"
+    echo "    steps:"
+    echo "      create-ticket: completed"
+    echo "      scout: in_progress"
+    echo "      impl: pending"
+    echo "      ship: pending"
+  } > ".simple-workflow/backlog/briefs/active/${slug}/autopilot-state.yaml"
+}
+
+# ------------------------------------------------------------
+# T-004-1a: parallel_mode ABSENT → byte-identical serial decision, no [PARALLEL-*]
+# ------------------------------------------------------------
+echo "--- T-004-1a: parallel_mode absent → byte-identical serial path ---"
+setup_test_repo
+# in_flight cursor present, but NO parallel_mode key → resolver returns off →
+# the wave branch is fully skipped → serial path emits the next-step block.
+create_wave_state "wave-off-absent" "" "in_flight" "0" "3"
+run_autopilot_hook '{"session_id":"wave-off-absent"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+REASON_SERIAL=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null | grep -c 'middle of a /autopilot pipeline' || true)
+PARALLEL_STDERR=$(echo "$LAST_STDERR" | grep -c '\[PARALLEL-' || true)
+if [ "$DECISION" = "block" ] && [ "$REASON_SERIAL" -ge 1 ] && [ "$PARALLEL_STDERR" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} absent parallel_mode: serial next-step block, no [PARALLEL-*] stderr (byte-identical)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} absent parallel_mode: expected serial block + no [PARALLEL-*] stderr"
+  echo -e "       Decision='$DECISION' serial-reason=$REASON_SERIAL parallel-stderr=$PARALLEL_STDERR"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-off-absent /tmp/.autopilot-notool-wave-off-absent
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-1b: parallel_mode: off → byte-identical serial decision, no [PARALLEL-*]
+# ------------------------------------------------------------
+echo "--- T-004-1b: parallel_mode: off → byte-identical serial path ---"
+setup_test_repo
+create_wave_state "wave-off-explicit" "parallel_mode: off" "in_flight" "0" "3"
+run_autopilot_hook '{"session_id":"wave-off-explicit"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+REASON_SERIAL=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null | grep -c 'middle of a /autopilot pipeline' || true)
+PARALLEL_STDERR=$(echo "$LAST_STDERR" | grep -c '\[PARALLEL-' || true)
+if [ "$DECISION" = "block" ] && [ "$REASON_SERIAL" -ge 1 ] && [ "$PARALLEL_STDERR" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} parallel_mode: off: serial next-step block, no [PARALLEL-*] stderr (byte-identical)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} parallel_mode: off: expected serial block + no [PARALLEL-*] stderr"
+  echo -e "       Decision='$DECISION' serial-reason=$REASON_SERIAL parallel-stderr=$PARALLEL_STDERR"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-off-explicit /tmp/.autopilot-notool-wave-off-explicit
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-2: wave_status: in_flight → barrier block (AC-2)
+# ------------------------------------------------------------
+echo "--- T-004-2: in_flight → barrier block ---"
+setup_test_repo
+create_wave_state "wave-inflight" "parallel_mode: on" "in_flight" "0" "3"
+run_autopilot_hook '{"session_id":"wave-inflight"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
+# grep -o counts MATCHES (the obligation cues all sit on one long line, so
+# grep -c would only ever return 1). Require all four mid-wave obligation cues.
+BARRIER_OK=$(echo "$REASON" | grep -oiE 'IN FLIGHT|wave_status: drained|return envelope|single writer' | wc -l | tr -d ' ')
+NO_INLINE=$(echo "$REASON" | grep -c 'do NOT run scout/impl/ship inline' || true)
+HAS_STATE=$(echo "$REASON" | grep -c 'current_wave' || true)
+if [ "$DECISION" = "block" ] && [ "$BARRIER_OK" -ge 4 ] && [ "$NO_INLINE" -ge 1 ] && [ "$HAS_STATE" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} in_flight: barrier block (collect envelopes / single writer / set drained / no inline / state inlined)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} in_flight: expected barrier block naming the mid-wave obligation"
+  echo -e "       Decision='$DECISION' barrier-cues=$BARRIER_OK no-inline=$NO_INLINE has-state=$HAS_STATE"
+  echo -e "       Reason: $REASON"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-inflight /tmp/.autopilot-notool-wave-inflight
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-3: drained + waves-remaining → spawn-next block (AC-3)
+# ------------------------------------------------------------
+echo "--- T-004-3: drained + waves-remaining → spawn-next block ---"
+setup_test_repo
+# current_wave 0, wave_count 3 → 0+1 < 3 → spawn-next.
+create_wave_state "wave-drained-rem" "parallel_mode: on" "drained" "0" "3"
+run_autopilot_hook '{"session_id":"wave-drained-rem"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
+INTEGRATE_OK=$(echo "$REASON" | grep -ciE 'integrate the completed wave|DRAINED' || true)
+SPAWN_OK=$(echo "$REASON" | grep -ciE 'spawn the next wave' || true)
+if [ "$DECISION" = "block" ] && [ "$INTEGRATE_OK" -ge 1 ] && [ "$SPAWN_OK" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} drained+remaining: spawn-next block (integrate completed wave + spawn next)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} drained+remaining: expected spawn-next block"
+  echo -e "       Decision='$DECISION' integrate=$INTEGRATE_OK spawn=$SPAWN_OK"
+  echo -e "       Reason: $REASON"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-drained-rem /tmp/.autopilot-notool-wave-drained-rem
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-4: drained + last wave + all-terminal → allow stop (AC-4)
+# ------------------------------------------------------------
+echo "--- T-004-4: drained + last wave + all-terminal → allow stop ---"
+setup_test_repo
+# current_wave 2, wave_count 3 → 2+1 >= 3 → terminal_check; all steps completed
+# so parse_active_steps == 0 → the existing all-terminal path allows the stop.
+mkdir -p ".simple-workflow/backlog/briefs/active/wave-last"
+{
+  echo "version: 1"
+  echo "slug: wave-last"
+  echo "started: 2026-04-15T00:00:00Z"
+  echo "execution_mode: split"
+  echo "parallel_mode: on"
+  echo "wave_status: drained"
+  echo "current_wave: 2"
+  echo "wave_count: 3"
+  echo "total_tickets: 1"
+  echo "tickets:"
+  echo "  - logical_id: wave-last"
+  echo "    ticket_dir: 001-test"
+  echo "    status: completed"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: completed"
+  echo "      impl: completed"
+  echo "      ship: completed"
+} > ".simple-workflow/backlog/briefs/active/wave-last/autopilot-state.yaml"
+run_autopilot_hook '{"session_id":"wave-last"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} drained+last+all-terminal: fell through to all-terminal allow (exit 0, no block)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} drained+last+all-terminal: expected exit 0 with no block stdout"
+  echo -e "       Exit=$LAST_EXIT_CODE Stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-last /tmp/.autopilot-notool-wave-last
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-4b: C1 empty-wave cursor stall — drained + waves-remaining BUT every
+# ticket already terminal (cascading failure) → must NOT emit a spawn-next block;
+# falls through to the all-terminal allow, mirroring the serial path.
+# ------------------------------------------------------------
+echo "--- T-004-4b: C1 empty-wave cascade — drained+remaining+all-terminal → allow stop (no spawn-next block) ---"
+setup_test_repo
+# Reproduce the confirmed-critical default-on regression: wave 0 = [A fails],
+# wave 1 = [B cascade-skip], wave 2 = [C cascade-skip]. The cursor advances only
+# by an ACTIVE wave's step 2, so the two empty later waves never advance it:
+# final state is current_wave 0, wave_status drained, wave_count 3, and EVERY
+# ticket terminal (1 failed + 2 dependency-skipped, NO pending/in_progress step).
+# Without the ALL-TERMINAL guard, 0+1 < 3 selects spawn_next and the hook emits a
+# `decision: block` asking to "spawn the next wave" forever (the next wave is
+# itself empty) until the FILE_COUNT loop guard fires [AUTOPILOT-STALL]. With the
+# guard, parse_active_steps emits nothing → WAVE_DECISION overridden to
+# terminal_check → fall through to the same all-terminal exit-0 the serial path
+# reaches.
+mkdir -p ".simple-workflow/backlog/briefs/active/wave-empty-cascade"
+{
+  echo "version: 1"
+  echo "slug: wave-empty-cascade"
+  echo "started: 2026-04-15T00:00:00Z"
+  echo "execution_mode: split"
+  echo "parallel_mode: on"
+  echo "wave_status: drained"
+  echo "current_wave: 0"
+  echo "wave_count: 3"
+  echo "total_tickets: 3"
+  echo "tickets:"
+  echo "  - logical_id: ticket-a"
+  echo "    ticket_dir: 001-a"
+  echo "    status: failed"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: completed"
+  echo "      impl: failed"
+  echo "      ship: skipped"
+  echo "  - logical_id: ticket-b"
+  echo "    ticket_dir: 002-b"
+  echo "    status: skipped"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: skipped"
+  echo "      impl: skipped"
+  echo "      ship: skipped"
+  echo "  - logical_id: ticket-c"
+  echo "    ticket_dir: 003-c"
+  echo "    status: skipped"
+  echo "    steps:"
+  echo "      create-ticket: completed"
+  echo "      scout: skipped"
+  echo "      impl: skipped"
+  echo "      ship: skipped"
+} > ".simple-workflow/backlog/briefs/active/wave-empty-cascade/autopilot-state.yaml"
+run_autopilot_hook '{"session_id":"wave-empty-cascade"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ]; then
+  echo -e "  ${GREEN}PASS${NC} empty-wave cascade: no spawn-next block, fell through to all-terminal allow (exit 0)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} empty-wave cascade: expected exit 0 with no spawn-next block (C1 stall regression)"
+  echo -e "       Exit=$LAST_EXIT_CODE Decision='$DECISION' Stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-empty-cascade /tmp/.autopilot-notool-wave-empty-cascade
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-5: R-ORDER-SENTINEL — fresh sentinel + drained + remaining → YIELD
+# ------------------------------------------------------------
+echo "--- T-004-5: fresh .auto-compact-pending + drained+remaining → YIELD (R-ORDER-SENTINEL) ---"
+setup_test_repo
+# drained + remaining would normally emit a spawn-next block. A FRESH sentinel
+# placed in the state dir MUST win because the sentinel yield (early) is
+# reached BEFORE the wave branch (late) → exit 0, no block, [AUTO-COMPACT-YIELD].
+create_wave_state "wave-sentinel" "parallel_mode: on" "drained" "0" "3"
+date +%s > ".simple-workflow/backlog/briefs/active/wave-sentinel/.auto-compact-pending"
+run_autopilot_hook '{"session_id":"wave-sentinel"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+YIELD_OK=$(echo "$LAST_STDERR" | grep -c '\[AUTO-COMPACT-YIELD\] sentinel found' || true)
+SPAWN_LEAK=$(echo "$LAST_STDOUT" | grep -c 'spawn the next wave' || true)
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ] && [ "$YIELD_OK" -ge 1 ] && [ "$SPAWN_LEAK" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} sentinel-wins: exit 0, no spawn-next block (sentinel yield reached before wave branch)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} sentinel-wins: expected exit 0 + [AUTO-COMPACT-YIELD] + NO spawn-next block"
+  echo -e "       Exit=$LAST_EXIT_CODE yield=$YIELD_OK spawn-leak=$SPAWN_LEAK"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-sentinel /tmp/.autopilot-notool-wave-sentinel
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-5b: R-ORDER-SENTINEL insertion-point grep — wave branch sits AFTER the
+# sentinel-check line and BEFORE the FILE_COUNT loop guard.
+# ------------------------------------------------------------
+echo "--- T-004-5b: insertion-point grep (sentinel-check < wave-branch < FILE_COUNT loop guard) ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+SENTINEL_LINE=$(grep -n 'SENTINEL_FILE="\$SENTINEL_DIR/.auto-compact-pending"' "$HOOK" | head -1 | cut -d: -f1)
+WAVE_LINE=$(grep -n 'Wave-aware continuation branch (parallel_mode; T-004)' "$HOOK" | head -1 | cut -d: -f1)
+# The OUTERMOST serial loop guard (the one that is the backstop) is the
+# FILE_COUNT>=5 && NOTOOL line that lives AFTER the wave branch closes.
+LOOPGUARD_LINE=$(grep -n 'if \[ "\$FILE_COUNT" -ge 5 \] && \[ "\$NOTOOL_COUNT" -ge "\$NOTOOL_THRESHOLD" \]; then' "$HOOK" | tail -1 | cut -d: -f1)
+if [ -n "$SENTINEL_LINE" ] && [ -n "$WAVE_LINE" ] && [ -n "$LOOPGUARD_LINE" ] \
+   && [ "$SENTINEL_LINE" -lt "$WAVE_LINE" ] && [ "$WAVE_LINE" -lt "$LOOPGUARD_LINE" ]; then
+  echo -e "  ${GREEN}PASS${NC} ordering: sentinel(L$SENTINEL_LINE) < wave-branch(L$WAVE_LINE) < FILE_COUNT loop guard(L$LOOPGUARD_LINE)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ordering: expected sentinel < wave-branch < loop-guard"
+  echo -e "       sentinel=$SENTINEL_LINE wave=$WAVE_LINE loopguard=$LOOPGUARD_LINE"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# ------------------------------------------------------------
+# T-004-6: FILE_COUNT loop-guard backstop releases at 5 on a stuck wave (AC-5)
+# ------------------------------------------------------------
+echo "--- T-004-6: stuck wave → FILE_COUNT loop guard releases at 5 ---"
+setup_test_repo
+create_wave_state "wave-stuck" "parallel_mode: on" "in_flight" "0" "3"
+# Pre-seed FILE_COUNT=5 and force NOTOOL to threshold via the legacy loopguard
+# so the backstop fires. The counter file must be NEWER than the state file or
+# the `STATE_FILE -nt COUNTER_FILE` progress-reset zeroes FILE_COUNT (a stuck
+# wave makes no state progress, so the counter is the more-recent artifact);
+# touch it forward so the reset does not trigger.
+echo "5" > /tmp/.autopilot-continue-wave-stuck
+touch -t 203001010000 /tmp/.autopilot-continue-wave-stuck
+set +e
+echo '{"session_id":"wave-stuck"}' | (cd "$TEST_REPO" && AUTOPILOT_LEGACY_LOOPGUARD=1 bash "$HOOK") >/tmp/.t004_out 2>/tmp/.t004_err
+LAST_EXIT_CODE=$?
+set -e
+LAST_STDOUT=$(cat /tmp/.t004_out); LAST_STDERR=$(cat /tmp/.t004_err)
+rm -f /tmp/.t004_out /tmp/.t004_err
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RELEASE_OK=$(echo "$LAST_STDERR" | grep -c '\[AUTOPILOT-STALL\] wave loop guard released' || true)
+NO_BARRIER=$(echo "$LAST_STDOUT" | grep -c '"decision": "block"' || true)
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$RELEASE_OK" -ge 1 ] && [ "$NO_BARRIER" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} stuck wave: [AUTOPILOT-STALL] wave loop guard released at 5, exit 0, no block (never hangs)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} stuck wave: expected wave loop guard release at 5"
+  echo -e "       Exit=$LAST_EXIT_CODE release=$RELEASE_OK block-leak=$NO_BARRIER"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-stuck /tmp/.autopilot-notool-wave-stuck
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-7: metric-only → logs [PARALLEL-CONTINUE] then takes serial path
+# ------------------------------------------------------------
+echo "--- T-004-7: parallel_mode: metric-only → log + serial path ---"
+setup_test_repo
+# in_flight cursor: under `on` this would barrier-block; under metric-only the
+# hook logs the would-be decision and falls through to the SERIAL next-step
+# block (proving the serial control flow is taken unchanged).
+create_wave_state "wave-metric" "parallel_mode: metric-only" "in_flight" "0" "3"
+run_autopilot_hook '{"session_id":"wave-metric"}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+METRIC_OK=$(echo "$LAST_STDERR" | grep -c '\[PARALLEL-CONTINUE\] metric-only:.*would=barrier' || true)
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+SERIAL_OK=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null | grep -c 'middle of a /autopilot pipeline' || true)
+if [ "$METRIC_OK" -ge 1 ] && [ "$DECISION" = "block" ] && [ "$SERIAL_OK" -ge 1 ]; then
+  echo -e "  ${GREEN}PASS${NC} metric-only: logged would=barrier and took the serial next-step block path"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} metric-only: expected [PARALLEL-CONTINUE] would=barrier + serial block"
+  echo -e "       metric-log=$METRIC_OK decision='$DECISION' serial=$SERIAL_OK"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-metric /tmp/.autopilot-notool-wave-metric
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-8: SW_PARALLEL_HOOKS_MODE=off forces serial on a parallel=on state
+# ------------------------------------------------------------
+echo "--- T-004-8: SW_PARALLEL_HOOKS_MODE=off overrides parallel_mode: on → serial ---"
+setup_test_repo
+create_wave_state "wave-envoff" "parallel_mode: on" "in_flight" "0" "3"
+set +e
+echo '{"session_id":"wave-envoff"}' | (cd "$TEST_REPO" && SW_PARALLEL_HOOKS_MODE=off bash "$HOOK") >/tmp/.t004o_out 2>/tmp/.t004o_err
+LAST_EXIT_CODE=$?
+set -e
+LAST_STDOUT=$(cat /tmp/.t004o_out); LAST_STDERR=$(cat /tmp/.t004o_err)
+rm -f /tmp/.t004o_out /tmp/.t004o_err
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+SERIAL_OK=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null | grep -c 'middle of a /autopilot pipeline' || true)
+PARALLEL_STDERR=$(echo "$LAST_STDERR" | grep -c '\[PARALLEL-' || true)
+if [ "$DECISION" = "block" ] && [ "$SERIAL_OK" -ge 1 ] && [ "$PARALLEL_STDERR" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} env=off override: serial next-step block, no [PARALLEL-*] (env wins over state on)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} env=off override: expected serial block + no [PARALLEL-*] stderr"
+  echo -e "       Decision='$DECISION' serial=$SERIAL_OK parallel-stderr=$PARALLEL_STDERR"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-envoff /tmp/.autopilot-notool-wave-envoff
+cleanup_test_repo
+
+# ------------------------------------------------------------
+# T-004-9: the policy-gate-stop honour gate runs BEFORE the wave branch
+# (Wave-2 adversarial-verify gap fix for AC-5's "the honour gate still runs
+# before the wave branch" claim). A policy_gate_stop declaration under
+# parallel_mode=on + wave_status=in_flight — which the wave branch would
+# otherwise turn into an in_flight barrier `decision: block` — must be
+# HONOURED: exit 0, no `decision: block`. That proves the honour gate (early
+# in the hook) short-circuits before the wave branch (late) is ever reached.
+# ------------------------------------------------------------
+echo "--- T-004-9: policy_gate_stop honoured BEFORE the wave branch (parallel in_flight) ---"
+setup_test_repo
+create_wave_state "wave-pgs-honour" "parallel_mode: on" "in_flight" "0" "3"
+run_pgs_hook "wave-pgs-honour" "policy_gate_stop_last_turn.jsonl" "on" "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+T49_DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+T49_PARALLEL_STDERR=$(echo "$LAST_STDERR" | grep -c '\[PARALLEL-' || true)
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$T49_DEC" != "block" ] && [ "$T49_PARALLEL_STDERR" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} policy_gate_stop honoured before the wave branch (exit 0, no block, no [PARALLEL-*] — honour gate wins the ordering)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} expected honour-gate allow (exit 0, no block, no [PARALLEL-*]) ahead of the wave in_flight barrier"
+  echo -e "       Exit=$LAST_EXIT_CODE Decision='$T49_DEC' parallel-stderr=$T49_PARALLEL_STDERR"
+  echo -e "       Stdout: $LAST_STDOUT"
+  echo -e "       Stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f /tmp/.autopilot-continue-wave-pgs-honour /tmp/.autopilot-notool-wave-pgs-honour
+cleanup_test_repo
+
 echo ""
 print_summary

@@ -189,6 +189,41 @@ run_hook_for() {
   rm -f "$stdout_file" "$stderr_file"
 }
 
+# T-006 parallel stand-down runner. Same as run_hook_for but threads
+# SW_PARALLEL_HOOKS_MODE into the hermetic env so the hook's Gate 2.5
+# parallel stand-down (resolve_parallel_mode) is exercised. Uses a
+# capture-pane output that WOULD make inject succeed, so a non-stand-down
+# (regression) would visibly write `.auto-compact-pending` and reach the
+# success additionalContext — the stand-down assertion then proves the
+# hook exited 0 BEFORE injecting.
+run_hook_parallel() {
+  local sandbox="$1"
+  local parallel_mode="$2"
+  local payload
+  payload=$(printf '{"tool_input":{"skill":"simple-workflow:scout"}}')
+  local stdout_file stderr_file
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  set +e
+  printf '%s' "$payload" | env -i \
+    HOME="$HOME" \
+    PATH="$PATH_BIN:$PATH" \
+    TMUX="fake-socket,1,0" \
+    TMUX_PANE="%test-pane" \
+    TERM="${TERM:-xterm}" \
+    SW_AUTO_COMPACT_ON_SHIP_MODE="on" \
+    SW_PARALLEL_HOOKS_MODE="$parallel_mode" \
+    SW_TEST_TMUX_SENDKEYS_RC="0" \
+    SW_TEST_TMUX_CAPTURE_OUT="user@host > /compact (echoed back)" \
+    SW_INJECT_KEYS_VERIFY_SLEEP_MS=0 \
+    bash -c "cd \"$sandbox\" && bash \"$HOOK\"" >"$stdout_file" 2>"$stderr_file"
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$stdout_file")
+  LAST_STDERR=$(cat "$stderr_file")
+  rm -f "$stdout_file" "$stderr_file"
+}
+
 echo "=== hooks/pre-next-scout-auto-compact.sh — P2-1 .next-compact-pending lifecycle ==="
 echo ""
 
@@ -239,6 +274,70 @@ assert_contains  "AC-3: failure additionalContext emitted" \
   "auto-compact-on-ship: injection failed" "$LAST_STDOUT"
 assert_contains  "AC-3: failure additionalContext mentions session-start retry" \
   "next session start" "$LAST_STDOUT"
+rm -rf "$LAST_SANDBOX"
+echo ""
+
+# ---------------------------------------------------------------------------
+# T-006 AC-5: parallel_mode=on -> the hook STANDS DOWN (exits 0, no inject),
+# so post-ship-state-auto-compact.sh is the sole wave-trigger.
+# ---------------------------------------------------------------------------
+echo "--- T-006 AC-5: parallel_mode=on -> stand down (exit 0, no inject) ---"
+make_sandbox p_on
+run_hook_parallel "$LAST_SANDBOX" "on"
+assert_eq        "T-006 AC-5: hook exits 0 under parallel_mode=on" "0" "$LAST_EXIT_CODE"
+assert_contains  "T-006 AC-5: stderr carries the parallel stand-down log" \
+  "parallel stand-down" "$LAST_STDERR"
+# Stand-down means NO inject -> neither sentinel nor the success
+# additionalContext was produced.
+assert_file_absent "T-006 AC-5: .auto-compact-pending NOT written (stood down before inject)" \
+  "$LAST_STATE_DIR/.auto-compact-pending"
+assert_eq        "T-006 AC-5: no inject -> empty stdout (no additionalContext)" \
+  "" "$LAST_STDOUT"
+rm -rf "$LAST_SANDBOX"
+echo ""
+
+# ---------------------------------------------------------------------------
+# T-006 AC-5: parallel_mode=metric-only -> log "would stand down" and FALL
+# THROUGH to the existing serial path (which injects on a real boundary).
+# ---------------------------------------------------------------------------
+echo "--- T-006 AC-5: parallel_mode=metric-only -> log + fall through to serial ---"
+make_sandbox p_mo
+run_hook_parallel "$LAST_SANDBOX" "metric-only"
+assert_eq        "T-006 AC-5: hook exits 0 under metric-only" "0" "$LAST_EXIT_CODE"
+assert_contains  "T-006 AC-5: stderr carries 'metric-only parallel: would stand down'" \
+  "metric-only parallel: would stand down" "$LAST_STDERR"
+# Fall-through means the serial path ran: a real boundary (T-001 shipped)
+# with a successful inject writes `.auto-compact-pending` and emits the
+# serial ticket-boundary additionalContext.
+assert_file_exists "T-006 AC-5: metric-only falls through -> .auto-compact-pending written" \
+  "$LAST_STATE_DIR/.auto-compact-pending"
+assert_contains  "T-006 AC-5: metric-only falls through -> serial additionalContext emitted" \
+  "auto-compact-on-ship (ticket-boundary)" "$LAST_STDOUT"
+rm -rf "$LAST_SANDBOX"
+echo ""
+
+# ---------------------------------------------------------------------------
+# T-006 AC-6: parallel_mode=off (explicit) -> existing serial behaviour,
+# byte-identical (no stand-down log, injects as before).
+# ---------------------------------------------------------------------------
+echo "--- T-006 AC-6: parallel_mode=off -> existing serial behaviour (no new log) ---"
+make_sandbox p_off
+run_hook_parallel "$LAST_SANDBOX" "off"
+assert_eq        "T-006 AC-6: hook exits 0 under parallel_mode=off" "0" "$LAST_EXIT_CODE"
+# Byte-identity: NO parallel stand-down stderr line of any kind.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDERR" | grep -qiE 'parallel stand-down|metric-only parallel'; then
+  echo -e "  ${RED}FAIL${NC} T-006 AC-6: off path emits NO parallel stand-down log"
+  echo -e "       actual stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} T-006 AC-6: off path emits NO parallel stand-down log"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+assert_file_exists "T-006 AC-6: off path injects -> .auto-compact-pending written" \
+  "$LAST_STATE_DIR/.auto-compact-pending"
+assert_contains  "T-006 AC-6: off path emits serial ticket-boundary additionalContext" \
+  "auto-compact-on-ship (ticket-boundary)" "$LAST_STDOUT"
 rm -rf "$LAST_SANDBOX"
 echo ""
 

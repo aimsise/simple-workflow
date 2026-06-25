@@ -633,6 +633,80 @@ unset _psf_have_saved PATH_SAVED
 echo ""
 
 # ---------------------------------------------------------------------------
+# Section 2d: resolve_parallel_mode (T-003)
+# AC-1 precedence + fail-closed (env > state > off, unknown -> off, never
+# empty, missing file -> off); AC-2 exported on the export -f line + callable.
+# ---------------------------------------------------------------------------
+echo "--- resolve_parallel_mode (T-003) ---"
+
+RPM_TMP="$(mktemp -d)"
+printf 'version: 1\nparallel_mode: on\n'          > "$RPM_TMP/on.yaml"
+printf 'version: 1\nparallel_mode: metric-only\n' > "$RPM_TMP/metric.yaml"
+printf 'version: 1\nparallel_mode: off\n'         > "$RPM_TMP/off.yaml"
+printf 'version: 1\nparallel_mode: bogus\n'       > "$RPM_TMP/unknown.yaml"
+printf 'version: 1\nparent_slug: x\n'             > "$RPM_TMP/absent.yaml"
+
+# AC-2: declared, sourceable, and on the export -f line.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if bash -c "source '$PSF_PATH' && declare -F resolve_parallel_mode" >/dev/null 2>&1 \
+   && grep -E '^export -f .*\bresolve_parallel_mode\b' "$PSF_PATH" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} AC-2: resolve_parallel_mode is declared + on the export -f line"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-2: resolve_parallel_mode missing from declare -F / export -f line"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Helper: call the resolver with $1 = state file, inheriting the caller's
+# SW_PARALLEL_HOOKS_MODE env (set via a VAR=val prefix on the call below).
+_rpm() { bash -c "source '$PSF_PATH' && resolve_parallel_mode \"\$1\"" _ "$1"; }
+
+# AC-1: state-scalar tier (env unset).
+assert_eq "AC-1: state parallel_mode=on -> on" "on" \
+  "$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/on.yaml")"
+assert_eq "AC-1: state parallel_mode=metric-only -> metric-only" "metric-only" \
+  "$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/metric.yaml")"
+assert_eq "AC-1: state parallel_mode=off -> off" "off" \
+  "$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/off.yaml")"
+assert_eq "AC-1: state parallel_mode=bogus (unknown) -> off" "off" \
+  "$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/unknown.yaml")"
+assert_eq "AC-1: state parallel_mode absent -> off" "off" \
+  "$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/absent.yaml")"
+assert_eq "AC-1: missing/unreadable state file -> off" "off" \
+  "$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/does-not-exist.yaml")"
+
+# AC-1: env-override tier (a SET env value wins over the state scalar).
+assert_eq "AC-1: env=on wins over state off" "on" \
+  "$(SW_PARALLEL_HOOKS_MODE=on _rpm "$RPM_TMP/off.yaml")"
+assert_eq "AC-1: env=off wins over state on" "off" \
+  "$(SW_PARALLEL_HOOKS_MODE=off _rpm "$RPM_TMP/on.yaml")"
+assert_eq "AC-1: env=metric-only wins over state on" "metric-only" \
+  "$(SW_PARALLEL_HOOKS_MODE=metric-only _rpm "$RPM_TMP/on.yaml")"
+# AC-1: unknown SET env -> off, does NOT fall through to state on.
+assert_eq "AC-1: env=garbage -> off (no fall-through to state on)" "off" \
+  "$(SW_PARALLEL_HOOKS_MODE=garbage _rpm "$RPM_TMP/on.yaml")"
+# AC-1: empty/unset env falls through to the state scalar.
+assert_eq "AC-1: empty env falls through to state on" "on" \
+  "$(SW_PARALLEL_HOOKS_MODE='' _rpm "$RPM_TMP/on.yaml")"
+
+# AC-1: never-empty invariant — output is always one of the three tokens.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+_rpm_neverempty="$(unset SW_PARALLEL_HOOKS_MODE; _rpm "$RPM_TMP/does-not-exist.yaml")"
+case "$_rpm_neverempty" in
+  on|metric-only|off)
+    echo -e "  ${GREEN}PASS${NC} AC-1: never-empty (got '$_rpm_neverempty')"
+    TESTS_PASSED=$((TESTS_PASSED + 1)) ;;
+  *)
+    echo -e "  ${RED}FAIL${NC} AC-1: empty/garbage output '$_rpm_neverempty'"
+    TESTS_FAILED=$((TESTS_FAILED + 1)) ;;
+esac
+
+unset -f _rpm
+rm -rf "$RPM_TMP"
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # Section 3: jsonl-tail-audit.sh
 # ---------------------------------------------------------------------------
 echo "--- jsonl-tail-audit.sh ---"

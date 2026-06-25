@@ -84,6 +84,14 @@
       {
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-log.sh" }]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/impl-checkpoint-guard.sh" }]
+      },
+      {
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scout-checkpoint-guard.sh" }]
+      }
     ]
   }
 }

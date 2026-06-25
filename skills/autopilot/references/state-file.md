@@ -11,8 +11,11 @@ The brief-level / parent-level `autopilot-state.yaml` is distinct from
 each ticket's `phase-state.yaml` (owned by `/scout`, `/impl`, `/ship`).
 Skip writing it if `resume_mode = true` (state already exists).
 
-The file has 7 top-level fields plus an OPTIONAL run-scoped
-`ultracode_mode:` field and an append-only metrics list:
+The file has 7 top-level fields plus two OPTIONAL run-scoped mode fields
+(`ultracode_mode:` and `parallel_mode:`), four OPTIONAL wave-cursor fields
+(`wave_count` / `current_wave` / `wave_status` / `main_checkout_root`,
+written only on the `PARALLEL_MODE != off` path), and an append-only
+metrics list:
 
 ```yaml
 version: 1
@@ -20,7 +23,12 @@ parent_slug: {parent-slug}
 started: {ISO-8601 via `date -u +%Y-%m-%dT%H:%M:%SZ`}
 execution_mode: split
 total_tickets: {N}
-ultracode_mode: off                      # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default off)
+ultracode_mode: on                       # OPTIONAL run-scoped orchestration mode: on | off | metric-only (default on)
+parallel_mode: on                        # OPTIONAL run-scoped parallel exec mode: on | metric-only — default on (absent on a fresh run writes on); WRITTEN ONLY when != off; ABSENT (-> off) on an explicit parallel=off opt-out run
+wave_count: 3                            # OPTIONAL wave cursor (PARALLEL_MODE != off only): total topological waves
+current_wave: 1                          # OPTIONAL wave cursor: 0-based index of the wave just spawned (-1 before the first spawn)
+wave_status: in_flight                   # OPTIONAL wave cursor: in_flight | drained (of current_wave)
+main_checkout_root: {abs path to main checkout}  # OPTIONAL: main-checkout repo root (single-writer; lets a guard under a worktree resolve state)
 ticket_mapping: {}
 tickets:
   - logical_id: {parent-slug}-part-{N}   # one entry per split-plan ticket, in topological order
@@ -55,18 +63,41 @@ Field summary (the 7 top-level fields plus `runtime_metrics:`):
 - `ticket_mapping` — `{logical_id: ticket_dir}` lookup table seeded from the split-plan.
 - `tickets` — per-ticket entries (logical_id, ticket_dir, status, steps, invocation_method).
 - `ultracode_mode` — OPTIONAL. Run-scoped orchestration mode; value
-  domain `on` | `off` | `metric-only` (default `off` when absent). Set
+  domain `on` | `off` | `metric-only` (default `on` when absent). Set
   once at Phase 2 state-file initialization from the `uc=` invocation
   argument resolved in Argument Parsing, re-read on resume at Phase 1
   Step 5 to reconstruct the run's orchestration mode, and moved to
   `briefs/done/` with the rest of the file on completion. It is
   **run-scoped run-state, NOT a permanent policy flag** — it is gone on
-  the next fresh run (a new run with no `uc=` argument writes `off`),
-  and is **distinct from `autopilot-policy.yaml`** (which carries
-  permanent per-ticket policy). Because it lives in `autopilot-state.yaml`
+  the next fresh run (a new run with no `uc=` argument writes `on`, the
+  default; pass `uc=off` to restore the v8.7.0 Agent path), and is
+  **distinct from `autopilot-policy.yaml`** (which carries permanent
+  per-ticket policy). Because it lives in `autopilot-state.yaml`
   it survives auto-compact and resume (Phase 1 Step 5 re-reads it via the
   same top-level scalar path as the other fields, e.g.
   `parse_yaml_scalar <file> ultracode_mode`).
+- `parallel_mode` — OPTIONAL. Run-scoped parallel execution mode; value
+  domain `on` | `off` | `metric-only`. **Default `on` (run-scoped; absent on a
+  fresh run writes `on`)** as of v9.0.0 — a bare `/autopilot` run now persists
+  `parallel_mode: on`. A near-
+  complete mirror of `ultracode_mode` with the same lifecycle: set once at
+  Phase 2 state-file initialization from the `parallel=` invocation argument
+  resolved in Argument Parsing **but written ONLY when `!= off`**, re-read on
+  resume at Phase 1 Step 5 (`parse_yaml_scalar <file> parallel_mode`) to
+  reconstruct the run's execution path, and moved to `briefs/done/` with the
+  rest of the file on completion. It is **run-scoped run-state, NOT a
+  permanent policy flag** — only an explicit `parallel=off` opt-out (or the
+  `SW_PARALLEL_TICKETS_MODE=off` kill switch resolving the run to `off`)
+  **OMITS the field entirely**, keeping the state file
+  byte-identical to a pre-parallel version, and resume reconstructs `off`
+  from the absent field; it never lives in `autopilot-policy.yaml`. The one
+  deliberate difference from `ultracode_mode` (which is written even for
+  `off`) is exactly this omit-on-`off`, required by the `parallel=off`
+  byte-identical-state guarantee. At Phase 2 it selects whether each ticket
+  runs through the current inline serial branch (explicit `off`) or a
+  `ticket-executor` subagent (`on` / absent-default / `metric-only`); it is **orthogonal to
+  `ultracode_mode`** (the two compose). The `SW_PARALLEL_TICKETS_MODE`
+  environment knob can force it to `off` as a run kill switch.
 - `runtime_metrics:` — append-only metrics list (see schema below).
 
 The `steps:` / `invocation_method:` maps no longer contain a `create-ticket`
@@ -184,6 +215,143 @@ write being blocked. Field evidence: `test_simple_workflow28` produced
 the map form (`pomodoro-timer-web-app-part-1: {...}`) and broke the
 pre-WI-4 LIST-only parsers in both `parse_ticket_statuses` and
 `parse_proposed_tickets` silently.
+
+## `[TICKET-EXECUTOR-RESULT]` envelope + single-writer contract (`PARALLEL_MODE != off`)
+
+When `PARALLEL_MODE != off`, each ticket's `/scout`→`/impl`→`/ship`
+pipeline runs inside a `ticket-executor` subagent
+(`agents/ticket-executor.md`) rather than inline in the main loop. Two
+contracts govern the state file on that path:
+
+**Single writer.** The `ticket-executor` MUST NOT write
+`autopilot-state.yaml`. The main loop is the sole writer: it writes
+`status: in_progress` for a ticket *before* spawning its executor, and
+transcribes the terminal `steps` / `status` / PR URL *after* receiving the
+executor's envelope. The executor owns only the per-ticket
+`phase-state.yaml` writes that `/scout` / `/impl` / `/ship` perform
+internally (a disjoint per-ticket inode). This keeps the brief-level state
+file free of concurrent writers, so no lost-update is possible once
+concurrency > 1 (Phase 2). At Phase 1 concurrency 1 the per-ticket boundary
+coincides with the wave boundary, so the single-writer rule holds cleanly
+under serial execution too.
+
+**Envelope.** The executor's FINAL message is a fixed-format envelope the
+main loop parses to perform its single write:
+
+```
+[TICKET-EXECUTOR-RESULT]
+logical_id: {parent-slug}-part-N
+status: {completed|failed|skipped}
+steps.scout: {pending|completed|failed}
+steps.impl: {pending|completed|failed}
+steps.ship: {pending|completed|failed}
+pr_url: {url or null}
+branch: {ap/<parent>/<NNN-slug> or null}
+head_sha: {worktree branch HEAD sha or null}
+failure_reason: {null or a short snake_case reason}
+```
+
+The main loop maps the envelope onto the canonical FLAT `steps:` schema
+(each `steps.<phase>` a string on its own line) and the ticket's `status`.
+A `null` `pr_url` is NOT a failure (a local-only ship with no remote still
+reports `steps.ship: completed`). The `branch` / `head_sha` fields ARE part
+of the envelope as of T-008 (worktree isolation):
+
+- `branch` — the per-ticket isolation branch `ap/<parent>/<NNN-slug>` the
+  executor's worktree was created on. `null` on the serial / concurrency-1
+  path (no worktree = main checkout). On the `PARALLEL_MODE == on` wave
+  scheduler the main loop reads it at the wave boundary to integrate the
+  ticket's branch into `ap-integration/<parent>` (wave-loop step 4a).
+- `head_sha` — the HEAD sha of that branch after `/ship` committed
+  (`git rev-parse HEAD` in the worktree); `null` when there was no commit or
+  no worktree. Lets the main loop record / verify the integrated tip.
+
+### `ap-integration/<parent>` — local-only orchestration branch (`PARALLEL_MODE == on`)
+
+The wave scheduler creates a per-parent integration branch
+`ap-integration/<parent>` at Phase 2 init from the session start ref. It is a
+**local-only orchestration artifact**: it is **NOT pushed** to any remote and
+is **NOT the PR target** (each ticket still ships its OWN PR against the repo
+default branch via `/ship <default-branch> ticket-dir=<NNN-slug>`, no
+`merge=true`). At each wave boundary the main loop merges every
+`status: completed` ticket's `ap/<parent>/<NNN-slug>` branch into
+`ap-integration/<parent>` (`--no-ff --no-edit`, topo/lex order, idempotent via
+`git merge-base --is-ancestor`), so wave `k>0`'s per-ticket worktrees base on
+the integrated tip and a cross-wave dependent sees its dependency's committed
+changes (shared object store). A genuine conflict fails THAT ticket
+(`failure_reason=integration_conflict_<other-NNN>`) + cascade-skips its
+dependents; the run continues (no auto-resolve). The branch and every
+per-ticket `ap/<parent>/<NNN-slug>` branch are KEPT after the run (cleanup
+removes only the worktrees); on the serial (`PARALLEL_MODE == off`) path no
+integration branch is created (byte-identical).
+
+## Wave cursor (`PARALLEL_MODE != off`) — orchestrator-written, hook-read
+
+When `PARALLEL_MODE != off`, the main loop persists a tiny single-writer
+wave cursor so the parallel-aware hooks never re-derive Kahn waves in shell.
+Four OPTIONAL top-level fields, all written by the main loop ONLY (the
+`ticket-executor` NEVER writes them — the same single-writer rule as
+`steps`/`status`):
+
+- `wave_count` — integer; the total number of topological waves computed
+  for this run (the level-synchronous Kahn layering in
+  `split-plan-parsing.md`). Written once at wave computation.
+- `current_wave` — integer; the 0-based index of the wave just spawned.
+  `-1` before the first wave is spawned. Written immediately BEFORE spawning
+  each wave's executors.
+- `wave_status` — `in_flight` | `drained`. `in_flight` from the moment a
+  wave's executors are spawned until the barrier has collected them all;
+  `drained` once every executor in `current_wave` has returned and the main
+  loop has written their terminal `steps`/`status`. A hook reading
+  `in_flight` knows a wave is still running; `drained` means the wave
+  boundary was crossed.
+- `main_checkout_root` — string; the absolute path of the MAIN-checkout repo
+  root (`git rev-parse --show-toplevel` at Phase 2 init). Single-writer. It
+  lets a guard running inside a per-ticket worktree resolve the authoritative
+  state location when the `_psf_repo_root` ancestor-walk is insufficient (a
+  worktree layout outside the main tree). `null` / absent on a fresh
+  non-worktree run — guards fall back to `_psf_repo_root` (today's behaviour).
+
+**Resume semantics.** The cursor is run-scoped and recomputed on each
+`/autopilot` entry: `wave_count` is recomputed from the (unchanged)
+dependency graph, and `current_wave` / `wave_status` are re-derived from the
+per-ticket terminal statuses already in `tickets[]` (the wave whose tickets
+are all terminal is `drained`; the first wave with a non-terminal ticket is
+the resumed `current_wave`, `in_flight`). The cursor is therefore a
+convenience / observability projection of the authoritative per-ticket
+`status` — never a second source of truth. It moves to `briefs/done/` with
+the rest of the file on completion.
+
+**Single-writer at the wave boundary (`PARALLEL_MODE == on`).** The
+wave-parallel scheduler performs **exactly TWO** `autopilot-state.yaml`
+writes per wave: a **pre-wave write** (`READY_k` → `in_progress`,
+`current_wave` advanced, `wave_status: in_flight`) immediately before the
+wave's executors are spawned, and a **post-wave write** (transcribe each
+returned envelope's `status`/`steps`/`pr_url`/`branch`/`head_sha`, apply any
+integration-conflict status flip, fold the wave's dependency-skips, set
+`wave_status: drained`) after the wave-boundary integration (SKILL.md step
+4a) completes — which itself runs after the foreground barrier has collected
+every envelope, so the post-wave write is the SINGLE persistence of both the
+executor outcomes and the integration result. The concurrently-running
+`ticket-executor` subagents NEVER write `autopilot-state.yaml` — the main
+loop is the SOLE writer, so there is no concurrent-write window even though
+the wave's members are `in_progress` in parallel. An oversized wave
+(`|READY_k| > CONCURRENCY_CAP`) processes in lex-ordered sub-batches, but
+the post-wave write still happens ONCE after the LAST sub-batch (the
+two-writes-per-wave count is per wave, not per sub-batch).
+
+**`parallel_max` is NOT persisted.** The concurrency cap
+(`parallel_max=<N>` arg → `SW_PARALLEL_MAX_CONCURRENCY` env → default 4) is
+a per-invocation knob: it is resolved fresh in Argument Parsing on every
+`/autopilot` entry and is NEVER written to `autopilot-state.yaml`. Likewise
+the wave layering itself is recomputed from the (unchanged) dependency graph
+on every entry — no wave index is persisted. Only `wave_count` /
+`current_wave` / `wave_status` / `main_checkout_root` (observability
+projections) are written.
+
+**No behaviour change yet.** These fields are additive and unread by any
+hook until the T-004/5/6 rework; a legacy or serial (`PARALLEL_MODE == off`)
+run omits them entirely (a byte-identical state file).
 
 ## `autopilot-state.yaml` location precedence
 
@@ -343,8 +511,17 @@ exactly like any other gate divergence.
 `/autopilot` MUST NOT mark a ticket `skipped` while any sibling is
 `pending` or `in_progress`, unless one of:
 
-- **Dependency cascade**: the ticket's `skip_reason` contains
-  `dependency_failed` or `dependency_skipped`.
+- **Dependency cascade**: the ticket's `skip_reason` matches the
+  `dependency_` PREFIX form — `dependency_<dep-slug>_failed` or
+  `dependency_<dep-slug>_skipped` (the autopilot Dependency check
+  interpolates the dep slug between `dependency_` and `_<status>`, so the
+  carve-out regex tolerates the slug). The bare-token `dependency_failed` /
+  `dependency_skipped` forms still match for back-compat. This is the H2
+  fix: under `PARALLEL_MODE != off` a whole wave's members are
+  `in_progress` simultaneously, so a slug-interpolated cascade-skip like
+  `dependency_002-bar_failed` would have been BLOCKED as
+  `unauthorized_skip_with_active_siblings` had the carve-out stayed pinned
+  to the exact bare tokens.
 - **Explicit override**: `override_skip: true` appears at the same
   indentation as `status:` AND the `skip_reason` does NOT match any
   pattern in `hooks/lib/forbidden-rationale-patterns.sh`.

@@ -520,5 +520,250 @@ fi
 cleanup_session "$SID"
 rm -rf "$TMP"
 
+# ===========================================================================
+# T-005 — parallel-mode dual-event branch (Stop / SubagentStop)
+# ===========================================================================
+echo ""
+echo "--- T-005 parallel-mode dual-event branch ---"
+
+# Write an autopilot-state.yaml under briefs/active/<slug>/ carrying an
+# optional parallel_mode: scalar (and optionally main_checkout_root). Used to
+# drive resolve_parallel_mode + the main_checkout_root preference.
+make_parallel_autopilot_state() {
+  local repo_dir="$1"
+  local parent_slug="$2"
+  local parallel_mode="$3"
+  local main_checkout_root="${4:-}"
+  mkdir -p "$repo_dir/.simple-workflow/backlog/briefs/active/$parent_slug"
+  {
+    printf 'version: 1\n'
+    printf 'slug: %s\n' "$parent_slug"
+    printf 'parallel_mode: %s\n' "$parallel_mode"
+    [ -n "$main_checkout_root" ] && printf 'main_checkout_root: %s\n' "$main_checkout_root"
+    printf 'tickets:\n'
+    printf '  - logical_id: t1\n'
+    printf '    ticket_dir: 001-test\n'
+    printf '    status: in_progress\n'
+    printf '    steps:\n'
+    printf '      impl: in_progress\n'
+  } > "$repo_dir/.simple-workflow/backlog/briefs/active/$parent_slug/autopilot-state.yaml"
+}
+
+# Executor transcript: an ac-evaluator subagent that emits an /audit-style
+# block but has NO Skill(simple-workflow:impl) invocation — the existing
+# Step 7 cross-session signature gate must silent-exit on it.
+TRANSCRIPT_AC_EVALUATOR='{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"evaluate ACs"}]}}
+{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"**Status**: PASS\n**Reports**:\n  - eval: e.md\n**Summary**: all ACs pass"}]}}'
+
+# (T-PAR-1): SubagentStop + parallel=on + executor transcript (5-AND) → block.
+echo "--- (T-PAR-1): SubagentStop + parallel=on + 5-AND → block ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_parallel_autopilot_state "$TMP" "par-brief" "on"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar1-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-1): SubagentStop enforces on executor transcript → decision=block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-1): expected decision=block, exit 0"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-2): Stop + parallel=on → stand down (exit 0, [IMPL-CHECKPOINT] log).
+echo "--- (T-PAR-2): main Stop + parallel=on → stand down ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_parallel_autopilot_state "$TMP" "par-brief" "on"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar2-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "Stop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
+   && echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-2): main Stop stands down → exit 0, no block, stand-down log"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-2): expected exit 0 + no block + stand-down log"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-3): serial (parallel=off) SubagentStop + unrelated ac-evaluator
+# transcript → silent-exit at the existing Step 7 signature gate.
+echo "--- (T-PAR-3): serial SubagentStop + unrelated ac-evaluator → silent exit ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+# parallel=off explicitly (serial). The ac-evaluator transcript has the audit
+# block but no Skill(simple-workflow:impl), so Step 7 silent-exits.
+make_parallel_autopilot_state "$TMP" "par-brief" "off"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AC_EVALUATOR"
+SID="impl-cp-tpar3-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ] \
+   && ! echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-3): serial SubagentStop → exit 0, empty stdout, no parallel log"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-3): expected exit 0 + empty stdout + no parallel log"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stdout: '$LAST_STDOUT'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-4): non-autopilot SubagentStop → early exit 0, no transcript scan.
+echo "--- (T-PAR-4): non-autopilot SubagentStop → exit 0 ---"
+TMP=$(mktemp -d)
+# NO autopilot-state.yaml at all → resolve_parallel_mode → off; impl Step 1
+# finds no phase-state.yaml → silent-exit before any transcript I/O.
+mkdir -p "$TMP/.simple-workflow/backlog/active"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar4-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-4): non-autopilot SubagentStop → exit 0, empty stdout"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-4): expected exit 0 + empty stdout"
+  echo -e "       Exit: $LAST_EXIT_CODE  Stdout: '$LAST_STDOUT'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-5): missing hook_event_name + parallel=on → treated as Stop → stand down.
+echo "--- (T-PAR-5): missing hook_event_name + parallel=on → treated as Stop (stand down) ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_parallel_autopilot_state "$TMP" "par-brief" "on"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar5-$$"
+cleanup_session "$SID"
+# No hook_event_name field in the payload.
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
+   && echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-5): missing event treated as Stop → stand down"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-5): expected exit 0 + no block + stand-down log"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-6): parallel=off main Stop → existing behaviour unchanged (block).
+echo "--- (T-PAR-6): parallel=off main Stop → existing behaviour (block) ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_parallel_autopilot_state "$TMP" "par-brief" "off"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar6-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "Stop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ] \
+   && ! echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-6): parallel=off main Stop → decision=block, no parallel log"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-6): expected decision=block, no parallel stderr"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-7): metric-only main Stop → log "would stand down" + fall through (block).
+echo "--- (T-PAR-7): metric-only main Stop → log + fall through (block) ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+make_parallel_autopilot_state "$TMP" "par-brief" "metric-only"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar7-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "Stop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ] \
+   && echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down (metric-only)'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-7): metric-only logs would-stand-down + falls through → block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-7): expected block + metric-only stand-down log"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (T-PAR-8): worktree phase-state resolution via main_checkout_root (AC-6).
+# cwd is a worktree path with its OWN autopilot-state.yaml (carrying
+# main_checkout_root pointing at the main checkout) but NO phase-state.yaml;
+# the main checkout holds the phase-state.yaml. The impl guard must resolve
+# phase-state from main_checkout_root, pass Step 1, and enforce on SubagentStop.
+echo "--- (T-PAR-8): SubagentStop in worktree resolves phase-state via main_checkout_root → block ---"
+MAIN=$(mktemp -d)
+WT=$(mktemp -d)
+# Main checkout: phase-state.yaml lives here (NOT in the worktree).
+make_phase_state "$MAIN" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+# Worktree: autopilot-state.yaml carrying main_checkout_root -> $MAIN; NO
+# phase-state.yaml under the worktree's active/ dir.
+mkdir -p "$WT/.simple-workflow/backlog/active"
+make_parallel_autopilot_state "$WT" "par-brief" "on" "$MAIN"
+make_transcript "$WT/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID="impl-cp-tpar8-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$WT/transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$WT"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-8): worktree SubagentStop resolves phase-state via main_checkout_root → block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-8): expected decision=block (phase-state resolved from main_checkout_root)"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$MAIN" "$WT"
+
 echo ""
 print_summary
