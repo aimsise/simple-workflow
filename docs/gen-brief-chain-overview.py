@@ -164,8 +164,8 @@ def build(theme, out):
     # header
     text(40, 40, "How  /brief chain=on  runs", size=22, bold=True, color=C["ink"])
     lx = swatch(40, 80, "skill", "skill")
-    lx = swatch(lx, 80, "agent", "subagent")
-    lx = swatch(lx, 80, None, "loop", dash=True)
+    lx = swatch(lx, 80, "agent", "ticket-executor")
+    lx = swatch(lx, 80, None, "wave loop", dash=True)
 
     # ---- band 1: setup chain ----
     bw = (880 - 88) / 3
@@ -174,9 +174,9 @@ def build(theme, out):
     titles = [("/brief", [[("spawns ", C["ink"], False), ("researcher", AG, True)],
                           [("writes brief.md + policy", IO, False)]]),
               ("/create-ticket", [[("splits scope into N tickets", C["ink"], False)],
-                                  [("agents: ", C["ink"], False), ("decomposer, planner", AG, True)]]),
+                                  [("with a ", C["ink"], False), ("depends_on", IO, True), (" graph", C["ink"], False)]]),
               ("/autopilot", [[("orchestrates the run", C["ink"], False)],
-                              [("ticket-by-ticket (topological)", C["ink"], False)]])]
+                              [("wave-parallel (topological)", C["ink"], False)]])]
     for x0, (nm, lines) in zip(xs, titles):
         box(x0, by0, x0 + bw, by1, "skill")
         text(x0 + 14, by0 + 24, nm, size=15.5, bold=True, color=SK)
@@ -185,55 +185,51 @@ def build(theme, out):
     harrow(xs[0] + bw, xs[1], (by0 + by1) / 2)
     harrow(xs[1] + bw, xs[2], (by0 + by1) / 2)
 
-    # autopilot -> loop
+    # autopilot -> wave loop
     apx = xs[2] + bw / 2
-    varrow(apx, by1, 224)
+    varrow(apx, by1, 228)
 
-    # ---- per-ticket loop container ----
-    LX0, LY0, LX1, LY1 = 40, 228, 920, 452
+    # ---- per-wave loop container ----
+    LX0, LY0, LX1, LY1 = 40, 232, 920, 470
     dashed_rect(LX0, LY0, LX1, LY1, C["loop"])
-    text(LX0 + 16, LY0 + 18, "PER-TICKET LOOP  —  repeats for each ticket", size=13.5, bold=True, color=C["loop"])
-    text(LX0 + 16, LY0 + 38, "(auto-/compact resets the context window between tickets)", size=10.5, color=C["loop"])
+    text(LX0 + 16, LY0 + 18, "PER-WAVE LOOP  —  one topological wave at a time", size=13.5, bold=True, color=C["loop"])
+    text(LX0 + 16, LY0 + 38, "non-blocked tickets run concurrently  ·  auto-/compact between waves", size=10.5, color=C["loop"])
+    text(LX0 + 16, LY0 + 62, "every ready (unblocked) ticket spawns its own ticket-executor at once  ·  cap 4", size=11, color=GR)
 
+    # 3 concurrent ticket-executor boxes (one per ready ticket)
     ibw = (848 - 80) / 3
     ix = [56, 56 + ibw + 40, 56 + 2 * (ibw + 40)]
-    iy0, iy1 = 290, 400
-    sc = [("/scout", [[("investigate + plan", C["ink"], False)],
-                      [("researcher · planner", AG, True)]]),
-          ("/impl", [[("verify loop", C["loop"], True), (" — Generator/Evaluator, max 9", C["ink"], False)],
-                    [("implementer · ac-evaluator", AG, True)]]),
-          ("/ship", [[("commit + open PR", C["ink"], False)],
-                    [("learns via ", C["ink"], False), ("/tune", SK, True)]])]
-    for x0, (nm, lines) in zip(ix, sc):
-        box(x0, iy0, x0 + ibw, iy1, "skill")
-        text(x0 + 12, iy0 + 22, nm, size=15, bold=True, color=SK)
-        rich(x0 + 12, iy0 + 48, lines[0], size=11.5)
-        rich(x0 + 12, iy0 + 70, lines[1], size=11.5)
-    harrow(ix[0] + ibw, ix[1], (iy0 + iy1) / 2)
-    harrow(ix[1] + ibw, ix[2], (iy0 + iy1) / 2)
+    iy0, iy1 = LY0 + 82, LY0 + 184
+    for i, x0 in enumerate(ix):
+        box(x0, iy0, x0 + ibw, iy1, "agent")
+        text(x0 + 14, iy0 + 22, "ticket-executor", size=13.5, bold=True, color=AG)
+        text(x0 + 14, iy0 + 44, "ticket %03d" % (i + 1), size=10.5, color=AG)
+        rich(x0 + 14, iy0 + 68, [("/scout", SK, True), ("  →  ", GR, False), ("/impl", SK, True),
+                                 ("  →  ", GR, False), ("/ship", SK, True)], size=11.5)
+        text(x0 + 14, iy0 + 90, "in its own git worktree", size=10, color=GR)
 
-    # loop-back arrow (under boxes)
+    # loop-back arrow: next wave
     scx = ix[0] + ibw / 2
     shx = ix[2] + ibw / 2
-    lby = 426
+    lby = iy1 + 24
     dashed(shx, iy1, shx, lby, C["loop"], 2.4, 9, 6)
     dashed(shx, lby, scx, lby, C["loop"], 2.4, 9, 6)
     dashed(scx, lby, scx, iy1, C["loop"], 2.4, 9, 6)
     ahead(scx, iy1 + 2, "up", color=C["loop"])
-    text_bg((scx + shx) / 2, lby, "yes — next ticket", size=10.5, color=C["loop"])
+    text_bg((scx + shx) / 2, lby, "next wave  —  once deps complete", size=10.5, color=C["loop"])
 
-    # loop -> PR
-    varrow((LX0 + LX1) / 2, LY1, 488)
-    text_bg((LX0 + LX1) / 2 + 92, (LY1 + 488) / 2, "all tickets done", size=10, color=GR)
+    # wave loop -> PR
+    varrow((LX0 + LX1) / 2, LY1, 502)
+    text_bg((LX0 + LX1) / 2 + 92, (LY1 + 502) / 2, "all waves done", size=10, color=GR)
 
-    PX0, PX1 = 320, 640
-    box(PX0, 488, PX1, 540, "pr")
-    text((PX0 + PX1) / 2, 514, "All tickets shipped  →  Pull Request(s)", size=13, bold=True, color=C["pr"][2], anchor="mm")
+    PX0, PX1 = 300, 660
+    box(PX0, 502, PX1, 554, "pr")
+    text((PX0 + PX1) / 2, 528, "Each ticket  →  its own Pull Request", size=13, bold=True, color=C["pr"][2], anchor="mm")
 
     # caption (ties to harness + points to detail)
-    text(40, 578, "Throughout, lifecycle hooks DRIVE the loop (the Stop hook re-injects \"continue\") and GUARD every write,",
+    text(40, 580, "Throughout, lifecycle hooks DRIVE the run (Stop / SubagentStop re-inject \"continue\") and GUARD every write;",
          size=11.5, color=GR)
-    rich(40, 598, [("and each subagent runs in an isolated context (information firewall).  ", GR, False),
+    rich(40, 600, [("each executor works in an isolated worktree, merged at every wave boundary.  ", GR, False),
                   ("Full flow — agents · hooks · harness — below.", C["ink"], True)], size=11.5)
 
     img.save(out)

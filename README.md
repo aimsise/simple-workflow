@@ -11,10 +11,10 @@ Built on a **Harness for long-running AI agents** that brings *loop engineering*
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brief-chain-overview-dark.png">
-    <img src="docs/brief-chain-overview.png" alt="How /brief chain=on runs: /brief then /create-ticket then /autopilot, then a per-ticket loop of /scout, /impl (with an inner verify loop) and /ship, ending in pull requests" width="860">
+    <img src="docs/brief-chain-overview.png" alt="How /brief chain=on runs: /brief then /create-ticket then /autopilot, which executes each topological wave of non-blocked tickets concurrently — one ticket-executor subagent per ticket, each in its own git worktree running /scout, /impl (with an inner verify loop) and /ship — ending in one pull request per ticket" width="860">
   </picture>
   <br>
-  <sub><i>The <code>/brief chain=on</code> full-automation flow (opt in with <code>chain=on</code>; no longer the default as of v10.0.0) at a glance: skills (blue) drive subagents (green); the per-ticket loop and the in-<code>/impl</code> verify loop are red; lifecycle hooks drive and guard every step. The full flow — agents · hooks · harness — is in the collapsible below.</i></sub>
+  <sub><i>The <code>/brief chain=on</code> full-automation flow (opt in with <code>chain=on</code>; no longer the default as of v10.0.0) at a glance: skills (blue) drive subagents (green); <code>/autopilot</code> runs each topological wave of non-blocked tickets concurrently — one <code>ticket-executor</code> per ticket, each in its own git worktree — and the per-wave loop and the in-<code>/impl</code> verify loop are red; lifecycle hooks drive and guard every step. With <code>parallel=off</code> the same <code>/scout</code> → <code>/impl</code> → <code>/ship</code> pipeline runs one ticket at a time in the main session. The full flow — agents · hooks · harness — is in the collapsible below.</i></sub>
 </p>
 
 <details>
@@ -23,7 +23,7 @@ Built on a **Harness for long-running AI agents** that brings *loop engineering*
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brief-chain-flow-dark.png">
-    <img src="docs/brief-chain-flow.png" alt="Detailed /brief chain=on execution flow: each phase's work, subagents and artifacts; the handoff and harness applied between phases; the lifecycle hooks; the per-ticket and verify loops; and a summary of the harness mechanisms" width="860">
+    <img src="docs/brief-chain-flow.png" alt="Detailed /brief chain=on execution flow: each phase's work, subagents and artifacts; the handoff and harness applied between phases; the lifecycle hooks; the wave scheduler running non-blocked tickets concurrently through ticket-executor subagents in isolated git worktrees; the per-wave loop, the in-/impl verify loop, and cross-wave branch integration; and a summary of the harness mechanisms" width="860">
   </picture>
 </p>
 
@@ -74,7 +74,7 @@ claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
 
 Inside an active Claude Code session, type `/brief <idea>` to produce a structured brief and decision policy and then stop for your review — or type `/brief <idea> chain=on` to hand the whole pipeline to the plugin end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
 
-Full argument signature: `/brief <what-to-build> [chain=on|off] [uc=on|off|metric-only] [parallel=on|off]` (default `chain=off`; a bare `/brief` writes the brief and stops — under `chain=on` the chained run defaults `uc=on`, `parallel=on`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`) — still accepted (with a deprecation warning); slated for removal in a future major (deferred from v9.0.0). `/autopilot <slug>` accepts the same `[uc=on|off|metric-only] [parallel=on|off]` tokens.
+Full argument signature: `/brief <what-to-build> [chain=on|off] [uc=on|off|metric-only] [parallel=on|off|metric-only]` (default `chain=off`; a bare `/brief` writes the brief and stops — under `chain=on` the chained run defaults `uc=on`, `parallel=on`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`) — still accepted (with a deprecation warning); slated for removal in a future major (deferred from v9.0.0). `/autopilot <slug>` accepts the same `[uc=on|off|metric-only] [parallel=on|off|metric-only]` tokens, plus `parallel_max=<N>` (the wave concurrency cap, default 4).
 
 **ultracode orchestration** is **on by default**: non-trivial (M+) tickets run their AC evaluation as a parallel multi-verifier panel via Claude Code's Workflow tool (forwarded `/brief` → `/autopilot` → each `/impl` and preserved across auto-`/compact`/resume; tier-appropriate model — Sonnet at `thorough`, Opus at `exhaustive`). Pass **`uc=off`** to revert to the byte-identical single-evaluator Agent path. Default-on applies under `chain=on`; under `chain=off` (the bare-`/brief` default as of v10.0.0) there is no chained `/autopilot`, so `uc` resolves `off`. Also accepted (as `uc=on|off|metric-only`) on `/autopilot <slug>` and `/impl …`. Details: `skills/impl/SKILL.md`. Note that `uc=` is the plugin's own argument: it neither requires nor enables Claude Code's `/effort ultracode` setting, and the harness's `ultracode` prompt keyword is unrelated to it.
 
@@ -104,12 +104,12 @@ Three typical execution patterns:
 # re-run /create-ticket so each ticket dir receives autopilot-policy.yaml (re-propagation):
 /create-ticket brief=.simple-workflow/backlog/briefs/active/<slug>/brief.md
 /autopilot <slug>
-# autopilot then loops: /scout → /impl → /ship per ticket → PR   ← loop engineering fires (the closed inner loop self-drives)
+# autopilot then runs tickets wave-parallel by default (one ticket-executor per non-blocked ticket): /scout → /impl → /ship → PR   ← loop engineering fires (the closed inner loop self-drives)
 # (running /autopilot directly on a chain=off brief stops with a re-propagation directive)
 
 # 3. Full automation (one command — opt in with chain=on):
 /brief <idea> chain=on
-# brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR   ← loop engineering fires once /autopilot takes over
+# brief chains: /create-ticket → /autopilot → wave-parallel tickets (per ticket: /scout → /impl → /ship) → PR   ← loop engineering fires once /autopilot takes over
 # (a bare /brief <idea> now defaults to chain=off: it writes the brief and stops — see pattern 1)
 ```
 
@@ -140,7 +140,7 @@ simple-workflow addresses the **structural** threats — Loss, Contamination, Bl
 
 ## Setup & Configuration
 
-The first time the plugin runs in a project, the target repository is prepared automatically: `git init -b main` if no repo exists (falls back to plain `git init` on git <2.28), an initial commit if HEAD is missing, and an idempotent append of `.simple-workflow/` to `.gitignore` (committed as `chore: add simple-workflow artifacts to .gitignore`). Once `.simple-workflow/.setup-done` is written, simple-workflow will **never** touch your `.gitignore` again — manual deletions are permanent.
+The first time the plugin runs in a project, the target repository is prepared automatically: `git init -b main` if no repo exists (falls back to plain `git init` on git <2.28), an initial commit if HEAD is missing, and an idempotent append of `.simple-workflow/` and the slash-less `.simple-workflow` to `.gitignore` (the slash-less form also matches the `.simple-workflow` symlink that wave-parallel executors create in their worktrees; committed as `chore: add simple-workflow artifacts to .gitignore`). Once `.simple-workflow/.setup-done` is written, simple-workflow will **never** touch your `.gitignore` again — manual deletions are permanent.
 
 ### Sharing selected paths under `.simple-workflow/`
 
