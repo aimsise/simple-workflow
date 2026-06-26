@@ -331,6 +331,16 @@ INPUT=$(cat)
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
+TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+# Identity extraction (S2-validated, FIX-3 PART B). The PreToolUse payload
+# natively carries `.agent_type` for a subagent Write/Edit (the agent name,
+# possibly namespaced as `simple-workflow:<name>`) and ABSENT/null for an
+# orchestrator / main-loop write. The unconditional prefix strip normalizes
+# BOTH the bare and namespaced forms; an EMPTY result == orchestrator == ALLOW
+# (fail-open-on-empty, the single load-bearing dependency keeping scenarios
+# (a)-(f) green, especially (d) the pending->completed normal transition).
+AGENT_TYPE=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null || true)
+AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"
 
 # Pull the candidate content depending on tool. Write provides .content;
 # Edit provides .new_string. We only inspect what the model is about to
@@ -410,7 +420,77 @@ if [ "$PROP_TOTAL" -gt 0 ]; then
   done
 fi
 
-# Nothing skipped in the proposed content -> nothing for this hook to do.
+# ---------------------------------------------------------------------------
+# FIX-3 PART A (v9.0.1): advancement detection (identity-free, unconditionally
+# shippable observability). The original guard fired ONLY on `status: skipped`;
+# PART A widens the detection to ALL advancement transitions so PART B
+# (Detection 4) and the metric-only logging can see them:
+#   - status / phases.<phase>.status -> in_progress / completed / failed
+#   - current_phase -> any pipeline-phase value (incl. ship)
+#   - overall_status -> any advancement value (incl. ship)
+# This is detection only; the skip routes (Rule 1 / Rule 2 / structural
+# override) below stay HAS_SKIPPED-based and are NOT gated by the new knob, so
+# scenarios (a)-(f) are byte-identical.
+#
+# Regex notes:
+#   - regex 1 (a standalone `status:` / `current_phase:` / `overall_status:`
+#     line driven to an advancement value) catches the canonical multi-line
+#     `phases:\n  ship:\n    status: completed` shape via its `status:` line.
+#   - the `ship` value matcher is value-agnostic for current_phase /
+#     overall_status (any pipeline-phase value would do; `ship` is the one a
+#     bare `current_phase: ship` write uses and the gap FIX-3 closes).
+ADVANCEMENT_DETECTED="false"
+if [ "$HAS_SKIPPED" = "true" ]; then
+  ADVANCEMENT_DETECTED="true"
+elif printf '%s' "$CONTENT" | grep -qiE '(^|[^[:alpha:]])(status|current_phase|overall_status|phases\.[^[:space:]]*\.status)[^[:alpha:]]{0,15}(in_progress|in-progress|completed|failed|ship)'; then
+  ADVANCEMENT_DETECTED="true"
+fi
+
+# Nothing skipped AND no advancement in the proposed content -> nothing for
+# this hook to do. (The skip routes below still gate on HAS_SKIPPED; PART B /
+# Detection 4 gates on ADVANCEMENT_DETECTED.)
+if [ "$HAS_SKIPPED" != "true" ] && [ "$ADVANCEMENT_DETECTED" != "true" ]; then
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# FIX-3 Detection 4 / PART B (v9.0.1): review/evaluator-agent phase-advance
+# firewall. Evaluated BEFORE the skip rules so that an advancement-only write
+# (HAS_SKIPPED=false) -- which never reaches the skip-rule block below -- is
+# still gated, and so a review-agent skip write is caught here regardless of
+# the skip-rule outcome.
+#
+# Identity gate: AGENT_TYPE (already prefix-stripped above) matched against the
+# review/evaluator denylist. AGENT_TYPE EMPTY (orchestrator / top-level / a
+# generator) is NOT in the denylist -> ALLOW (fail-open-on-empty -- THE single
+# load-bearing dependency keeping (a)-(f) green; (d) pending->completed is the
+# canary: PART A flags it as an advancement, but the empty identity keeps it
+# ALLOW).
+#
+# GOVERNANCE (B) harness-own: the denylist gates the review/evaluator ROLE (a
+# property of the agent's job), NOT a named product / language / domain.
+# CT-DECONTAM-1 / a reviewer MUST read these agent names as harness-own role
+# identities, not product cues. ticket-evaluator is INCLUDED (it carries the
+# Write tool; a folded denylist-omission fix).
+#
+# Gated by SW_STATE_ADVANCE_GUARD_MODE (default metric-only). The PART A
+# detection above and the existing Rule 1 / Rule 2 (PX-04 skip guards) are NOT
+# gated by this knob -- only this Detection 4 deny is (NAC #8: no env bypass on
+# the skip guards).
+ADVANCE_GUARD_MODE="${SW_STATE_ADVANCE_GUARD_MODE:-metric-only}"
+if [ "$ADVANCE_GUARD_MODE" != "off" ] && [ "$ADVANCEMENT_DETECTED" = "true" ] \
+   && printf '%s' "$AGENT_TYPE" | grep -qE '^(simple-workflow:)?(ac-evaluator|ac-evaluator-hi|doc-verifier|code-reviewer|security-scanner|ticket-evaluator)$'; then
+  case "$ADVANCE_GUARD_MODE" in
+    on)
+      emit_block "unauthorized_phase_advance_by_review_agent" \
+        "A review/evaluator agent ('$AGENT_TYPE') may not write a phase-advancement transition (status/current_phase/overall_status -> in_progress/completed/failed/ship) to $FILE_PATH. Only the orchestrator and generators may write these transitions; a verdict actor advancing the phase it grades is a firewall breach. See skills/autopilot/SKILL.md." ;;
+    metric-only|*)
+      printf '[STATE-ADVANCE-GUARD] metric-only: would deny unauthorized_phase_advance_by_review_agent (agent=%s): %s\n' "$AGENT_TYPE" "$FILE_PATH" >&2 ;;
+  esac
+fi
+
+# When nothing is skipped (advancement-only write), the skip-rule block below
+# is inapplicable -- skip straight to the final allow.
 if [ "$HAS_SKIPPED" != "true" ]; then
   exit 0
 fi

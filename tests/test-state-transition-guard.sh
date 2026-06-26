@@ -57,6 +57,7 @@ run_guard() {
   local content="$2"
   local cwd="$3"
   local tool_name="${4:-Write}"
+  local at="${5:-}"   # optional agent_type (FIX-3): merged ONLY when non-empty
 
   local payload
   if [ "$tool_name" = "Edit" ]; then
@@ -64,13 +65,17 @@ run_guard() {
       --arg fp "$file_path" \
       --arg ns "$content" \
       --arg cwd "$cwd" \
-      '{tool_name:"Edit", tool_input:{file_path:$fp, old_string:"", new_string:$ns}, cwd:$cwd, session_id:"test", transcript_path:""}')
+      --arg at "$at" \
+      '{tool_name:"Edit", tool_input:{file_path:$fp, old_string:"", new_string:$ns}, cwd:$cwd, session_id:"test", transcript_path:""}
+         + (if $at=="" then {} else {agent_type:$at} end)')
   else
     payload=$(jq -n \
       --arg fp "$file_path" \
       --arg c "$content" \
       --arg cwd "$cwd" \
-      '{tool_name:"Write", tool_input:{file_path:$fp, content:$c}, cwd:$cwd, session_id:"test", transcript_path:""}')
+      --arg at "$at" \
+      '{tool_name:"Write", tool_input:{file_path:$fp, content:$c}, cwd:$cwd, session_id:"test", transcript_path:""}
+         + (if $at=="" then {} else {agent_type:$at} end)')
   fi
 
   local stdout_file stderr_file
@@ -558,6 +563,102 @@ if grep -qE '\$\{?(SKIP|BYPASS|FORCE)_[A-Z_]+' "$HOOK_PATH"; then
 else
   echo -e "  ${GREEN}PASS${NC} (NAC#8) hook source has no \$SKIP_*/\$BYPASS_*/\$FORCE_* env-var bypass"
   TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# FIX-3 (v9.0.1): phase-advancement guard (PART A detection + PART B Detection 4).
+# A run_guard variant that sets SW_STATE_ADVANCE_GUARD_MODE for the hook proc.
+# ---------------------------------------------------------------------------
+run_guard_adv() {
+  local mode="$1" file_path="$2" content="$3" cwd="$4" at="$5" payload so se
+  payload=$(jq -n --arg fp "$file_path" --arg c "$content" --arg cwd "$cwd" --arg at "$at" \
+    '{tool_name:"Write", tool_input:{file_path:$fp, content:$c}, cwd:$cwd, session_id:"test", transcript_path:""}
+       + (if $at=="" then {} else {agent_type:$at} end)')
+  so=$(mktemp); se=$(mktemp)
+  set +e
+  printf '%s' "$payload" | env SW_STATE_ADVANCE_GUARD_MODE="$mode" bash "$HOOK_PATH" >"$so" 2>"$se"
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$so"); LAST_STDERR=$(cat "$se"); rm -f "$so" "$se"
+}
+
+echo ""
+echo "--- FIX-3 PART A / PART B: phase-advancement guard ---"
+TMP_ADV="$(mktemp -d)"; register_cleanup "$TMP_ADV"
+SLUG_ADV="advance-slug"
+STATE_ADV="$(prepare_autopilot_tree "$TMP_ADV" "$SLUG_ADV" 2)"
+PS_ADV="$TMP_ADV/.simple-workflow/backlog/active/$SLUG_ADV/001-feat/phase-state.yaml"
+mkdir -p "$(dirname "$PS_ADV")"
+
+# A phase-state.yaml advancement content (current_phase + overall_status + ship.status).
+ADV_CONTENT="version: 1
+current_phase: ship
+overall_status: in-progress
+phases:
+  ship:
+    status: completed
+"
+
+# CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (bare agent_type, on -> block).
+run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "ticket-evaluator"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_phase_advance_by_review_agent'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (bare ticket-evaluator, on): advancement blocked"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (bare): expected block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (namespaced agent_type -> identical block).
+run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "simple-workflow:doc-verifier"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_phase_advance_by_review_agent'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (namespaced simple-workflow:doc-verifier, on): blocked"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (namespaced): expected block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# metric-only -> fail-open (no block), stderr logs would-deny (PART A still detects).
+run_guard_adv metric-only "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "doc-verifier"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_phase_advance_by_review_agent'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-PART-A/PART-B (metric-only): detect+log, fail-open allow"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3 (metric-only): expected allow+stderr. stdout: $LAST_STDOUT stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-FIX3-LEGIT-ORCHESTRATOR-ALLOWED: empty agent_type (orchestrator) advancement
+# -> ALLOW even under on (fail-open-on-empty). PART A detects the advancement but
+# the empty identity is not in the denylist.
+run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" ""
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-LEGIT-ORCHESTRATOR-ALLOWED (empty agent_type, on): advancement allowed (fail-open-on-empty)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3-LEGIT-ORCHESTRATOR-ALLOWED: empty agent_type must fail-open. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-FIX3-PART-A: a generator (implementer) doing the SAME advancement -> ALLOW
+# (not in the denylist), confirming PART A detection is identity-free but the
+# deny only fires for review/evaluator roles.
+run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "implementer"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-PART-A (implementer advancement, on): generator allowed (role not denylisted)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3-PART-A: generator advancement must be allowed. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 echo ""
