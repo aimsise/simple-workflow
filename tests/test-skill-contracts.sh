@@ -11304,6 +11304,21 @@ assert_true \
   "CT-FIX1-PREFLIGHT (worktree pre-flight serial fallback + persist parallel_mode delete + unknown->on): knob ($fix1_pf_knob>=1) delete-parallel_mode ($fix1_pf_delete>=1) reason ($fix1_pf_reason>=1) unknown-on ($fix1_pf_unknown_on>=1)" \
   "$fix1_pf_result"
 
+# CT-FIX1-NOREMOTE-LANDING (dogfood63: codify the no-remote main-advance). With no git remote there are
+# no per-ticket PRs to carry the integrated work to a visible surface, so the post-loop fast-forwards the
+# start ref to ap-integration/<parent> (--ff-only, with a divergence fallback); with a remote the start
+# ref is left restored (PRs are the landing surface). Assert SKILL.md documents all four halves.
+fix1_nrl_landing=$(grep -ciE 'No-remote landing' "$PAR_AUTOPILOT" || true)
+fix1_nrl_ffonly=$(grep -cF 'git merge --ff-only ap-integration/<parent>' "$PAR_AUTOPILOT" || true)
+fix1_nrl_diverge=$(grep -ciE 'diverged' "$PAR_AUTOPILOT" || true)
+fix1_nrl_remote=$(grep -ciE 'do NOT advance the start ref' "$PAR_AUTOPILOT" || true)
+fix1_nrl_result="false"
+if [ "$fix1_nrl_landing" -ge 1 ] && [ "$fix1_nrl_ffonly" -ge 1 ] && [ "$fix1_nrl_diverge" -ge 1 ] \
+  && [ "$fix1_nrl_remote" -ge 1 ]; then fix1_nrl_result="true"; fi
+assert_true \
+  "CT-FIX1-NOREMOTE-LANDING (no-remote ff-advance + --ff-only divergence fallback + with-remote restore-only): landing ($fix1_nrl_landing>=1) ff-only ($fix1_nrl_ffonly>=1) diverged ($fix1_nrl_diverge>=1) remote-restore ($fix1_nrl_remote>=1)" \
+  "$fix1_nrl_result"
+
 echo ""
 echo "--- Cat FIX-2 / FIX-3: generator->evaluator->audit firewall (v9.0.1) ---"
 
@@ -11465,6 +11480,21 @@ if [ -z "$fx3sync_missing" ] && [ "$fx3sync_checked" -ge 1 ]; then fx3sync_resul
 assert_true \
   "CT-FIX3-SYNC1 (property: every review/evaluator agent by description-role is in the Detection-4 denylist; generators+ticket-executor+tune-analyzer excluded): checked ($fx3sync_checked>=1) missing-from-denylist (${fx3sync_missing:-none})" \
   "$fx3sync_result"
+
+# CT-FIX4-ENV-ISOLATION (dogfood63): the implementer MUST isolate build/test tooling installs to the
+# workspace (venv / project-local / container) and MUST NOT mutate a shared/global/system toolchain
+# that persists outside the workspace. The operative property is persists-outside-the-workspace; the
+# examples are illustrative (agnostic). A wave-0 executor's `--break-system-packages` system-pytest
+# install (eval-sandbox violation) motivated this.
+fix4_impl="$REPO_DIR/agents/implementer.md"
+fix4_iso=$(grep -ciE 'isolated to the workspace|environment isolation' "$fix4_impl" || true)
+fix4_notmutate=$(grep -ciE 'MUST NOT mutate a .*(shared|global|system)' "$fix4_impl" || true)
+fix4_property=$(grep -ciE 'persists-outside-the-workspace|persists outside the workspace' "$fix4_impl" || true)
+fix4_result="false"
+if [ "$fix4_iso" -ge 1 ] && [ "$fix4_notmutate" -ge 1 ] && [ "$fix4_property" -ge 1 ]; then fix4_result="true"; fi
+assert_true \
+  "CT-FIX4-ENV-ISOLATION (implementer isolates tooling installs to the workspace, no global-toolchain mutation): isolation ($fix4_iso>=1) no-mutate ($fix4_notmutate>=1) property ($fix4_property>=1)" \
+  "$fix4_result"
 
 echo ""
 

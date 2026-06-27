@@ -455,6 +455,36 @@ assert_guard_allow \
   "$TMP_NO"
 
 # ---------------------------------------------------------------------------
+# CT-FIX2-NONCE-COLOCATED (dogfood63 hardening): the nonce gate tolerates a
+# co-located nonce-write in the SAME command. /ship may chain
+# `: > .../.ship-commit-nonce` with the Step-3 `git commit` via `&&`; PreToolUse
+# inspects the command string BEFORE the `: >` runs, so the file is not yet on
+# disk -- the gate scans $COMMAND for the queued active-tree nonce write and
+# ALLOWs. A bare commit (no such co-located write) is still BLOCKed.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- CT-FIX2-NONCE-COLOCATED: combined ': > nonce && git commit' allowed; bare commit blocked ---"
+TMP_CO="$(mktemp -d)"; register_cleanup "$TMP_CO"
+SLUG_CO="colocated-slug"; TICKET_CO="001-co"
+mkdir -p \
+  "$TMP_CO/.simple-workflow/backlog/briefs/active/$SLUG_CO" \
+  "$TMP_CO/.simple-workflow/backlog/active/$SLUG_CO/$TICKET_CO"
+write_autopilot_state \
+  "$TMP_CO/.simple-workflow/backlog/briefs/active/$SLUG_CO/autopilot-state.yaml" \
+  "$SLUG_CO"
+# No nonce on disk -> a bare commit is still blocked (the co-located scan finds no nonce write).
+assert_guard_block \
+  "CT-FIX2-NONCE-COLOCATED (no nonce on disk, bare git commit): blocked" \
+  "git commit -m 'bare'" \
+  "$TMP_CO" \
+  "unauthorized_ship_inline"
+# Combined `: > nonce && git commit` in ONE command (nonce not yet on disk) -> allowed via the co-located scan.
+assert_guard_allow \
+  "CT-FIX2-NONCE-COLOCATED (co-located ': > nonce && git commit' in one command): allowed" \
+  ": > .simple-workflow/backlog/active/$SLUG_CO/$TICKET_CO/.ship-commit-nonce && git commit -m 'combined'" \
+  "$TMP_CO"
+
+# ---------------------------------------------------------------------------
 # CT-FIX2-NONCE-BASH-SINK: the nonce write/cleanup commands themselves
 # (`: > ....ship-commit-nonce` and `rm -f ....ship-commit-nonce`) must NOT be
 # blocked under any SW_REVIEW_FIREWALL_MODE value (the firewall never blocks

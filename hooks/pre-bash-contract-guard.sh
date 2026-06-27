@@ -180,6 +180,21 @@ if printf '%s' "$COMMAND" | grep -qE "$GIT_COMMIT_RE"; then
     fi
   fi
 
+  # Tolerate a co-located nonce-write in the SAME command. /ship Step 2.5 may
+  # chain the nonce write (`: > .../.ship-commit-nonce`) with the Step-3 commit
+  # via `&&`; PreToolUse inspects the whole command string BEFORE the `: >` runs,
+  # so the file is not yet on disk -- recognize the QUEUED write to the
+  # active-tree nonce so a legitimate /ship commit is not false-blocked (the
+  # write resolves through the worktree `.simple-workflow` symlink to the main
+  # checkout, the same file the on-disk check reads). A naive inline `git commit`
+  # by a review agent carries no such write and is still blocked. (dogfood63: the
+  # combined `: > nonce && git commit` form false-tripped 1 of 3 ship paths.)
+  if [ "$NONCE_PRESENT" != "true" ]; then
+    if printf '%s' "$COMMAND" | grep -qE '>[[:space:]]*[^|;&]*\.simple-workflow/backlog/active/[^|;&]*\.ship-commit-nonce'; then
+      NONCE_PRESENT="true"
+    fi
+  fi
+
   if [ "$NONCE_PRESENT" != "true" ]; then
     emit_block "unauthorized_ship_inline" \
       "Direct 'git commit' is not allowed inside an autopilot run. Route through the /ship Skill (which writes a .ship-commit-nonce before the Step-3 commit) so the artifact-presence gate, ticket-move, and PR creation stay atomic. See skills/autopilot/SKILL.md Mandatory Skill Invocations."

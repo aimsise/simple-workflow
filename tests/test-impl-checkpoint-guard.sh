@@ -765,5 +765,48 @@ fi
 cleanup_session "$SID"
 rm -rf "$MAIN" "$WT"
 
+# (T-PAR-9, dogfood63 AC-8 owed): assert the impl main_checkout_root resolution emits its
+# observability marker (the resolution is invisible in subagent transcripts, so the marker is the
+# only way to verify it ran). Positive: marker fires + names the main checkout root. Control: no
+# main_checkout_root in the state -> the resolution block is skipped and the marker is absent.
+echo "--- (T-PAR-9): impl main_checkout_root resolution marker fires (AC-8 owed observability) ---"
+MAIN9=$(mktemp -d); WT9=$(mktemp -d)
+make_phase_state "$MAIN9" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+mkdir -p "$WT9/.simple-workflow/backlog/active"
+make_parallel_autopilot_state "$WT9" "par9-brief" "on" "$MAIN9"
+make_transcript "$WT9/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SID9="impl-cp-tpar9-$$"; cleanup_session "$SID9"
+INPUT=$(jq -n --arg t "$WT9/transcript.jsonl" --arg s "$SID9" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$WT9"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if echo "$LAST_STDERR" | grep -q "main_checkout_root resolution: root=$MAIN9"; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-9): impl main_checkout_root resolution marker fired (root=$MAIN9)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-9): expected marker 'root=$MAIN9' in stderr"
+  echo -e "       Stderr: ${LAST_STDERR:0:300}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+MAINC=$(mktemp -d); WTC=$(mktemp -d)
+make_phase_state "$MAINC" "001-test" "$PHASE_STATE_NEEDS_AUDIT"
+mkdir -p "$WTC/.simple-workflow/backlog/active"
+make_parallel_autopilot_state "$WTC" "par9c-brief" "on" ""
+make_transcript "$WTC/transcript.jsonl" "$TRANSCRIPT_AUDIT_EMIT_NO_CHECKPOINT"
+SIDC="impl-cp-tpar9c-$$"; cleanup_session "$SIDC"
+INPUTC=$(jq -n --arg t "$WTC/transcript.jsonl" --arg s "$SIDC" \
+  '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUTC" "$WTC"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! echo "$LAST_STDERR" | grep -q 'main_checkout_root resolution'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-9 control): no main_checkout_root -> marker absent (non-vacuous)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-9 control): marker fired despite empty main_checkout_root"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID9"; cleanup_session "$SIDC"
+rm -rf "$MAIN9" "$WT9" "$MAINC" "$WTC"
+
 echo ""
 print_summary
