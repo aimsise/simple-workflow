@@ -358,6 +358,11 @@ if [ "$PARALLEL_MODE" != "off" ]; then
       MAIN_CHECKOUT_ROOT=$(parse_yaml_scalar "$PARALLEL_STATE_FILE" main_checkout_root 2>/dev/null || true)
       if [ -n "${MAIN_CHECKOUT_ROOT:-}" ] && [ -d "$MAIN_CHECKOUT_ROOT" ]; then
         STATE_FILE=$(find_phase_state_file "$MAIN_CHECKOUT_ROOT" 2>/dev/null || true)
+        # Observability (dogfood63 AC-8 owed): the SubagentStop main_checkout_root
+        # resolution is invisible in subagent transcripts (they do not capture hook
+        # stderr), so emit a behaviour-neutral marker that makes the resolution
+        # unit-testable and visible to a forensic eval.
+        echo "[SCOUT-CHECKPOINT] main_checkout_root resolution: root=$MAIN_CHECKOUT_ROOT phase-state=${STATE_FILE:-none}" >&2
       fi
     fi
   fi

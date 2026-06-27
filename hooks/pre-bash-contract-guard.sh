@@ -29,13 +29,21 @@
 #   1. autopilot context outside  -> always allow (pass-through). The hook
 #      does NOT police Bash commands run outside an autopilot tree.
 #   2. autopilot context inside, `git commit ...` direct invocation:
-#        - Allowed when any per-ticket phase-state.yaml under the active
-#          autopilot tree has `phases.ship.status: in-progress` (the
-#          /ship Skill is the legitimate caller).
-#        - Blocked otherwise as `unauthorized_ship_inline`. This is the
-#          "/ship Skill bypass" path described in the ticket Implementation
-#          Notes (option 4 fallback -- the hook input does not carry
-#          parent_skill_id metadata, so phase status is the closest signal).
+#        - Allowed when the /ship Skill has written a `.ship-commit-nonce`
+#          sentinel under the active autopilot tree BEFORE its Step-3 commit
+#          (skills/ship/SKILL.md Step 2.5) -- a non-forgeable file-existence
+#          signal (FIX-2, v9.0.1; replaces the prior forgeable
+#          `phases.ship.status: in-progress` proxy a model could write).
+#        - Blocked otherwise as `unauthorized_ship_inline` (UNCONDITIONAL --
+#          NOT gated by SW_REVIEW_FIREWALL_MODE; only the SIGNAL was re-keyed).
+#   2b. autopilot context inside, a review/evaluator agent (`.agent_type` in
+#        the FOUR Bash-bearing review agents ac-evaluator / ac-evaluator-hi /
+#        doc-verifier / code-reviewer) running `git add|commit|mv|push` ->
+#        `unauthorized_commit_by_review_agent`, gated by SW_REVIEW_FIREWALL_MODE
+#        (default metric-only). `git worktree` is exempt. (security-scanner /
+#        ticket-evaluator carry no Bash, so they have no git surface here; their
+#        phase-advance Write vector is covered by pre-state-transition.sh
+#        Detection 4, whose denylist holds all SIX.) The FIX-2 firewall.
 #   3. autopilot context inside, append to `manual_bash_fallbacks[]` whose
 #      reason text matches any FORBIDDEN_RATIONALE_PATTERNS entry:
 #        - Blocked as `context_budget_fallback`. Other rationales (e.g.
@@ -125,39 +133,101 @@ if printf '%s' "$COMMAND" | grep -q 'manual_bash_fallbacks'; then
 fi
 
 # ---------------------------------------------------------------------------
-# Detection 2: direct `git commit` outside the /ship Skill context.
+# Detection 2: review/evaluator-agent git firewall + the /ship nonce gate.
 # ---------------------------------------------------------------------------
+# Identity extraction (S2-validated). The PreToolUse payload natively carries
+# `.agent_type` when the tool call originates from a subagent (the agent name,
+# possibly namespaced as `simple-workflow:<name>`); it is ABSENT/null for an
+# orchestrator / main-loop call. The unconditional prefix strip below
+# normalizes BOTH the bare and the namespaced forms, so a live namespaced
+# value is never a silent no-op. An EMPTY result (no agent_type) == the
+# orchestrator / generator == ALLOW (fail-open-on-empty is load-bearing).
+#
+# GOVERNANCE (B) harness-own: the REVIEW_AGENTS denylist below gates the
+# review/evaluator ROLE (a property of the agent's job), NOT a named product /
+# language / domain. CT-DECONTAM-1 / a reviewer MUST read these agent names as
+# harness-own role identities, not product cues.
+AGENT_TYPE=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null || true)
+AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"   # UNCONDITIONAL strip -- bare AND namespaced
+
+# (A) Nonce gate (UNCONDITIONALLY enforced -- NOT gated by SW_REVIEW_FIREWALL_MODE).
 # Token-position aware match: at start, after pipe, after `;`, after `&&`
 # / `||`, or inside a `$(...)` / backtick subshell. This mirrors the
 # token-position regex used in pre-bash-safety.sh's destructive guard.
+#
+# A direct `git commit` inside an autopilot run is authorized ONLY when the
+# /ship Skill has written a `.ship-commit-nonce` sentinel BEFORE its Step-3
+# commit (skills/ship/SKILL.md Step 2.5). The nonce is a non-forgeable
+# file-existence signal: unlike the prior `phases.ship.status: in-progress`
+# proxy (which a model can write into any phase-state.yaml), the nonce is
+# dropped by /ship itself immediately before the commit and removed on every
+# exit path, so its presence is the closest available evidence that "Bash was
+# invoked inside /ship". This re-keys the authorization SIGNAL only;
+# enforcement strength is unchanged (still an unconditional block), so the
+# metric-only default of the NEW (B) review-deny below MUST NOT downgrade it.
 GIT_COMMIT_RE='(^|[|;&]|\$\(|`)[[:space:]]*(env[[:space:]]+|command[[:space:]]+)?git[[:space:]]+commit([[:space:]]|$)'
 
 if printf '%s' "$COMMAND" | grep -qE "$GIT_COMMIT_RE"; then
-  # Look for a per-ticket phase-state.yaml underneath
-  # .simple-workflow/backlog/active/ that records phases.ship.status:
-  # in-progress. The /ship Skill flips this status as its first step, so
-  # an in-progress state is the strongest available proxy for "Bash was
-  # invoked inside /ship". When no such file is found we treat the call
-  # as a Skill bypass and block it.
   ROOT="$(_psf_repo_root "$PWD")"
-  SHIP_IN_PROGRESS="false"
-  if [ -d "$ROOT/.simple-workflow/backlog/active" ]; then
-    while IFS= read -r ps_file; do
-      [ -z "$ps_file" ] && continue
-      status="$(parse_phase_status "$ps_file" ship 2>/dev/null || true)"
-      if [ "$status" = "in-progress" ]; then
-        SHIP_IN_PROGRESS="true"
-        break
-      fi
-    done < <(find "$ROOT/.simple-workflow/backlog/active" \
-               -mindepth 1 -maxdepth 6 -name phase-state.yaml \
-               -print 2>/dev/null)
+  NONCE_PRESENT="false"
+  if [ -f "$ROOT/.simple-workflow/backlog/active/.ship-commit-nonce" ]; then
+    NONCE_PRESENT="true"
+  elif [ -d "$ROOT/.simple-workflow/backlog/active" ]; then
+    if find "$ROOT/.simple-workflow/backlog/active" \
+         -mindepth 1 -maxdepth 6 -name .ship-commit-nonce -type f \
+         -print 2>/dev/null | grep -q .; then
+      NONCE_PRESENT="true"
+    fi
   fi
 
-  if [ "$SHIP_IN_PROGRESS" != "true" ]; then
-    emit_block "unauthorized_ship_inline" \
-      "Direct 'git commit' is not allowed inside an autopilot run. Route through the /ship Skill (which flips phases.ship.status: in_progress) so the artifact-presence gate, ticket-move, and PR creation stay atomic. See skills/autopilot/SKILL.md Mandatory Skill Invocations."
+  # Tolerate a co-located nonce-write in the SAME command. /ship Step 2.5 may
+  # chain the nonce write (`: > .../.ship-commit-nonce`) with the Step-3 commit
+  # via `&&`; PreToolUse inspects the whole command string BEFORE the `: >` runs,
+  # so the file is not yet on disk -- recognize the QUEUED write to the
+  # active-tree nonce so a legitimate /ship commit is not false-blocked (the
+  # write resolves through the worktree `.simple-workflow` symlink to the main
+  # checkout, the same file the on-disk check reads). A naive inline `git commit`
+  # by a review agent carries no such write and is still blocked. (dogfood63: the
+  # combined `: > nonce && git commit` form false-tripped 1 of 3 ship paths.)
+  if [ "$NONCE_PRESENT" != "true" ]; then
+    if printf '%s' "$COMMAND" | grep -qE '>[[:space:]]*[^|;&]*\.simple-workflow/backlog/active/[^|;&]*\.ship-commit-nonce'; then
+      NONCE_PRESENT="true"
+    fi
   fi
+
+  if [ "$NONCE_PRESENT" != "true" ]; then
+    emit_block "unauthorized_ship_inline" \
+      "Direct 'git commit' is not allowed inside an autopilot run. Route through the /ship Skill (which writes a .ship-commit-nonce before the Step-3 commit) so the artifact-presence gate, ticket-move, and PR creation stay atomic. See skills/autopilot/SKILL.md Mandatory Skill Invocations."
+  fi
+fi
+
+# (B) Review-agent git-source firewall (NEW, gated by SW_REVIEW_FIREWALL_MODE,
+# default metric-only). A review/evaluator subagent (ac-evaluator,
+# ac-evaluator-hi, doc-verifier, code-reviewer) legitimately runs read-only git
+# (`git diff/status/log/show`) and `git worktree add/remove/list` for scratch
+# probes, but MUST NOT mutate history or staging: `git add`, `git commit`,
+# `git mv`, `git push`. S3 FAIL means the per-agent `tools:` allowlist does not
+# enforce Bash subcommand granularity, so this hook is the sole mechanism.
+# CARVE-OUT: `git worktree` is NOT matched (review agents legitimately use
+# `git worktree add/remove/list`).
+REVIEW_FIREWALL_MODE="${SW_REVIEW_FIREWALL_MODE:-metric-only}"
+if [ "$REVIEW_FIREWALL_MODE" != "off" ] && [ -n "$AGENT_TYPE" ]; then
+  case "$AGENT_TYPE" in
+    ac-evaluator|ac-evaluator-hi|doc-verifier|code-reviewer)
+      # Match `git add|commit|mv|push` directly after `git ` (token-position
+      # aware). `git worktree ...` does not match this alternation -> exempt.
+      GIT_SRC_RE='(^|[|;&]|\$\(|`)[[:space:]]*(env[[:space:]]+|command[[:space:]]+)?git[[:space:]]+(add|commit|mv|push)([[:space:]]|$)'
+      if printf '%s' "$COMMAND" | grep -qE "$GIT_SRC_RE"; then
+        case "$REVIEW_FIREWALL_MODE" in
+          on)
+            emit_block "unauthorized_commit_by_review_agent" \
+              "A review/evaluator agent ('$AGENT_TYPE') may not mutate git history or staging (git add / commit / mv / push). Review agents are read-only on the product source; the generator->evaluator->audit firewall forbids a verdict actor from committing the code it grades. (git worktree add/remove/list remain permitted.) See skills/autopilot/SKILL.md." ;;
+          metric-only|*)
+            printf '[REVIEW-FIREWALL] metric-only: would deny unauthorized_commit_by_review_agent (agent=%s): %s\n' "$AGENT_TYPE" "${COMMAND:0:140}" >&2 ;;
+        esac
+      fi
+      ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -189,10 +259,18 @@ if [ "$STATE_GUARD_MODE" != "off" ] \
   if printf '%s' "$COMMAND" | grep -qE '>>?[[:space:]]*[^[:space:]|;&]*(autopilot-state|phase-state)\.yaml'; then
     _sg_mutation=true
   fi
-  # A step/ticket status being driven to a terminal/skip value. The
-  # `[^[:alpha:]]{0,15}` gap tolerates `= "..."`, `: ...`, `= \"...\"`, `[].`.
+  # A step/ticket status / phase being driven to a terminal/skip/advancement
+  # value. The `[^[:alpha:]]{0,15}` gap tolerates `= "..."`, `: ...`,
+  # `= \"...\"`, `[].`. FIX-3 (v9.0.1) widened the advancement set to mirror
+  # pre-state-transition.sh's PART-A detector: `current_phase` / `overall_status`
+  # field names + a bare `ship` value, closing the `current_phase: ship` gap a
+  # Bash `yq -i current_phase=ship` would otherwise drive unobserved. This is
+  # an advancement-SET extension only -- FIX-3 deliberately adds NO identity
+  # gate here (the review/evaluator agent_type deny is FIX-2 (B)'s job on the
+  # git surface and Detection 4's job on the Write/Edit surface). The existing
+  # _sg_mutation gate + SW_BASH_STATE_GUARD_MODE knob are unchanged.
   _sg_transition=false
-  if printf '%s' "$COMMAND" | grep -qiE '(status|steps|ship|scout|impl|create-ticket)[^[:alpha:]]{0,15}(skipped|completed|failed|in_progress|in-progress)'; then
+  if printf '%s' "$COMMAND" | grep -qiE '(status|steps|ship|scout|impl|create-ticket|current_phase|overall_status)[^[:alpha:]]{0,15}(skipped|completed|failed|in_progress|in-progress|ship)'; then
     _sg_transition=true
   fi
   if [ "$_sg_mutation" = true ] && [ "$_sg_transition" = true ]; then

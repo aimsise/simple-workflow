@@ -45,11 +45,14 @@ trap cleanup_all EXIT
 run_guard() {
   local command="$1"
   local cwd="$2"
+  local at="${3:-}"   # optional agent_type (FIX-2/FIX-3): merged ONLY when non-empty
   local payload
   payload=$(jq -n \
     --arg cmd "$command" \
     --arg cwd "$cwd" \
-    '{tool_name:"Bash", tool_input:{command:$cmd}, cwd:$cwd, session_id:"test", transcript_path:""}')
+    --arg at "$at" \
+    '{tool_name:"Bash", tool_input:{command:$cmd}, cwd:$cwd, session_id:"test", transcript_path:""}
+       + (if $at=="" then {} else {agent_type:$at} end)')
 
   local stdout_file stderr_file
   stdout_file=$(mktemp)
@@ -71,8 +74,9 @@ assert_guard_allow() {
   local description="$1"
   local command="$2"
   local cwd="$3"
+  local at="${4:-}"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  run_guard "$command" "$cwd"
+  run_guard "$command" "$cwd" "$at"
   if [ "$LAST_EXIT_CODE" -eq 0 ] && ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -92,8 +96,9 @@ assert_guard_block() {
   local command="$2"
   local cwd="$3"
   local expected_tag="$4"
+  local at="${5:-}"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  run_guard "$command" "$cwd"
+  run_guard "$command" "$cwd" "$at"
   local blocked="false"
   if [ "$LAST_EXIT_CODE" -ne 0 ]; then
     blocked="true"
@@ -168,10 +173,13 @@ assert_guard_allow \
   "$TMP_A"
 
 # ---------------------------------------------------------------------------
-# Scenario (b): inside autopilot, /ship Skill in progress -> commit allowed.
+# Scenario (b): inside autopilot, /ship nonce present -> commit allowed.
+# FIX-2 (v9.0.1): the authorization signal is a `.ship-commit-nonce` file
+# (written by /ship step 2.5 BEFORE the Step-3 commit), not the forgeable
+# `phases.ship.status: in-progress` proxy.
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Scenario (b): inside autopilot, ship in-progress, git commit allowed ---"
+echo "--- Scenario (b): inside autopilot, .ship-commit-nonce present, git commit allowed ---"
 TMP_B="$(mktemp -d)"
 register_cleanup "$TMP_B"
 SLUG_B="example-slug"
@@ -182,19 +190,18 @@ mkdir -p \
 write_autopilot_state \
   "$TMP_B/.simple-workflow/backlog/briefs/active/$SLUG_B/autopilot-state.yaml" \
   "$SLUG_B"
-write_phase_state \
-  "$TMP_B/.simple-workflow/backlog/active/$SLUG_B/$TICKET_B/phase-state.yaml" \
-  "in-progress"
+# /ship step 2.5 nonce sink (ticket-dir scope).
+: > "$TMP_B/.simple-workflow/backlog/active/$SLUG_B/$TICKET_B/.ship-commit-nonce"
 assert_guard_allow \
-  "(b) inside autopilot tree, phases.ship.status=in-progress, git commit allowed" \
+  "(b) inside autopilot tree, .ship-commit-nonce present, git commit allowed" \
   "git commit -m 'release(vX.Y.Z): feature'" \
   "$TMP_B"
 
 # ---------------------------------------------------------------------------
-# Scenario (c): inside autopilot, ship pending -> commit blocked.
+# Scenario (c): inside autopilot, no nonce -> commit blocked.
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Scenario (c): inside autopilot, ship pending, git commit blocked ---"
+echo "--- Scenario (c): inside autopilot, no .ship-commit-nonce, git commit blocked ---"
 TMP_C="$(mktemp -d)"
 register_cleanup "$TMP_C"
 SLUG_C="bypass-slug"
@@ -205,11 +212,9 @@ mkdir -p \
 write_autopilot_state \
   "$TMP_C/.simple-workflow/backlog/briefs/active/$SLUG_C/autopilot-state.yaml" \
   "$SLUG_C"
-write_phase_state \
-  "$TMP_C/.simple-workflow/backlog/active/$SLUG_C/$TICKET_C/phase-state.yaml" \
-  "pending"
+# No .ship-commit-nonce written -> the Step-3 commit is unauthorized.
 assert_guard_block \
-  "(c) inside autopilot tree, phases.ship.status!=in-progress, git commit blocked" \
+  "(c) inside autopilot tree, no .ship-commit-nonce, git commit blocked" \
   "git commit -m 'inline shortcut'" \
   "$TMP_C" \
   "unauthorized_ship_inline"
@@ -315,6 +320,233 @@ if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} (f3) knob=on: read-only command should be allowed. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# FIX-2 (v9.0.1) scenarios: review-agent git firewall + nonce gate + carve-out.
+# These share the run_guard agent_type 5th argument (assert_guard_*) so the
+# orchestrator-allow path depends on agent_type being ABSENT.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- FIX-2: review-agent git firewall (SW_REVIEW_FIREWALL_MODE) ---"
+TMP_FW="$(mktemp -d)"; register_cleanup "$TMP_FW"
+SLUG_FW="firewall-slug"
+TICKET_FW="001-fw-feature"
+mkdir -p \
+  "$TMP_FW/.simple-workflow/backlog/briefs/active/$SLUG_FW" \
+  "$TMP_FW/.simple-workflow/backlog/active/$SLUG_FW/$TICKET_FW"
+write_autopilot_state \
+  "$TMP_FW/.simple-workflow/backlog/briefs/active/$SLUG_FW/autopilot-state.yaml" \
+  "$SLUG_FW"
+# A nonce IS present so the unconditional Detection 2 (A) nonce gate does NOT
+# fire -- this isolates the NEW review-deny (B) under test.
+: > "$TMP_FW/.simple-workflow/backlog/active/$SLUG_FW/$TICKET_FW/.ship-commit-nonce"
+
+# run_guard variant that sets SW_REVIEW_FIREWALL_MODE for the hook process.
+run_guard_fw() {
+  local mode="$1" command="$2" cwd="$3" at="$4" payload so se
+  payload=$(jq -n --arg cmd "$command" --arg cwd "$cwd" --arg at "$at" \
+    '{tool_name:"Bash", tool_input:{command:$cmd}, cwd:$cwd, session_id:"test", transcript_path:""}
+       + (if $at=="" then {} else {agent_type:$at} end)')
+  so=$(mktemp); se=$(mktemp)
+  set +e
+  printf '%s' "$payload" | env SW_REVIEW_FIREWALL_MODE="$mode" bash "$HOOK_PATH" >"$so" 2>"$se"
+  LAST_EXIT_CODE=$?
+  set -e
+  LAST_STDOUT=$(cat "$so"); LAST_STDERR=$(cat "$se"); rm -f "$so" "$se"
+}
+
+# CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare agent_type).
+run_guard_fw on "git commit -m 'review tries to commit'" "$TMP_FW" "doc-verifier"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_commit_by_review_agent'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare doc-verifier, on): git commit blocked"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare): expected block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced agent_type -> identical block).
+run_guard_fw on "git add ." "$TMP_FW" "simple-workflow:doc-verifier"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_commit_by_review_agent'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced simple-workflow:doc-verifier, on): git add blocked"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced): expected block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# metric-only -> fail-open (no block), stderr logs would-deny.
+run_guard_fw metric-only "git commit -m x" "$TMP_FW" "doc-verifier"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_commit_by_review_agent'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT (metric-only): fail-open + stderr would-deny"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-REVIEW-AGENT-COMMIT (metric-only): expected allow+stderr. stdout: $LAST_STDOUT stderr: $LAST_STDERR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# off -> fully disabled (no block, no stderr deny line).
+run_guard_fw off "git push origin HEAD" "$TMP_FW" "code-reviewer"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT (off): disabled, no block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-REVIEW-AGENT-COMMIT (off): expected allow. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# CT-FIX2-GIT-WORKTREE-EXEMPT: a review agent's `git worktree add` is NOT blocked.
+run_guard_fw on "git worktree add ../scratch HEAD" "$TMP_FW" "ac-evaluator"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-GIT-WORKTREE-EXEMPT (ac-evaluator git worktree add, on): not blocked (carve-out)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-GIT-WORKTREE-EXEMPT: git worktree must be exempt. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Orchestrator-allow: ABSENT agent_type + git commit + nonce present -> allowed.
+run_guard_fw on "git commit -m 'orchestrator'" "$TMP_FW" ""
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-ORCH-ALLOWED (empty agent_type + nonce present): git commit allowed"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-ORCH-ALLOWED: empty agent_type must fail-open. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# CT-FIX2-NONCE-ORDERING: with a nonce present the commit ALLOWs (default env,
+# no SW_REVIEW_FIREWALL_MODE override); without it the commit BLOCKs. This locks
+# the unconditional Detection 2 (A) nonce gate (NOT gated by the firewall knob).
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- CT-FIX2-NONCE-ORDERING: nonce present -> allow, absent -> block (default env) ---"
+TMP_NO="$(mktemp -d)"; register_cleanup "$TMP_NO"
+SLUG_NO="nonce-slug"; TICKET_NO="001-nonce"
+mkdir -p \
+  "$TMP_NO/.simple-workflow/backlog/briefs/active/$SLUG_NO" \
+  "$TMP_NO/.simple-workflow/backlog/active/$SLUG_NO/$TICKET_NO"
+write_autopilot_state \
+  "$TMP_NO/.simple-workflow/backlog/briefs/active/$SLUG_NO/autopilot-state.yaml" \
+  "$SLUG_NO"
+# Absent nonce -> block (unconditional, default env).
+assert_guard_block \
+  "CT-FIX2-NONCE-ORDERING (no nonce, default env): git commit blocked" \
+  "git commit -m 'before nonce'" \
+  "$TMP_NO" \
+  "unauthorized_ship_inline"
+# Now write the nonce (the /ship step-2.5 sink ran before the commit) -> allow.
+: > "$TMP_NO/.simple-workflow/backlog/active/$SLUG_NO/$TICKET_NO/.ship-commit-nonce"
+assert_guard_allow \
+  "CT-FIX2-NONCE-ORDERING (nonce written before commit, default env): git commit allowed" \
+  "git commit -m 'after nonce'" \
+  "$TMP_NO"
+
+# ---------------------------------------------------------------------------
+# CT-FIX2-NONCE-COLOCATED (dogfood63 hardening): the nonce gate tolerates a
+# co-located nonce-write in the SAME command. /ship may chain
+# `: > .../.ship-commit-nonce` with the Step-3 `git commit` via `&&`; PreToolUse
+# inspects the command string BEFORE the `: >` runs, so the file is not yet on
+# disk -- the gate scans $COMMAND for the queued active-tree nonce write and
+# ALLOWs. A bare commit (no such co-located write) is still BLOCKed.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- CT-FIX2-NONCE-COLOCATED: combined ': > nonce && git commit' allowed; bare commit blocked ---"
+TMP_CO="$(mktemp -d)"; register_cleanup "$TMP_CO"
+SLUG_CO="colocated-slug"; TICKET_CO="001-co"
+mkdir -p \
+  "$TMP_CO/.simple-workflow/backlog/briefs/active/$SLUG_CO" \
+  "$TMP_CO/.simple-workflow/backlog/active/$SLUG_CO/$TICKET_CO"
+write_autopilot_state \
+  "$TMP_CO/.simple-workflow/backlog/briefs/active/$SLUG_CO/autopilot-state.yaml" \
+  "$SLUG_CO"
+# No nonce on disk -> a bare commit is still blocked (the co-located scan finds no nonce write).
+assert_guard_block \
+  "CT-FIX2-NONCE-COLOCATED (no nonce on disk, bare git commit): blocked" \
+  "git commit -m 'bare'" \
+  "$TMP_CO" \
+  "unauthorized_ship_inline"
+# Combined `: > nonce && git commit` in ONE command (nonce not yet on disk) -> allowed via the co-located scan.
+assert_guard_allow \
+  "CT-FIX2-NONCE-COLOCATED (co-located ': > nonce && git commit' in one command): allowed" \
+  ": > .simple-workflow/backlog/active/$SLUG_CO/$TICKET_CO/.ship-commit-nonce && git commit -m 'combined'" \
+  "$TMP_CO"
+
+# ---------------------------------------------------------------------------
+# CT-FIX2-NONCE-BASH-SINK: the nonce write/cleanup commands themselves
+# (`: > ....ship-commit-nonce` and `rm -f ....ship-commit-nonce`) must NOT be
+# blocked under any SW_REVIEW_FIREWALL_MODE value (the firewall never blocks
+# its own authorization-sentinel write).
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- CT-FIX2-NONCE-BASH-SINK: nonce write/cleanup never blocked ---"
+NONCE_REL=".simple-workflow/backlog/active/$SLUG_NO/$TICKET_NO/.ship-commit-nonce"
+for _m in on metric-only off; do
+  run_guard_fw "$_m" ": > $NONCE_REL" "$TMP_NO" ""
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+    echo -e "  ${GREEN}PASS${NC} CT-FIX2-NONCE-BASH-SINK (mode=$_m, write): not blocked"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} CT-FIX2-NONCE-BASH-SINK (mode=$_m, write): unexpected block. stdout: $LAST_STDOUT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+  run_guard_fw "$_m" "rm -f $NONCE_REL" "$TMP_NO" ""
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+    echo -e "  ${GREEN}PASS${NC} CT-FIX2-NONCE-BASH-SINK (mode=$_m, cleanup): not blocked"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} CT-FIX2-NONCE-BASH-SINK (mode=$_m, cleanup): unexpected block. stdout: $LAST_STDOUT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# CT-FIX3-BASHMIRROR: the Detection 3 advancement-set extension catches a
+# `current_phase: ship` Bash mutation (yq -i), while a read-only `grep ship`
+# is NOT flagged (no _sg_mutation). SW_BASH_STATE_GUARD_MODE=on isolates the
+# block.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- CT-FIX3-BASHMIRROR: current_phase:ship mutation detected, read-only grep not ---"
+TMP_BM="$(mktemp -d)"; register_cleanup "$TMP_BM"
+SLUG_BM="bashmirror-slug"
+mkdir -p "$TMP_BM/.simple-workflow/backlog/briefs/active/$SLUG_BM"
+write_autopilot_state \
+  "$TMP_BM/.simple-workflow/backlog/briefs/active/$SLUG_BM/autopilot-state.yaml" \
+  "$SLUG_BM"
+# (1) yq -i current_phase=ship on phase-state.yaml -> blocked under knob=on.
+run_guard_mode on 'yq -i ".current_phase = \"ship\"" phase-state.yaml' "$TMP_BM"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
+   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_state_mutate_bash'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-BASHMIRROR (yq -i current_phase=ship): blocked (advancement-set extension)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3-BASHMIRROR: expected block on current_phase:ship. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+# (2) read-only grep ship on phase-state.yaml -> NOT blocked (no mutation).
+run_guard_mode on "grep ship phase-state.yaml" "$TMP_BM"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX3-BASHMIRROR (grep ship): read-only not blocked (no _sg_mutation)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX3-BASHMIRROR: read-only grep must be allowed. stdout: $LAST_STDOUT"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

@@ -111,6 +111,10 @@ fi
 # --- Step 1: phase-state.yaml not found → silent exit ---
 if [ -n "$PSF_START_DIR" ]; then
   STATE_FILE=$(find_phase_state_file "$PSF_START_DIR" 2>/dev/null || true)
+  # Observability (dogfood63 AC-8 owed): the main_checkout_root resolution is
+  # invisible in subagent transcripts (they do not capture hook stderr), so emit
+  # a behaviour-neutral marker that makes the resolution unit-testable.
+  echo "[IMPL-CHECKPOINT] main_checkout_root resolution: root=$PSF_START_DIR phase-state=${STATE_FILE:-none}" >&2
 else
   STATE_FILE=$(find_phase_state_file 2>/dev/null || true)
 fi

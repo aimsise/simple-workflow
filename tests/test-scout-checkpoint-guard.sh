@@ -986,5 +986,53 @@ fi
 cleanup_session "$SID"
 rm -rf "$MAIN" "$WT"
 
+# --- (T-PAR-9, dogfood63 AC-8 owed): SubagentStop in a worktree whose .simple-workflow is a SYMLINK
+# to the main checkout; the orchestrator-written main_checkout_root resolves the scout-completed
+# phase-state at the ABSOLUTE main path, the Step-3 short-circuit fires, and the resolution emits its
+# observability marker (subagent transcripts do not capture hook stderr, so the marker is the only
+# way to verify the resolution ran -- this closes the dogfood63 AC-8 owed item). -------------------
+echo "--- (T-PAR-9): SubagentStop worktree-via-symlink, main_checkout_root resolves scout-completed -> silent exit + marker ---"
+MAIN9=$(mktemp -d); WT9=$(mktemp -d)
+SLUG9="ac8-brief"; TICKET9="001-ac8"
+make_parallel_autopilot_state "$MAIN9" "$SLUG9" "on" "$MAIN9"
+mkdir -p "$MAIN9/.simple-workflow/backlog/active/$SLUG9/$TICKET9"
+printf 'phases:\n  scout:\n    status: completed\n' > "$MAIN9/.simple-workflow/backlog/active/$SLUG9/$TICKET9/phase-state.yaml"
+ln -s "$MAIN9/.simple-workflow" "$WT9/.simple-workflow"   # FIX-1 executor self-creates this symlink
+SID9="scout-cp-tpar9-$$"; cleanup_session "$SID9"
+INPUT=$(jq -n --arg s "$SID9" '{transcript_path: "", session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$WT9"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if echo "$LAST_STDERR" | grep -q "main_checkout_root resolution: root=$MAIN9" \
+   && [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ]; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-9): main_checkout_root-via-symlink resolution marker fired + Step-3 short-circuit (silent exit)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-9): expected marker 'root=$MAIN9' + exit 0 + empty stdout"
+  echo -e "       Exit: $LAST_EXIT_CODE  Stdout: '$LAST_STDOUT'  Stderr: ${LAST_STDERR:0:300}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+# Non-vacuity control: the SAME setup WITHOUT a main_checkout_root in the state -> the resolution
+# block is skipped and its marker MUST NOT appear (the marker is tied specifically to the
+# main_checkout_root resolution, not to any short-circuit).
+MAINC=$(mktemp -d); WTC=$(mktemp -d); SLUGC="ac8-noroot"
+make_parallel_autopilot_state "$MAINC" "$SLUGC" "on" ""
+mkdir -p "$MAINC/.simple-workflow/backlog/active/$SLUGC/001-c"
+printf 'phases:\n  scout:\n    status: completed\n' > "$MAINC/.simple-workflow/backlog/active/$SLUGC/001-c/phase-state.yaml"
+ln -s "$MAINC/.simple-workflow" "$WTC/.simple-workflow"
+SIDC="scout-cp-tpar9c-$$"; cleanup_session "$SIDC"
+INPUTC=$(jq -n --arg s "$SIDC" '{transcript_path: "", session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUTC" "$WTC"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if ! echo "$LAST_STDERR" | grep -q 'main_checkout_root resolution'; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-9 control): no main_checkout_root in state -> resolution marker absent (non-vacuous)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-9 control): marker fired despite empty main_checkout_root"
+  echo -e "       Stderr: ${LAST_STDERR:0:300}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID9"; cleanup_session "$SIDC"
+rm -rf "$MAIN9" "$WT9" "$MAINC" "$WTC"
+
 echo ""
 print_summary

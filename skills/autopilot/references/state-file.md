@@ -246,7 +246,7 @@ steps.scout: {pending|completed|failed}
 steps.impl: {pending|completed|failed}
 steps.ship: {pending|completed|failed}
 pr_url: {url or null}
-branch: {ap/<parent>/<NNN-slug> or null}
+branch: {worktree-agent-<id> or null}
 head_sha: {worktree branch HEAD sha or null}
 failure_reason: {null or a short snake_case reason}
 ```
@@ -257,10 +257,11 @@ A `null` `pr_url` is NOT a failure (a local-only ship with no remote still
 reports `steps.ship: completed`). The `branch` / `head_sha` fields ARE part
 of the envelope as of T-008 (worktree isolation):
 
-- `branch` — the per-ticket isolation branch `ap/<parent>/<NNN-slug>` the
-  executor's worktree was created on. `null` on the serial / concurrency-1
-  path (no worktree = main checkout). On the `PARALLEL_MODE == on` wave
-  scheduler the main loop reads it at the wave boundary to integrate the
+- `branch` — the platform-assigned per-ticket isolation branch
+  `worktree-agent-<id>` the executor's worktree was created on (the executor
+  reports it via `git rev-parse --abbrev-ref HEAD`). `null` on the serial /
+  concurrency-1 path (no worktree = main checkout). On the `PARALLEL_MODE == on`
+  wave scheduler the main loop reads it at the wave boundary to integrate the
   ticket's branch into `ap-integration/<parent>` (wave-loop step 4a).
 - `head_sha` — the HEAD sha of that branch after `/ship` committed
   (`git rev-parse HEAD` in the worktree); `null` when there was no commit or
@@ -269,21 +270,25 @@ of the envelope as of T-008 (worktree isolation):
 ### `ap-integration/<parent>` — local-only orchestration branch (`PARALLEL_MODE == on`)
 
 The wave scheduler creates a per-parent integration branch
-`ap-integration/<parent>` at Phase 2 init from the session start ref. It is a
-**local-only orchestration artifact**: it is **NOT pushed** to any remote and
-is **NOT the PR target** (each ticket still ships its OWN PR against the repo
-default branch via `/ship <default-branch> ticket-dir=<NNN-slug>`, no
-`merge=true`). At each wave boundary the main loop merges every
-`status: completed` ticket's `ap/<parent>/<NNN-slug>` branch into
-`ap-integration/<parent>` (`--no-ff --no-edit`, topo/lex order, idempotent via
-`git merge-base --is-ancestor`), so wave `k>0`'s per-ticket worktrees base on
-the integrated tip and a cross-wave dependent sees its dependency's committed
+`ap-integration/<parent>` at Phase 2 init from the session start ref **and
+checks it out in the main checkout** (the orchestrator runs the wave loop with
+its HEAD on this branch, so each wave's `isolation:"worktree"` executors branch
+from the orchestrator's HEAD = the integrated tip — the spike-validated
+cross-wave base). It is a **local-only orchestration artifact**: it is **NOT
+pushed** to any remote and is **NOT the PR target** (each ticket still ships its
+OWN PR against the repo default branch via `/ship <default-branch>
+ticket-dir=<NNN-slug>`, no `merge=true`). At each wave boundary the main loop
+merges every `status: completed` ticket's reported `worktree-agent-<id>` branch
+into `ap-integration/<parent>` in the main checkout (`--no-ff --no-edit`,
+topo/lex order, idempotent via `git merge-base --is-ancestor`), advancing the
+orchestrator's HEAD so wave `k>0`'s isolation worktrees branch from the
+integrated tip and a cross-wave dependent sees its dependency's committed
 changes (shared object store). A genuine conflict fails THAT ticket
 (`failure_reason=integration_conflict_<other-NNN>`) + cascade-skips its
 dependents; the run continues (no auto-resolve). The branch and every
-per-ticket `ap/<parent>/<NNN-slug>` branch are KEPT after the run (cleanup
-removes only the worktrees); on the serial (`PARALLEL_MODE == off`) path no
-integration branch is created (byte-identical).
+per-ticket `worktree-agent-<id>` branch are KEPT after the run (cleanup removes
+only the worktrees + restores the start ref); on the serial
+(`PARALLEL_MODE == off`) path no integration branch is created (byte-identical).
 
 ## Wave cursor (`PARALLEL_MODE != off`) — orchestrator-written, hook-read
 

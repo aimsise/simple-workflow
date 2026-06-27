@@ -11075,34 +11075,37 @@ assert_true \
 PAR_SHIP="$REPO_DIR/skills/ship/SKILL.md"
 PAR_ACEVAL="$REPO_DIR/agents/ac-evaluator.md"
 
-# CT-WORKTREE-1 (the single most important mechanical decision: explicit `git worktree add <ref>`,
-# NOT EnterWorktree/baseRef). The wave loop pre-creates per-ticket worktrees off the integration
-# branch via an EXPLICIT `git worktree add -b ... <BASE_REF>` and DOCUMENTS that baseRef cannot
-# target an arbitrary ref. Both halves must be present (the positive add-prose + the negative
-# baseRef rejection).
-ctwt1_explicit_add=$(grep -cF 'git worktree add -b ap/<parent>/<T-NNN-slug>' "$PAR_AUTOPILOT" || true)
-ctwt1_not_baseref=$(grep -ciE 'NOT .EnterWorktree./baseRef|baseRef is a binary .* git config and cannot target' "$PAR_AUTOPILOT" || true)
-ctwt1_base_ref=$(grep -cF 'BASE_REF' "$PAR_AUTOPILOT" || true)
+# CT-WORKTREE-1 (the single most important mechanical decision, FIX-1 v9.0.1: per-ticket worktrees
+# are platform-created via isolation:"worktree", NOT a manual `git worktree add`; the platform bases
+# each worktree on the orchestrator's current HEAD = the integrated ap-integration/<parent> tip.
+# dogfood62 spikes settled this: S1 = the Task tool has NO cwd param (manual-cwd dead); S4/S5 =
+# isolation:"worktree" works and bases on the orchestrator HEAD (the spike-validated cross-wave
+# base). Assert the isolation spawn + the no-manual-add note + the base-on-HEAD note in SKILL.md.
+ctwt1_isolation=$(grep -cF 'isolation:"worktree"' "$PAR_AUTOPILOT" || true)
+ctwt1_no_manual=$(grep -ciE 'runs NO manual .git worktree add.|no manual .git worktree add.' "$PAR_AUTOPILOT" || true)
+ctwt1_base_head=$(grep -ciE "based on the orchestrator.s current HEAD|branch from this HEAD|executors branch from" "$PAR_AUTOPILOT" || true)
 ctwt1_result="false"
-if [ "$ctwt1_explicit_add" -ge 1 ] && [ "$ctwt1_not_baseref" -ge 1 ] && [ "$ctwt1_base_ref" -ge 1 ]; then ctwt1_result="true"; fi
+if [ "$ctwt1_isolation" -ge 1 ] && [ "$ctwt1_no_manual" -ge 1 ] && [ "$ctwt1_base_head" -ge 1 ]; then ctwt1_result="true"; fi
 assert_true \
-  "CT-WORKTREE-1 (explicit git worktree add <ref>, NOT baseRef): explicit-add ($ctwt1_explicit_add>=1) baseRef-rejected ($ctwt1_not_baseref>=1) BASE_REF ($ctwt1_base_ref>=1)" \
+  "CT-WORKTREE-1 (isolation:\"worktree\" per-ticket, NOT manual add, base=orchestrator HEAD): isolation ($ctwt1_isolation>=1) no-manual-add ($ctwt1_no_manual>=1) base-head ($ctwt1_base_head>=1)" \
   "$ctwt1_result"
 
-# CT-WORKTREE-2 (H3: per-ticket AND integration worktree paths BOTH pinned under .claude/worktrees/).
-# A path outside .claude/worktrees/ is rejected at runtime by EnterWorktree(path=) and caught by NO
-# test, so the prose pin is the only guard. Assert the per-ticket pin, the integration-worktree pin,
-# and the H3 platform-acceptance note all appear in SKILL.md.
-ctwt2_perticket=$(grep -cF '<MAIN_REPO>/.claude/worktrees/ap-<parent>-<NNN-slug>' "$PAR_AUTOPILOT" || true)
-ctwt2_integration=$(grep -cF '<MAIN_REPO>/.claude/worktrees/ap-integration-<parent>' "$PAR_AUTOPILOT" || true)
+# CT-WORKTREE-2 (H3: per-ticket worktree path pinned under .claude/worktrees/agent-<id>; FIX-1 v9.0.1
+# drops the dedicated integration worktree — the orchestrator checks out ap-integration/<parent> IN
+# its main checkout, so a second worktree on that branch is impossible). A path outside
+# .claude/worktrees/ is rejected at runtime by the platform and caught by NO test, so the prose pin
+# is the only guard. Assert the per-ticket agent-<id> pin (SKILL.md + executor), the
+# no-dedicated-integration-worktree note, and the H3 platform-acceptance note all in SKILL.md.
+ctwt2_perticket=$(grep -cF '<MAIN_REPO>/.claude/worktrees/agent-<id>' "$PAR_AUTOPILOT" || true)
+ctwt2_no_integration_wt=$(grep -ciE 'no dedicated integration worktree' "$PAR_AUTOPILOT" || true)
 ctwt2_h3=$(grep -ciE 'H3 platform-acceptance|rejected by the executor.s .EnterWorktree' "$PAR_AUTOPILOT" || true)
-# The executor side ALSO documents the .claude/worktrees/ pin + the acceptance constraint.
-ctwt2_exec_pin=$(grep -cF '.claude/worktrees/ap-<parent>-<NNN-slug>' "$PAR_EXECUTOR" || true)
+# The executor side ALSO documents the .claude/worktrees/agent-<id> per-ticket worktree pin.
+ctwt2_exec_pin=$(grep -cF '.claude/worktrees/agent-<id>' "$PAR_EXECUTOR" || true)
 ctwt2_result="false"
-if [ "$ctwt2_perticket" -ge 1 ] && [ "$ctwt2_integration" -ge 1 ] && [ "$ctwt2_h3" -ge 1 ] \
+if [ "$ctwt2_perticket" -ge 1 ] && [ "$ctwt2_no_integration_wt" -ge 1 ] && [ "$ctwt2_h3" -ge 1 ] \
   && [ "$ctwt2_exec_pin" -ge 1 ]; then ctwt2_result="true"; fi
 assert_true \
-  "CT-WORKTREE-2 (H3 .claude/worktrees/ pin both worktrees): per-ticket ($ctwt2_perticket>=1) integration ($ctwt2_integration>=1) H3-note ($ctwt2_h3>=1) executor-pin ($ctwt2_exec_pin>=1)" \
+  "CT-WORKTREE-2 (H3 .claude/worktrees/agent-<id> pin + no dedicated integration worktree): per-ticket ($ctwt2_perticket>=1) no-integration-wt ($ctwt2_no_integration_wt>=1) H3-note ($ctwt2_h3>=1) executor-pin ($ctwt2_exec_pin>=1)" \
   "$ctwt2_result"
 
 # CT-WORKTREE-3 (state/artifact resolution via the .simple-workflow symlink + main_checkout_root init).
@@ -11178,29 +11181,33 @@ assert_true \
   "CT-WORKTREE-7 (SW_PARALLEL_WORKTREE_KEEP knob in CLAUDE.md): knob ($ctwt7_knob>=1) (B)harness-own-colocated ($ctwt7_bsub>=1) default-off ($ctwt7_default_off>=1)" \
   "$ctwt7_result"
 
-# CT-WORKTREE-8 (ticket-executor worktree grant mirrors ac-evaluator). ac-evaluator carries the
-# scoped Bash(git worktree add/remove/list) grant (NOT prune/lock); the executor mirrors that intent.
-# Compare the two grants: ac-evaluator has all three scoped sub-commands in its tools: list; the
-# executor documents the SAME add/list/remove scoping (NOT prune/lock) + the EnterWorktree pipeline.
+# CT-WORKTREE-8 (ticket-executor worktree grant mirrors ac-evaluator; FIX-1 v9.0.1: the executor is
+# spawned with isolation:"worktree" so it does NOT EnterWorktree — its first step self-creates the
+# .simple-workflow symlink). ac-evaluator carries the scoped Bash(git worktree add/remove/list) grant
+# (NOT prune/lock); the executor mirrors that intent. The executor documents the SAME add/list/remove
+# scoping (NOT prune/lock); the legacy EnterWorktree(path=<WORKTREE_PATH>) entry MUST be gone (==0,
+# negative control) and the first-step self-symlink MUST be present.
 acev_add=$(grep -cF 'Bash(git worktree add:*)' "$PAR_ACEVAL" || true)
 acev_remove=$(grep -cF 'Bash(git worktree remove:*)' "$PAR_ACEVAL" || true)
 acev_list=$(grep -cF 'Bash(git worktree list:*)' "$PAR_ACEVAL" || true)
 exec_mirror=$(grep -ciE 'mirror.*ac-evaluator|ac-evaluator.s scoped' "$PAR_EXECUTOR" || true)
 exec_scope=$(grep -ciE 'add. / .remove. / .list. (ONLY|only)|add/list/remove' "$PAR_EXECUTOR" || true)
 exec_not_prune=$(grep -ciE 'NOT prune|never .prune|never .{0,4}prune' "$PAR_EXECUTOR" || true)
-exec_enter=$(grep -cF 'EnterWorktree(path=<WORKTREE_PATH>)' "$PAR_EXECUTOR" || true)
+exec_no_enter=$(grep -cF 'EnterWorktree(path=<WORKTREE_PATH>)' "$PAR_EXECUTOR" || true)
+exec_selfsymlink=$(grep -cF 'ln -s <MAIN_REPO>/.simple-workflow .simple-workflow' "$PAR_EXECUTOR" || true)
 ctwt8_result="false"
 if [ "$acev_add" -ge 1 ] && [ "$acev_remove" -ge 1 ] && [ "$acev_list" -ge 1 ] \
   && [ "$exec_mirror" -ge 1 ] && [ "$exec_scope" -ge 1 ] && [ "$exec_not_prune" -ge 1 ] \
-  && [ "$exec_enter" -ge 1 ]; then ctwt8_result="true"; fi
+  && [ "$exec_no_enter" -eq 0 ] && [ "$exec_selfsymlink" -ge 1 ]; then ctwt8_result="true"; fi
 assert_true \
-  "CT-WORKTREE-8 (executor worktree grant mirrors ac-evaluator): acev add ($acev_add>=1) remove ($acev_remove>=1) list ($acev_list>=1); executor mirror-note ($exec_mirror>=1) add/list/remove-scope ($exec_scope>=1) NOT-prune ($exec_not_prune>=1) EnterWorktree ($exec_enter>=1)" \
+  "CT-WORKTREE-8 (executor worktree grant mirrors ac-evaluator; isolation:worktree, no EnterWorktree): acev add ($acev_add>=1) remove ($acev_remove>=1) list ($acev_list>=1); executor mirror-note ($exec_mirror>=1) add/list/remove-scope ($exec_scope>=1) NOT-prune ($exec_not_prune>=1) no-EnterWorktree ($exec_no_enter==0) self-symlink ($exec_selfsymlink>=1)" \
   "$ctwt8_result"
 
-# CT-WORKTREE-9 (envelope branch/head_sha additions, flipped to PRESENT). The ticket-executor envelope
-# now carries branch + head_sha (T-008); the "NOT yet part of the envelope" note is FLIPPED to "ARE
-# part". Asserted on BOTH ticket-executor.md and state-file.md.
-ctwt9_exec_branch=$(grep -cF 'branch: {ap/<parent>/<NNN-slug> or null}' "$PAR_EXECUTOR" || true)
+# CT-WORKTREE-9 (envelope branch/head_sha additions, flipped to PRESENT; FIX-1 v9.0.1: the branch is
+# the platform-assigned worktree-agent-<id>, NOT a plugin-named ap/<parent>/<NNN-slug>). The
+# ticket-executor envelope carries branch + head_sha (T-008); the "NOT yet part of the envelope" note
+# is FLIPPED to "ARE part". Asserted on BOTH ticket-executor.md and state-file.md.
+ctwt9_exec_branch=$(grep -cF 'branch: {worktree-agent-<id> or null}' "$PAR_EXECUTOR" || true)
 ctwt9_exec_headsha=$(grep -ciE 'head_sha:' "$PAR_EXECUTOR" || true)
 ctwt9_exec_flip=$(grep -ciE 'ARE part of the envelope as of T-008' "$PAR_EXECUTOR" || true)
 ctwt9_state_branch=$(grep -ciE 'branch. / .head_sha. fields ARE part' "$PAR_STATEFILE" || true)
@@ -11255,6 +11262,239 @@ if [ "$ctwt12_symlink_nocopy" -ge 1 ] && [ "$ctwt12_integration_order" -ge 1 ] &
 assert_true \
   "CT-WORKTREE-12 (verify-round: symlink-no-copy + integration-before-postwrite + conflict-flip-persist + mid-merge-recovery): symlink-no-copy ($ctwt12_symlink_nocopy>=1) integration-order ($ctwt12_integration_order>=1) flip-persist ($ctwt12_flip_persist>=1) mid-merge-recovery ($ctwt12_recovery>=1)" \
   "$ctwt12_result"
+
+# CT-FIX1-SPAWN-ISOLATION (FIX-1 v9.0.1 cross-wave Option-X, spike-validated S5: the orchestrator
+# checks out the integration branch IN its own main checkout so each wave's isolation:"worktree"
+# executors branch from the advanced HEAD; the wave-3 spawn passes MAIN_REPO). Assert the
+# main-checkout integration-branch checkout + the MAIN_REPO spawn arg + the HEAD-advance note.
+fix1_checkout_integ=$(grep -cF 'git checkout ap-integration/<parent>' "$PAR_AUTOPILOT" || true)
+fix1_main_repo_arg=$(grep -ciE 'MAIN_REPO. \(= .main_checkout_root' "$PAR_AUTOPILOT" || true)
+fix1_advance_head=$(grep -ciE "advances both the branch AND the orchestrator.s HEAD|advancing the orchestrator.s HEAD" "$PAR_AUTOPILOT" || true)
+fix1_si_result="false"
+if [ "$fix1_checkout_integ" -ge 1 ] && [ "$fix1_main_repo_arg" -ge 1 ] && [ "$fix1_advance_head" -ge 1 ]; then fix1_si_result="true"; fi
+assert_true \
+  "CT-FIX1-SPAWN-ISOLATION (orchestrator checks out integration branch in main checkout + MAIN_REPO spawn arg + HEAD-advance): checkout-integ ($fix1_checkout_integ>=1) MAIN_REPO-arg ($fix1_main_repo_arg>=1) advance-head ($fix1_advance_head>=1)" \
+  "$fix1_si_result"
+
+# CT-FIX1-SYMLINK (FIX-1 v9.0.1: the executor self-creates the .simple-workflow symlink as its FIRST
+# step, with an absolute <MAIN_REPO> target, and NEVER EnterWorktrees by path — the isolation:"worktree"
+# spawn already placed it in the worktree). Asserted on ticket-executor.md.
+fix1_sym=$(grep -cF 'ln -s <MAIN_REPO>/.simple-workflow .simple-workflow' "$PAR_EXECUTOR" || true)
+fix1_no_enter=$(grep -cF 'EnterWorktree(path=' "$PAR_EXECUTOR" || true)
+fix1_first=$(grep -ciE 'symlink FIRST|first step.*self-create|self-create.*first step|your first step is to self-create' "$PAR_EXECUTOR" || true)
+fix1_sym_result="false"
+if [ "$fix1_sym" -ge 1 ] && [ "$fix1_no_enter" -eq 0 ] && [ "$fix1_first" -ge 1 ]; then fix1_sym_result="true"; fi
+assert_true \
+  "CT-FIX1-SYMLINK (executor self-creates .simple-workflow symlink first, no EnterWorktree(path=)): self-symlink ($fix1_sym>=1) no-enter-by-path ($fix1_no_enter==0) first-step ($fix1_first>=1)" \
+  "$fix1_sym_result"
+
+# CT-FIX1-PREFLIGHT (FIX-1 v9.0.1: the worktree-capability pre-flight falls back to serial on an
+# isolation-unsupported host by DELETING the parallel_mode: line [persist the downgrade so resume does
+# not re-thrash across the /compact boundary] + logging reason=worktree-unavailable;
+# SW_PARALLEL_WORKTREE_PREFLIGHT_MODE gates it, unknown resolving to on — a deliberate inversion since
+# the only failure action is a SAFE serial fallback). Asserted on SKILL.md.
+fix1_pf_knob=$(grep -cF 'SW_PARALLEL_WORKTREE_PREFLIGHT_MODE' "$PAR_AUTOPILOT" || true)
+fix1_pf_delete=$(grep -ciE 'DELETE the .parallel_mode:. line' "$PAR_AUTOPILOT" || true)
+fix1_pf_reason=$(grep -cF 'reason=worktree-unavailable' "$PAR_AUTOPILOT" || true)
+fix1_pf_unknown_on=$(grep -ciE 'Unknown values resolve to .on.' "$PAR_AUTOPILOT" || true)
+fix1_pf_result="false"
+if [ "$fix1_pf_knob" -ge 1 ] && [ "$fix1_pf_delete" -ge 1 ] && [ "$fix1_pf_reason" -ge 1 ] \
+  && [ "$fix1_pf_unknown_on" -ge 1 ]; then fix1_pf_result="true"; fi
+assert_true \
+  "CT-FIX1-PREFLIGHT (worktree pre-flight serial fallback + persist parallel_mode delete + unknown->on): knob ($fix1_pf_knob>=1) delete-parallel_mode ($fix1_pf_delete>=1) reason ($fix1_pf_reason>=1) unknown-on ($fix1_pf_unknown_on>=1)" \
+  "$fix1_pf_result"
+
+# CT-FIX1-NOREMOTE-LANDING (dogfood63: codify the no-remote main-advance). With no git remote there are
+# no per-ticket PRs to carry the integrated work to a visible surface, so the post-loop fast-forwards the
+# start ref to ap-integration/<parent> (--ff-only, with a divergence fallback); with a remote the start
+# ref is left restored (PRs are the landing surface). Assert SKILL.md documents all four halves.
+fix1_nrl_landing=$(grep -ciE 'No-remote landing' "$PAR_AUTOPILOT" || true)
+fix1_nrl_ffonly=$(grep -cF 'git merge --ff-only ap-integration/<parent>' "$PAR_AUTOPILOT" || true)
+fix1_nrl_diverge=$(grep -ciE 'diverged' "$PAR_AUTOPILOT" || true)
+fix1_nrl_remote=$(grep -ciE 'do NOT advance the start ref' "$PAR_AUTOPILOT" || true)
+fix1_nrl_result="false"
+if [ "$fix1_nrl_landing" -ge 1 ] && [ "$fix1_nrl_ffonly" -ge 1 ] && [ "$fix1_nrl_diverge" -ge 1 ] \
+  && [ "$fix1_nrl_remote" -ge 1 ]; then fix1_nrl_result="true"; fi
+assert_true \
+  "CT-FIX1-NOREMOTE-LANDING (no-remote ff-advance + --ff-only divergence fallback + with-remote restore-only): landing ($fix1_nrl_landing>=1) ff-only ($fix1_nrl_ffonly>=1) diverged ($fix1_nrl_diverge>=1) remote-restore ($fix1_nrl_remote>=1)" \
+  "$fix1_nrl_result"
+
+echo ""
+echo "--- Cat FIX-2 / FIX-3: generator->evaluator->audit firewall (v9.0.1) ---"
+
+PBCG="$REPO_DIR/hooks/pre-bash-contract-guard.sh"
+PSCG="$REPO_DIR/hooks/pre-skill-contract-guard.sh"
+PST="$REPO_DIR/hooks/pre-state-transition.sh"
+SHIP_SKILL="$REPO_DIR/skills/ship/SKILL.md"
+HOOKS_JSON="$REPO_DIR/hooks/hooks.json"
+
+# CT-FIX2-NONCE-ORDERING (static): /ship writes the .ship-commit-nonce in a Step
+# 2.5 that PRECEDES the Step-3 commit (a nonce written after the commit would
+# false-block the legit commit on the on-mode path), via a Bash sink, and the
+# Detection 2 (A) nonce gate keys on the nonce file (not the forgeable
+# phases.ship.status proxy). Assert: ship has a "2.5" step BEFORE "3. **Create
+# commit**", the hook checks the nonce file and emits unauthorized_ship_inline.
+fx2no_step25=$(grep -ciE 'Write /ship-commit nonce' "$SHIP_SKILL" || true)
+fx2no_sink=$(grep -cF ': > .simple-workflow/backlog/active/{ticket-dir}/.ship-commit-nonce' "$SHIP_SKILL" || true)
+fx2no_before=$(awk '
+  /Write \/ship-commit nonce \(Step 2\.5\)/ {n25=NR}
+  /^3\. \*\*Create commit\*\*/ {n3=NR}
+  END { if (n25>0 && n3>0 && n25<n3) print "ok" }' "$SHIP_SKILL")
+fx2no_hook=$(grep -cF '.ship-commit-nonce' "$PBCG" || true)
+fx2no_tag=$(grep -cF 'unauthorized_ship_inline' "$PBCG" || true)
+fx2no_result="false"
+if [ "$fx2no_step25" -ge 1 ] && [ "$fx2no_sink" -ge 1 ] && [ "$fx2no_before" = "ok" ] \
+   && [ "$fx2no_hook" -ge 1 ] && [ "$fx2no_tag" -ge 1 ]; then fx2no_result="true"; fi
+assert_true \
+  "CT-FIX2-NONCE-ORDERING (ship step 2.5 nonce Bash sink BEFORE step 3 commit; hook keys on nonce file): step2.5 ($fx2no_step25>=1) sink ($fx2no_sink>=1) ordering ($fx2no_before=ok) hook-nonce ($fx2no_hook>=1) tag ($fx2no_tag>=1)" \
+  "$fx2no_result"
+
+# CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (static): the Bash-side review-deny is
+# gated by SW_REVIEW_FIREWALL_MODE, denies git add/commit/mv/push with the
+# unconditional simple-workflow: prefix strip, and emits the named tag.
+fx2rd_knob=$(grep -cF 'SW_REVIEW_FIREWALL_MODE' "$PBCG" || true)
+fx2rd_strip=$(grep -cF 'AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"' "$PBCG" || true)
+fx2rd_srcre=$(grep -cF 'add|commit|mv|push' "$PBCG" || true)
+fx2rd_tag=$(grep -cF 'unauthorized_commit_by_review_agent' "$PBCG" || true)
+fx2rd_result="false"
+if [ "$fx2rd_knob" -ge 1 ] && [ "$fx2rd_strip" -ge 1 ] && [ "$fx2rd_srcre" -ge 1 ] \
+   && [ "$fx2rd_tag" -ge 1 ]; then fx2rd_result="true"; fi
+assert_true \
+  "CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (Bash review-deny: knob-gated, unconditional prefix strip, git add/commit/mv/push, named tag): knob ($fx2rd_knob>=1) strip ($fx2rd_strip>=1) srcre ($fx2rd_srcre>=1) tag ($fx2rd_tag>=1)" \
+  "$fx2rd_result"
+
+# CT-FIX2-GIT-WORKTREE-EXEMPT (static): the git-source regex matches only
+# add|commit|mv|push (NOT worktree), and the carve-out is documented.
+fx2we_carve=$(grep -ciE 'git worktree (is NOT matched|.* exempt|add/remove/list remain permitted|add/remove/list)' "$PBCG" || true)
+fx2we_no_worktree=$(grep -cE "GIT_SRC_RE=.*worktree" "$PBCG" || true)
+fx2we_result="false"
+if [ "$fx2we_carve" -ge 1 ] && [ "$fx2we_no_worktree" -eq 0 ]; then fx2we_result="true"; fi
+assert_true \
+  "CT-FIX2-GIT-WORKTREE-EXEMPT (git worktree carve-out: documented, NOT in GIT_SRC_RE): carve-doc ($fx2we_carve>=1) worktree-absent-from-srcre ($fx2we_no_worktree==0)" \
+  "$fx2we_result"
+
+# CT-FIX2-SKILL-NAMESPACED (static): the new pre-skill-contract-guard.sh exists,
+# lists NAMESPACED pipeline skills (simple-workflow:impl ...), the Skill-bearing
+# review agents, unconditional prefix strip, knob-gated, exit-0 fail-open.
+fx2sn_exists=0; [ -f "$PSCG" ] && fx2sn_exists=1
+fx2sn_ns=$(grep -cF 'simple-workflow:impl' "$PSCG" || true)
+fx2sn_review=$(grep -cF '"ac-evaluator" "ac-evaluator-hi" "doc-verifier" "code-reviewer"' "$PSCG" || true)
+fx2sn_strip=$(grep -cF 'AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"' "$PSCG" || true)
+fx2sn_knob=$(grep -cF 'SW_REVIEW_FIREWALL_MODE' "$PSCG" || true)
+fx2sn_result="false"
+if [ "$fx2sn_exists" -eq 1 ] && [ "$fx2sn_ns" -ge 1 ] && [ "$fx2sn_review" -ge 1 ] \
+   && [ "$fx2sn_strip" -ge 1 ] && [ "$fx2sn_knob" -ge 1 ]; then fx2sn_result="true"; fi
+assert_true \
+  "CT-FIX2-SKILL-NAMESPACED (new pre-skill-contract-guard.sh: namespaced pipeline skills + Skill-bearing review agents + prefix strip + knob): exists ($fx2sn_exists=1) ns ($fx2sn_ns>=1) review ($fx2sn_review>=1) strip ($fx2sn_strip>=1) knob ($fx2sn_knob>=1)" \
+  "$fx2sn_result"
+
+# CT-FIX2-HOOKS-JSON-SPLIT (static): the PreToolUse:Skill array carries the new
+# pre-skill-contract-guard.sh as its OWN top-level entry, FIRST, before the
+# existing pre-next-scout-auto-compact.sh (ordering-dependent hooks MUST be
+# top-level entries). Assert two distinct top-level Skill entries in order.
+fx2hj_order=$(awk '
+  /"matcher": "Skill"/ { in_skill=1 }
+  in_skill && /pre-skill-contract-guard.sh/ { a=NR }
+  in_skill && /pre-next-scout-auto-compact.sh/ { b=NR }
+  END { if (a>0 && b>0 && a<b) print "ok" }' "$HOOKS_JSON")
+fx2hj_result="false"; [ "$fx2hj_order" = "ok" ] && fx2hj_result="true"
+assert_true \
+  "CT-FIX2-HOOKS-JSON-SPLIT (pre-skill-contract-guard.sh is its own top-level Skill entry, BEFORE pre-next-scout-auto-compact.sh): ordering ($fx2hj_order=ok)" \
+  "$fx2hj_result"
+
+# CT-FIX3-PART-A (static): pre-state-transition.sh PART A detects advancement
+# transitions identity-free (ADVANCEMENT_DETECTED computed via the widened set),
+# keeping the HAS_SKIPPED skip routes intact.
+fx3pa_adv=$(grep -cF 'ADVANCEMENT_DETECTED' "$PST" || true)
+fx3pa_set=$(grep -cF 'current_phase|overall_status|phases\.' "$PST" || true)
+fx3pa_result="false"
+if [ "$fx3pa_adv" -ge 1 ] && [ "$fx3pa_set" -ge 1 ]; then fx3pa_result="true"; fi
+assert_true \
+  "CT-FIX3-PART-A (identity-free advancement detection: ADVANCEMENT_DETECTED + widened field set): adv ($fx3pa_adv>=1) set ($fx3pa_set>=1)" \
+  "$fx3pa_result"
+
+# CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (static): Detection 4 keyed on the
+# full denylist regex (bare AND namespaced, INCLUDING ticket-evaluator),
+# knob-gated by SW_STATE_ADVANCE_GUARD_MODE, named tag.
+fx3rd_re=$(grep -cF '^(simple-workflow:)?(ac-evaluator|ac-evaluator-hi|doc-verifier|code-reviewer|security-scanner|ticket-evaluator)$' "$PST" || true)
+fx3rd_knob=$(grep -cF 'SW_STATE_ADVANCE_GUARD_MODE' "$PST" || true)
+fx3rd_tag=$(grep -cF 'unauthorized_phase_advance_by_review_agent' "$PST" || true)
+fx3rd_te=$(grep -cF 'ticket-evaluator' "$PST" || true)
+fx3rd_result="false"
+if [ "$fx3rd_re" -ge 1 ] && [ "$fx3rd_knob" -ge 1 ] && [ "$fx3rd_tag" -ge 1 ] \
+   && [ "$fx3rd_te" -ge 1 ]; then fx3rd_result="true"; fi
+assert_true \
+  "CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (Detection 4: bare+namespaced denylist incl ticket-evaluator, knob-gated, named tag): re ($fx3rd_re>=1) knob ($fx3rd_knob>=1) tag ($fx3rd_tag>=1) ticket-evaluator ($fx3rd_te>=1)" \
+  "$fx3rd_result"
+
+# CT-FIX3-BASHMIRROR (static): the Bash-mirror Detection 3 advancement set in
+# pre-bash-contract-guard.sh was widened with current_phase/overall_status +
+# bare ship value, closing the current_phase:ship gap.
+fx3bm=$(grep -cF '(status|steps|ship|scout|impl|create-ticket|current_phase|overall_status)' "$PBCG" || true)
+fx3bm_ship=$(grep -cF 'in-progress|ship)' "$PBCG" || true)
+fx3bm_result="false"
+if [ "$fx3bm" -ge 1 ] && [ "$fx3bm_ship" -ge 1 ]; then fx3bm_result="true"; fi
+assert_true \
+  "CT-FIX3-BASHMIRROR (Detection 3 advancement set widened: current_phase/overall_status + bare ship): fieldset ($fx3bm>=1) ship-value ($fx3bm_ship>=1)" \
+  "$fx3bm_result"
+
+# CT-FIX3-SYNC1 (property-based): enumerate every verify/evaluate/review agent
+# (by its `description:` frontmatter regex verif|review|evaluat|scanner|audit|truth)
+# and cross-check it against the Detection-4 denylist in pre-state-transition.sh.
+# Generators (implementer/researcher/planner/decomposer/test-writer) and the
+# pipeline-owner ticket-executor are rationale-EXCLUDED (they legitimately write
+# advancement). tune-analyzer matches the role regex (it analyzes evaluation
+# logs) but writes kb/, NOT phase-state -> is_excluded. This goes RED if a new
+# review agent is added without a denylist update.
+#
+# GOVERNANCE: this gates the review/evaluator ROLE (a property of the agent's
+# job), NOT a named product/language/domain -- (B) harness-own, not a product cue.
+fx3sync_missing=""
+fx3sync_checked=0
+# Extract the Detection-4 denylist line(s) by a STABLE structural anchor (the (simple-workflow:)?(
+# alternation prefix), NOT a hardcoded full list -- so a legitimate denylist extension does not
+# false-RED and membership stays robust to content changes.
+fx3sync_denyline=$(grep -F '(simple-workflow:)?(' "$PST" || true)
+for agf in "$REPO_DIR"/agents/*.md; do
+  aname=$(basename "$agf" .md)
+  # Rationale-excluded generators + pipeline owner (legitimate advancement writers).
+  case "$aname" in
+    implementer|researcher|planner|decomposer|test-writer|ticket-executor) continue ;;
+    # tune-analyzer matches the role regex but writes kb/, not phase-state.
+    tune-analyzer) continue ;;
+  esac
+  # Role detection: scan the description: frontmatter line only.
+  desc=$(awk '/^description:/{print; exit}' "$agf")
+  if printf '%s' "$desc" | grep -qiE 'verif|review|evaluat|scanner|audit|truth'; then
+    fx3sync_checked=$((fx3sync_checked + 1))
+    # Token-boundary membership in the Detection-4 denylist alternation: the name must appear as a
+    # FULL token (bounded by ( | or )), so a short name that is a substring of a longer entry
+    # (ac-evaluator vs ac-evaluator-hi) cannot false-PASS and a removed short name IS caught.
+    if ! printf '%s' "$fx3sync_denyline" | grep -qE "[(|]${aname}[|)]"; then
+      fx3sync_missing="$fx3sync_missing $aname"
+    fi
+  fi
+done
+fx3sync_result="false"
+if [ -z "$fx3sync_missing" ] && [ "$fx3sync_checked" -ge 1 ]; then fx3sync_result="true"; fi
+assert_true \
+  "CT-FIX3-SYNC1 (property: every review/evaluator agent by description-role is in the Detection-4 denylist; generators+ticket-executor+tune-analyzer excluded): checked ($fx3sync_checked>=1) missing-from-denylist (${fx3sync_missing:-none})" \
+  "$fx3sync_result"
+
+# CT-FIX4-ENV-ISOLATION (dogfood63): the implementer MUST isolate build/test tooling installs to the
+# workspace (venv / project-local / container) and MUST NOT mutate a shared/global/system toolchain
+# that persists outside the workspace. The operative property is persists-outside-the-workspace; the
+# examples are illustrative (agnostic). A wave-0 executor's `--break-system-packages` system-pytest
+# install (eval-sandbox violation) motivated this.
+fix4_impl="$REPO_DIR/agents/implementer.md"
+fix4_iso=$(grep -ciE 'isolated to the workspace|environment isolation' "$fix4_impl" || true)
+fix4_notmutate=$(grep -ciE 'MUST NOT mutate a .*(shared|global|system)' "$fix4_impl" || true)
+fix4_property=$(grep -ciE 'persists-outside-the-workspace|persists outside the workspace' "$fix4_impl" || true)
+fix4_result="false"
+if [ "$fix4_iso" -ge 1 ] && [ "$fix4_notmutate" -ge 1 ] && [ "$fix4_property" -ge 1 ]; then fix4_result="true"; fi
+assert_true \
+  "CT-FIX4-ENV-ISOLATION (implementer isolates tooling installs to the workspace, no global-toolchain mutation): isolation ($fix4_iso>=1) no-mutate ($fix4_notmutate>=1) property ($fix4_property>=1)" \
+  "$fix4_result"
 
 echo ""
 

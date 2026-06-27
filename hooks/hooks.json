@@ -29,6 +29,10 @@
       },
       {
         "matcher": "Skill",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-skill-contract-guard.sh" }]
+      },
+      {
+        "matcher": "Skill",
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-next-scout-auto-compact.sh" }]
       },
       {
