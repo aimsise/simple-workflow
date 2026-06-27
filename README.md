@@ -14,7 +14,7 @@ Built on a **Harness for long-running AI agents** that brings *loop engineering*
     <img src="docs/brief-chain-overview.png" alt="How /brief chain=on runs: /brief then /create-ticket then /autopilot, then a per-ticket loop of /scout, /impl (with an inner verify loop) and /ship, ending in pull requests" width="860">
   </picture>
   <br>
-  <sub><i>The default <code>/brief chain=on</code> flow at a glance: skills (blue) drive subagents (green); the per-ticket loop and the in-<code>/impl</code> verify loop are red; lifecycle hooks drive and guard every step. The full flow — agents · hooks · harness — is in the collapsible below.</i></sub>
+  <sub><i>The <code>/brief chain=on</code> full-automation flow (opt in with <code>chain=on</code>; no longer the default as of v10.0.0) at a glance: skills (blue) drive subagents (green); the per-ticket loop and the in-<code>/impl</code> verify loop are red; lifecycle hooks drive and guard every step. The full flow — agents · hooks · harness — is in the collapsible below.</i></sub>
 </p>
 
 <details>
@@ -72,18 +72,18 @@ claude plugin install   simple-workflow@aimsise-simple-workflow --scope project
 
 ## Usage
 
-Inside an active Claude Code session, type `/brief <idea>` and the plugin handles the rest end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
+Inside an active Claude Code session, type `/brief <idea>` to produce a structured brief and decision policy and then stop for your review — or type `/brief <idea> chain=on` to hand the whole pipeline to the plugin end-to-end: codebase investigation, requirements interview, ticket creation, implementation, multi-agent review, and pull request.
 
-Full argument signature: `/brief <what-to-build> [chain=on|off] [uc=on|off|metric-only] [parallel=on|off]` (default `chain=on`, `uc=on`, `parallel=on`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`) — still accepted in v9.0.0 with a deprecation warning; slated for removal in a future major (deferred from v9.0.0). `/autopilot <slug>` accepts the same `[uc=on|off|metric-only] [parallel=on|off]` tokens.
+Full argument signature: `/brief <what-to-build> [chain=on|off] [uc=on|off|metric-only] [parallel=on|off]` (default `chain=off`; a bare `/brief` writes the brief and stops — under `chain=on` the chained run defaults `uc=on`, `parallel=on`). The `chain=on|off` form is canonical; `mode=auto|manual` is a deprecated legacy alias (`chain=on` ≡ `mode=auto`, `chain=off` ≡ `mode=manual`) — still accepted (with a deprecation warning); slated for removal in a future major (deferred from v9.0.0). `/autopilot <slug>` accepts the same `[uc=on|off|metric-only] [parallel=on|off]` tokens.
 
-**ultracode orchestration** is **on by default**: non-trivial (M+) tickets run their AC evaluation as a parallel multi-verifier panel via Claude Code's Workflow tool (forwarded `/brief` → `/autopilot` → each `/impl` and preserved across auto-`/compact`/resume; tier-appropriate model — Sonnet at `thorough`, Opus at `exhaustive`). Pass **`uc=off`** to revert to the byte-identical single-evaluator Agent path. Default-on applies under `chain=on` (the `/brief` default); under `chain=off` there is no chained `/autopilot`, so `uc` resolves `off`. Also accepted (as `uc=on|off|metric-only`) on `/autopilot <slug>` and `/impl …`. Details: `skills/impl/SKILL.md`.
+**ultracode orchestration** is **on by default**: non-trivial (M+) tickets run their AC evaluation as a parallel multi-verifier panel via Claude Code's Workflow tool (forwarded `/brief` → `/autopilot` → each `/impl` and preserved across auto-`/compact`/resume; tier-appropriate model — Sonnet at `thorough`, Opus at `exhaustive`). Pass **`uc=off`** to revert to the byte-identical single-evaluator Agent path. Default-on applies under `chain=on`; under `chain=off` (the bare-`/brief` default as of v10.0.0) there is no chained `/autopilot`, so `uc` resolves `off`. Also accepted (as `uc=on|off|metric-only`) on `/autopilot <slug>` and `/impl …`. Details: `skills/impl/SKILL.md`.
 
-**Wave-parallel ticket execution** is also **on by default** (v9.0.0): under `/autopilot` (and `/brief chain=on`) a multi-ticket run executes its `/scout`→`/impl`→`/ship` pipeline through one `ticket-executor` subagent per topologically-ready ticket / wave (each in an isolated git worktree, merged at wave boundaries), instead of the inline serial loop. Pass **`parallel=off`** to revert to the byte-identical v8.7.0 inline serial loop; the `SW_PARALLEL_TICKETS_MODE=off` / `SW_PARALLEL_HOOKS_MODE=off` environment kill switches force serial globally (the panic button when you cannot edit a `/brief`-chained invocation). A fat-fingered `parallel=<garbage>` value fails **safe to `off`** (the proven serial path), surfaced via `[PARALLEL-MODE] mode=off active=n reason=invocation-unknown-value-failsafe`. Default-on applies under `chain=on`; under `chain=off` there is no chained `/autopilot`, so `parallel` resolves `off`.
+**Wave-parallel ticket execution** is also **on by default** (v9.0.0): under `/autopilot` (and `/brief chain=on`) a multi-ticket run executes its `/scout`→`/impl`→`/ship` pipeline through one `ticket-executor` subagent per topologically-ready ticket / wave (each in an isolated git worktree, merged at wave boundaries), instead of the inline serial loop. Pass **`parallel=off`** to revert to the byte-identical v8.7.0 inline serial loop; the `SW_PARALLEL_TICKETS_MODE=off` / `SW_PARALLEL_HOOKS_MODE=off` environment kill switches force serial globally (the panic button when you cannot edit a `/brief`-chained invocation). A fat-fingered `parallel=<garbage>` value fails **safe to `off`** (the proven serial path), surfaced via `[PARALLEL-MODE] mode=off active=n reason=invocation-unknown-value-failsafe`. Default-on applies under `chain=on`; under `chain=off` (the bare-`/brief` default as of v10.0.0) there is no chained `/autopilot`, so `parallel` resolves `off`.
 
 | Mode | Command | Result |
 |------|---------|--------|
-| Full automation (default, `chain=on`) | `/brief <idea>` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
-| Brief-assisted manual (`chain=off`) | `/brief <idea> chain=off` | Structured brief and decision policy are produced; you drive each subsequent step (legacy alias: `mode=manual`) |
+| Brief-assisted manual (default, `chain=off`) | `/brief <idea>` | Structured brief and decision policy are produced, then it stops with manual next-steps; you drive each subsequent step (legacy alias: `mode=manual`) |
+| Full automation (`chain=on`) | `/brief <idea> chain=on` | Idea → PR with zero intervention; large scopes are auto-split into multiple tickets and executed in dependency order |
 | Resume an interrupted run | `/autopilot <slug>` | Pick up where a previous automated run left off using state files under `.simple-workflow/backlog/` |
 
 ### Execution chains
@@ -107,9 +107,10 @@ Three typical execution patterns:
 # autopilot then loops: /scout → /impl → /ship per ticket → PR   ← loop engineering fires (the closed inner loop self-drives)
 # (running /autopilot directly on a chain=off brief stops with a re-propagation directive)
 
-# 3. Full automation (one command):
-/brief <idea>
+# 3. Full automation (one command — opt in with chain=on):
+/brief <idea> chain=on
 # brief chains: /create-ticket → /autopilot → (per ticket: /scout → /impl → /ship) → PR   ← loop engineering fires once /autopilot takes over
+# (a bare /brief <idea> now defaults to chain=off: it writes the brief and stops — see pattern 1)
 ```
 
 > **Caveat — full automation works best on focused, well-scoped ideas.** On overly broad or ambiguous input, the model can break output contracts, fabricate intermediate state, and continue past failures without surfacing them. Full automation has fewer human-in-the-loop checkpoints than the brief-assisted manual flow, so this kind of misbehaviour is easier to miss. For large or exploratory work, prefer `chain=off` (you inspect artifacts at each step) or split the work into smaller, focused briefs.

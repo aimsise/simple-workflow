@@ -2,7 +2,7 @@
 """Generate the detailed `/brief chain=on` execution flow (light + dark).
 
 Renders, with Pillow only (no external diagram toolchain), an annotated flowchart
-of the default `/brief chain=on` path: what each phase does, which subagents it
+of the `/brief chain=on` (opt-in full-automation) path: what each phase does, which subagents it
 spawns, what it writes, what is handed off *between* phases, which lifecycle hooks
 fire, where the two nested loops are, and which harness mechanism governs each
 step. Collapsed under a <details> in README.md. Emits two files for a <picture>
@@ -215,7 +215,7 @@ def build(theme, out):
 
     # 1. user IO
     box(MX0, 126, MX1, 172, IO_FILL, IO_BD)
-    text(MCX, 149, 'User types   /brief "<idea>"   (chain=on is the default)',
+    text(MCX, 149, 'User types   /brief "<idea>" chain=on   (opt-in)',
          size=12.5, color=IO_TX, anchor="mm")
     d.line([P(MCX), P(172), P(MCX), P(204)], fill=LINE, width=P(2))
     arrowhead(MCX, 204, "down")

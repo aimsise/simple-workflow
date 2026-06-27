@@ -2490,6 +2490,28 @@ fi
 
 echo ""
 
+# CT-MODE-18 (chain default flip, v10.0.0): a bare `/brief <idea>` (no chain=/mode= token)
+# MUST default to chain=off — it writes the brief and STOPS (Step 3 manual guidance) rather
+# than auto-chaining into /create-ticket -> /autopilot. Pins the new default at the brief
+# SKILL.md Argument Parsing source + the Step 2 bare-skip clause + the README signature, and
+# DRIFT-GUARDS (negative clause) against the pre-v10.0.0 `chain=on` default silently returning.
+# This is the lone runtime invariant for the v10.0.0 breaking change; the `mode=` alias literals
+# (CT-MODE-1..9) are deliberately preserved (the alias is NOT removed in v10.0.0).
+echo "--- CT-MODE-18 ---"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -qF '**Default when both keys are omitted**: `chain=off`' "$REPO_DIR/skills/brief/SKILL.md" \
+   && ! grep -qF '**Default when both keys are omitted**: `chain=on`' "$REPO_DIR/skills/brief/SKILL.md" \
+   && grep -qF 'both `chain=` and `mode=` omitted defaults to `chain=off`' "$REPO_DIR/skills/brief/SKILL.md" \
+   && grep -qF 'default `chain=off`' "$REPO_DIR/README.md"; then
+  echo -e "  ${GREEN}PASS${NC} CT-MODE-18: bare /brief defaults to chain=off (v10.0.0 flip) — brief SKILL.md Argument Parsing + Step 2 bare-skip + README pin chain=off; pre-v10 chain=on default absent"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-MODE-18: bare /brief must default to chain=off (v10.0.0) — expect brief SKILL.md '**Default when both keys are omitted**: \`chain=off\`' + the Step 2 bare-skip clause + README 'default \`chain=off\`', and NO residual 'chain=on' default"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+echo ""
+
 # =============================================================================
 # Category AD: /audit per-Category checklist references contract
 # Diff: New category. Verifies that the canonical per-Category checklist
