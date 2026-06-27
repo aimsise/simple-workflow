@@ -331,7 +331,6 @@ INPUT=$(cat)
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
-TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 # Identity extraction (S2-validated, FIX-3 PART B). The PreToolUse payload
 # natively carries `.agent_type` for a subagent Write/Edit (the agent name,
 # possibly namespaced as `simple-workflow:<name>`) and ABSENT/null for an

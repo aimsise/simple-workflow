@@ -586,7 +586,8 @@ echo ""
 echo "--- FIX-3 PART A / PART B: phase-advancement guard ---"
 TMP_ADV="$(mktemp -d)"; register_cleanup "$TMP_ADV"
 SLUG_ADV="advance-slug"
-STATE_ADV="$(prepare_autopilot_tree "$TMP_ADV" "$SLUG_ADV" 2)"
+# prepare the autopilot tree for the fixture (the returned state path is unused here).
+prepare_autopilot_tree "$TMP_ADV" "$SLUG_ADV" 2 >/dev/null
 PS_ADV="$TMP_ADV/.simple-workflow/backlog/active/$SLUG_ADV/001-feat/phase-state.yaml"
 mkdir -p "$(dirname "$PS_ADV")"
 
