@@ -35,12 +35,12 @@ fail_local() {
   TESTS_FAILED=$((TESTS_FAILED + 1)); TESTS_TOTAL=$((TESTS_TOTAL + 1))
 }
 
-expect_block()   { if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDOUT" | grep -q '"decision": "block"'; then pass_local "$1"; else fail_local "$1"; fi; }
-expect_noblock() { if [ "$LAST_EXIT_CODE" -eq 0 ] && ! echo "$LAST_STDOUT" | grep -q '"decision"'; then pass_local "$1"; else fail_local "$1"; fi; }
-expect_metric()  { if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDERR" | grep -qF '[ACCEPT-SET-VERIFY] metric-only: would block'; then pass_local "$1"; else fail_local "$1"; fi; }
+expect_block()   { if [ "$LAST_EXIT_CODE" -eq 0 ] && grep -q -- '"decision": "block"' <<<"$LAST_STDOUT"; then pass_local "$1"; else fail_local "$1"; fi; }
+expect_noblock() { if [ "$LAST_EXIT_CODE" -eq 0 ] && ! grep -q -- '"decision"' <<<"$LAST_STDOUT"; then pass_local "$1"; else fail_local "$1"; fi; }
+expect_metric()  { if [ "$LAST_EXIT_CODE" -eq 0 ] && grep -qF -- '[ACCEPT-SET-VERIFY] metric-only: would block' <<<"$LAST_STDERR"; then pass_local "$1"; else fail_local "$1"; fi; }
 expect_silent()  { if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ] && [ -z "$LAST_STDERR" ]; then pass_local "$1"; else fail_local "$1"; fi; }
 # P3 thin-corpus is ADVISORY (dogfood51): a stderr note, NEVER a block.
-expect_advisory() { if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDERR" | grep -qF '[ACCEPT-SET-VERIFY] advisory:' && ! echo "$LAST_STDOUT" | grep -q '"decision"'; then pass_local "$1"; else fail_local "$1"; fi; }
+expect_advisory() { if [ "$LAST_EXIT_CODE" -eq 0 ] && grep -qF -- '[ACCEPT-SET-VERIFY] advisory:' <<<"$LAST_STDERR" && ! grep -q -- '"decision"' <<<"$LAST_STDOUT"; then pass_local "$1"; else fail_local "$1"; fi; }
 
 # ---- Fixtures -------------------------------------------------------------
 mkfix eval-round-F1.md "## Status: FAIL

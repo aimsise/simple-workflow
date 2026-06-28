@@ -147,10 +147,10 @@ scan_file() {
     [ -z "$match_line" ] && continue
     local lineno="${match_line%%:*}"
     local content="${match_line#*:}"
-    if echo "$content" | grep -qF "$OLD_ACTIVE"; then
+    if grep -qF -- "$OLD_ACTIVE" <<<"$content"; then
       emit_drift "$label" "$lineno" "$OLD_ACTIVE"
     fi
-    if echo "$content" | grep -qF "$OLD_PRODUCT"; then
+    if grep -qF -- "$OLD_PRODUCT" <<<"$content"; then
       emit_drift "$label" "$lineno" "$OLD_PRODUCT"
     fi
   done < <(echo "$stripped" | grep -nF -e "$OLD_ACTIVE" -e "$OLD_PRODUCT" || true)
@@ -185,10 +185,10 @@ if [ -f "$BRIEF_STATE_FILE" ]; then
     [ -z "$match_line" ] && continue
     lineno="${match_line%%:*}"
     content="${match_line#*:}"
-    if echo "$content" | grep -qF "$OLD_ACTIVE"; then
+    if grep -qF -- "$OLD_ACTIVE" <<<"$content"; then
       emit_drift "$rel" "$lineno" "$OLD_ACTIVE"
     fi
-    if echo "$content" | grep -qF "$OLD_PRODUCT"; then
+    if grep -qF -- "$OLD_PRODUCT" <<<"$content"; then
       emit_drift "$rel" "$lineno" "$OLD_PRODUCT"
     fi
   done < <(grep -nF -e "$OLD_ACTIVE" -e "$OLD_PRODUCT" "$BRIEF_STATE_FILE" || true)

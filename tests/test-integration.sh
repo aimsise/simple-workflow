@@ -388,7 +388,7 @@ test_ship_integration() {
   fi
 
   # Check if skill was recognized (plugin skills may not be available via claude -p)
-  if echo "$TIMEOUT_OUTPUT" | grep -q "Unknown skill"; then
+  if grep -q -- "Unknown skill" <<<"$TIMEOUT_OUTPUT"; then
     echo -e "  ${YELLOW}SKIP${NC} /ship skill not available via claude -p (plugin skill resolution pending)"
     rm -rf "$test_repo"
     return 0
@@ -434,7 +434,7 @@ test_audit_integration() {
   fi
 
   # Check if skill was recognized (plugin skills may not be available via claude -p)
-  if echo "$TIMEOUT_OUTPUT" | grep -q "Unknown skill"; then
+  if grep -q -- "Unknown skill" <<<"$TIMEOUT_OUTPUT"; then
     echo -e "  ${YELLOW}SKIP${NC} /audit skill not available via claude -p (plugin skill resolution pending)"
     rm -rf "$test_repo"
     return 0
@@ -573,7 +573,7 @@ EOF
     echo -e "  ${YELLOW}WARN${NC} claude -p timed out (1800s)"
   fi
 
-  if echo "$TIMEOUT_OUTPUT" | grep -q "Unknown skill"; then
+  if grep -q -- "Unknown skill" <<<"$TIMEOUT_OUTPUT"; then
     echo -e "  ${YELLOW}SKIP${NC} /autopilot skill not available via claude -p"
     rm -rf "$test_repo"
     return 0

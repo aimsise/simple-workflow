@@ -405,8 +405,8 @@ INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: 
 run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && echo "$LAST_STDOUT" | grep -qF '[SCOUT-CHECKPOINT-RELEASE]' \
-   && echo "$LAST_STDOUT" | grep -qF 'Resume with: /scout' \
+   && grep -qF -- '[SCOUT-CHECKPOINT-RELEASE]' <<<"$LAST_STDOUT" \
+   && grep -qF -- 'Resume with: /scout' <<<"$LAST_STDOUT" \
    && [ ! -f "/tmp/.scout-checkpoint-$SID" ]; then
   echo -e "  ${GREEN}PASS${NC} C8: release stdout contains [SCOUT-CHECKPOINT-RELEASE] + counter removed"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -437,7 +437,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] \
    && [ -z "$LAST_STDOUT" ] \
-   && echo "$LAST_STDERR" | grep -qF '[SCOUT-AUTOPILOT-DONE-GATE] silent exit'; then
+   && grep -qF -- '[SCOUT-AUTOPILOT-DONE-GATE] silent exit' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} C9: exit 0, empty stdout, gate stderr token visible"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -468,7 +468,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] \
    && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-AUTOPILOT-DONE-GATE] silent exit'; then
+   && ! grep -qF -- '[SCOUT-AUTOPILOT-DONE-GATE] silent exit' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} C10: gate yields to active; decision=block; no gate token"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -496,7 +496,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] \
    && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-AUTOPILOT-DONE-GATE] silent exit'; then
+   && ! grep -qF -- '[SCOUT-AUTOPILOT-DONE-GATE] silent exit' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} C11: stale done state -> gate falls through; decision=block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -530,7 +530,7 @@ rm -f "$stdout_file" "$stderr_file"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] \
    && [ -z "$LAST_STDOUT" ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-AUTOPILOT-DONE-GATE]'; then
+   && ! grep -qF -- '[SCOUT-AUTOPILOT-DONE-GATE]' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} C12: kill-switch wins, no Step 2a stderr token"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -555,7 +555,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] \
    && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-AUTOPILOT-DONE-GATE] silent exit'; then
+   && ! grep -qF -- '[SCOUT-AUTOPILOT-DONE-GATE] silent exit' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} C13: failed ticket -> gate yields; decision=block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -598,7 +598,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] \
    && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-AUTOPILOT-DONE-GATE] silent exit'; then
+   && ! grep -qF -- '[SCOUT-AUTOPILOT-DONE-GATE] silent exit' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} C14: custom TTL=60 + 120s-old state -> gate yields; decision=block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -654,7 +654,7 @@ run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=on"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]'; then
+   && grep -qF -- '[POLICY-GATE-STOP]' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (P-i): honour → exit 0, no block, [POLICY-GATE-STOP] stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -720,8 +720,8 @@ INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: 
 run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
-if [ "$DECISION" = "block" ] && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]' \
-   && echo "$LAST_STDERR" | grep -qiF 'would honour'; then
+if [ "$DECISION" = "block" ] && grep -qF -- '[POLICY-GATE-STOP]' <<<"$LAST_STDERR" \
+   && grep -qiF -- 'would honour' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (P-iv): metric-only → block + would-honour stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -826,7 +826,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[SCOUT-CHECKPOINT] parallel stand-down'; then
+   && grep -qF -- '[SCOUT-CHECKPOINT] parallel stand-down' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-2): main Stop stands down → exit 0, no block, stand-down log"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -850,7 +850,7 @@ INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" \
 run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-CHECKPOINT] parallel stand-down'; then
+   && ! grep -qF -- '[SCOUT-CHECKPOINT] parallel stand-down' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-3): serial SubagentStop → exit 0, empty stdout, no parallel log"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -898,7 +898,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[SCOUT-CHECKPOINT] parallel stand-down'; then
+   && grep -qF -- '[SCOUT-CHECKPOINT] parallel stand-down' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-5): missing event treated as Stop → stand down"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -922,7 +922,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[SCOUT-CHECKPOINT] parallel'; then
+   && ! grep -qF -- '[SCOUT-CHECKPOINT] parallel' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-6): parallel=off main Stop → decision=block, no parallel log"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -946,7 +946,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && echo "$LAST_STDERR" | grep -qF '[SCOUT-CHECKPOINT] parallel stand-down (metric-only)'; then
+   && grep -qF -- '[SCOUT-CHECKPOINT] parallel stand-down (metric-only)' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-7): metric-only logs would-stand-down + falls through → block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1002,7 +1002,7 @@ SID9="scout-cp-tpar9-$$"; cleanup_session "$SID9"
 INPUT=$(jq -n --arg s "$SID9" '{transcript_path: "", session_id: $s, hook_event_name: "SubagentStop"}')
 run_guard_hook "$INPUT" "$WT9"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$LAST_STDERR" | grep -q "main_checkout_root resolution: root=$MAIN9" \
+if grep -q -- "main_checkout_root resolution: root=$MAIN9" <<<"$LAST_STDERR" \
    && [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ]; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-9): main_checkout_root-via-symlink resolution marker fired + Step-3 short-circuit (silent exit)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -1023,7 +1023,7 @@ SIDC="scout-cp-tpar9c-$$"; cleanup_session "$SIDC"
 INPUTC=$(jq -n --arg s "$SIDC" '{transcript_path: "", session_id: $s, hook_event_name: "SubagentStop"}')
 run_guard_hook "$INPUTC" "$WTC"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! echo "$LAST_STDERR" | grep -q 'main_checkout_root resolution'; then
+if ! grep -q -- 'main_checkout_root resolution' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-9 control): no main_checkout_root in state -> resolution marker absent (non-vacuous)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

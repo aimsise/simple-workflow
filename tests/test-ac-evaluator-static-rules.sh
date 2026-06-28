@@ -57,16 +57,13 @@ fi
 for rule in R1 R2 R3; do
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   # Each rule section must carry both BAD: and GOOD: labels.
-  if awk -v r="### $rule:" '
+  __rule_section=$(awk -v r="### $rule:" '
         $0 ~ r {inside=1; next}
         /^### R[0-9]+:/ {inside=0}
         inside {print}
-      ' "$RULES_FILE" | grep -q 'BAD:' \
-     && awk -v r="### $rule:" '
-        $0 ~ r {inside=1; next}
-        /^### R[0-9]+:/ {inside=0}
-        inside {print}
-      ' "$RULES_FILE" | grep -q 'GOOD:'; then
+      ' "$RULES_FILE")
+  if grep -q -- 'BAD:' <<<"$__rule_section" \
+     && grep -q -- 'GOOD:' <<<"$__rule_section"; then
     echo -e "  ${GREEN}PASS${NC} AC #1: $rule section has BAD: and GOOD: example labels"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -85,11 +82,12 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if awk '
+__limitations_body=$(awk '
       /^##+[[:space:]]+(Known )?Limitations/ {inside=1; next}
       /^##+[[:space:]]/ && inside {inside=0}
       inside {print}
-    ' "$RULES_FILE" | grep -qE 'AST|variable resolution'; then
+    ' "$RULES_FILE")
+if grep -qE -- 'AST|variable resolution' <<<"$__limitations_body"; then
   echo -e "  ${GREEN}PASS${NC} AC #1: Limitations body mentions AST / variable resolution"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -157,7 +155,7 @@ for entry in "${VIOLATING[@]}"; do
   exit_code=$?
   set -e
 
-  if [ "$exit_code" -eq 1 ] && printf '%s' "$output" | grep -qF "$rule"; then
+  if [ "$exit_code" -eq 1 ] && grep -qF -- "$rule" <<<"$output"; then
     echo -e "  ${GREEN}PASS${NC} AC #4: $fixture FAILs with $rule"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -198,7 +196,7 @@ for entry in "a:R1" "b:R2" "c:R3"; do
   exit_code=$?
   set -e
 
-  if printf '%s' "$output" | grep -qF "$rule"; then
+  if grep -qF -- "$rule" <<<"$output"; then
     echo -e "  ${GREEN}PASS${NC} AC #3(ii): $prefix fixture feedback contains '$rule'"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else

@@ -252,7 +252,7 @@ assert_pii_block() {
   local content="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_write_hook_with_content "$file_path" "$content"
-  if [ "$LAST_EXIT_CODE" -ne 0 ] && echo "$LAST_STDERR" | grep -qF "pii: absolute home path detected"; then
+  if [ "$LAST_EXIT_CODE" -ne 0 ] && grep -qF -- "pii: absolute home path detected" <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} BLOCK (pii): $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -269,7 +269,7 @@ assert_pii_allow() {
   local content="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_write_hook_with_content "$file_path" "$content"
-  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! echo "$LAST_STDERR" | grep -qF "pii:"; then
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! grep -qF -- "pii:" <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} ALLOW (pii): $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -359,7 +359,7 @@ _jq_on_out="$(printf '{"tool_input":{"file_path":"x"}}' | env PATH="$_JQ_NOPATH"
 _jq_on_rc=$?
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$_jq_on_rc" -eq 2 ] && printf '%s' "$_jq_on_out" | grep -qF '[SAFETY-JQ-MISSING]'; then
+if [ "$_jq_on_rc" -eq 2 ] && grep -qF -- '[SAFETY-JQ-MISSING]' <<<"$_jq_on_out"; then
   echo -e "  ${GREEN}PASS${NC} jq-missing + knob=on: fail-closed (exit 2) with [SAFETY-JQ-MISSING] message"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -372,7 +372,7 @@ _jq_def_out="$(printf '{"tool_input":{"file_path":"x"}}' | env PATH="$_JQ_NOPATH
 _jq_def_rc=$?
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$_jq_def_rc" -eq 0 ] && printf '%s' "$_jq_def_out" | grep -qF 'metric-only'; then
+if [ "$_jq_def_rc" -eq 0 ] && grep -qF -- 'metric-only' <<<"$_jq_def_out"; then
   echo -e "  ${GREEN}PASS${NC} jq-missing + default: metric-only allows (exit 0) with message"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

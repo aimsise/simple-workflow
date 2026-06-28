@@ -74,7 +74,7 @@ assert_contains() {
   local needle="$2"
   local haystack="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$haystack" | grep -qF -- "$needle"; then
+  if grep -qF -- "$needle" <<<"$haystack"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -326,7 +326,7 @@ run_hook_parallel "$LAST_SANDBOX" "off"
 assert_eq        "T-006 AC-6: hook exits 0 under parallel_mode=off" "0" "$LAST_EXIT_CODE"
 # Byte-identity: NO parallel stand-down stderr line of any kind.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDERR" | grep -qiE 'parallel stand-down|metric-only parallel'; then
+if grep -qiE -- 'parallel stand-down|metric-only parallel' <<<"$LAST_STDERR"; then
   echo -e "  ${RED}FAIL${NC} T-006 AC-6: off path emits NO parallel stand-down log"
   echo -e "       actual stderr: $LAST_STDERR"
   TESTS_FAILED=$((TESTS_FAILED + 1))

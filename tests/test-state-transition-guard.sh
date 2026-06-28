@@ -98,7 +98,7 @@ assert_guard_allow() {
   local description="$1"; shift
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_guard "$@"
-  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -119,12 +119,12 @@ assert_guard_block() {
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_guard "$@"
   local blocked="false"
-  if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     blocked="true"
   fi
   local tag_ok="true"
   if [ -n "$expected_tag" ]; then
-    if ! printf '%s' "$LAST_STDOUT" | grep -q "$expected_tag"; then
+    if ! grep -q -- "$expected_tag" <<<"$LAST_STDOUT"; then
       tag_ok="false"
     fi
   fi
@@ -210,8 +210,8 @@ assert_guard_allow \
 # narrative shape (status: completed for siblings) so the resume pathway
 # is exercised explicitly by this fixture.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$CONTENT_A" | grep -qE 'status:[[:space:]]*completed' \
-   && printf '%s' "$CONTENT_A" | grep -qE 'status:[[:space:]]*skipped'; then
+if grep -qE -- 'status:[[:space:]]*completed' <<<"$CONTENT_A" \
+   && grep -qE -- 'status:[[:space:]]*skipped' <<<"$CONTENT_A"; then
   echo -e "  ${GREEN}PASS${NC} (a/NAC#2) resume-mode shape preserved (completed siblings + lone skip)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -603,8 +603,8 @@ phases:
 # CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (bare agent_type, on -> block).
 run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "ticket-evaluator"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_phase_advance_by_review_agent'; then
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_phase_advance_by_review_agent' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (bare ticket-evaluator, on): advancement blocked"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -615,8 +615,8 @@ fi
 # CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (namespaced agent_type -> identical block).
 run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "simple-workflow:doc-verifier"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_phase_advance_by_review_agent'; then
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_phase_advance_by_review_agent' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (namespaced simple-workflow:doc-verifier, on): blocked"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -627,8 +627,8 @@ fi
 # metric-only -> fail-open (no block), stderr logs would-deny (PART A still detects).
 run_guard_adv metric-only "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "doc-verifier"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_phase_advance_by_review_agent'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'metric-only: would deny unauthorized_phase_advance_by_review_agent' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-PART-A/PART-B (metric-only): detect+log, fail-open allow"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -641,7 +641,7 @@ fi
 # the empty identity is not in the denylist.
 run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" ""
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-LEGIT-ORCHESTRATOR-ALLOWED (empty agent_type, on): advancement allowed (fail-open-on-empty)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -654,7 +654,7 @@ fi
 # deny only fires for review/evaluator roles.
 run_guard_adv on "$PS_ADV" "$ADV_CONTENT" "$TMP_ADV" "implementer"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-PART-A (implementer advancement, on): generator allowed (role not denylisted)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

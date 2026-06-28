@@ -704,7 +704,7 @@ _jq_on_out="$(printf '{"tool_input":{"command":"echo hi"}}' | env PATH="$_JQ_NOP
 _jq_on_rc=$?
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$_jq_on_rc" -eq 2 ] && printf '%s' "$_jq_on_out" | grep -qF '[SAFETY-JQ-MISSING]'; then
+if [ "$_jq_on_rc" -eq 2 ] && grep -qF -- '[SAFETY-JQ-MISSING]' <<<"$_jq_on_out"; then
   echo -e "  ${GREEN}PASS${NC} jq-missing + knob=on: fail-closed (exit 2) with [SAFETY-JQ-MISSING] message"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -717,7 +717,7 @@ _jq_def_out="$(printf '{"tool_input":{"command":"echo hi"}}' | env PATH="$_JQ_NO
 _jq_def_rc=$?
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$_jq_def_rc" -eq 0 ] && printf '%s' "$_jq_def_out" | grep -qF 'metric-only'; then
+if [ "$_jq_def_rc" -eq 0 ] && grep -qF -- 'metric-only' <<<"$_jq_def_out"; then
   echo -e "  ${GREEN}PASS${NC} jq-missing + default: metric-only allows (exit 0) with message"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

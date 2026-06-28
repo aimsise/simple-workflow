@@ -128,7 +128,7 @@ assert_output_contains() {
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   local output
   output=$( (cd "$repo" && bash -c "$cmd") 2>/dev/null || true )
-  if echo "$output" | grep -qF "$expected"; then
+  if grep -qF -- "$expected" <<<"$output"; then
     echo -e "  ${GREEN}PASS${NC} ${scenario}: ${label} fallback marker '${expected}' present"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else

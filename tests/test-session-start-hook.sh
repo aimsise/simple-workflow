@@ -61,8 +61,8 @@ run_hook "$HOOK" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
 if [ "$LAST_EXIT_CODE" -eq 0 ] && \
-   echo "$CONTEXT" | grep -qF "Active tickets:" && \
-   echo "$CONTEXT" | grep -qF "001-foo"; then
+   grep -qF -- "Active tickets:" <<<"$CONTEXT" && \
+   grep -qF -- "001-foo" <<<"$CONTEXT"; then
   echo -e "  ${GREEN}PASS${NC} Fixture A: valid .simple-workflow/backlog/active ticket appears under 'Active tickets:'"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -73,7 +73,7 @@ else
 fi
 # Scenario-specific additional marker: active tickets get an (active) marker.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$CONTEXT" | grep -qF "(active)"; then
+if grep -qF -- "(active)" <<<"$CONTEXT"; then
   echo -e "  ${GREEN}PASS${NC} Fixture A: active ticket line carries '(active)' location marker"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -91,9 +91,9 @@ run_hook "$HOOK" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
 if [ "$LAST_EXIT_CODE" -eq 0 ] && \
-   echo "$CONTEXT" | grep -qF "Active tickets:" && \
-   echo "$CONTEXT" | grep -qF "001-bar" && \
-   echo "$CONTEXT" | grep -qF "(product_backlog)"; then
+   grep -qF -- "Active tickets:" <<<"$CONTEXT" && \
+   grep -qF -- "001-bar" <<<"$CONTEXT" && \
+   grep -qF -- "(product_backlog)" <<<"$CONTEXT"; then
   echo -e "  ${GREEN}PASS${NC} Fixture B: product_backlog ticket appears with '(product_backlog)' marker (AC 4.1)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -118,7 +118,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
 if [ "$LAST_EXIT_CODE" -eq 0 ] && \
    echo "$LAST_STDOUT" | jq . >/dev/null 2>&1 && \
-   ! echo "$CONTEXT" | grep -qF "001-foo"; then
+   ! grep -qF -- "001-foo" <<<"$CONTEXT"; then
   # We want: hook exited 0, output is valid JSON, malformed ticket was
   # silently skipped (not mentioned in Active tickets).
   echo -e "  ${GREEN}PASS${NC} Fixture C: malformed YAML silently skipped, hook exits 0"
@@ -151,7 +151,7 @@ if [ ! -r "$TEST_REPO/.simple-workflow/backlog/active/001-foo/phase-state.yaml" 
   CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
   if [ "$LAST_EXIT_CODE" -eq 0 ] && \
      echo "$LAST_STDOUT" | jq . >/dev/null 2>&1 && \
-     ! echo "$CONTEXT" | grep -qF "001-foo"; then
+     ! grep -qF -- "001-foo" <<<"$CONTEXT"; then
     echo -e "  ${GREEN}PASS${NC} Fixture D: chmod 000 ticket silently skipped, hook exits 0"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -176,9 +176,9 @@ run_hook "$HOOK" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
 if [ "$LAST_EXIT_CODE" -eq 0 ] && \
-   echo "$CONTEXT" | grep -qF "Branch:" && \
-   echo "$CONTEXT" | grep -qF "Changed files:" && \
-   ! echo "$CONTEXT" | grep -qF "Active tickets:"; then
+   grep -qF -- "Branch:" <<<"$CONTEXT" && \
+   grep -qF -- "Changed files:" <<<"$CONTEXT" && \
+   ! grep -qF -- "Active tickets:" <<<"$CONTEXT"; then
   echo -e "  ${GREEN}PASS${NC} Fixture E: missing .simple-workflow/backlog → original Branch + Changed files only, no 'Active tickets:' line"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -203,10 +203,10 @@ run_hook "$HOOK" "" "$TEST_REPO/src/foo"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CONTEXT=$(echo "$LAST_STDOUT" | jq -r '.additionalContext // ""')
 if [ "$LAST_EXIT_CODE" -eq 0 ] && \
-   echo "$CONTEXT" | grep -qF "Active tickets:" && \
-   echo "$CONTEXT" | grep -qF "001-foo" && \
-   echo "$CONTEXT" | grep -qF ".simple-workflow/backlog/active/001-foo" && \
-   ! echo "$CONTEXT" | grep -qE "/(tmp|private)/"; then
+   grep -qF -- "Active tickets:" <<<"$CONTEXT" && \
+   grep -qF -- "001-foo" <<<"$CONTEXT" && \
+   grep -qF -- ".simple-workflow/backlog/active/001-foo" <<<"$CONTEXT" && \
+   ! grep -qE -- "/(tmp|private)/" <<<"$CONTEXT"; then
   # The ticket must appear, and its path must be rendered relative to the
   # repo root (not as an absolute path leaking the tmpdir prefix).
   echo -e "  ${GREEN}PASS${NC} Fixture F: hook invoked from src/foo/ still sees .simple-workflow/backlog/active/ (AC 15.4)"

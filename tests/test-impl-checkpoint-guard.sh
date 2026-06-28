@@ -287,8 +287,8 @@ INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: 
 run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && echo "$LAST_STDOUT" | grep -qF '[IMPL-CHECKPOINT-RELEASE]' \
-   && echo "$LAST_STDOUT" | grep -qF 'Resume with: /impl'; then
+   && grep -qF -- '[IMPL-CHECKPOINT-RELEASE]' <<<"$LAST_STDOUT" \
+   && grep -qF -- 'Resume with: /impl' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} (v): release stdout contains [IMPL-CHECKPOINT-RELEASE] + Resume with: /impl"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -361,9 +361,9 @@ INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: 
 run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && echo "$LAST_STDOUT" | grep -qF '[IMPL-CHECKPOINT-RELEASE]' \
-   && echo "$LAST_STDOUT" | grep -qF 'Resume with: /autopilot' \
-   && echo "$LAST_STDOUT" | grep -qF 'feature-x'; then
+   && grep -qF -- '[IMPL-CHECKPOINT-RELEASE]' <<<"$LAST_STDOUT" \
+   && grep -qF -- 'Resume with: /autopilot' <<<"$LAST_STDOUT" \
+   && grep -qF -- 'feature-x' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} (viii): release stdout names autopilot parent slug"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -420,7 +420,7 @@ run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=on"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]'; then
+   && grep -qF -- '[POLICY-GATE-STOP]' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (P-i): honour → exit 0, no block, [POLICY-GATE-STOP] stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -486,8 +486,8 @@ INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: 
 run_guard_hook_env "$INPUT" "$TMP" "SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
-if [ "$DECISION" = "block" ] && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]' \
-   && echo "$LAST_STDERR" | grep -qiF 'would honour'; then
+if [ "$DECISION" = "block" ] && grep -qF -- '[POLICY-GATE-STOP]' <<<"$LAST_STDERR" \
+   && grep -qiF -- 'would honour' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (P-iv): metric-only → block + would-honour stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -593,7 +593,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down'; then
+   && grep -qF -- '[IMPL-CHECKPOINT] parallel stand-down' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-2): main Stop stands down → exit 0, no block, stand-down log"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -621,7 +621,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ -z "$LAST_STDOUT" ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down'; then
+   && ! grep -qF -- '[IMPL-CHECKPOINT] parallel stand-down' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-3): serial SubagentStop → exit 0, empty stdout, no parallel log"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -671,7 +671,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down'; then
+   && grep -qF -- '[IMPL-CHECKPOINT] parallel stand-down' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-5): missing event treated as Stop → stand down"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -696,7 +696,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && ! echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel'; then
+   && ! grep -qF -- '[IMPL-CHECKPOINT] parallel' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-6): parallel=off main Stop → decision=block, no parallel log"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -721,7 +721,7 @@ run_guard_hook "$INPUT" "$TMP"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ] \
-   && echo "$LAST_STDERR" | grep -qF '[IMPL-CHECKPOINT] parallel stand-down (metric-only)'; then
+   && grep -qF -- '[IMPL-CHECKPOINT] parallel stand-down (metric-only)' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-7): metric-only logs would-stand-down + falls through → block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -780,7 +780,7 @@ INPUT=$(jq -n --arg t "$WT9/transcript.jsonl" --arg s "$SID9" \
   '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
 run_guard_hook "$INPUT" "$WT9"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$LAST_STDERR" | grep -q "main_checkout_root resolution: root=$MAIN9"; then
+if grep -q -- "main_checkout_root resolution: root=$MAIN9" <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-9): impl main_checkout_root resolution marker fired (root=$MAIN9)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -798,7 +798,7 @@ INPUTC=$(jq -n --arg t "$WTC/transcript.jsonl" --arg s "$SIDC" \
   '{transcript_path: $t, session_id: $s, hook_event_name: "SubagentStop"}')
 run_guard_hook "$INPUTC" "$WTC"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! echo "$LAST_STDERR" | grep -q 'main_checkout_root resolution'; then
+if ! grep -q -- 'main_checkout_root resolution' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (T-PAR-9 control): no main_checkout_root -> marker absent (non-vacuous)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

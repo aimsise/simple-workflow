@@ -115,7 +115,7 @@ run_case() {
   out=$(plan_compliance_check "$plan" "$actual_tmp" 1)
   rm -f "$actual_tmp"
 
-  if printf '%s\n' "$out" | grep -qE "$expected_pattern"; then
+  if grep -qE -- "$expected_pattern" <<<"$out"; then
     echo -e "  ${GREEN}PASS${NC} $name"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -138,7 +138,7 @@ assert_no_match() {
   out=$(plan_compliance_check "$plan" "$actual_tmp" 1)
   rm -f "$actual_tmp"
 
-  if printf '%s\n' "$out" | grep -qE "$forbidden_pattern"; then
+  if grep -qE -- "$forbidden_pattern" <<<"$out"; then
     echo -e "  ${RED}FAIL${NC} $name"
     echo -e "       Forbidden pattern matched: $forbidden_pattern"
     echo -e "       Actual stdout:             $out"
@@ -204,7 +204,7 @@ ROUND2_TMP=$(mktemp)
 printf 'src/foo.ts\n' > "$ROUND2_TMP"
 ROUND2_OUT=$(plan_compliance_check "$FIXTURE_DIR/plan-missing.md" "$ROUND2_TMP" 2)
 rm -f "$ROUND2_TMP"
-if printf '%s\n' "$ROUND2_OUT" | grep -qE 'round=2\)$'; then
+if grep -qE -- 'round=2\)$' <<<"$ROUND2_OUT"; then
   echo -e "  ${GREEN}PASS${NC} round=N propagates into [PLAN-COMPLIANCE-WARN] lines"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

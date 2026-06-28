@@ -91,7 +91,7 @@ assert_blocked_message() {
 
   run_safety_hook "$command"
 
-  if [ "$LAST_EXIT_CODE" -eq 2 ] && echo "$LAST_STDERR" | grep -qF "$expected_message"; then
+  if [ "$LAST_EXIT_CODE" -eq 2 ] && grep -qF -- "$expected_message" <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -99,7 +99,7 @@ assert_blocked_message() {
     if [ "$LAST_EXIT_CODE" -ne 2 ]; then
       echo -e "       Expected: exit 2, Got: exit $LAST_EXIT_CODE"
     fi
-    if ! echo "$LAST_STDERR" | grep -qF "$expected_message"; then
+    if ! grep -qF -- "$expected_message" <<<"$LAST_STDERR"; then
       echo -e "       Expected stderr to contain: $expected_message"
       echo -e "       Actual stderr: $LAST_STDERR"
     fi

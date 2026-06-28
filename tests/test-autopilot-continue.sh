@@ -271,7 +271,7 @@ REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
 
 # Check for autopilot-state.yaml mention
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -q "autopilot-state.yaml"; then
+if grep -q -- "autopilot-state.yaml" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason mentions autopilot-state.yaml"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -282,7 +282,7 @@ fi
 
 # Check for autopilot mention
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -q "autopilot"; then
+if grep -q -- "autopilot" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason mentions autopilot"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -292,7 +292,7 @@ fi
 
 # Check for next step name (impl in this case)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -q "impl"; then
+if grep -q -- "impl" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason mentions next step (impl)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -424,7 +424,7 @@ fi
 
 # Check reason mentions ticket 2's ticket_dir
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -q "002-active"; then
+if grep -q -- "002-active" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} Split: reason mentions ticket 2 dir (002-active)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -562,7 +562,7 @@ run_autopilot_hook '{"session_id":"test-autokick-3"}' "$TEST_REPO"
 REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "/autopilot"; then
+if grep -qF -- "/autopilot" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains /autopilot"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -571,7 +571,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "feat-x"; then
+if grep -qF -- "feat-x" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains slug feat-x"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -580,7 +580,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "Skill tool"; then
+if grep -qF -- "Skill tool" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains 'Skill tool'"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -590,7 +590,7 @@ fi
 
 # NegAC5: reason does NOT contain /create-ticket
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! echo "$REASON" | grep -qF "/create-ticket"; then
+if ! grep -qF -- "/create-ticket" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} [NegAC5] reason does NOT contain /create-ticket (split-plan present)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -615,7 +615,7 @@ run_autopilot_hook '{"session_id":"test-autokick-4"}' "$TEST_REPO"
 REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "/create-ticket"; then
+if grep -qF -- "/create-ticket" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains /create-ticket"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -624,7 +624,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "/autopilot"; then
+if grep -qF -- "/autopilot" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains /autopilot"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -633,7 +633,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "feat-y"; then
+if grep -qF -- "feat-y" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains slug feat-y"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -642,7 +642,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "Skill tool"; then
+if grep -qF -- "Skill tool" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains 'Skill tool'"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -652,7 +652,7 @@ fi
 
 # NegAC6: /create-ticket MUST NOT appear at line start of stdout
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! echo "$LAST_STDOUT" | grep -qE '^/create-ticket'; then
+if ! grep -qE -- '^/create-ticket' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} [NegAC6] no stdout line starts with /create-ticket"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -689,7 +689,7 @@ run_autopilot_hook '{"session_id":"test-autokick-5"}' "$TEST_REPO"
 REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "autopilot-state.yaml"; then
+if grep -qF -- "autopilot-state.yaml" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains autopilot-state.yaml"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -698,7 +698,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$REASON" | grep -qF "steps:"; then
+if grep -qF -- "steps:" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason contains steps: block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -707,7 +707,7 @@ else
 fi
 
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! echo "$REASON" | grep -qF "auto-kick.yaml"; then
+if ! grep -qF -- "auto-kick.yaml" <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} reason does NOT contain auto-kick.yaml (state file wins)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -968,7 +968,7 @@ setup_test_repo
 p02_create_state "p02-ac4"
 run_p02_hook "p02-ac4" "text_only_5_consecutive.jsonl" "5" "4" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDOUT" | grep -qE '\[AUTOPILOT-STALL\]'; then
+if [ "$LAST_EXIT_CODE" -eq 0 ] && grep -qE -- '\[AUTOPILOT-STALL\]' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} double stuck releases: exit 0 + [AUTOPILOT-STALL] on stdout"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1068,7 +1068,7 @@ p02_create_state "p02-ac9b"
 # triggers release. This is the precise AC #9 sub-assertion.
 run_p02_hook "p02-ac9b" "tool_use_present.jsonl" "5" "0" "$TEST_REPO" "AUTOPILOT_LEGACY_LOOPGUARD=1"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$LAST_EXIT_CODE" -eq 0 ] && echo "$LAST_STDOUT" | grep -qE '\[AUTOPILOT-STALL\]'; then
+if [ "$LAST_EXIT_CODE" -eq 0 ] && grep -qE -- '\[AUTOPILOT-STALL\]' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} legacy loop guard (FILE=5): release fires regardless of tool_use"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1092,7 +1092,7 @@ run_p02_hook "p02-autokick" "" "" "" "$TEST_REPO"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 REASON=$(echo "$LAST_STDOUT" | jq -r '.reason // ""' 2>/dev/null || echo "")
-if [ "$DEC" = "block" ] && echo "$REASON" | grep -q 'auto-kick.yaml'; then
+if [ "$DEC" = "block" ] && grep -q -- 'auto-kick.yaml' <<<"$REASON"; then
   echo -e "  ${GREEN}PASS${NC} autokick branch unchanged: decision=block + reason mentions auto-kick.yaml"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1162,8 +1162,8 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$PGS_STATE_AFTER" | grep -qF 'stop_reason: policy_gate_stop' \
-   && echo "$PGS_STATE_AFTER" | grep -qF 'boundary: session_end'; then
+if grep -qF -- 'stop_reason: policy_gate_stop' <<<"$PGS_STATE_AFTER" \
+   && grep -qF -- 'boundary: session_end' <<<"$PGS_STATE_AFTER"; then
   echo -e "  ${GREEN}PASS${NC} honour: runtime_metrics session_end / policy_gate_stop appended"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1242,8 +1242,8 @@ p02_create_state "pgs-metric"
 run_pgs_hook "pgs-metric" "policy_gate_stop_last_turn.jsonl" "metric-only" "$TEST_REPO"
 DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$DEC" = "block" ] && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]' \
-   && echo "$LAST_STDERR" | grep -qiF 'would honour'; then
+if [ "$DEC" = "block" ] && grep -qF -- '[POLICY-GATE-STOP]' <<<"$LAST_STDERR" \
+   && grep -qiF -- 'would honour' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} metric-only: decision=block + [POLICY-GATE-STOP] would-honour stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -1312,7 +1312,7 @@ rm -f "$LEGACY_STDOUT" "$LEGACY_STDERR" "/tmp/.autopilot-continue-${LEGACY_SID}"
 DEC=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DEC" != "block" ] \
-   && echo "$LAST_STDERR" | grep -qF '[POLICY-GATE-STOP]'; then
+   && grep -qF -- '[POLICY-GATE-STOP]' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} legacy loopguard: honour still fires (exit 0, no block)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

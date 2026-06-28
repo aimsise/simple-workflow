@@ -115,7 +115,7 @@ assert_decision_allow() {
   state_dir=$(write_state_skeleton "$tmp" "example-slug")
   place_policy "$state_dir" "$tier"
   run_ask_guard "$tmp" "$header"
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -140,7 +140,7 @@ assert_decision_deny() {
   place_policy "$state_dir" "$tier"
   run_ask_guard "$tmp" "$header"
   local denied="false" all_literals_present="true"
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"deny"'; then
+  if grep -q -- '"permissionDecision":"deny"' <<<"$LAST_STDOUT"; then
     denied="true"
   fi
   # AC-11: all four reason literals must be present.
@@ -149,7 +149,7 @@ assert_decision_deny() {
     "header='${header}'" \
     "policy_gate_stop" \
     "autopilot-policy.yaml"; do
-    if ! printf '%s' "$LAST_STDOUT" | grep -qF "$lit"; then
+    if ! grep -qF -- "$lit" <<<"$LAST_STDOUT"; then
       all_literals_present="false"
     fi
   done
@@ -235,8 +235,8 @@ echo "--- Section 2: metric-only mode (2 scenarios) ---"
   set -e
   LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"' \
-     && printf '%s' "$LAST_STDERR" | grep -qF '[ASK-GUARD] metric-only: would deny tier=aggressive header=audit-fail'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT" \
+     && grep -qF -- '[ASK-GUARD] metric-only: would deny tier=aggressive header=audit-fail' <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} (m-a) metric-only deny-cell: stdout=allow + stderr 'would deny' present"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -266,8 +266,8 @@ echo "--- Section 2: metric-only mode (2 scenarios) ---"
   set -e
   LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"' \
-     && ! printf '%s' "$LAST_STDERR" | grep -qF 'metric-only: would deny'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT" \
+     && ! grep -qF -- 'metric-only: would deny' <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} (m-b) metric-only allow-cell: stdout=allow + no 'would deny' log"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -290,7 +290,7 @@ echo "--- Section 3: unknown-header stderr log (1 scenario) ---"
   place_policy "$state_dir" "conservative"
   run_ask_guard "$tmp" "other-unknown"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$LAST_STDERR" | grep -qF '[ASK-GUARD] unknown-header=other-unknown'; then
+  if grep -qF -- '[ASK-GUARD] unknown-header=other-unknown' <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} (u-a) unknown-header stderr contains '[ASK-GUARD] unknown-header=other-unknown'"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -326,7 +326,7 @@ for tier in aggressive moderate conservative; do
     set -e
     LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
     rm -f "$stdout_file" "$stderr_file"
-    if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"'; then
+    if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT"; then
       echo -e "  ${GREEN}PASS${NC} off tier=${tier} header=${header} -> allow"
       TESTS_PASSED=$((TESTS_PASSED + 1))
     else
@@ -357,7 +357,7 @@ done
   set -e
   LAST_STDOUT=$(cat "$stdout_file"); LAST_STDERR=$(cat "$stderr_file")
   rm -f "$stdout_file" "$stderr_file"
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} NAC-4 unknown SW_AUTOPILOT_ASK_GUARD value collapses to allow"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -390,7 +390,7 @@ for header in audit-fail ac-eval ship-review ship-ci eval-dry tkt-quality other-
   else
     expected_decision="allow"
   fi
-  if printf '%s' "$LAST_STDOUT" | grep -q "\"permissionDecision\":\"$expected_decision\""; then
+  if grep -q -- "\"permissionDecision\":\"$expected_decision\"" <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} policy-absent header=${header} -> ${expected_decision} (conservative fallback)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -413,7 +413,7 @@ YAML
   # audit-fail should be allowed under conservative (the fallback).
   run_ask_guard "$tmp" "audit-fail"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} NAC-5 unknown risk_tolerance value -> conservative (audit-fail allowed)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -436,7 +436,7 @@ echo "--- Section 6: NAC-1 / NAC-2 negative scenarios ---"
   register_cleanup "$tmp"
   run_ask_guard "$tmp" "audit-fail"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} NAC-1 outside autopilot context -> allow (is_autopilot_context=false)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -466,7 +466,7 @@ YAML
   place_policy "$dir" "aggressive"
   run_ask_guard "$tmp" "ship-review"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$LAST_STDOUT" | grep -q '"permissionDecision":"allow"'; then
+  if grep -q -- '"permissionDecision":"allow"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} NAC-2 all tickets terminal -> allow (non_terminal=0)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
