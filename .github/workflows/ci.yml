@@ -15,6 +15,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Add swap headroom (shellcheck peaks ~15-24 GB on one test file; 16 GB RAM alone OOM-kills the agent -> "operation was canceled")
+        run: |
+          # tests/test-skill-contracts.sh (~11.7k lines) drives shellcheck's core
+          # dataflow analysis to a ~14-24 GB peak by itself (measured); the 16 GB
+          # ubuntu-latest runner OOM-kills the agent intermittently. A dedicated
+          # 16 GB swapfile lets the kernel page the cold GHC GC copy-space instead
+          # of starving the agent, so the analysis completes (lint surface unchanged).
+          # Durable follow-up: split test-skill-contracts.sh so no single file
+          # exceeds runner RAM (worst half measured ~6 GB).
+          sudo fallocate -l 16G /mnt/swapfile-ci || sudo dd if=/dev/zero of=/mnt/swapfile-ci bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          swapon --show
+          free -h
       - name: Run ShellCheck on hooks
         run: shellcheck --severity=warning hooks/*.sh hooks/lib/*.sh
       - name: Run ShellCheck on tests
