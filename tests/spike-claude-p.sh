@@ -58,7 +58,7 @@ echo "--- Verification 1: skill name resolution ---"
 verify1_result="fail"
 if output=$(claude -p "List available skills. Just print the skill names, one per line." --max-turns 1 2>&1); then
   # At least one known skill name is present in the output
-  if echo "$output" | grep -qiE '(audit|impl|ship|scout|plan2doc)'; then
+  if grep -qiE -- '(audit|impl|ship|scout|plan2doc)' <<<"$output"; then
     verify1_result="pass"
   fi
 fi
@@ -71,7 +71,7 @@ echo "--- Verification 2: backtick expansion ---"
 verify2_result="fail"
 if output=$(cd "$REPO_DIR" && claude -p "Run: git branch --show-current" --max-turns 1 --allowedTools "Bash(git branch:*)" 2>&1); then
   # If a branch name comes back, expansion is working
-  if echo "$output" | grep -qE '[a-zA-Z]'; then
+  if grep -qE -- '[a-zA-Z]' <<<"$output"; then
     verify2_result="pass"
   fi
 fi

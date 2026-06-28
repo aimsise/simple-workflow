@@ -149,7 +149,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 PSF_FUNCS="$(bash -c "source '$PSF_PATH' && declare -F is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file" 2>/dev/null || true)"
 PSF_FUNC_OK="true"
 for fn in is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file; do
-  if ! echo "$PSF_FUNCS" | grep -qE "(^|[[:space:]])${fn}([[:space:]]|$)"; then
+  if ! grep -qE -- "(^|[[:space:]])${fn}([[:space:]]|$)" <<<"$PSF_FUNCS"; then
     PSF_FUNC_OK="false"
     break
   fi
@@ -1445,7 +1445,7 @@ fi
 # AC-2: public function exported
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 RM_FUNC_OUT="$(bash -c "source '$RM_PATH' && declare -F append_runtime_metrics_entry" 2>/dev/null || true)"
-if echo "$RM_FUNC_OUT" | grep -q 'append_runtime_metrics_entry'; then
+if grep -q -- 'append_runtime_metrics_entry' <<<"$RM_FUNC_OUT"; then
   echo -e "  ${GREEN}PASS${NC} runtime-metrics.sh exports append_runtime_metrics_entry"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

@@ -98,7 +98,7 @@ while IFS= read -r match_line; do
     NR==target {print sect; exit}
   ' "$IMPL_SKILL")
   # Accept lines enclosed by migration/bootstrap prose.
-  if echo "$enclosing" | grep -qE '11a|11b|Legacy migration|Bootstrap|Sub-case'; then
+  if grep -qE -- '11a|11b|Legacy migration|Bootstrap|Sub-case' <<<"$enclosing"; then
     continue
   fi
   IMPL_SCOUT_UNSAFE+="$match_line"$'\n'

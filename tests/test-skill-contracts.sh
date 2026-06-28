@@ -120,7 +120,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   if [ "$dmi" = "true" ]; then
     fm_block=$(extract_frontmatter_block "$skill_md")
     has_agent_or_skill="false"
-    if echo "$fm_block" | grep -qE '(Agent|Skill)'; then
+    if grep -qE -- '(Agent|Skill)' <<<"$fm_block"; then
       has_agent_or_skill="true"
     fi
     is_exception="false"
@@ -156,7 +156,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
       has_agent_field="true"
     fi
     has_agent_tool="false"
-    if echo "$fm_block" | grep -qE 'Agent'; then
+    if grep -qE -- 'Agent' <<<"$fm_block"; then
       has_agent_tool="true"
     fi
 
@@ -184,7 +184,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   if [ "$dmi" = "false" ]; then
     fm_block=$(extract_frontmatter_block "$skill_md")
     has_agent_or_skill="false"
-    if echo "$fm_block" | grep -qE '(Agent|Skill)'; then
+    if grep -qE -- '(Agent|Skill)' <<<"$fm_block"; then
       has_agent_or_skill="true"
     fi
     is_exception="false"
@@ -247,7 +247,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   [ -f "$skill_md" ] || continue
 
   fm_block=$(extract_frontmatter_block "$skill_md")
-  if echo "$fm_block" | grep -qE 'AskUserQuestion'; then
+  if grep -qE -- 'AskUserQuestion' <<<"$fm_block"; then
     cat_b1_skills+=("$skill_slug")
     assert_file_contains \
       "$skill_slug: AskUserQuestion in allowed-tools -> has Non-interactive description" \
@@ -274,7 +274,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
 
   body=$(awk 'BEGIN{depth=0} /^---[[:space:]]*$/{depth++;next} depth>=2{print}' "$skill_md")
   # Only target skills that instruct using AskUserQuestion as a tool
-  if echo "$body" | grep -qE '(Use.*AskUserQuestion|AskUserQuestion.*to ask|AskUserQuestion.*unavailable|AskUserQuestion.*fallback)'; then
+  if grep -qE -- '(Use.*AskUserQuestion|AskUserQuestion.*to ask|AskUserQuestion.*unavailable|AskUserQuestion.*fallback)' <<<"$body"; then
     assert_file_contains \
       "$skill_slug: body instructs AskUserQuestion usage -> has Non-interactive description" \
       "$skill_md" \
@@ -302,7 +302,7 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   [ -f "$skill_md" ] || continue
 
   fm_block=$(extract_frontmatter_block "$skill_md")
-  if ! echo "$fm_block" | grep -qE '\bSkill\b'; then
+  if ! grep -qE -- '\bSkill\b' <<<"$fm_block"; then
     continue
   fi
 
@@ -409,14 +409,14 @@ for skill_dir in "$REPO_DIR"/skills/*/; do
   [ -f "$skill_md" ] || continue
 
   fm_block=$(extract_frontmatter_block "$skill_md")
-  if ! echo "$fm_block" | grep -qE '\bAgent\b'; then
+  if ! grep -qE -- '\bAgent\b' <<<"$fm_block"; then
     continue
   fi
 
   body=$(awk 'BEGIN{depth=0} /^---[[:space:]]*$/{depth++;next} depth>=2{print}' "$skill_md")
 
   for agent_name in $KNOWN_AGENTS; do
-    if echo "$body" | grep -qF "$agent_name"; then
+    if grep -qF -- "$agent_name" <<<"$body"; then
       agent_md="$REPO_DIR/agents/$agent_name.md"
       result="false"
       if [ -f "$agent_md" ]; then
@@ -664,10 +664,10 @@ TUNE_AGENT_FM=$(extract_frontmatter_block "$TUNE_AGENT")
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 has_edit="false"
 has_bash_star="false"
-if echo "$TUNE_AGENT_FM" | grep -qE '^\s*-\s*Edit'; then
+if grep -qE -- '^\s*-\s*Edit' <<<"$TUNE_AGENT_FM"; then
   has_edit="true"
 fi
-if echo "$TUNE_AGENT_FM" | grep -qE 'Bash\(\*\)'; then
+if grep -qE -- 'Bash\(\*\)' <<<"$TUNE_AGENT_FM"; then
   has_bash_star="true"
 fi
 if [ "$has_edit" = "false" ] && [ "$has_bash_star" = "false" ]; then
@@ -1428,13 +1428,13 @@ for skill_name in "${ORCHESTRATOR_SKILLS[@]}"; do
   ' "$skill_md")
 
   has_skip_header="false"
-  if echo "$section" | grep -qE 'Skip consequence'; then
+  if grep -qE -- 'Skip consequence' <<<"$section"; then
     has_skip_header="true"
   fi
 
   # Check for at least one consequence keyword in the section
   has_consequence_language="false"
-  if echo "$section" | grep -qiE '(detected|trigger|missing|marked failed|bypass|violation|fails)'; then
+  if grep -qiE -- '(detected|trigger|missing|marked failed|bypass|violation|fails)' <<<"$section"; then
     has_consequence_language="true"
   fi
 
@@ -1890,7 +1890,7 @@ x_check_targets() {
   local target
   for target in "${targets[@]}"; do
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    if [ -n "$col1" ] && printf '%s\n' "$col1" | grep -qF -- "$target"; then
+    if [ -n "$col1" ] && grep -qF -- "$target" <<<"$col1"; then
       echo -e "  ${GREEN}PASS${NC} X: $rel_path Mandatory table references target '$target'"
       TESTS_PASSED=$((TESTS_PASSED + 1))
     else
@@ -2204,7 +2204,7 @@ else
   # Guard 1: the normal path must emit the [tiktoken] label on stderr.
   # If it does not, the helper has silently fallen back, which the numerical
   # agreement test alone cannot detect (Test-the-test FU15-6 guard).
-  if ! printf '%s' "$ab_normal_stderr" | grep -qF "[tiktoken]"; then
+  if ! grep -qF -- "[tiktoken]" <<<"$ab_normal_stderr"; then
     echo -e "  ${RED}FAIL${NC} AB: tiktoken available but normal-path stderr did not contain '[tiktoken]' label"
     echo -e "       Helper: $AB_HELPER"
     echo -e "       normal-path stderr: $ab_normal_stderr"
@@ -2261,7 +2261,7 @@ echo "--- Cat AC: /brief mode={auto|manual} v6.0.0 contract ---"
 echo "--- CT-MODE-1 ---"
 ct_mode_1_hint=$(extract_frontmatter_field "$REPO_DIR/skills/brief/SKILL.md" "argument-hint")
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$ct_mode_1_hint" | grep -qF 'mode=auto|manual'; then
+if grep -qF -- 'mode=auto|manual' <<<"$ct_mode_1_hint"; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-1: skills/brief/SKILL.md argument-hint contains 'mode=auto|manual' (AC-S1)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -2362,7 +2362,7 @@ fi
 echo "--- CT-MODE-10 ---"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ct_mode_10_section=$(awk '/^## \[6\.0\.0\]/{flag=1; next} /^## \[/{flag=0} flag' "$REPO_DIR/CHANGELOG.md")
-if printf '%s' "$ct_mode_10_section" | grep -q 'BREAKING CHANGES'; then
+if grep -q -- 'BREAKING CHANGES' <<<"$ct_mode_10_section"; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-10: CHANGELOG.md [6.0.0] entry contains 'BREAKING CHANGES' subsection (AC-S10)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -2407,7 +2407,7 @@ echo ""
 echo "--- CT-MODE-13 ---"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ct_mode_13_header=$(awk '/^## \[6\.0\.0\]/{print; exit}' "$REPO_DIR/CHANGELOG.md")
-if printf '%s' "$ct_mode_13_header" | grep -q 'YYYY-MM-DD'; then
+if grep -q -- 'YYYY-MM-DD' <<<"$ct_mode_13_header"; then
   echo -e "  ${RED}FAIL${NC} CT-MODE-13: CHANGELOG.md [6.0.0] header still has the 'YYYY-MM-DD' placeholder — set the release date before shipping"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 else
@@ -2802,7 +2802,7 @@ AE_INVALID_FIXTURE="$REPO_DIR/tests/fixtures/autopilot-log-invalid-reason.md"
 if [ -f "$AE_INVALID_FIXTURE" ]; then
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   ae_inv_scan=$(ae_scan_decisions_table "$AE_INVALID_FIXTURE")
-  if printf '%s\n' "$ae_inv_scan" | grep -q '^INVALID '; then
+  if grep -q -- '^INVALID ' <<<"$ae_inv_scan"; then
     echo -e "  ${GREEN}PASS${NC} AE-3 (test-the-test): scanner detects non-canonical reason in tests/fixtures/autopilot-log-invalid-reason.md"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -2827,7 +2827,7 @@ cat > "$ae_neg1_tmp" <<'AE_NEG1_EOF'
 AE_NEG1_EOF
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ae_neg1_scan=$(ae_scan_decisions_table "$ae_neg1_tmp")
-if printf '%s\n' "$ae_neg1_scan" | grep -q '^INVALID '; then
+if grep -q -- '^INVALID ' <<<"$ae_neg1_scan"; then
   echo -e "  ${RED}FAIL${NC} AE-4 (negative AC 1): scanner false-positived on an HTML-comment-scoped reason=foo"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 else
@@ -2854,7 +2854,7 @@ cat > "$ae_neg2_tmp" <<'AE_NEG2_EOF'
 AE_NEG2_EOF
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ae_neg2_scan=$(ae_scan_decisions_table "$ae_neg2_tmp")
-if printf '%s\n' "$ae_neg2_scan" | grep -q '^INVALID '; then
+if grep -q -- '^INVALID ' <<<"$ae_neg2_scan"; then
   echo -e "  ${RED}FAIL${NC} AE-5 (negative AC 2): scanner false-positived on a fenced-block reason=foo"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 else
@@ -3078,7 +3078,7 @@ assert_helper_error() {
   set -e
   stderr_content=$(cat "$stderr_file")
   rm -f "$stderr_file"
-  if [ "$rc" -ne 0 ] && echo "$stderr_content" | grep -qF -- "$expected_substr"; then
+  if [ "$rc" -ne 0 ] && grep -qF -- "$expected_substr" <<<"$stderr_content"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -3127,7 +3127,7 @@ assert_helper_stdout \
 # Probe the warning-titles channel — backticks MUST round-trip.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 warning_out=$(bash "$HELPER" --warning-titles "$FIX_DIR/backtick-title.md" 2>/dev/null || true)
-if echo "$warning_out" | grep -qF '`SECRET_TOKEN`'; then
+if grep -qF -- '`SECRET_TOKEN`' <<<"$warning_out"; then
   echo -e "  ${GREEN}PASS${NC} parser: --warning-titles preserves backticks in title (Edge Case 3)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -3318,7 +3318,7 @@ fi
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 LT_STOP_REASON_BLOCK=$(awk '/^## Stop Reason[[:space:]]*$/{found=1; next} found && /^## /{exit} found {print}' "$LT_AUTOPILOT_SKILL")
 if [ -n "$LT_STOP_REASON_BLOCK" ] \
-   && echo "$LT_STOP_REASON_BLOCK" | grep -qE 'references/stop-reason-taxonomy\.md'; then
+   && grep -qE -- 'references/stop-reason-taxonomy\.md' <<<"$LT_STOP_REASON_BLOCK"; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-LT-2: SKILL.md '## Stop Reason' section cites references/stop-reason-taxonomy.md"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -3599,8 +3599,8 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 CP2_OUT=$(grep -nE '^##+\s+Context.Pressure Response Paths|^## Stop Reason$' "$CP_AUTOPILOT_SKILL" | head -2)
 CP2_LINE_1=$(echo "$CP2_OUT" | sed -n '1p')
 CP2_LINE_2=$(echo "$CP2_OUT" | sed -n '2p')
-if echo "$CP2_LINE_1" | grep -qiE 'Context.Pressure Response Paths' \
-   && echo "$CP2_LINE_2" | grep -q '## Stop Reason'; then
+if grep -qiE -- 'Context.Pressure Response Paths' <<<"$CP2_LINE_1" \
+   && grep -q -- '## Stop Reason' <<<"$CP2_LINE_2"; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-CP-2 (PX-01 AC #2): '## Context-Pressure Response Paths' precedes '## Stop Reason'"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -3619,7 +3619,7 @@ CP3_BODY=$(awk '/^## Context-Pressure Response Paths/{found=1; next} found && /^
 CP3_OK="true"
 CP3_MISSING=""
 for needle in 'pre-compact-save.sh' '[RESUME] Skipping' 'unexpected_error.action: stop' 'AskUserQuestion'; do
-  if ! echo "$CP3_BODY" | grep -qF -- "$needle"; then
+  if ! grep -qF -- "$needle" <<<"$CP3_BODY"; then
     CP3_OK="false"
     CP3_MISSING="$CP3_MISSING [$needle]"
   fi
@@ -3803,17 +3803,17 @@ while IFS= read -r line; do
     tests/test-helper.sh) continue ;;
   esac
   # Skip comment lines.
-  if printf '%s\n' "$match" | grep -qE '^[[:space:]]*#'; then
+  if grep -qE -- '^[[:space:]]*#' <<<"$match"; then
     continue
   fi
   # Skip echo/printf message lines that mention `grep -c` as documentation —
   # the grep -c lives inside a string literal, not as an executed command.
-  if printf '%s\n' "$match" | grep -qE '^[[:space:]]*(echo|printf)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)?"'; then
+  if grep -qE -- '^[[:space:]]*(echo|printf)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)?"' <<<"$match"; then
     continue
   fi
   # Allowed: inline guard on the same line. NB: `echo 0` is NOT in this
   # list — see the header comment above for why.
-  if printf '%s\n' "$match" | grep -qE '\|\|[[:space:]]*(true|count=0|return[[:space:]]+0|exit[[:space:]]+[0-9]+|count_matches)'; then
+  if grep -qE -- '\|\|[[:space:]]*(true|count=0|return[[:space:]]+0|exit[[:space:]]+[0-9]+|count_matches)' <<<"$match"; then
     continue
   fi
   # Allowed: previous non-blank line is `set +e`.
@@ -3824,7 +3824,7 @@ while IFS= read -r line; do
     prev_line="$(sed -n "${scan_lineno}p" "$REPO_DIR/$file" 2>/dev/null)"
     [ -n "$(printf '%s' "$prev_line" | tr -d '[:space:]')" ] && break
   done
-  if printf '%s\n' "$prev_line" | grep -qE '^[[:space:]]*set[[:space:]]+\+e[[:space:]]*$'; then
+  if grep -qE -- '^[[:space:]]*set[[:space:]]+\+e[[:space:]]*$' <<<"$prev_line"; then
     continue
   fi
   CT_GREP_C_VIOLATIONS+=("$file:$lineno: $(printf '%s' "$match" | sed 's/^[[:space:]]*//')")
@@ -4133,8 +4133,8 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 ICG_PASS=true
 ICG_RELEASE_LINES=$(grep -F '[IMPL-CHECKPOINT-RELEASE] Pipeline halted' "$ICG_HOOK" || true)
 [ -n "$ICG_RELEASE_LINES" ] || ICG_PASS=false
-printf '%s\n' "$ICG_RELEASE_LINES" | grep -qF 'Resume with: /impl' || ICG_PASS=false
-printf '%s\n' "$ICG_RELEASE_LINES" | grep -qF 'Resume with: /autopilot' || ICG_PASS=false
+grep -qF -- 'Resume with: /impl' <<<"$ICG_RELEASE_LINES" || ICG_PASS=false
+grep -qF -- 'Resume with: /autopilot' <<<"$ICG_RELEASE_LINES" || ICG_PASS=false
 if [ "$ICG_PASS" = true ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-ICG-6: impl-checkpoint-guard.sh emits both Resume variants on Pipeline-halted lines"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -4341,7 +4341,7 @@ SS6_FINAL_STATUS=$(grep -m1 '^## Status:' "$SS6_REPORT" 2>/dev/null || echo "")
 SS6_CONTRACT_VIOLATION=$(echo "$SS6_OUTPUT" | count_matches '\[CONTRACT-VIOLATION\]')
 if [ "$SS6_EXIT" -eq 0 ] && \
    [ "$SS6_COUNT" -eq 2 ] && \
-   echo "$SS6_FINAL_STATUS" | grep -qE '^## Status: (PASS|FAIL|FAIL-CRITICAL|PASS-WITH-CAVEATS)$' && \
+   grep -qE -- '^## Status: (PASS|FAIL|FAIL-CRITICAL|PASS-WITH-CAVEATS)$' <<<"$SS6_FINAL_STATUS" && \
    [ "$SS6_CONTRACT_VIOLATION" -eq 0 ]; then
   echo -e "  ${GREEN}PASS${NC} CT-MODE-SINGLESHOT-6: recovery smoke — 2 invocations, terminal status='$SS6_FINAL_STATUS', no CONTRACT-VIOLATION"
   TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -5065,7 +5065,7 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 AC07_TMP=$(mktemp -d)
 _ac_make_state_with_prior_ship "$AC07_TMP/.simple-workflow/backlog/briefs/active/dummy"
 AC07_OUT=$(cd "$AC07_TMP" && env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c 'echo '"'"'{"tool_input":{"skill":"simple-workflow:scout"}}'"'"' | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1 || true)
-if echo "$AC07_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC07_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-07: primary — env unset + non-first scout reaches dispatcher (default on)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5157,7 +5157,7 @@ AC12_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simp
 printf '%s' "$AC12_NEW" > "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC12_INPUT=$(jq -n --arg fp "$AC12_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC12_OUT=$(cd "$AC12_TMP" && INPUT="$AC12_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC12_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- 'state-lie protection' <<<"$AC12_OUT" && ! grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC12_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-12: safety-net — state-lie protection blocks inject when done/ dir absent"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5182,7 +5182,7 @@ AC12B_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .sim
 printf '%s' "$AC12B_NEW" > "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC12B_INPUT=$(jq -n --arg fp "$AC12B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC12B_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC12B_OUT=$(cd "$AC12B_TMP" && INPUT="$AC12B_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC12B_OUT" | grep -qE 'state-lie protection' && ! echo "$AC12B_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- 'state-lie protection' <<<"$AC12B_OUT" && ! grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC12B_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-12b: product_backlog-form ticket_dir state-lie caught (no inject)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5203,7 +5203,7 @@ date +%s > "$AC13_TMP/.simple-workflow/backlog/briefs/active/dummy/.auto-compact
 AC13_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
 AC13_INPUT=$(jq -n --arg fp "$AC13_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC13_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC13_OUT=$(cd "$AC13_TMP" && INPUT="$AC13_INPUT" TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC13_OUT" | grep -qE 'dedup: fresh sentinel present' && ! echo "$AC13_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- 'dedup: fresh sentinel present' <<<"$AC13_OUT" && ! grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC13_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-13: safety-net — dedup against fresh primary sentinel"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5223,7 +5223,7 @@ touch "$AC14_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.ya
 AC14_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
 AC14_INPUT=$(jq -n --arg fp "$AC14_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC14_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC14_OUT=$(cd "$AC14_TMP" && INPUT="$AC14_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC14_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC14_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-14: safety-net — env unset + valid state-write + done/ dir reaches dispatcher"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5246,7 +5246,7 @@ touch "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.y
 AC14B_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps: {scout: completed, impl: completed, ship: completed}\n')
 AC14B_INPUT=$(jq -n --arg fp "$AC14B_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC14B_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC14B_OUT=$(cd "$AC14B_TMP" && INPUT="$AC14B_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC14B_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC14B_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-14b: safety-net — inline-flow ship-completed payload reaches dispatcher (Gate 2 flow tolerance)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5266,7 +5266,8 @@ TESTS_TOTAL=$((TESTS_TOTAL + 1))
 AC15_OK=1
 AC15_REASON=""
 for backend in tmux screen kitty wezterm iterm2; do
-  if ! awk '/^_inject_detect_backend\(\)/,/^\}/' "$AC_LIB" | grep -qE "echo \"$backend\""; then
+  __ac15_hay=$(awk '/^_inject_detect_backend\(\)/,/^\}/' "$AC_LIB")
+  if ! grep -qE -- "echo \"$backend\"" <<<"$__ac15_hay"; then
     AC15_OK=0
     AC15_REASON="missing branch: $backend"
     break
@@ -5295,16 +5296,16 @@ AC16_MISSING=""
 for AC16_HOOK_PATH in "$AC_HOOK_PRIMARY" "$AC_HOOK_SAFETY"; do
   AC16_HEADER=$(awk 'NR==1{next} /^[^#]/ && !/^[[:space:]]*$/ {exit} {print}' "$AC16_HOOK_PATH")
   AC16_NAME=$(basename "$AC16_HOOK_PATH")
-  if ! echo "$AC16_HEADER" | grep -qiE 'kill.switch|SW_AUTO_COMPACT_ON_SHIP_MODE'; then
+  if ! grep -qiE -- 'kill.switch|SW_AUTO_COMPACT_ON_SHIP_MODE' <<<"$AC16_HEADER"; then
     AC16_OK=0; AC16_MISSING="${AC16_MISSING} ${AC16_NAME}:kill-switch"
   fi
   # The safety-net hook inherits the PTY dependency narrative by reference
   # to the primary; accept either explicit "PTY" or a reference to
   # "inject-keys" / "PTY injection".
-  if ! echo "$AC16_HEADER" | grep -qiE 'PTY|inject_keys|injection'; then
+  if ! grep -qiE -- 'PTY|inject_keys|injection' <<<"$AC16_HEADER"; then
     AC16_OK=0; AC16_MISSING="${AC16_MISSING} ${AC16_NAME}:PTY"
   fi
-  if ! echo "$AC16_HEADER" | grep -qiE 'silent no-op|silent.*no.op|never block'; then
+  if ! grep -qiE -- 'silent no-op|silent.*no.op|never block' <<<"$AC16_HEADER"; then
     AC16_OK=0; AC16_MISSING="${AC16_MISSING} ${AC16_NAME}:silent-no-op"
   fi
 done
@@ -5401,10 +5402,10 @@ touch "$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/autopilot-state
 date +%s > "$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
 AC19_OUT=$(cd "$AC19_TMPDIR" && bash -c 'echo "{}" | bash "'"$REPO_DIR"'/hooks/autopilot-continue.sh"' 2>&1)
 AC19_SENTINEL_AFTER="$AC19_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
-if ! echo "$AC19_OUT" | grep -qE '\[AUTO-COMPACT-YIELD\] sentinel found'; then
+if ! grep -qE -- '\[AUTO-COMPACT-YIELD\] sentinel found' <<<"$AC19_OUT"; then
   AC19_OK=0; AC19_MISSING="${AC19_MISSING} fresh-yield-log"
 fi
-if echo "$AC19_OUT" | grep -qE '"decision"[[:space:]]*:[[:space:]]*"block"'; then
+if grep -qE -- '"decision"[[:space:]]*:[[:space:]]*"block"' <<<"$AC19_OUT"; then
   AC19_OK=0; AC19_MISSING="${AC19_MISSING} fresh-unexpected-block-decision"
 fi
 if [ -f "$AC19_SENTINEL_AFTER" ]; then
@@ -5434,14 +5435,14 @@ AC19B_STALE_TS=$(( $(date +%s) - 300 ))
 echo "$AC19B_STALE_TS" > "$AC19B_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
 AC19B_OUT=$(cd "$AC19B_TMPDIR" && bash -c 'echo "{}" | bash "'"$REPO_DIR"'/hooks/autopilot-continue.sh"' 2>&1)
 AC19B_SENTINEL_AFTER="$AC19B_TMPDIR/.simple-workflow/backlog/briefs/active/dummy/.auto-compact-pending"
-if ! echo "$AC19B_OUT" | grep -qE '\[AUTO-COMPACT-YIELD\] stale sentinel'; then
+if ! grep -qE -- '\[AUTO-COMPACT-YIELD\] stale sentinel' <<<"$AC19B_OUT"; then
   AC19_OK=0; AC19_MISSING="${AC19_MISSING} stale-log-missing"
 fi
 if [ -f "$AC19B_SENTINEL_AFTER" ]; then
   AC19_OK=0; AC19_MISSING="${AC19_MISSING} stale-sentinel-not-deleted"
 fi
 # Stale should fall through to block-decision (in_progress pipeline).
-if ! echo "$AC19B_OUT" | grep -qE '"decision"[[:space:]]*:[[:space:]]*"block"'; then
+if ! grep -qE -- '"decision"[[:space:]]*:[[:space:]]*"block"' <<<"$AC19B_OUT"; then
   AC19_OK=0; AC19_MISSING="${AC19_MISSING} stale-no-fall-through-to-block"
 fi
 rm -rf "$AC19B_TMPDIR"
@@ -5476,10 +5477,10 @@ AC20_PRIM_OUT=$(cd "$AC20_TMP_PRIM" && \
   TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC20_STUB_DIR:$PATH" \
   bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>/dev/null)
 AC20_PRIM_CTX=$(echo "$AC20_PRIM_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
-if ! echo "$AC20_PRIM_CTX" | grep -qiE 'end this turn|end the turn|end_turn'; then
+if ! grep -qiE -- 'end this turn|end the turn|end_turn' <<<"$AC20_PRIM_CTX"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} primary-additionalContext-end-turn"
 fi
-if ! echo "$AC20_PRIM_CTX" | grep -qiE 'ticket.boundary'; then
+if ! grep -qiE -- 'ticket.boundary' <<<"$AC20_PRIM_CTX"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} primary-additionalContext-ticket-boundary-label"
 fi
 rm -rf "$AC20_TMP_PRIM"
@@ -5493,10 +5494,10 @@ AC20_NEW=$(printf 'tickets:\n  - logical_id: dummy-part-1\n    ticket_dir: .simp
 AC20_INPUT=$(jq -n --arg fp "$AC20_TMP_SAFE/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC20_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC20_SAFE_OUT=$(cd "$AC20_TMP_SAFE" && INPUT="$AC20_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC20_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>/dev/null)
 AC20_SAFE_CTX=$(echo "$AC20_SAFE_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
-if ! echo "$AC20_SAFE_CTX" | grep -qiE 'end this turn|end the turn|end_turn'; then
+if ! grep -qiE -- 'end this turn|end the turn|end_turn' <<<"$AC20_SAFE_CTX"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} safety-additionalContext-end-turn"
 fi
-if ! echo "$AC20_SAFE_CTX" | grep -qiE 'state.write|safety.net'; then
+if ! grep -qiE -- 'state.write|safety.net' <<<"$AC20_SAFE_CTX"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} safety-additionalContext-safety-net-label"
 fi
 rm -rf "$AC20_TMP_SAFE"
@@ -5504,16 +5505,16 @@ rm -rf "$AC20_TMP_SAFE"
 # Axis 2: SKILL.md step e (loop-tail) must carry AUTO-COMPACT EXCEPTION
 # that names BOTH new hooks and their additionalContext labels.
 AC20_LOOPTAIL_BLOCK=$(awk '/^   e\. \*\*Loop-tail CHECKPOINT/,/^4\. /' "$REPO_DIR/skills/autopilot/SKILL.md")
-if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qiE 'AUTO-COMPACT EXCEPTION'; then
+if ! grep -qiE -- 'AUTO-COMPACT EXCEPTION' <<<"$AC20_LOOPTAIL_BLOCK"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-exception-block"
 fi
-if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qE 'pre-next-scout-auto-compact'; then
+if ! grep -qE -- 'pre-next-scout-auto-compact' <<<"$AC20_LOOPTAIL_BLOCK"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-names-primary-hook"
 fi
-if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qE 'post-ship-state-auto-compact'; then
+if ! grep -qE -- 'post-ship-state-auto-compact' <<<"$AC20_LOOPTAIL_BLOCK"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-names-safety-net-hook"
 fi
-if ! echo "$AC20_LOOPTAIL_BLOCK" | grep -qiE 'end the turn|end your turn'; then
+if ! grep -qiE -- 'end the turn|end your turn' <<<"$AC20_LOOPTAIL_BLOCK"; then
   AC20_OK=0; AC20_MISSING="${AC20_MISSING} skill-md-end-turn-instruction"
 fi
 
@@ -5556,13 +5557,13 @@ AC21_OUT_C=$(cd "$AC21_TMPDIR" && \
   bash -c 'echo "{\"source\":\"compact\"}" | bash "'"$REPO_DIR"'/hooks/session-start.sh"' 2>&1 >/dev/null)
 AC21_OK=1
 AC21_MISSING=""
-if ! echo "$AC21_OUT_A" | grep -qE '\[SESSION-START-RESUME\] \[inject-keys\] DRY_RUN backend=.+ text=/autopilot my-slug'; then
+if ! grep -qE -- '\[SESSION-START-RESUME\] \[inject-keys\] DRY_RUN backend=.+ text=/autopilot my-slug' <<<"$AC21_OUT_A"; then
   AC21_OK=0; AC21_MISSING="${AC21_MISSING} path-A-resume-missing"
 fi
-if echo "$AC21_OUT_B" | grep -qE '\[SESSION-START-RESUME\]'; then
+if grep -qE -- '\[SESSION-START-RESUME\]' <<<"$AC21_OUT_B"; then
   AC21_OK=0; AC21_MISSING="${AC21_MISSING} path-B-startup-spurious-inject"
 fi
-if echo "$AC21_OUT_C" | grep -qE '\[SESSION-START-RESUME\]'; then
+if grep -qE -- '\[SESSION-START-RESUME\]' <<<"$AC21_OUT_C"; then
   AC21_OK=0; AC21_MISSING="${AC21_MISSING} path-C-opt-out-leaked"
 fi
 if [ "$AC21_OK" = "1" ]; then
@@ -5634,19 +5635,19 @@ AC22_OUT_C=$(cd "$AC22_TMPDIR" && \
 AC22_MARKER_C=$(cat "$AC22_MARKER" 2>/dev/null || echo "MISSING")
 AC22_OK=1
 AC22_MISSING=""
-if ! echo "$AC22_OUT_A" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+if ! grep -qE -- '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC22_OUT_A"; then
   AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-A-inject-missing"
 fi
 if [ "${AC22_MARKER_A%%:*}" != "1" ]; then
   AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-A-marker-count-not-1(got=${AC22_MARKER_A%%:*})"
 fi
-if echo "$AC22_OUT_B" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC22_OUT_B"; then
   AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-B-spurious-inject"
 fi
-if ! echo "$AC22_OUT_B" | grep -qiE 'loop suspected|skipping inject'; then
+if ! grep -qiE -- 'loop suspected|skipping inject' <<<"$AC22_OUT_B"; then
   AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-B-loop-log-missing"
 fi
-if ! echo "$AC22_OUT_C" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+if ! grep -qE -- '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC22_OUT_C"; then
   AC22_OK=0; AC22_MISSING="${AC22_MISSING} run-C-inject-missing-after-state-advance"
 fi
 if [ "${AC22_MARKER_C%%:*}" != "2" ]; then
@@ -5731,24 +5732,24 @@ AC23_OUT_C=$(cd "$AC23_TMPDIR" && INPUT="$AC23_INPUT" TMUX=fake-socket INJECT_KE
 AC23_OK=1
 AC23_MISSING=""
 # Run A: dispatcher reached AND marker count = 1 (one ship: completed).
-if ! echo "$AC23_OUT_A" | grep -qE '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+if ! grep -qE -- '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC23_OUT_A"; then
   AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-A-inject-missing"
 fi
 if [ "${AC23_MARKER_A%%:*}" != "1" ]; then
   AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-A-marker-count-not-1(got=${AC23_MARKER_A%%:*})"
 fi
 # Run B: primary must skip (shared marker says count=1 already).
-if echo "$AC23_OUT_B" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC23_OUT_B"; then
   AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-B-primary-spurious-inject-after-safety-net"
 fi
-if ! echo "$AC23_OUT_B" | grep -qiE 'loop suspected|skipping inject'; then
+if ! grep -qiE -- 'loop suspected|skipping inject' <<<"$AC23_OUT_B"; then
   AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-B-loop-log-missing"
 fi
 # Run C: safety-net must skip on second consecutive fire.
-if echo "$AC23_OUT_C" | grep -qE '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC23_OUT_C"; then
   AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-C-safety-net-spurious-inject-on-second-fire"
 fi
-if ! echo "$AC23_OUT_C" | grep -qiE 'loop-guard|loop suspected|skipping inject'; then
+if ! grep -qiE -- 'loop-guard|loop suspected|skipping inject' <<<"$AC23_OUT_C"; then
   AC23_OK=0; AC23_MISSING="${AC23_MISSING} run-C-loop-log-missing"
 fi
 if [ "$AC23_OK" = "1" ]; then
@@ -5787,7 +5788,7 @@ AC24_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    ticket_dir: .simple-work
 printf '%s' "$AC24_NEW" > "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC24_INPUT=$(jq -n --arg fp "$AC24_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC24_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC24_OUT=$(cd "$AC24_TMP" && INPUT="$AC24_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC24_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC24_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC24_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- 'state-lie protection.*002-fake' <<<"$AC24_OUT" && ! grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC24_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-24: safety-net — element-scoped state-lie protection blocks multi-ticket payload when ANY element lies (CD-1 fix)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5823,7 +5824,7 @@ AC25_NEW=$(printf 'tickets:\n  - logical_id: T-001\n    steps:\n      ship: comp
 printf '%s' "$AC25_NEW" > "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml"
 AC25_INPUT=$(jq -n --arg fp "$AC25_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC25_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC25_OUT=$(cd "$AC25_TMP" && INPUT="$AC25_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC25_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC25_OUT" | grep -qE 'state-lie protection.*002-fake' && ! echo "$AC25_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- 'state-lie protection.*002-fake' <<<"$AC25_OUT" && ! grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC25_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-25: safety-net — element-scoped parser pairs ship/ticket_dir in any order within element (CD-2 fix)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -5853,11 +5854,11 @@ AC26_OUT_NOPANE=$(env -u TMUX_PANE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TES
 AC26_OK=1
 AC26_MISSING=""
 # Path A: TMUX_PANE set -> target value appears in DRY_RUN log.
-if ! echo "$AC26_OUT_TMUX" | grep -qE 'backend=tmux target=%42 text=/compact'; then
+if ! grep -qE -- 'backend=tmux target=%42 text=/compact' <<<"$AC26_OUT_TMUX"; then
   AC26_OK=0; AC26_MISSING="${AC26_MISSING} tmux-pane-missing-from-log"
 fi
 # Path B: TMUX_PANE absent -> log still emitted with empty target (no crash).
-if ! echo "$AC26_OUT_NOPANE" | grep -qE 'backend=tmux target= text=/compact'; then
+if ! grep -qE -- 'backend=tmux target= text=/compact' <<<"$AC26_OUT_NOPANE"; then
   AC26_OK=0; AC26_MISSING="${AC26_MISSING} tmux-no-pane-fallback-broken"
 fi
 # Path C: source contains the targeted invocation for both backends so a
@@ -5924,11 +5925,11 @@ AC27_COMPACT_LITERAL='`/compact` has been queued'
 AC27_OK=1
 AC27_MISSING=""
 # Both labels appear verbatim in the respective hook output.
-echo "$AC27_PRIM_CTX" | grep -qF "$AC27_PRIM_LABEL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-label-in-hook"; }
-echo "$AC27_SAFE_CTX" | grep -qF "$AC27_SAFE_LABEL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-label-in-hook"; }
+grep -qF -- "$AC27_PRIM_LABEL" <<<"$AC27_PRIM_CTX" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-label-in-hook"; }
+grep -qF -- "$AC27_SAFE_LABEL" <<<"$AC27_SAFE_CTX" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-label-in-hook"; }
 # Both hooks include the /compact-queued literal.
-echo "$AC27_PRIM_CTX" | grep -qF "$AC27_COMPACT_LITERAL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-compact-literal-in-hook"; }
-echo "$AC27_SAFE_CTX" | grep -qF "$AC27_COMPACT_LITERAL" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-compact-literal-in-hook"; }
+grep -qF -- "$AC27_COMPACT_LITERAL" <<<"$AC27_PRIM_CTX" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-compact-literal-in-hook"; }
+grep -qF -- "$AC27_COMPACT_LITERAL" <<<"$AC27_SAFE_CTX" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-compact-literal-in-hook"; }
 # Same three literals appear in SKILL.md (byte-for-byte; grep -F).
 grep -qF "$AC27_PRIM_LABEL" "$AC_SKILLMD" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} prim-label-in-skillmd"; }
 grep -qF "$AC27_SAFE_LABEL" "$AC_SKILLMD" || { AC27_OK=0; AC27_MISSING="${AC27_MISSING} safety-label-in-skillmd"; }
@@ -5983,7 +5984,7 @@ AC28_OUT=$(cd "$AC28_TMP" && INPUT="$AC28_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_
 AC28_OK=1
 AC28_MISSING=""
 # Dispatcher reached.
-if ! echo "$AC28_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if ! grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC28_OUT"; then
   AC28_OK=0; AC28_MISSING="${AC28_MISSING} dispatcher-not-reached"
 fi
 # Sentinel + marker must land in brief-A, NOT brief-B (the mtime-winner).
@@ -6045,14 +6046,14 @@ AC30_OUT=$(cd "$AC30_TMP" && INPUT="$AC30_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_
 AC30_CTX=$(echo "$AC30_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
 AC30_OK=1
 AC30_MISSING=""
-if ! echo "$AC30_CTX" | grep -qF 'FINAL ticket of this pipeline'; then
+if ! grep -qF -- 'FINAL ticket of this pipeline' <<<"$AC30_CTX"; then
   AC30_OK=0; AC30_MISSING="${AC30_MISSING} last-ticket-literal-missing"
 fi
-if ! echo "$AC30_CTX" | grep -qF 'post-loop phase FIRST'; then
+if ! grep -qF -- 'post-loop phase FIRST' <<<"$AC30_CTX"; then
   AC30_OK=0; AC30_MISSING="${AC30_MISSING} post-loop-phase-FIRST-missing"
 fi
 # Last-ticket additionalContext MUST NOT contain the non-last copy.
-if echo "$AC30_CTX" | grep -qF "next ticket's preamble"; then
+if grep -qF -- "next ticket's preamble" <<<"$AC30_CTX"; then
   AC30_OK=0; AC30_MISSING="${AC30_MISSING} non-last-copy-leaked-into-last"
 fi
 # SKILL.md AUTO-COMPACT EXCEPTION must reference the last-ticket sub-variant.
@@ -6110,13 +6111,13 @@ AC31_OUT=$(cd "$AC31_TMP" && INPUT="$AC31_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_
 AC31_CTX=$(echo "$AC31_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
 AC31_OK=1
 AC31_MISSING=""
-if ! echo "$AC31_CTX" | grep -qF "next ticket's preamble"; then
+if ! grep -qF -- "next ticket's preamble" <<<"$AC31_CTX"; then
   AC31_OK=0; AC31_MISSING="${AC31_MISSING} non-last-copy-missing"
 fi
-if echo "$AC31_CTX" | grep -qF 'FINAL ticket of this pipeline'; then
+if grep -qF -- 'FINAL ticket of this pipeline' <<<"$AC31_CTX"; then
   AC31_OK=0; AC31_MISSING="${AC31_MISSING} last-ticket-literal-leaked-into-non-last"
 fi
-if echo "$AC31_CTX" | grep -qF 'post-loop phase FIRST'; then
+if grep -qF -- 'post-loop phase FIRST' <<<"$AC31_CTX"; then
   AC31_OK=0; AC31_MISSING="${AC31_MISSING} post-loop-phase-leaked-into-non-last"
 fi
 if [ "$AC31_OK" = "1" ]; then
@@ -6248,10 +6249,10 @@ AC35_INPUT=$(jq -n --arg fp "$AC35_TMP/.simple-workflow/backlog/briefs/active/du
 AC35_OUT=$(cd "$AC35_TMP" && INPUT="$AC35_INPUT" SW_AUTO_COMPACT_ON_SHIP_MODE=metric-only TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC35_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
 AC35_OK=1
 AC35_MISSING=""
-if ! echo "$AC35_OUT" | grep -qE 'metric-only'; then
+if ! grep -qE -- 'metric-only' <<<"$AC35_OUT"; then
   AC35_OK=0; AC35_MISSING="${AC35_MISSING} metric-only-label-missing"
 fi
-if echo "$AC35_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC35_OUT"; then
   AC35_OK=0; AC35_MISSING="${AC35_MISSING} dispatcher-spuriously-reached"
 fi
 if [ "$AC35_OK" = "1" ]; then
@@ -6286,7 +6287,7 @@ touch "$AC36_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.ya
 AC36_NEW=$(printf 'tickets:\n  - logical_id: a-1\n    ticket_dir: .simple-workflow/backlog/active/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
 AC36_INPUT=$(jq -n --arg fp "$AC36_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC36_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC36_OUT=$(cd "$AC36_TMP" && INPUT="$AC36_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC36_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC36_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend=' && ! echo "$AC36_OUT" | grep -qE 'state-lie protection'; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC36_OUT" && ! grep -qE -- 'state-lie protection' <<<"$AC36_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-36: safety-net Gate 5 active→done rewrite — ticket_dir under active/ with done/ counterpart present reaches dispatcher"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -6317,7 +6318,7 @@ echo "$AC37_STALE_TS" > "$AC37_TMP/.simple-workflow/backlog/briefs/active/dummy/
 AC37_NEW=$(printf 'tickets:\n  - logical_id: a-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
 AC37_INPUT=$(jq -n --arg fp "$AC37_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg ns "$AC37_NEW" '{tool_input:{file_path:$fp,new_string:$ns}}')
 AC37_OUT=$(cd "$AC37_TMP" && INPUT="$AC37_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC37_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC37_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend=' && ! echo "$AC37_OUT" | grep -qE 'dedup: fresh sentinel'; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC37_OUT" && ! grep -qE -- 'dedup: fresh sentinel' <<<"$AC37_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-37: safety-net Gate 6 — stale sentinel (>120s) does NOT block inject"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -6345,7 +6346,7 @@ touch "$AC38_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.ya
 AC38_CONTENT=$(printf 'tickets:\n  - logical_id: a-1\n    ticket_dir: .simple-workflow/backlog/done/dummy/001-shipped\n    status: completed\n    steps:\n      ship: completed\n')
 AC38_INPUT=$(jq -n --arg fp "$AC38_TMP/.simple-workflow/backlog/briefs/active/dummy/autopilot-state.yaml" --arg c "$AC38_CONTENT" '{tool_input:{file_path:$fp,content:$c}}')
 AC38_OUT=$(cd "$AC38_TMP" && INPUT="$AC38_INPUT" env -u SW_AUTO_COMPACT_ON_SHIP_MODE TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC38_STUB_DIR:$PATH" bash -c "printf '%s' \"\$INPUT\" | bash \"$AC_HOOK_SAFETY\"" 2>&1 || true)
-if echo "$AC38_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend='; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC38_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-38: safety-net Write tool — tool_input.content carries ship: completed and reaches dispatcher"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -6373,7 +6374,7 @@ echo "1:${AC39_STALE_TS}" > "$AC39_TMP/.simple-workflow/backlog/briefs/active/du
 AC39_OUT=$(cd "$AC39_TMP" && \
   TMUX=fake-socket INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC39_STUB_DIR:$PATH" \
   bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>&1)
-if echo "$AC39_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend=' && ! echo "$AC39_OUT" | grep -qE 'state-check.*loop suspected'; then
+if grep -qE -- '\[inject-keys\] DRY_RUN backend=' <<<"$AC39_OUT" && ! grep -qE -- 'state-check.*loop suspected' <<<"$AC39_OUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-AC-39: primary Gate 5 — stale marker (>300s) does NOT block inject"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -6395,31 +6396,31 @@ AC40_MISSING=""
 
 # Path A: no backend
 AC40_NO_BACKEND=$(bash -c "source \"$AC_LIB\" && inject_keys_failure_hint '[inject-keys] no backend (TMUX= STY= TERM_PROGRAM= TERM=xterm)'")
-if ! echo "$AC40_NO_BACKEND" | grep -qE 'no supported terminal multiplexer'; then
+if ! grep -qE -- 'no supported terminal multiplexer' <<<"$AC40_NO_BACKEND"; then
   AC40_OK=0; AC40_MISSING="${AC40_MISSING} no-backend-hint(got=${AC40_NO_BACKEND})"
 fi
 
 # Path B: kitty failed
 AC40_KITTY=$(bash -c "source \"$AC_LIB\" && inject_keys_failure_hint '[inject-keys] backend=kitty failed (rc=1)'")
-if ! echo "$AC40_KITTY" | grep -qE 'kitty backend failed.*allow_remote_control'; then
+if ! grep -qE -- 'kitty backend failed.*allow_remote_control' <<<"$AC40_KITTY"; then
   AC40_OK=0; AC40_MISSING="${AC40_MISSING} kitty-hint(got=${AC40_KITTY})"
 fi
 
 # Path C: iterm2 failed
 AC40_ITERM=$(bash -c "source \"$AC_LIB\" && inject_keys_failure_hint '[inject-keys] backend=iterm2 failed (rc=1)'")
-if ! echo "$AC40_ITERM" | grep -qiE 'iTerm2 backend failed.*Automation permission'; then
+if ! grep -qiE -- 'iTerm2 backend failed.*Automation permission' <<<"$AC40_ITERM"; then
   AC40_OK=0; AC40_MISSING="${AC40_MISSING} iterm2-hint(got=${AC40_ITERM})"
 fi
 
 # Path D: wezterm failed
 AC40_WEZ=$(bash -c "source \"$AC_LIB\" && inject_keys_failure_hint '[inject-keys] backend=wezterm failed (rc=2)'")
-if ! echo "$AC40_WEZ" | grep -qE 'WezTerm backend failed.*--no-paste'; then
+if ! grep -qE -- 'WezTerm backend failed.*--no-paste' <<<"$AC40_WEZ"; then
   AC40_OK=0; AC40_MISSING="${AC40_MISSING} wezterm-hint(got=${AC40_WEZ})"
 fi
 
 # Path E: unknown backend failed (catch-all)
 AC40_UNKNOWN=$(bash -c "source \"$AC_LIB\" && inject_keys_failure_hint '[inject-keys] backend=newbackend failed (rc=5)'")
-if ! echo "$AC40_UNKNOWN" | grep -qE 'newbackend backend command failed'; then
+if ! grep -qE -- 'newbackend backend command failed' <<<"$AC40_UNKNOWN"; then
   AC40_OK=0; AC40_MISSING="${AC40_MISSING} unknown-backend-hint(got=${AC40_UNKNOWN})"
 fi
 
@@ -6432,7 +6433,7 @@ AC40_OUT=$(cd "$AC40_TMP" && \
   env -u TMUX -u STY -u TERM_PROGRAM -u KITTY_PID -u TERM PATH="/usr/bin:/bin" \
   bash -c 'echo "{\"tool_input\":{\"skill\":\"simple-workflow:scout\"}}" | bash "'"$AC_HOOK_PRIMARY"'"' 2>/dev/null)
 AC40_CTX=$(echo "$AC40_OUT" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null)
-if ! echo "$AC40_CTX" | grep -qE 'no supported terminal multiplexer'; then
+if ! grep -qE -- 'no supported terminal multiplexer' <<<"$AC40_CTX"; then
   AC40_OK=0; AC40_MISSING="${AC40_MISSING} hook-end-to-end-hint-missing(ctx=${AC40_CTX})"
 fi
 rm -rf "$AC40_TMP"
@@ -6475,10 +6476,10 @@ chmod +x "$AC42_STUB_DIR/tmux"
 # disabling verify keeps the inner inject_keys rc=0 so the outer
 # `set -e` does not abort the script before the assertions run.
 AC42_OUT_A=$(env -u SW_TEST_HARNESS SW_INJECT_KEYS_VERIFY=0 TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
-if echo "$AC42_OUT_A" | grep -qE 'DRY_RUN backend='; then
+if grep -qE -- 'DRY_RUN backend=' <<<"$AC42_OUT_A"; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} dry_run-short-circuited-without-harness-env"
 fi
-if ! echo "$AC42_OUT_A" | grep -qE 'real-tmux-stub'; then
+if ! grep -qE -- 'real-tmux-stub' <<<"$AC42_OUT_A"; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} real-backend-not-invoked-without-harness"
 fi
 
@@ -6487,10 +6488,10 @@ fi
 # P1-1 verify block, so `SW_INJECT_KEYS_VERIFY` is irrelevant here —
 # but we keep the env minimal to mirror real DRY_RUN call sites.
 AC42_OUT_B=$(SW_TEST_HARNESS=1 TMUX=fake-socket TMUX_PANE='%0' INJECT_KEYS_DRY_RUN=1 PATH="$AC42_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
-if ! echo "$AC42_OUT_B" | grep -qE 'DRY_RUN backend=tmux'; then
+if ! grep -qE -- 'DRY_RUN backend=tmux' <<<"$AC42_OUT_B"; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} dry_run-not-short-circuited-with-harness"
 fi
-if echo "$AC42_OUT_B" | grep -qE 'real-tmux-stub'; then
+if grep -qE -- 'real-tmux-stub' <<<"$AC42_OUT_B"; then
   AC42_OK=0; AC42_MISSING="${AC42_MISSING} real-backend-invoked-despite-harness"
 fi
 
@@ -6578,19 +6579,19 @@ AC43_OK=1
 AC43_MISSING=""
 [ "$AC43_STEP1_SENTINEL_PRESENT" = "1" ] || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step1-sentinel-not-written"; }
 [ "$AC43_STEP1_MARKER_PRESENT" = "1" ] || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step1-marker-not-written"; }
-echo "$AC43_OUT_1" | grep -qE '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' \
+grep -qE -- '\[POST-SHIP-STATE-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC43_OUT_1" \
   || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step1-dispatcher-not-reached"; }
 # Step 2: autopilot-continue.sh consumed sentinel, marker survived.
 [ "$AC43_STEP2_SENTINEL_DELETED" = "1" ] || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step2-sentinel-not-consumed"; }
 [ "$AC43_STEP2_MARKER_SURVIVED" = "1" ] || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step2-marker-was-deleted"; }
-echo "$AC43_OUT_2" | grep -qE '\[AUTO-COMPACT-YIELD\] sentinel found' \
+grep -qE -- '\[AUTO-COMPACT-YIELD\] sentinel found' <<<"$AC43_OUT_2" \
   || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step2-no-yield-log"; }
-echo "$AC43_OUT_2" | grep -qE '"decision"[[:space:]]*:[[:space:]]*"block"' \
+grep -qE -- '"decision"[[:space:]]*:[[:space:]]*"block"' <<<"$AC43_OUT_2" \
   && { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step2-spurious-block"; }
 # Step 3: primary short-circuited (no second inject).
-echo "$AC43_OUT_3" | grep -qE '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' \
+grep -qE -- '\[PRE-NEXT-SCOUT-AUTO-COMPACT\] \[inject-keys\] DRY_RUN backend=' <<<"$AC43_OUT_3" \
   && { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step3-double-compact"; }
-echo "$AC43_OUT_3" | grep -qiE 'loop suspected|skipping inject' \
+grep -qiE -- 'loop suspected|skipping inject' <<<"$AC43_OUT_3" \
   || { AC43_OK=0; AC43_MISSING="${AC43_MISSING} step3-no-loop-detection-log"; }
 
 if [ "$AC43_OK" = "1" ]; then
@@ -6745,10 +6746,10 @@ AC46_OUT_KITTY=$(env -u TMUX -u STY KITTY_PID=12345 KITTY_WINDOW_ID=99 TERM=xter
 AC46_OUT_NOWIN=$(env -u TMUX -u STY -u KITTY_WINDOW_ID KITTY_PID=12345 TERM=xterm-kitty INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC46_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 AC46_OK=1
 AC46_MISSING=""
-if ! echo "$AC46_OUT_KITTY" | grep -qE 'backend=kitty target=99 text=/compact'; then
+if ! grep -qE -- 'backend=kitty target=99 text=/compact' <<<"$AC46_OUT_KITTY"; then
   AC46_OK=0; AC46_MISSING="${AC46_MISSING} kitty-window-id-missing-from-log"
 fi
-if ! echo "$AC46_OUT_NOWIN" | grep -qE 'backend=kitty target= text=/compact'; then
+if ! grep -qE -- 'backend=kitty target= text=/compact' <<<"$AC46_OUT_NOWIN"; then
   AC46_OK=0; AC46_MISSING="${AC46_MISSING} kitty-no-window-fallback-broken"
 fi
 if ! grep -qE 'kitty @ send-text --match "id:\$KITTY_WINDOW_ID"' "$AC_LIB"; then
@@ -6780,10 +6781,10 @@ AC47_OUT_WEZTERM=$(env -u TMUX -u STY TERM_PROGRAM=WezTerm WEZTERM_PANE=7 INJECT
 AC47_OUT_NOPANE=$(env -u TMUX -u STY -u WEZTERM_PANE TERM_PROGRAM=WezTerm INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC47_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 AC47_OK=1
 AC47_MISSING=""
-if ! echo "$AC47_OUT_WEZTERM" | grep -qE 'backend=wezterm target=7 text=/compact'; then
+if ! grep -qE -- 'backend=wezterm target=7 text=/compact' <<<"$AC47_OUT_WEZTERM"; then
   AC47_OK=0; AC47_MISSING="${AC47_MISSING} wezterm-pane-missing-from-log"
 fi
-if ! echo "$AC47_OUT_NOPANE" | grep -qE 'backend=wezterm target= text=/compact'; then
+if ! grep -qE -- 'backend=wezterm target= text=/compact' <<<"$AC47_OUT_NOPANE"; then
   AC47_OK=0; AC47_MISSING="${AC47_MISSING} wezterm-no-pane-fallback-broken"
 fi
 if ! grep -qE 'wezterm cli send-text --no-paste --pane-id "\$WEZTERM_PANE"' "$AC_LIB"; then
@@ -6820,10 +6821,10 @@ AC48_OUT_ITERM=$(env -u TMUX -u STY TERM_PROGRAM=iTerm.app ITERM_SESSION_ID='w0t
 AC48_OUT_NOSID=$(env -u TMUX -u STY -u ITERM_SESSION_ID TERM_PROGRAM=iTerm.app INJECT_KEYS_DRY_RUN=1 SW_TEST_HARNESS=1 PATH="$AC48_STUB_DIR:$PATH" bash -c "source \"$AC_LIB\" && inject_keys /compact --enter" 2>&1)
 AC48_OK=1
 AC48_MISSING=""
-if ! echo "$AC48_OUT_ITERM" | grep -qE 'backend=iterm2 target=w0t1p0:AFB4CDF0-7514-4BDD-81C4-8F78F2305A34 text=/compact'; then
+if ! grep -qE -- 'backend=iterm2 target=w0t1p0:AFB4CDF0-7514-4BDD-81C4-8F78F2305A34 text=/compact' <<<"$AC48_OUT_ITERM"; then
   AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-session-id-missing-from-log"
 fi
-if ! echo "$AC48_OUT_NOSID" | grep -qE 'backend=iterm2 target= text=/compact'; then
+if ! grep -qE -- 'backend=iterm2 target= text=/compact' <<<"$AC48_OUT_NOSID"; then
   AC48_OK=0; AC48_MISSING="${AC48_MISSING} iterm-no-session-id-fallback-broken"
 fi
 # Source: AppleScript reads ITERM_TARGET_UUID via system attribute.
@@ -6945,16 +6946,16 @@ AC49_OK=1
 AC49_MISSING=""
 # Must reach DRY_RUN dispatcher (proves Gate 2 + Gate 5 + Gate 7 all passed
 # with the nested schema).
-if ! echo "$AC49_OUT" | grep -qE '\[inject-keys\] DRY_RUN backend=tmux target=%88 text=/compact'; then
+if ! grep -qE -- '\[inject-keys\] DRY_RUN backend=tmux target=%88 text=/compact' <<<"$AC49_OUT"; then
   AC49_OK=0; AC49_MISSING="${AC49_MISSING} dispatcher-not-reached(payload-rejected-by-Gate2-or-Gate7-zero-count)"
 fi
 # Must emit the canonical safety-net additionalContext label.
-if ! echo "$AC49_OUT" | grep -qF 'auto-compact-on-ship (state-write safety-net):'; then
+if ! grep -qF -- 'auto-compact-on-ship (state-write safety-net):' <<<"$AC49_OUT"; then
   AC49_OK=0; AC49_MISSING="${AC49_MISSING} additionalContext-missing"
 fi
 # This test fixture has shipped_count == total_tickets == 1, so the
 # last-ticket sub-variant must fire.
-if ! echo "$AC49_OUT" | grep -qF 'FINAL ticket of this pipeline'; then
+if ! grep -qF -- 'FINAL ticket of this pipeline' <<<"$AC49_OUT"; then
   AC49_OK=0; AC49_MISSING="${AC49_MISSING} last-ticket-branch-not-fired(shipped_count-may-be-0)"
 fi
 rm -rf "$AC49_TMP" "$AC49_STUB_DIR"
@@ -7168,10 +7169,10 @@ AC51_PAYLOAD=$(jq -n \
 
 AC51_STDOUT=$(printf '%s' "$AC51_PAYLOAD" | bash "$REPO_DIR/hooks/pre-state-transition.sh" 2>/dev/null || true)
 
-if ! echo "$AC51_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$AC51_STDOUT"; then
   AC51_OK=0; AC51_MISSING="${AC51_MISSING} no-block-decision(stdout=$AC51_STDOUT)"
 fi
-if ! echo "$AC51_STDOUT" | grep -qE 'unauthorized_skip_with_active_siblings|unauthorized_skip_with_forbidden_rationale'; then
+if ! grep -qE -- 'unauthorized_skip_with_active_siblings|unauthorized_skip_with_forbidden_rationale' <<<"$AC51_STDOUT"; then
   AC51_OK=0; AC51_MISSING="${AC51_MISSING} missing-diagnostic-tag"
 fi
 
@@ -7194,7 +7195,7 @@ AC51_LIST_PAYLOAD=$(jq -n \
   --arg cwd "$AC51_TMP" \
   '{tool_name:"Edit", tool_input:{file_path:$fp, old_string:"", new_string:$ns}, cwd:$cwd, session_id:"test-AC51", transcript_path:""}')
 AC51_LIST_STDOUT=$(printf '%s' "$AC51_LIST_PAYLOAD" | bash "$REPO_DIR/hooks/pre-state-transition.sh" 2>/dev/null || true)
-if ! echo "$AC51_LIST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$AC51_LIST_STDOUT"; then
   AC51_OK=0; AC51_MISSING="${AC51_MISSING} list-form-also-not-blocking(parallel-broken)"
 fi
 
@@ -7393,7 +7394,7 @@ if [ -f "$TEMPLATE_MD" ]; then
     am1_col_line=$(awk -v ln="$am1_cap_line" 'NR==ln+2' "$TEMPLATE_MD")
   fi
   if [ "$am1_order" = "$am1_expected" ] \
-     && echo "$am1_col_line" | grep -qE '^\| *Name *\| *Type *\| *Purpose *\| *Used by *\| *Bound AC\(s\) *\|'; then
+     && grep -qE -- '^\| *Name *\| *Type *\| *Purpose *\| *Used by *\| *Bound AC\(s\) *\|' <<<"$am1_col_line"; then
     am1_result="true"
   fi
 fi
@@ -7424,8 +7425,8 @@ am3_count=$(grep -cE '^Available MCP servers: !`' "$CT_SKILL_MD" || true)
 am3_probe_line=$(grep -E '^Available MCP servers: !`' "$CT_SKILL_MD" | head -1)
 am3_result="false"
 if [ "$am3_count" -eq 1 ] \
-   && echo "$am3_probe_line" | grep -qF '.mcp.json' \
-   && echo "$am3_probe_line" | grep -qF 'mcpServers'; then
+   && grep -qF -- '.mcp.json' <<<"$am3_probe_line" \
+   && grep -qF -- 'mcpServers' <<<"$am3_probe_line"; then
   am3_result="true"
 fi
 assert_true \
@@ -7640,7 +7641,7 @@ assert_true \
 an2_hits=0
 for slug in "${GROUP_C[@]}"; do
   fm=$(extract_frontmatter_block "$REPO_DIR/agents/$slug.md")
-  if echo "$fm" | grep -qE '^tools:'; then
+  if grep -qE -- '^tools:' <<<"$fm"; then
     an2_hits=$((an2_hits + 1))
   fi
 done
@@ -7686,7 +7687,7 @@ for slug in planner researcher; do
   section=$(sed -n '/^## Side-effect ban$/,/^## /{/^## Side-effect ban$/!{/^## /!p;};}' "$agent_md")
   tokens_present=1
   for t in 'git commit' 'curl' 'mcp__Gmail__send'; do
-    if ! echo "$section" | grep -qF "$t"; then
+    if ! grep -qF -- "$t" <<<"$section"; then
       tokens_present=0
       break
     fi
@@ -8072,7 +8073,7 @@ assert_true \
 ao3_line=$(grep -nF 'args-aware shrinkage' "$CT_SKILL_AO" | head -1 | cut -d: -f2-)
 ao3_result="false"
 if [ -n "$ao3_line" ] \
-   && echo "$ao3_line" | grep -qF 'references/agent-spawn-prompts.md'; then
+   && grep -qF -- 'references/agent-spawn-prompts.md' <<<"$ao3_line"; then
   ao3_result="true"
 fi
 assert_true \
@@ -8740,7 +8741,7 @@ assert_true \
 # `chain=on|off`.
 pcn_2_hint=$(extract_frontmatter_field "$PCN_BRIEF_SKILL" "argument-hint")
 pcn_2_result="false"
-printf '%s' "$pcn_2_hint" | grep -qF 'chain=on|off' && pcn_2_result="true"
+grep -qF -- 'chain=on|off' <<<"$pcn_2_hint" && pcn_2_result="true"
 assert_true \
   "PCN-2 (AC-2): skills/brief/SKILL.md argument-hint contains 'chain=on|off' (value: '$pcn_2_hint')" \
   "$pcn_2_result"
@@ -11029,7 +11030,7 @@ _ctw5_drive() {
     '{tool_name:"Write", tool_input:{file_path:$fp, content:$c}, cwd:$cwd, session_id:"test-CTW5", transcript_path:""}')
   out=$(printf '%s' "$payload" | bash "$CTW5_HOOK" 2>/dev/null || true)
   rm -rf "$tmp"
-  if printf '%s' "$out" | grep -q 'unauthorized_skip_with_active_siblings'; then
+  if grep -q -- 'unauthorized_skip_with_active_siblings' <<<"$out"; then
     echo "BLOCKED"
   else
     echo "ALLOWED"
@@ -11487,12 +11488,12 @@ for agf in "$REPO_DIR"/agents/*.md; do
   esac
   # Role detection: scan the description: frontmatter line only.
   desc=$(awk '/^description:/{print; exit}' "$agf")
-  if printf '%s' "$desc" | grep -qiE 'verif|review|evaluat|scanner|audit|truth'; then
+  if grep -qiE -- 'verif|review|evaluat|scanner|audit|truth' <<<"$desc"; then
     fx3sync_checked=$((fx3sync_checked + 1))
     # Token-boundary membership in the Detection-4 denylist alternation: the name must appear as a
     # FULL token (bounded by ( | or )), so a short name that is a substring of a longer entry
     # (ac-evaluator vs ac-evaluator-hi) cannot false-PASS and a removed short name IS caught.
-    if ! printf '%s' "$fx3sync_denyline" | grep -qE "[(|]${aname}[|)]"; then
+    if ! grep -qE -- "[(|]${aname}[|)]" <<<"$fx3sync_denyline"; then
       fx3sync_missing="$fx3sync_missing $aname"
     fi
   fi

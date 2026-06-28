@@ -77,7 +77,7 @@ assert_guard_allow() {
   local at="${4:-}"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_guard "$command" "$cwd" "$at"
-  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -102,12 +102,12 @@ assert_guard_block() {
   local blocked="false"
   if [ "$LAST_EXIT_CODE" -ne 0 ]; then
     blocked="true"
-  elif printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  elif grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     blocked="true"
   fi
   local tag_ok="true"
   if [ -n "$expected_tag" ]; then
-    if ! printf '%s' "$LAST_STDOUT" | grep -q "$expected_tag"; then
+    if ! grep -q -- "$expected_tag" <<<"$LAST_STDOUT"; then
       tag_ok="false"
     fi
   fi
@@ -290,9 +290,9 @@ CMD_F_MUTATE='yq -i ".tickets[].status = \"skipped\"" autopilot-state.yaml'
 # (f1) knob=on -> decision:block with unauthorized_state_mutate_bash + schema ref.
 run_guard_mode on "$CMD_F_MUTATE" "$TMP_F"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_state_mutate_bash' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'docs/state-schema.md'; then
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_state_mutate_bash' <<<"$LAST_STDOUT" \
+   && grep -q -- 'docs/state-schema.md' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} (f1) knob=on: Bash status mutation blocked (unauthorized_state_mutate_bash + docs/state-schema.md ref)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -303,8 +303,8 @@ fi
 # (f2) metric-only (the shipped default) -> NOT blocked; stderr logs would-deny.
 run_guard_mode metric-only "$CMD_F_MUTATE" "$TMP_F"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_state_mutate_bash'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'metric-only: would deny unauthorized_state_mutate_bash' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (f2) metric-only (default): not blocked, logs would-deny to stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -315,7 +315,7 @@ fi
 # (f3) knob=on + legitimate read-only command on a state file -> allowed (no mutation).
 run_guard_mode on "grep skipped autopilot-state.yaml" "$TMP_F"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} (f3) knob=on: read-only 'grep skipped' on state file allowed (no mutation)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -360,8 +360,8 @@ run_guard_fw() {
 # CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare agent_type).
 run_guard_fw on "git commit -m 'review tries to commit'" "$TMP_FW" "doc-verifier"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_commit_by_review_agent'; then
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_commit_by_review_agent' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare doc-verifier, on): git commit blocked"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -372,8 +372,8 @@ fi
 # CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced agent_type -> identical block).
 run_guard_fw on "git add ." "$TMP_FW" "simple-workflow:doc-verifier"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_commit_by_review_agent'; then
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_commit_by_review_agent' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced simple-workflow:doc-verifier, on): git add blocked"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -384,8 +384,8 @@ fi
 # metric-only -> fail-open (no block), stderr logs would-deny.
 run_guard_fw metric-only "git commit -m x" "$TMP_FW" "doc-verifier"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_commit_by_review_agent'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'metric-only: would deny unauthorized_commit_by_review_agent' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT (metric-only): fail-open + stderr would-deny"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -396,7 +396,7 @@ fi
 # off -> fully disabled (no block, no stderr deny line).
 run_guard_fw off "git push origin HEAD" "$TMP_FW" "code-reviewer"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT (off): disabled, no block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -407,7 +407,7 @@ fi
 # CT-FIX2-GIT-WORKTREE-EXEMPT: a review agent's `git worktree add` is NOT blocked.
 run_guard_fw on "git worktree add ../scratch HEAD" "$TMP_FW" "ac-evaluator"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX2-GIT-WORKTREE-EXEMPT (ac-evaluator git worktree add, on): not blocked (carve-out)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -418,7 +418,7 @@ fi
 # Orchestrator-allow: ABSENT agent_type + git commit + nonce present -> allowed.
 run_guard_fw on "git commit -m 'orchestrator'" "$TMP_FW" ""
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX2-ORCH-ALLOWED (empty agent_type + nonce present): git commit allowed"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -496,7 +496,7 @@ NONCE_REL=".simple-workflow/backlog/active/$SLUG_NO/$TICKET_NO/.ship-commit-nonc
 for _m in on metric-only off; do
   run_guard_fw "$_m" ": > $NONCE_REL" "$TMP_NO" ""
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} CT-FIX2-NONCE-BASH-SINK (mode=$_m, write): not blocked"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -505,7 +505,7 @@ for _m in on metric-only off; do
   fi
   run_guard_fw "$_m" "rm -f $NONCE_REL" "$TMP_NO" ""
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} CT-FIX2-NONCE-BASH-SINK (mode=$_m, cleanup): not blocked"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -531,8 +531,8 @@ write_autopilot_state \
 # (1) yq -i current_phase=ship on phase-state.yaml -> blocked under knob=on.
 run_guard_mode on 'yq -i ".current_phase = \"ship\"" phase-state.yaml' "$TMP_BM"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDOUT" | grep -q 'unauthorized_state_mutate_bash'; then
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_state_mutate_bash' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-BASHMIRROR (yq -i current_phase=ship): blocked (advancement-set extension)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -542,7 +542,7 @@ fi
 # (2) read-only grep ship on phase-state.yaml -> NOT blocked (no mutation).
 run_guard_mode on "grep ship phase-state.yaml" "$TMP_BM"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
   echo -e "  ${GREEN}PASS${NC} CT-FIX3-BASHMIRROR (grep ship): read-only not blocked (no _sg_mutation)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

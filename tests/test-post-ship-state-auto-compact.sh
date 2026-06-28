@@ -81,7 +81,7 @@ assert_contains() {
   local needle="$2"
   local haystack="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$haystack" | grep -qF -- "$needle"; then
+  if grep -qF -- "$needle" <<<"$haystack"; then
     echo -e "  ${GREEN}PASS${NC} $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -97,7 +97,7 @@ assert_not_contains() {
   local needle="$2"
   local haystack="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$haystack" | grep -qF -- "$needle"; then
+  if grep -qF -- "$needle" <<<"$haystack"; then
     echo -e "  ${RED}FAIL${NC} $description"
     echo -e "       unexpected substring present: $needle"
     echo -e "       actual haystack:              $haystack"

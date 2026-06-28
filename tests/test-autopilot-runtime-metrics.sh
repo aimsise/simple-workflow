@@ -180,7 +180,7 @@ cp "$FIXTURE_STATE_DIR/multi-ticket.yaml" "$STATE_PATH"
 _run_stop_hook '{"session_id":"test-loop","cache_creation_input_tokens":99}' 5
 _assert_state_contains "stop_reason is loop_guard_release when AUTOPILOT-STALL emitted" "$STATE_PATH" 'stop_reason: loop_guard_release'
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if echo "$LAST_STDERR" | grep -qE '\[AUTOPILOT-STALL\]'; then
+if grep -qE -- '\[AUTOPILOT-STALL\]' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} hook emitted [AUTOPILOT-STALL] marker on stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

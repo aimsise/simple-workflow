@@ -65,8 +65,8 @@ run_skill_guard() {
 assert_block() {
   local desc="$1" tag="$2"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-     && printf '%s' "$LAST_STDOUT" | grep -q "$tag" \
+  if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+     && grep -q -- "$tag" <<<"$LAST_STDOUT" \
      && [ "$LAST_EXIT_CODE" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} $desc"
     TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -80,7 +80,7 @@ assert_block() {
 assert_allow() {
   local desc="$1"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"'; then
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT"; then
     echo -e "  ${GREEN}PASS${NC} $desc"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -118,8 +118,8 @@ assert_block "(namespaced ac-evaluator + simple-workflow:audit, on): blocked" \
 # metric-only -> fail-open + stderr would-deny.
 run_skill_guard metric-only "simple-workflow:impl" "$TMP" "code-reviewer"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$LAST_STDOUT" | grep -q '"decision":"block"' \
-   && printf '%s' "$LAST_STDERR" | grep -q 'metric-only: would deny unauthorized_pipeline_skill_by_review_agent'; then
+if ! grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'metric-only: would deny unauthorized_pipeline_skill_by_review_agent' <<<"$LAST_STDERR"; then
   echo -e "  ${GREEN}PASS${NC} (code-reviewer + simple-workflow:impl, metric-only): fail-open + stderr"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

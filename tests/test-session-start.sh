@@ -641,7 +641,7 @@ case_c10() {
 
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   name="additionalContext contains 'Branch:' substring"
-  if printf '%s' "$ctx" | grep -qF "Branch:"; then
+  if grep -qF -- "Branch:" <<<"$ctx"; then
     report_pass "$name"
   else
     report_fail "$name" "ctx=$ctx"

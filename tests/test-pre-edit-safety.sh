@@ -251,7 +251,7 @@ assert_pii_block_edit() {
   local new_string="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_edit_hook_with_new_string "$file_path" "$new_string"
-  if [ "$LAST_EXIT_CODE" -ne 0 ] && echo "$LAST_STDERR" | grep -qF "pii: absolute home path detected"; then
+  if [ "$LAST_EXIT_CODE" -ne 0 ] && grep -qF -- "pii: absolute home path detected" <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} BLOCK (pii): $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -268,7 +268,7 @@ assert_pii_allow_edit() {
   local new_string="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   run_edit_hook_with_new_string "$file_path" "$new_string"
-  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! echo "$LAST_STDERR" | grep -qF "pii:"; then
+  if [ "$LAST_EXIT_CODE" -eq 0 ] && ! grep -qF -- "pii:" <<<"$LAST_STDERR"; then
     echo -e "  ${GREEN}PASS${NC} ALLOW (pii): $description"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -353,7 +353,7 @@ _jq_on_out="$(printf '{"tool_input":{"file_path":"x"}}' | env PATH="$_JQ_NOPATH"
 _jq_on_rc=$?
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$_jq_on_rc" -eq 2 ] && printf '%s' "$_jq_on_out" | grep -qF '[SAFETY-JQ-MISSING]'; then
+if [ "$_jq_on_rc" -eq 2 ] && grep -qF -- '[SAFETY-JQ-MISSING]' <<<"$_jq_on_out"; then
   echo -e "  ${GREEN}PASS${NC} jq-missing + knob=on: fail-closed (exit 2) with [SAFETY-JQ-MISSING] message"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -366,7 +366,7 @@ _jq_def_out="$(printf '{"tool_input":{"file_path":"x"}}' | env PATH="$_JQ_NOPATH
 _jq_def_rc=$?
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if [ "$_jq_def_rc" -eq 0 ] && printf '%s' "$_jq_def_out" | grep -qF 'metric-only'; then
+if [ "$_jq_def_rc" -eq 0 ] && grep -qF -- 'metric-only' <<<"$_jq_def_out"; then
   echo -e "  ${GREEN}PASS${NC} jq-missing + default: metric-only allows (exit 0) with message"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -392,10 +392,10 @@ set +e
 _sfg_on_out="$(printf '%s' "$_SFG_EDIT_INPUT" | env SW_STATE_FIELD_GUARD_MODE=on bash "$HOOK" 2>&1)"
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if printf '%s' "$_sfg_on_out" | grep -q '"decision":"block"' \
-   && printf '%s' "$_sfg_on_out" | grep -q 'hook_owned_field_violation' \
-   && printf '%s' "$_sfg_on_out" | grep -q '\.runtime_metrics' \
-   && printf '%s' "$_sfg_on_out" | grep -q 'docs/state-schema.md'; then
+if grep -q -- '"decision":"block"' <<<"$_sfg_on_out" \
+   && grep -q -- 'hook_owned_field_violation' <<<"$_sfg_on_out" \
+   && grep -q -- '\.runtime_metrics' <<<"$_sfg_on_out" \
+   && grep -q -- 'docs/state-schema.md' <<<"$_sfg_on_out"; then
   echo -e "  ${GREEN}PASS${NC} state-field guard knob=on: .runtime_metrics Edit blocked (reason names field + docs/state-schema.md)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -407,8 +407,8 @@ set +e
 _sfg_def_out="$(printf '%s' "$_SFG_EDIT_INPUT" | env SW_STATE_FIELD_GUARD_MODE=metric-only bash "$HOOK" 2>&1)"
 set -e
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
-if ! printf '%s' "$_sfg_def_out" | grep -q '"decision":"block"' \
-   && printf '%s' "$_sfg_def_out" | grep -q '\[STATE-FIELD-GUARD\] metric-only'; then
+if ! grep -q -- '"decision":"block"' <<<"$_sfg_def_out" \
+   && grep -q -- '\[STATE-FIELD-GUARD\] metric-only' <<<"$_sfg_def_out"; then
   echo -e "  ${GREEN}PASS${NC} state-field guard metric-only (default): .runtime_metrics Edit not blocked, logs would-block"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else

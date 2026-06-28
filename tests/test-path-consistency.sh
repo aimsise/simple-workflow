@@ -319,21 +319,21 @@ assert_agent_frontmatter_valid_v8() {
   local fm
   fm=$(extract_agent_frontmatter "$agent_md")
 
-  if ! echo "$fm" | grep -qE '^description:'; then
+  if ! grep -qE -- '^description:' <<<"$fm"; then
     echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter has 'description'"
     TESTS_FAILED=$((TESTS_FAILED + 1))
     return
   fi
 
   if [ "$expect_tools" = "yes" ]; then
-    if ! echo "$fm" | grep -qE '^tools:'; then
+    if ! grep -qE -- '^tools:' <<<"$fm"; then
       echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter has 'tools' (Group C: explicit allowlist required)"
       TESTS_FAILED=$((TESTS_FAILED + 1))
       return
     fi
     echo -e "  ${GREEN}PASS${NC} agents/$agent_basename.md frontmatter is valid (name=$name, Group C: has tools:)"
   else
-    if echo "$fm" | grep -qE '^tools:'; then
+    if grep -qE -- '^tools:' <<<"$fm"; then
       echo -e "  ${RED}FAIL${NC} agents/$agent_basename.md frontmatter MUST NOT have 'tools' (Group A: v8.0.0 inherit-all omit)"
       TESTS_FAILED=$((TESTS_FAILED + 1))
       return
@@ -478,7 +478,7 @@ for agent_md in \
     continue
   fi
   # Verify at least one known token appears
-  if echo "$STATUS_VALUES" | grep -qE "($KNOWN_TOKENS)"; then
+  if grep -qE -- "($KNOWN_TOKENS)" <<<"$STATUS_VALUES"; then
     echo -e "  ${GREEN}PASS${NC} $agent_basename.md Status vocabulary is recognized"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -538,7 +538,7 @@ actual_tools_set=$(
       /^---[[:space:]]*$/ { fences++; if (fences==2) exit; next }
       fences==1 { print }
     ' "$agent_md")
-    if echo "$fm" | grep -qE '^tools:'; then
+    if grep -qE -- '^tools:' <<<"$fm"; then
       basename "$agent_md" .md
     fi
   done | sort
@@ -631,7 +631,7 @@ for skill_md in "$REPO_DIR"/skills/*/SKILL.md; do
   all_ok=1
   bad_pipe=""
   for pipe in "${pipes[@]}"; do
-    if ! echo "$pipe" | grep -qF '| grep .'; then
+    if ! grep -qF -- '| grep .' <<<"$pipe"; then
       all_ok=0
       bad_pipe="$pipe"
       break
@@ -681,7 +681,7 @@ for skill_md in \
     step_id="${entry##*:}"
     # Branch steps (e.g. 15a, 15b) annotate step 15 inline; accept them and
     # skip the gap scan for that entry. They do not advance prev_num.
-    if echo "$step_id" | grep -qE '[a-z]$'; then
+    if grep -qE -- '[a-z]$' <<<"$step_id"; then
       continue
     fi
     num="$step_id"
@@ -1019,7 +1019,7 @@ run_drift_probe() {
 
   local drift_ok=0
   local drift_seen="no"
-  if echo "$stderr_content" | grep -qF "drift:"; then
+  if grep -qF -- "drift:" <<<"$stderr_content"; then
     drift_seen="yes"
   fi
   if [ "$expect_drift" = "$drift_seen" ]; then
