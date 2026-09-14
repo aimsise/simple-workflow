@@ -10,6 +10,10 @@
 // mergeAcVerdicts (or VERDICT_RANK / statusRank) in the product Workflow MUST be
 // applied identically here, and vice versa.
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
 // ----- BEGIN VERBATIM MIRROR (from skills/impl/workflows/eval-panel.mjs) -----
 
 // --- Severity ladder helpers (shared by both merge modes) ---
@@ -29,9 +33,11 @@ function statusRank(s) {
 function mergeAcVerdicts(verifiers, { refuteMerge } = {}) {
   const mode = refuteMerge === "off" ? "majority" : "refute";
 
-  // 1. Drop invalid envelopes (null, or no usable acs array).
+  // 1. Drop invalid envelopes (null, no usable acs array, or a non-terminal
+  //    IN_PROGRESS status — an unfinished verifier is not an independent verdict
+  //    and must not count toward the quorum).
   const valid = (Array.isArray(verifiers) ? verifiers : []).filter(
-    (v) => v && Array.isArray(v.acs),
+    (v) => v && Array.isArray(v.acs) && String(v.status) !== "IN_PROGRESS",
   );
 
   // 2. Quorum: fewer than two independent envelopes is FAIL_CRITICAL.
@@ -118,12 +124,15 @@ function mergeAcVerdicts(verifiers, { refuteMerge } = {}) {
     mergedAcs.push({ ...repr, id, verdict });
   }
 
-  // 5. Overall status = worst merged per-AC verdict on the ladder.
+  // 5. Overall status = worst merged per-AC verdict on the ladder. A
+  //    verifier-level FAIL_CRITICAL (a critical finding not tied to one AC id)
+  //    is CRITICAL-not-voted-away exactly like a per-AC CRITICAL.
   let worst = "PASS";
   for (const ac of mergedAcs) {
     const v = String(ac.verdict);
     if (statusRank(v) > statusRank(worst)) worst = v;
   }
+  if (valid.some((v) => String(v.status) === "FAIL_CRITICAL")) worst = "FAIL_CRITICAL";
   // Normalize per-AC CRITICAL up to the round-level FAIL_CRITICAL status.
   const status = worst === "CRITICAL" ? "FAIL_CRITICAL" : worst;
 
@@ -339,6 +348,30 @@ const cases = [
     },
   },
   {
+    name: "7. an IN_PROGRESS envelope does not count toward the quorum",
+    verifiers: [
+      { status: "IN_PROGRESS", acs: [{ id: "AC-1", verdict: "PASS" }] },
+      v(["AC-1", "PASS"]),
+    ],
+    opts: {},
+    check: (r) => {
+      assertEq(r.status, "FAIL_CRITICAL", "one terminal envelope -> quorum failure");
+    },
+  },
+  {
+    name: "7b. verifier-level FAIL_CRITICAL is not voted away",
+    verifiers: [
+      { status: "FAIL_CRITICAL", acs: [{ id: "AC-1", verdict: "PASS" }], issues: ["secret committed"] },
+      v(["AC-1", "PASS"]),
+      v(["AC-1", "PASS"]),
+    ],
+    opts: {},
+    check: (r) => {
+      assertEq(r.status, "FAIL_CRITICAL", "envelope-level FAIL_CRITICAL wins the ladder");
+      assertEq(verdictOf(r, "AC-1"), "PASS", "per-AC verdicts unchanged");
+    },
+  },
+  {
     name: "6b. lone PASS_WITH_CAVEATS does not downgrade a majority PASS",
     verifiers: [
       v(["AC-1", "PASS_WITH_CAVEATS"]),
@@ -357,6 +390,38 @@ for (const c of cases) {
   console.log(`- ${c.name}`);
   c.check(mergeAcVerdicts(c.verifiers, c.opts));
 }
+
+// ----- Product-script contract (the committed Workflow file itself) -----
+// (1) The script MUST hand its result back with a top-level `return` — the
+//     Workflow runtime returns only what the wrapped async body returns; a bare
+//     trailing expression yields NO result to /impl Step 16.
+// (2) It MUST parse as an async function body with the sandbox globals in scope
+//     (`node --check` cannot be the gate: a top-level `return` is invalid in a
+//     plain ES module, and the sandbox is not a module).
+console.log("\n- product-script contract: skills/impl/workflows/eval-panel.mjs");
+const productPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "skills",
+  "impl",
+  "workflows",
+  "eval-panel.mjs",
+);
+const productSrc = readFileSync(productPath, "utf8");
+assertEq(
+  /\breturn\s+merged\s*;?\s*$/.test(productSrc.trimEnd()),
+  true,
+  "eval-panel.mjs ends with a top-level `return merged`",
+);
+let parseError = null;
+try {
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const body = productSrc.replace(/^\s*export\s+const\s+meta\b/m, "const meta");
+  new AsyncFunction("args", "agent", "parallel", "pipeline", "phase", "log", "budget", "workflow", body);
+} catch (e) {
+  parseError = String(e && e.message ? e.message : e);
+}
+assertEq(parseError, null, "eval-panel.mjs parses as an async Workflow body");
 
 const total = passes + failures;
 console.log(`\nPASS ${passes}/${total}`);

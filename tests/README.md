@@ -7,11 +7,27 @@ All hooks in `hooks/` have corresponding test files in `tests/`:
 | Hook | Test File | Coverage |
 |------|-----------|----------|
 | pre-bash-safety.sh | test-pre-bash-safety.sh | Destructive commands, pipes, chains, prefixes, subshells, sensitive files, bulk staging, edge cases |
-| pre-write-safety.sh | test-pre-write-safety.sh | Sensitive file blocking, allowed files |
-| pre-edit-safety.sh | test-pre-edit-safety.sh | Sensitive file blocking, allowed files |
-| session-start.sh | test-session-start.sh | JSON output, context injection, branch detection, log cleanup |
+| pre-write-safety.sh | test-pre-write-safety.sh | Sensitive file blocking, allowed files, hook-owned state fields |
+| pre-edit-safety.sh | test-pre-edit-safety.sh | Sensitive file blocking, allowed files, hook-owned state fields |
+| pre-bash-contract-guard.sh | test-pre-bash-contract-guard.sh | Forbidden fallback rationales, inline `git commit` nonce gate, review-agent firewall, Bash state mutation |
+| pre-skill-contract-guard.sh | test-pre-skill-contract-guard.sh | Review-agent pipeline-skill deny |
+| pre-askuserquestion-guard.sh | test-ask-guard.sh | 3-tier `risk_tolerance` header matrix |
+| pre-state-transition.sh | test-state-transition-guard.sh | Skip / advancement transition authority |
+| pre-next-scout-auto-compact.sh | test-pre-next-scout-auto-compact.sh | Ticket-boundary `/compact` injection, loop guard, sentinels |
+| post-ship-state-auto-compact.sh | test-post-ship-state-auto-compact.sh | State-write safety-net `/compact` injection, integrity self-heal |
+| post-phase-checkpoint.sh | test-per-phase-metrics.sh | Per-phase `runtime_metrics` emission |
+| post-skill-cleanup.sh | test-post-skill-cleanup.sh | Stale `auto-kick.yaml` removal |
+| accept-set-verify.sh | test-accept-set-verify.sh | Accept-set sweep conformance predicates |
+| autopilot-continue.sh | test-autopilot-continue.sh, test-autopilot-runtime-metrics.sh | Stop-hook continuation, loop guards, policy-gate-stop honour, wave-aware continuation, `runtime_metrics` writes |
+| impl-checkpoint-guard.sh | test-impl-checkpoint-guard.sh | Post-`/audit` handoff guard (Stop + SubagentStop) |
+| scout-checkpoint-guard.sh | test-scout-checkpoint-guard.sh | Post-`/plan2doc` handoff guard (Stop + SubagentStop) |
+| session-start.sh | test-session-start.sh, test-session-start-hook.sh, test-session-start-next-compact.sh | JSON output, context injection, branch detection, log cleanup, post-compact resume kick, `.next-compact-pending` replay |
 | session-stop-log.sh | test-session-stop-log.sh | Log creation and content |
-| pre-compact-save.sh | test-pre-compact-save.sh | State file creation, content verification |
+| pre-level1-guard.sh | (none) | Dev-repository-only guard registered in the tracked `.claude/settings.json` (not in `hooks/hooks.json`); exercised manually |
+| pre-compact-save.sh | test-pre-compact-save.sh, test-precompact-end-to-end.sh | State file creation, content verification, end-to-end compact round-trip |
+| hooks/lib/*.sh | test-hooks-lib.sh, test-state-parsers.sh, test-detect-policy-gate-stop.sh, test-inject-keys.sh | Shared helpers: state parsers, policy-gate-stop detector, keystroke injection |
+
+The committed Workflow script (`skills/impl/workflows/eval-panel.mjs`) is covered by `node tests/test-eval-panel-merge.mjs` (the merge pure-function plus the product-script contract: top-level `return`, parses as a Workflow body).
 
 ### Running Tests
 

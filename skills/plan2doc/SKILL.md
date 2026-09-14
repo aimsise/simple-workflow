@@ -31,7 +31,7 @@ argument-hint: "<feature or change to plan>"
 Create an implementation plan for: $ARGUMENTS
 
 Current changes:
-!`git diff --stat`
+!`git diff --stat 2>/dev/null || true`
 
 Existing research (if any):
 !`ls -t .simple-workflow/docs/research/*.md 2>/dev/null | head -5`

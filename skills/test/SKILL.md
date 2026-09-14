@@ -17,6 +17,10 @@ description: >-
   "missing tests", "test cases", "cover the changes".
 context: fork
 agent: test-writer
+# Since Claude Code v2.1.218 a `context: fork` skill runs in the BACKGROUND by
+# default and its result only arrives in a later turn. This skill is chain-called
+# by a pipeline skill that reads the artifact in the SAME turn, so it must wait.
+background: false
 model: sonnet
 argument-hint: "<file path or feature name to test>"
 allowed-tools:
@@ -31,7 +35,7 @@ allowed-tools:
 Create and run tests for: $ARGUMENTS
 
 Current changes:
-!`git diff --stat`
+!`git diff --stat 2>/dev/null || true`
 
 Existing test directories:
 !`ls -d tests/ test/ __tests__/ spec/ 2>/dev/null || echo "(no top-level test directory found)"`

@@ -272,9 +272,15 @@ of the envelope as of T-008 (worktree isolation):
 The wave scheduler creates a per-parent integration branch
 `ap-integration/<parent>` at Phase 2 init from the session start ref **and
 checks it out in the main checkout** (the orchestrator runs the wave loop with
-its HEAD on this branch, so each wave's `isolation:"worktree"` executors branch
-from the orchestrator's HEAD = the integrated tip — the spike-validated
-cross-wave base). It is a **local-only orchestration artifact**: it is **NOT
+its HEAD on this branch, so each wave's `isolation:"worktree"` executors build
+on the orchestrator's HEAD = the integrated tip — the cross-wave base the T-008
+spike validated. NOTE: the platform bases an isolation worktree on
+`origin/<default-branch>` under its default `worktree.baseRef: "fresh"`
+(Claude Code ≥ 2.1.133) and on the orchestrator's HEAD only under
+`worktree.baseRef: "head"` or when the repository has no remote — the spike's
+no-remote case. The executor therefore re-points its `worktree-agent-<id>`
+branch onto `ap-integration/<parent>` as its step 1b, which is what makes the
+integrated tip the base in every configuration). It is a **local-only orchestration artifact**: it is **NOT
 pushed** to any remote and is **NOT the PR target** (each ticket still ships its
 OWN PR against the repo default branch via `/ship <default-branch>
 ticket-dir=<NNN-slug>`, no `merge=true`). At each wave boundary the main loop

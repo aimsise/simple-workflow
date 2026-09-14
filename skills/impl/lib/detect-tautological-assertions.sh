@@ -79,9 +79,19 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
 
   # ---- R2: vacuous numeric boundary against a literal extremum ----
-  # Right-hand side is one of: 0, -0, Number.MAX_VALUE, Number.MIN_VALUE,
-  # Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, Infinity, -Infinity.
-  if printf '%s' "$line" | grep -qE 'expect\([^)]*\)\.(toBeGreaterThanOrEqual|toBeGreaterThan|toBeLessThanOrEqual|toBeLessThan)\([[:space:]]*(-?0|-?Infinity|Number\.(MAX_VALUE|MIN_VALUE|MAX_SAFE_INTEGER|MIN_SAFE_INTEGER))[[:space:]]*\)'; then
+  # Each operator is paired ONLY with the bound that is vacuous FOR THAT
+  # operator (the rules file's "type-bound extremum for op"):
+  #   >= 0 / -0 / -Infinity / MIN_SAFE_INTEGER      (lower extremum)
+  #   >  -Infinity
+  #   <= Infinity / MAX_VALUE / MAX_SAFE_INTEGER    (upper extremum)
+  #   <  Infinity
+  # Deliberately NOT flagged: strict `> 0` / `< 0` (positivity / negativity
+  # carry information), `<= 0`, and `>= Number.MIN_VALUE` (the smallest
+  # POSITIVE double — a positivity check, not an extremum).
+  if printf '%s' "$line" | grep -qE 'expect\([^)]*\)\.toBeGreaterThanOrEqual\([[:space:]]*(-?0|-Infinity|Number\.MIN_SAFE_INTEGER)[[:space:]]*\)' \
+     || printf '%s' "$line" | grep -qE 'expect\([^)]*\)\.toBeGreaterThan\([[:space:]]*-Infinity[[:space:]]*\)' \
+     || printf '%s' "$line" | grep -qE 'expect\([^)]*\)\.toBeLessThanOrEqual\([[:space:]]*(Infinity|Number\.(MAX_VALUE|MAX_SAFE_INTEGER))[[:space:]]*\)' \
+     || printf '%s' "$line" | grep -qE 'expect\([^)]*\)\.toBeLessThan\([[:space:]]*Infinity[[:space:]]*\)'; then
     emit "R2" "$lineno" "$line"
   fi
 

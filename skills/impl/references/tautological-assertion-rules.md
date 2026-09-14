@@ -51,6 +51,10 @@ literal** known to be a vacuous extremum (`0`, `Number.MAX_VALUE`,
 `-Infinity`, `Infinity`, `Number.MIN_SAFE_INTEGER`, `Number.MAX_SAFE_INTEGER`).
 If the right-hand side is a non-literal expression (a variable, a property
 access, a function call, etc.), the rule does NOT fire — see Limitations.
+The literal must be the extremum **for that operator**: `>= 0`, `> -Infinity`,
+`<= Number.MAX_VALUE` fire; a strict `> 0` / `< 0`, a `<= 0`, or a
+`>= Number.MIN_VALUE` (the smallest positive double) is a genuine positivity /
+negativity check and does NOT fire.
 
 <example lang="javascript">
 BAD:

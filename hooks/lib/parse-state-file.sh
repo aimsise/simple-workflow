@@ -134,7 +134,25 @@
 
 # _psf_have <command> -> 0 if the command is on PATH, 1 otherwise.
 _psf_have() {
+  # `yq` is special: only mikefarah yq v4 speaks the expressions the tiers
+  # below use. The python "yq" wrapper (kislyuk; `apt install yq` on Debian /
+  # Ubuntu) takes jq syntax, prints JSON-quoted scalars and exits non-zero on
+  # the v4 expressions, so treating it as yq silently corrupts every parse.
+  if [ "$1" = "yq" ]; then _psf_have_yq4; return $?; fi
   command -v "$1" >/dev/null 2>&1
+}
+
+# _psf_have_yq4 -> 0 iff a mikefarah yq v4 is on PATH (cached per process).
+_psf_have_yq4() {
+  if [ -z "${_PSF_YQ4_OK:-}" ]; then
+    if command -v yq >/dev/null 2>&1 \
+       && yq --version 2>/dev/null | grep -qE 'mikefarah|version v?4\.'; then
+      _PSF_YQ4_OK=1
+    else
+      _PSF_YQ4_OK=0
+    fi
+  fi
+  [ "$_PSF_YQ4_OK" = "1" ]
 }
 
 # _psf_repo_root [start_dir] -> prints the nearest ancestor that contains
@@ -304,7 +322,14 @@ parse_ticket_statuses() {
   # without the up-front `import yaml` probe a stock macOS without PyYAML
   # would short-circuit here on ImportError and skip the awk tier.
   if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
-    if python3 - "$file" <<'PY' 2>/dev/null
+    # Keep the heredoc on a simple `cmd <<'PY' ... && return 0` line — NEVER
+    # inside an `if ... then` condition. This function is `export -f`-ed, and
+    # bash 5.2 cannot re-import an exported function whose heredoc sits in an
+    # if-condition: every child bash then prints "syntax error near unexpected
+    # token `fi'" / "error importing function definition" on stderr (observed
+    # with bash 5.2.21). The `|| return 1` / `&& return 0` simple-command shape
+    # used by the sibling parsers re-imports cleanly.
+    python3 - "$file" <<'PY' 2>/dev/null && return 0
 import sys
 import yaml
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
@@ -320,9 +345,6 @@ for entry in entries:
     val = entry.get("status", "") if isinstance(entry, dict) else ""
     print(val if val is not None else "")
 PY
-    then
-      return 0
-    fi
     # python tier failed -> fall through to awk.
   fi
 
@@ -920,14 +942,23 @@ parse_yaml_scalar() {
   # silently short-circuiting empty on ImportError.
   if _psf_have python3 && python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$file" "$key" <<'PY' 2>/dev/null || return 1
+import re
 import sys
 import yaml
 path, key = sys.argv[1], sys.argv[2]
 with open(path, "r", encoding="utf-8") as fh:
-    doc = yaml.safe_load(fh) or {}
+    text = fh.read()
+doc = yaml.safe_load(text) or {}
 val = doc.get(key, "") if isinstance(doc, dict) else ""
 if val is None:
     val = ""
+if isinstance(val, bool):
+    # PyYAML is YAML 1.1: the bare scalars `on` / `off` / `yes` / `no` load as
+    # booleans, which would turn `parallel_mode: on` into `True` and make
+    # resolve_parallel_mode fall to `off`. mikefarah yq (YAML 1.2) and the awk
+    # tier both keep the literal text, so re-read the raw scalar here.
+    m = re.search(r"^" + re.escape(key) + r":[ \t]+([^#\n]*)", text, re.M)
+    val = m.group(1).strip().strip("\"'") if m else str(val).lower()
 print(val)
 PY
     return 0
@@ -1062,4 +1093,4 @@ resolve_parallel_mode() {
 # Export the public functions so children that re-enter bash via `bash -c`
 # can pick them up without re-sourcing. (Bash only — POSIX `sh` ignores
 # `export -f`. Hooks already require Bash, so this is safe.)
-export -f is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file find_done_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance resolve_parallel_mode 2>/dev/null || true
+export -f _psf_have _psf_have_yq4 is_autopilot_context parse_phase_status parse_ticket_statuses find_state_file find_any_autopilot_state_file find_done_autopilot_state_file parse_ticket_ship_dirs find_phase_state_file parse_impl_next_action parse_yaml_scalar get_risk_tolerance resolve_parallel_mode 2>/dev/null || true

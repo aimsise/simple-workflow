@@ -106,7 +106,50 @@ _rm_numeric_or_null() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Append lock. Claude Code runs every hook that matches one event IN PARALLEL
+# (hooks reference: "All matching hooks run in parallel"), and up to three Stop
+# hooks (autopilot-continue / impl-checkpoint-guard / scout-checkpoint-guard)
+# append to the SAME `runtime_metrics:` list of the same state file in the same
+# tick. Each tier below is a read-modify-write (yq -i / python rewrite), so two
+# concurrent appends could drop one entry. A `mkdir`-based lock serialises
+# them portably (no `flock` on stock macOS). Bounded wait (~2 s, 100 x 20 ms)
+# then a stale-lock takeover so a crashed holder can never wedge a hook.
+# ---------------------------------------------------------------------------
+_rm_lock_acquire() {
+  # $1 state_file. Echoes the lock dir on success (caller releases it); empty
+  # when no lock could be taken (the caller proceeds unlocked — best effort).
+  local lockdir="$1.lock"
+  local i=0
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 100 ]; then
+      # Stale lock (holder crashed) or pathological contention: take it over.
+      rmdir "$lockdir" 2>/dev/null || true
+      if mkdir "$lockdir" 2>/dev/null; then
+        printf '%s' "$lockdir"
+      fi
+      return 0
+    fi
+    sleep 0.02
+  done
+  printf '%s' "$lockdir"
+}
+
 append_runtime_metrics_entry() {
+  # Locked wrapper around `_rm_append_runtime_metrics_entry_unlocked` (same
+  # positional contract). The lock is keyed on the state file path.
+  local _rm_lockdir=""
+  if [ -n "${1:-}" ] && [ -f "${1:-}" ]; then
+    _rm_lockdir=$(_rm_lock_acquire "$1")
+  fi
+  local _rm_rc=0
+  _rm_append_runtime_metrics_entry_unlocked "$@" || _rm_rc=$?
+  [ -n "$_rm_lockdir" ] && rmdir "$_rm_lockdir" 2>/dev/null
+  return "$_rm_rc"
+}
+
+_rm_append_runtime_metrics_entry_unlocked() {
   # $1 state_file, $2 boundary, $3 stop_reason ("null" or value),
   # $4 timestamp, $5 cache_creation, $6 cache_read, $7 input_tokens,
   # $8 consecutive_stop ("null" or int),
@@ -161,7 +204,8 @@ append_runtime_metrics_entry() {
 
   [ -n "$state_file" ] && [ -f "$state_file" ] || return 0
 
-  if command -v yq >/dev/null 2>&1; then
+  # mikefarah yq v4 only — the python "yq" wrapper rejects `yq eval -i`.
+  if command -v yq >/dev/null 2>&1 && yq --version 2>/dev/null | grep -qE 'mikefarah|version v?4\.'; then
     local stop_value
     if [ "$stop_reason" = "null" ]; then stop_value="null"; else stop_value="\"$stop_reason\""; fi
     # T1/T2: append shipped_count LAST (immediately after consecutive_stop_blocks)
@@ -268,3 +312,4 @@ EOF
 }
 
 export -f append_runtime_metrics_entry
+export -f _rm_lock_acquire _rm_append_runtime_metrics_entry_unlocked 2>/dev/null || true

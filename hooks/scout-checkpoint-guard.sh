@@ -88,8 +88,33 @@ source "$SCRIPT_DIR/lib/runtime-metrics.sh"
 # before the decision:block emit.
 source "$SCRIPT_DIR/lib/detect-policy-gate-stop.sh"
 
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+# On SubagentStop the hook input carries BOTH `transcript_path` (the PARENT
+# session's transcript) and `agent_transcript_path` (the stopping subagent's own
+# transcript — under parallel_mode=on, the ticket-executor's). Prefer the
+# subagent transcript so executor-side enforcement scans the executor's turns,
+# never the orchestrator's; on the main Stop only `transcript_path` is present.
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.agent_transcript_path // .transcript_path // ""' 2>/dev/null || echo "")
+# shellcheck disable=SC2088  # a literal leading `~/` in the hook payload is expanded here on purpose
+case "$TRANSCRIPT_PATH" in "~/"*) TRANSCRIPT_PATH="$HOME/${TRANSCRIPT_PATH#\~/}" ;; esac
+LAST_ASSISTANT_MESSAGE=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null || echo "")
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || echo "unknown")
+
+# --- Background subagents in flight (fork mode) --------------------------------
+# In interactive sessions subagents run in the BACKGROUND by default (fork mode)
+# and the Agent tool returns immediately; the harness ends the turn and wakes the
+# session again when a task completes, and it tells Stop hooks so through the
+# `background_tasks` array ("session is paused waiting for background work",
+# hooks reference). While a subagent / workflow / teammate task is in flight the
+# pause is legitimate: do NOT block it, do NOT count it as a stall. The main
+# Stop only — a SubagentStop payload carries the PARENT session's task list.
+if [ "$(echo "$INPUT" | jq -r '.hook_event_name // "Stop"' 2>/dev/null || echo Stop)" != "SubagentStop" ]; then
+  _sw_bg_inflight=$(echo "$INPUT" | jq -r '[.background_tasks[]? | select(((.type // "") | test("subagent|workflow|teammate|agent"; "i")) and ((.status // "running") | test("complete|done|finish|fail|error|cancel"; "i") | not))] | length' 2>/dev/null || echo 0)
+  case "$_sw_bg_inflight" in *[!0-9]*|"") _sw_bg_inflight=0 ;; esac
+  if [ "$_sw_bg_inflight" -gt 0 ]; then
+    echo "[SCOUT-CHECKPOINT] standing down: $_sw_bg_inflight background agent task(s) in flight — the harness wakes the session when they return; allowing end_turn without counting a stall." >&2
+    exit 0
+  fi
+fi
 
 # --- Helpers ---------------------------------------------------------------
 
@@ -483,14 +508,14 @@ fi
 POLICY_STOP_HONOR="${SW_AUTOPILOT_POLICY_STOP_HONOR:-on}"
 case "$POLICY_STOP_HONOR" in
   on)
-    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH" "$LAST_ASSISTANT_MESSAGE"; then
       echo "[POLICY-GATE-STOP] honouring model-declared policy_gate_stop (last assistant turn emitted [AUTOPILOT-POLICY] ... action=stop); standing down without blocking." >&2
       rm -f "$COUNTER_FILE" 2>/dev/null || true
       exit 0
     fi
     ;;
   metric-only)
-    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH" "$LAST_ASSISTANT_MESSAGE"; then
       echo "[POLICY-GATE-STOP] metric-only: would honour model-declared policy_gate_stop; still blocking per SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only." >&2
     fi
     ;;
@@ -501,11 +526,16 @@ esac
 
 # --- block: increment counter, emit decision:block, record metric ---------
 BLOCK_COUNT=$((BLOCK_COUNT + 1))
+# ORDER IS LOAD-BEARING: record the metric BEFORE touching the counter file.
+# `_emit_metrics` appends to `$STATE_FILE`, and the counter-reset rule above
+# treats a state file NEWER than the counter as "progress" and resets the
+# count to 0. Writing the counter first (the pre-v10.1.0 order) made this
+# hook's own metrics write defeat its 3-attempt release on EVERY tick, so
+# the documented release never fired and the block could repeat forever.
+_emit_metrics "premature_plan2doc_handoff_blocked" "$BLOCK_COUNT"
 if [ "$SESSION_ID" != "unknown" ]; then
   echo "$BLOCK_COUNT" > "$COUNTER_FILE"
 fi
-
-_emit_metrics "premature_plan2doc_handoff_blocked" "$BLOCK_COUNT"
 
 jq -n '{
   decision: "block",

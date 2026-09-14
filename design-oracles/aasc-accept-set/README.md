@@ -4,9 +4,10 @@ This directory is a **committed design-oracle**: a runnable proof that the
 **Advertised-Accept-Set Conformance (AASC)** mechanism is language-agnostic,
 constructive, and false-positive-free. It satisfies the charter `§F-1` evidence
 item ("commit the prototype as a repo design-oracle"). It is a **proof artifact,
-not normative plugin content** — the AASC mechanism itself is NOT yet wired into
-the harness; its implementation is gated on the charter `§F-4` discriminating-subject
-live dogfood. Nothing here is run by the test suites or by CI.
+not normative plugin content** — the AASC mechanism has since shipped (v8.5.0:
+`hooks/accept-set-verify.sh`, the `ac-evaluator` executed accept-set sweep and the
+`SW_ACCEPT_SET_CONFORMANCE_MODE` knob); this directory remains the first-principles
+proof artifact it was written as. Nothing here is run by the test suites or by CI.
 
 ## What it proves
 

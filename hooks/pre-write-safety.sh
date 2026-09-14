@@ -88,7 +88,7 @@ case "$FILE_PATH" in
       case "${SW_STATE_FIELD_GUARD_MODE:-metric-only}" in
         on)
           jq -nc --arg f "$_SFG_FIELD" \
-            '{decision:"block", reason:("hook_owned_field_violation: " + $f + " is a hook-owned, append-only field written exclusively by the autopilot Stop / PreCompact / checkpoint hooks. Do not Write it directly — let the hooks append. See docs/state-schema.md.")}'
+            '{decision:"block", reason:("hook_owned_field_violation: " + $f + " is a hook-owned, append-only field written exclusively by the autopilot Stop / PreCompact / checkpoint hooks. Do not Write it directly — let the hooks append. See docs/state-schema.md."), hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:("hook_owned_field_violation: " + $f + " is a hook-owned, append-only field written exclusively by the autopilot Stop / PreCompact / checkpoint hooks. Do not Write it directly — let the hooks append. See docs/state-schema.md.")}}'
           exit 0 ;;
         off) ;;
         metric-only|*)

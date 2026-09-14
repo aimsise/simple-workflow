@@ -142,7 +142,7 @@ fi
 
 # --- AC #4: detector verdicts on each fixture ---
 declare -a VIOLATING=("a-r1-violation.test.js:R1" "b-r2-violation.test.js:R2" "c-r3-violation.test.js:R3")
-declare -a CLEAN=("d-hint-exempt.test.js" "e-non-constant-bound.test.js" "f-clean.test.js")
+declare -a CLEAN=("d-hint-exempt.test.js" "e-non-constant-bound.test.js" "f-clean.test.js" "g-positivity-not-vacuous.test.js")
 
 for entry in "${VIOLATING[@]}"; do
   fixture="${entry%%:*}"

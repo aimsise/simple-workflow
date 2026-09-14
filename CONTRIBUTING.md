@@ -23,13 +23,18 @@ No build step is required — this project consists of shell scripts and Markdow
 
 ```
 simple-workflow/
-├── agents/           # Claude agent definitions (.md with YAML frontmatter)
-├── skills/           # Claude Code skills (each skill has a SKILL.md)
+├── agents/           # Claude subagent definitions (.md with YAML frontmatter)
+├── skills/           # Claude Code skills (each skill has a SKILL.md, optional references/)
 │   └── <name>/
-│       └── SKILL.md
+│       ├── SKILL.md
+│       └── references/   # supporting docs loaded on demand by the skill
 ├── hooks/            # Lifecycle hook scripts + hooks.json config
-├── tests/            # Shell-based test suite
-├── .claude-plugin/   # Plugin metadata (plugin.json)
+│   └── lib/          # Shared helpers sourced by several hooks (functions only)
+├── tests/            # Shell-based test suite (+ fixtures/, helpers/, replay/)
+├── docs/             # Tracked reference docs (state schema, README diagrams)
+├── design-oracles/   # First-principles probes used by the accept-set sweeps
+├── tools/            # Maintainer utilities
+├── .claude-plugin/   # Plugin metadata (plugin.json, marketplace.json)
 └── .github/          # GitHub templates and CI workflows
 ```
 

@@ -231,6 +231,57 @@ NEG_TMP="$(mktemp -d)"
 # shellcheck disable=SC2064
 trap "rm -rf '$PSF_TMP' '$NEG_TMP'" EXIT
 
+# 2.0b: every `export -f`-ed function re-imports cleanly in a child bash.
+# Regression for the bash 5.2 heredoc-in-if-condition defect: an exported
+# function whose python heredoc sat inside `if cmd <<'PY' ... then` made every
+# child bash print "error importing function definition for `parse_ticket_statuses'".
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PSF_IMPORT_ERRS="$(bash -c "source '$PSF_PATH'; bash -c ':'" 2>&1 | grep -c 'error importing function definition' || true)"
+if [ "${PSF_IMPORT_ERRS:-0}" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} parse-state-file.sh exported functions re-import in a child bash (0 import errors)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} parse-state-file.sh exported functions fail to re-import in a child bash ($PSF_IMPORT_ERRS import error(s) — heredoc inside an if-condition?)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# 2.0c: a `yq` that is NOT mikefarah v4 (e.g. the python wrapper printing
+# `yq 3.1.0`) must be ignored — `_psf_have yq` returns non-zero and the parsers
+# fall through to the python3 / awk tiers instead of consuming garbage.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PSF_FAKE_YQ_BIN="$(mktemp -d)"
+printf '#!/usr/bin/env bash\necho "yq 3.1.0"\nexit 0\n' > "$PSF_FAKE_YQ_BIN/yq"; chmod +x "$PSF_FAKE_YQ_BIN/yq"
+PSF_FAKE_YQ_STATE="$(mktemp)"
+printf 'tickets:\n  - logical_id: a\n    status: completed\n  - logical_id: b\n    status: pending\n' > "$PSF_FAKE_YQ_STATE"
+PSF_FAKE_YQ_HAVE="$(PATH="$PSF_FAKE_YQ_BIN:$PATH" bash -c "source '$PSF_PATH'; _psf_have yq && echo yes || echo no" 2>/dev/null)"
+PSF_FAKE_YQ_OUT="$(PATH="$PSF_FAKE_YQ_BIN:$PATH" bash -c "source '$PSF_PATH'; parse_ticket_statuses '$PSF_FAKE_YQ_STATE'" 2>/dev/null | tr '\n' ',')"
+if [ "$PSF_FAKE_YQ_HAVE" = "no" ] && [ "$PSF_FAKE_YQ_OUT" = "completed,pending," ]; then
+  echo -e "  ${GREEN}PASS${NC} a non-mikefarah yq on PATH is ignored (_psf_have yq=no; parsers fall through: $PSF_FAKE_YQ_OUT)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} non-mikefarah yq handling: have=$PSF_FAKE_YQ_HAVE out='$PSF_FAKE_YQ_OUT' (expected no / completed,pending,)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$PSF_FAKE_YQ_BIN" "$PSF_FAKE_YQ_STATE"
+
+# 2.0d: without mikefarah yq the python3 + PyYAML tier must keep the literal
+# `on` of `parallel_mode: on` (PyYAML is YAML 1.1 and loads `on` as boolean
+# True, which resolve_parallel_mode would collapse to `off`). `_PSF_YQ4_OK=0`
+# is the lib's own cache variable: exporting it forces the non-yq tiers
+# (python3 when PyYAML is importable, else awk) without PATH surgery.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+PSF_BOOL_STATE="$(mktemp)"
+printf 'parallel_mode: on\nultracode_mode: metric-only\n' > "$PSF_BOOL_STATE"
+PSF_BOOL_OUT="$(_PSF_YQ4_OK=0 bash -c "source '$PSF_PATH'; printf '%s/%s/%s' \"\$(parse_yaml_scalar '$PSF_BOOL_STATE' parallel_mode)\" \"\$(parse_yaml_scalar '$PSF_BOOL_STATE' ultracode_mode)\" \"\$(resolve_parallel_mode '$PSF_BOOL_STATE')\"" 2>/dev/null)"
+if [ "$PSF_BOOL_OUT" = "on/metric-only/on" ]; then
+  echo -e "  ${GREEN}PASS${NC} non-yq tiers keep the literal YAML scalar 'on' (parse_yaml_scalar/resolve_parallel_mode: $PSF_BOOL_OUT)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} non-yq tiers mangle 'parallel_mode: on': got '$PSF_BOOL_OUT' (expected on/metric-only/on — PyYAML YAML-1.1 boolean leak?)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -f "$PSF_BOOL_STATE"
+
 # 2.1: is_autopilot_context — positive (briefs/active branch).
 set +e
 ( cd "$PSF_TMP" && is_autopilot_context )
@@ -1616,6 +1667,26 @@ else
   echo "       $RM_PATH_LEAK"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
+
+# 5.x: concurrent appends are serialised by the mkdir lock (hooks on one event
+# run in parallel; up to three Stop hooks append to the same state file in the
+# same tick). 8 parallel appends MUST yield 8 entries and leave no lock dir.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+RM_CC_TMP="$(mktemp)"
+printf 'version: 1\nparent_slug: cc\ntickets: []\nruntime_metrics: []\n' > "$RM_CC_TMP"
+for _i in 1 2 3 4 5 6 7 8; do
+  bash -c "source '$RM_PATH' && append_runtime_metrics_entry '$RM_CC_TMP' 'session_end' 'normal_completion' '2026-09-14T00:00:0${_i}Z' '$_i' '0' '0' 'null'" &
+done
+wait
+RM_CC_COUNT="$(grep -cE '^[[:space:]]*- boundary: session_end' "$RM_CC_TMP" || true)"
+if [ "${RM_CC_COUNT:-0}" -eq 8 ] && [ ! -d "$RM_CC_TMP.lock" ]; then
+  echo -e "  ${GREEN}PASS${NC} 8 concurrent append_runtime_metrics_entry calls -> 8 entries, lock released"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} concurrent appends: expected 8 entries + no lock dir; got count=$RM_CC_COUNT lockdir=$([ -d "$RM_CC_TMP.lock" ] && echo present || echo absent)"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$RM_CC_TMP" "$RM_CC_TMP.lock"
 
 echo ""
 print_summary

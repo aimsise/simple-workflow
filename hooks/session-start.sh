@@ -53,7 +53,11 @@ if [ ! -f "$_sw_repo_root/.simple-workflow/.setup-done" ]; then
   #    - Never uses `-f` with `git add`.
   _sw_gitignore_modified=0
   if git rev-parse --git-dir >/dev/null 2>&1; then
-    _sw_gitignore_entries=(.simple-workflow/)
+    # Both forms: `.simple-workflow/` matches the directory; the slash-less
+    # `.simple-workflow` also matches a SYMLINK of that name (git treats a
+    # trailing-slash pattern as directory-only). Wave-parallel executors run in
+    # worktrees where `.simple-workflow` is a symlink into the main checkout.
+    _sw_gitignore_entries=(.simple-workflow/ .simple-workflow)
     _sw_missing_entries=()
     for _sw_entry in "${_sw_gitignore_entries[@]}"; do
       if ! grep -qxF "$_sw_entry" .gitignore 2>/dev/null; then
@@ -61,8 +65,10 @@ if [ ! -f "$_sw_repo_root/.simple-workflow/.setup-done" ]; then
       fi
     done
     if [ ${#_sw_missing_entries[@]} -gt 0 ]; then
-      [ -s .gitignore ] && printf '\n' >> .gitignore
-      printf '# simple-workflow plugin artifacts (local-only; delete entries to share via git)\n' >> .gitignore
+      if ! grep -qF '# simple-workflow plugin artifacts' .gitignore 2>/dev/null; then
+        [ -s .gitignore ] && printf '\n' >> .gitignore
+        printf '# simple-workflow plugin artifacts (local-only; delete entries to share via git)\n' >> .gitignore
+      fi
       for _sw_entry in "${_sw_missing_entries[@]}"; do
         printf '%s\n' "$_sw_entry" >> .gitignore
       done
@@ -227,8 +233,10 @@ if [ -n "$_sw_ticket_lines" ]; then
 fi
 unset _sw_ticket_lines
 
-# Output as additionalContext JSON
-jq -n --arg ctx "$CONTEXT" '{"additionalContext": $ctx}'
+# Output as the documented SessionStart JSON shape
+# (hookSpecificOutput.additionalContext). The top-level key is kept as well so a
+# host that still reads the older shape gets the same context once.
+jq -n --arg ctx "$CONTEXT" '{"additionalContext": $ctx, "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": $ctx}}'
 
 # --- Axis 3: auto-compact-on-ship post-compaction resume kick ---
 # When SessionStart fires with source=compact AND we are inside an

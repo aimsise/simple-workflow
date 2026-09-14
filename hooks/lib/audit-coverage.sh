@@ -224,7 +224,8 @@ audit_coverage_check() {
   local parsed=0
 
   # Tier 1: yq (mikefarah v4).
-  if [ "$parsed" -eq 0 ] && command -v yq >/dev/null 2>&1; then
+  if [ "$parsed" -eq 0 ] && command -v yq >/dev/null 2>&1 \
+     && yq --version 2>/dev/null | grep -qE 'mikefarah|version v?4\.'; then
     local yq_json
     yq_json=$(printf '%s\n' "$yaml_body" | yq -p yaml -o json 2>/dev/null) || yq_json=""
     if [ -n "$yq_json" ] && command -v jq >/dev/null 2>&1; then

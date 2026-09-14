@@ -169,9 +169,11 @@ function statusRank(s) {
 function mergeAcVerdicts(verifiers, { refuteMerge } = {}) {
   const mode = refuteMerge === "off" ? "majority" : "refute";
 
-  // 1. Drop invalid envelopes (null, or no usable acs array).
+  // 1. Drop invalid envelopes (null, no usable acs array, or a non-terminal
+  //    IN_PROGRESS status — an unfinished verifier is not an independent verdict
+  //    and must not count toward the quorum).
   const valid = (Array.isArray(verifiers) ? verifiers : []).filter(
-    (v) => v && Array.isArray(v.acs),
+    (v) => v && Array.isArray(v.acs) && String(v.status) !== "IN_PROGRESS",
   );
 
   // 2. Quorum: fewer than two independent envelopes is FAIL_CRITICAL.
@@ -258,12 +260,15 @@ function mergeAcVerdicts(verifiers, { refuteMerge } = {}) {
     mergedAcs.push({ ...repr, id, verdict });
   }
 
-  // 5. Overall status = worst merged per-AC verdict on the ladder.
+  // 5. Overall status = worst merged per-AC verdict on the ladder. A
+  //    verifier-level FAIL_CRITICAL (a critical finding not tied to one AC id)
+  //    is CRITICAL-not-voted-away exactly like a per-AC CRITICAL.
   let worst = "PASS";
   for (const ac of mergedAcs) {
     const v = String(ac.verdict);
     if (statusRank(v) > statusRank(worst)) worst = v;
   }
+  if (valid.some((v) => String(v.status) === "FAIL_CRITICAL")) worst = "FAIL_CRITICAL";
   // Normalize per-AC CRITICAL up to the round-level FAIL_CRITICAL status.
   const status = worst === "CRITICAL" ? "FAIL_CRITICAL" : worst;
 
@@ -314,33 +319,59 @@ const refuteMode = a.refute_merge === "off" ? "off" : "auto";
 // Carried Step-3a resolution fields, surfaced verbatim into each spawn so the
 // evaluator reads them from the prompt (not from disk), exactly as the
 // Agent-tool path does.
+// Field names mirror the Agent-path spawn prompt verbatim (Oracle verification /
+// Evidence floor / Selfdoc verification / Accept-set conformance …) so both
+// dispatch mechanisms hand the evaluator the identical contract lines.
 const carried = [
   `Oracle verification: ${a.oracle_verification || "auto"}`,
   `Evidence floor: ${a.evidence_floor || ""}`,
-  `Eval panel: ${a.eval_panel || "auto"}`,
-  `Self-documentation verification: ${a.selfdoc_verification || "auto"}`,
-  `Accept-set conformance: ${a.accept_set_conformance || "auto"}${
-    a.accept_set_triggered_on ? ` triggered-on=${a.accept_set_triggered_on}` : ""
+  a.panel_directive ? String(a.panel_directive) : "",
+  `Selfdoc verification: ${a.selfdoc_verification || "auto"}`,
+  `Accept-set conformance: ${a.accept_set_conformance || "auto"} triggered-on=${
+    a.accept_set_triggered_on ? a.accept_set_triggered_on : "(none)"
   }`,
+  a.turn_budget ? `Soft turn budget: ${a.turn_budget}` : "",
 ]
   .filter(Boolean)
   .join("\n");
 
+// The `## Bound capabilities (per AC)` block (verbatim from ticket.md) and the
+// optional §14a plan-compliance hint — carried exactly as the Agent path inlines
+// them; absent fields degrade to the documented fallbacks.
+const boundCapabilities =
+  a.bound_capabilities && String(a.bound_capabilities).trim()
+    ? String(a.bound_capabilities)
+    : "## Bound capabilities (per AC): (none recorded — ticket pre-dates Gate 6)";
+const planComplianceHint = a.plan_compliance_hint
+  ? `Plan-compliance hint (§14a): ${a.plan_compliance_hint}`
+  : "";
+
 const evalRoundPaths = Array.isArray(a.eval_round_paths) ? a.eval_round_paths : [];
 
 function buildPrompt(i) {
-  const reportPath = evalRoundPaths[i] || `eval-round-${a.round || "n"}-v${i + 1}.md`;
+  // Report path: the caller's per-lens path, else a path INSIDE the ticket dir
+  // (never the cwd root) so a mis-marshalled `eval_round_paths` cannot scatter
+  // reports across the repository root.
+  const reportDir = a.ticket_dir ? String(a.ticket_dir).replace(/\/+$/, "") + "/" : "";
+  const reportPath =
+    evalRoundPaths[i] || `${reportDir}eval-round-${a.round || "n"}-v${i + 1}.md`;
   return [
     LENS_DIRECTIVES[i],
     "",
+    a.plan_path ? `Plan: ${a.plan_path} (read it in full)` : "",
     "Acceptance Criteria (the fixed rubric - do NOT re-derive it):",
     a.ac_rubric || "",
     "",
     `git diff reference: ${a.git_diff_ref || ""}`,
+    a.git_diff_shortstat ? `git diff --shortstat: ${a.git_diff_shortstat}` : "",
     "Run `git diff` against that reference to inspect the changes, run lint / test independently, and verify each AC.",
     "",
-    carried,
+    boundCapabilities,
     "",
+    carried,
+    planComplianceHint,
+    "",
+    "The Acceptance Criteria text above is the fixed rubric — do NOT re-derive from the plan. If the plan's AC differs, trust the rubric.",
     `Persist your FULL evaluation report to: ${reportPath}`,
     "You MUST persist the full report to that file AND return the forced EVAL_SCHEMA object (status, acs, issues, accept_set_sweep). The persisted report is the durable artifact; the returned object is the handoff to the orchestrator.",
   ].join("\n");
@@ -385,9 +416,12 @@ log(
 );
 
 // The merged typed result is the effective Step 15 output for Step 16 to consume
-// (no grep parse of a prose envelope). It is left as the module's trailing
-// completion expression rather than a top-level `return` statement so that
-// `node --check skills/impl/workflows/eval-panel.mjs` (the section 6 / section 12.3 green-gate)
-// parses it as a plain ES module; the Workflow sandbox evaluates the body and
-// reads this completion value as the script's result.
-merged;
+// (no grep parse of a prose envelope). It MUST be handed back with a top-level
+// `return`: the Workflow runtime wraps the script body in an async function and
+// returns ONLY what that function returns. A bare trailing completion expression
+// (`merged;`) yields NO result to the caller (verified live on Claude Code
+// 2.1.270), which silently starves /impl Step 16 of the typed verdict. Because a
+// top-level `return` is not valid in a plain ES module, `node --check` is NOT the
+// syntax gate for this file — tests/test-eval-panel-merge.mjs parses it as an
+// async function body with the sandbox globals instead.
+return merged;

@@ -28,7 +28,7 @@
 #           {"tool_name":"Skill","tool_input":{"skill":"simple-workflow:impl"},
 #            "agent_type":"doc-verifier", "cwd":"...", ...}
 #   stdout: empty when allowed; otherwise a single JSON object with shape
-#           {"decision":"block","reason":"<text>"}.
+#           {"decision":"block","reason":"<text>","hookSpecificOutput":{"permissionDecision":"deny",...}}.
 #   exit:   ALWAYS 0 (fail-open -- a block is conveyed via the JSON decision
 #           field, never via a non-zero exit). jq-absent is a silent exit 0.
 #
@@ -78,9 +78,13 @@ fi
 emit_block() {
   local kind="$1"
   local detail="$2"
+  # PreToolUse decision shape: `hookSpecificOutput.permissionDecision` is the
+  # documented contract (the top-level `decision`/`reason` pair is deprecated
+  # for PreToolUse but still emitted alongside for older hosts).
   jq -nc \
     --arg reason "$kind: $detail" \
-    '{decision:"block", reason:$reason}'
+    '{decision:"block", reason:$reason,
+      hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$reason}}'
   exit 0
 }
 

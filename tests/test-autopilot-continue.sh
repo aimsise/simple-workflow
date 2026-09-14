@@ -23,7 +23,12 @@ create_state_file() {
 
 # Helper: run the autopilot-continue hook with optional env vars
 run_autopilot_hook() {
-  local input="${1:-{}}"
+  # NOTE: `"${1:-{}}"` is NOT "default to {}" — bash closes the expansion at the
+  # first `}`, so every non-empty input silently gained a trailing `}` (invalid
+  # JSON: jq then failed on every field read and the hook ran as if the payload
+  # were empty). Default explicitly instead.
+  local input="${1:-}"
+  [ -n "$input" ] || input='{}'
   local cwd="${2:-.}"
   local env_count="${3:-}"
 
@@ -140,6 +145,40 @@ fi
 cleanup_test_repo
 
 # ============================================================
+# AC-BG: scout in_progress BUT a background subagent is in flight -> stand down
+# (exit 0, no decision). The harness pauses the session while background tasks
+# run and wakes it when they return; the hook must not count that as a stall.
+# ============================================================
+echo "--- AC-BG: background subagent in flight -> stand down ---"
+
+setup_test_repo
+create_state_file "test-slug" "version: 1
+slug: test-slug
+started: 2026-04-15T00:00:00Z
+execution_mode: split
+total_tickets: 1
+parallel_mode: on
+tickets:
+  - logical_id: test-slug
+    ticket_dir: 001-test
+    status: in_progress
+    steps:
+      create-ticket: completed
+      scout: in_progress
+      impl: pending
+      ship: pending"
+
+run_autopilot_hook '{"session_id":"test-bg","hook_event_name":"Stop","background_tasks":[{"id":"task-1","type":"subagent","status":"running","agent_type":"ticket-executor"}]}' "$TEST_REPO"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] && grep -qF 'standing down: 1 background agent task' <<<"$LAST_STDERR"; then
+  echo -e "  ${GREEN}PASS${NC} AC-BG: background subagent in flight -> exit 0, no block, stand-down log"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AC-BG: expected exit 0 + no block + stand-down log; exit=$LAST_EXIT_CODE decision='$DECISION' stderr='${LAST_STDERR:0:160}'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 # AC-4: scout in_progress — block stop
 # ============================================================
 echo "--- AC-4: scout in_progress ---"

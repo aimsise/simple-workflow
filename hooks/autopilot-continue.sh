@@ -35,6 +35,23 @@ source "$SCRIPT_DIR/lib/detect-policy-gate-stop.sh"
 # driver below uses to count unfinished steps and pick the next one.
 source "$SCRIPT_DIR/lib/parse-state-file.sh"
 
+# --- Background subagents in flight (fork mode) --------------------------------
+# In interactive sessions subagents run in the BACKGROUND by default (fork mode)
+# and the Agent tool returns immediately; the harness ends the turn and wakes the
+# session again when a task completes, and it tells Stop hooks so through the
+# `background_tasks` array ("session is paused waiting for background work",
+# hooks reference). While a subagent / workflow / teammate task is in flight the
+# pause is legitimate: do NOT block it, do NOT count it as a stall. The main
+# Stop only — a SubagentStop payload carries the PARENT session's task list.
+if [ "$(echo "$INPUT" | jq -r '.hook_event_name // "Stop"' 2>/dev/null || echo Stop)" != "SubagentStop" ]; then
+  _sw_bg_inflight=$(echo "$INPUT" | jq -r '[.background_tasks[]? | select(((.type // "") | test("subagent|workflow|teammate|agent"; "i")) and ((.status // "running") | test("complete|done|finish|fail|error|cancel"; "i") | not))] | length' 2>/dev/null || echo 0)
+  case "$_sw_bg_inflight" in *[!0-9]*|"") _sw_bg_inflight=0 ;; esac
+  if [ "$_sw_bg_inflight" -gt 0 ]; then
+    echo "[AUTOPILOT-CONTINUE] standing down: $_sw_bg_inflight background agent task(s) in flight — the harness wakes the session when they return; allowing end_turn without counting a stall." >&2
+    exit 0
+  fi
+fi
+
 # `_runtime_metrics_payload_field` is currently duplicated in
 # hooks/pre-compact-save.sh as `_pc_runtime_metrics_payload_field`. Both
 # copies close over the hook-script-local `$INPUT` variable; sharing
@@ -280,6 +297,11 @@ FILE_COUNT=0
 # `else` branch so the honour gate works regardless of
 # AUTOPILOT_LEGACY_LOOPGUARD.
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+# `last_assistant_message` (Stop / SubagentStop input since Claude Code
+# v2.1.47) carries the final assistant text verbatim, so the policy-gate-stop
+# honour check below no longer depends on the transcript file having been
+# flushed (the transcript is written asynchronously and may lag the turn).
+LAST_ASSISTANT_MESSAGE=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null || echo "")
 
 if [ "$SESSION_ID" != "unknown" ] && [ -f "$COUNTER_FILE" ]; then
   FILE_COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")
@@ -381,7 +403,7 @@ fi
 POLICY_STOP_HONOR="${SW_AUTOPILOT_POLICY_STOP_HONOR:-on}"
 case "$POLICY_STOP_HONOR" in
   on)
-    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH" "$LAST_ASSISTANT_MESSAGE"; then
       echo "[POLICY-GATE-STOP] honouring model-declared policy_gate_stop (last assistant turn emitted [AUTOPILOT-POLICY] ... action=stop); allowing end_turn instead of re-injecting continuation." >&2
       _emit_session_end_metrics "policy_gate_stop" "$FILE_COUNT"
       rm -f "$COUNTER_FILE" 2>/dev/null || true
@@ -390,7 +412,7 @@ case "$POLICY_STOP_HONOR" in
     fi
     ;;
   metric-only)
-    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH"; then
+    if last_turn_declares_policy_gate_stop "$TRANSCRIPT_PATH" "$LAST_ASSISTANT_MESSAGE"; then
       echo "[POLICY-GATE-STOP] metric-only: would honour model-declared policy_gate_stop (last assistant turn emitted [AUTOPILOT-POLICY] ... action=stop); still blocking per SW_AUTOPILOT_POLICY_STOP_HONOR=metric-only." >&2
     fi
     ;;

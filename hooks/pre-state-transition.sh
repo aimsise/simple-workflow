@@ -18,7 +18,7 @@
 #           Edit:  {"tool_name":"Edit","tool_input":{"file_path":"...",
 #                   "old_string":"...","new_string":"..."}, "cwd":"...", ...}
 #   stdout: empty when the write is allowed; otherwise a single JSON object
-#           with shape {"decision":"block","reason":"<text>"}.
+#           with shape {"decision":"block","reason":"<text>","hookSpecificOutput":{"permissionDecision":"deny",...}}.
 #   exit:   0 in both allow and block paths (block is conveyed via the JSON
 #           decision field). Non-zero only on internal errors that prevent
 #           the hook from making a decision.
@@ -94,9 +94,13 @@ source "$REPO_HOOKS_DIR/lib/parse-state-file.sh"  # hooks/lib/parse-state-file.s
 emit_block() {
   local kind="$1"
   local detail="$2"
+  # PreToolUse decision shape: `hookSpecificOutput.permissionDecision` is the
+  # documented contract (the top-level `decision`/`reason` pair is deprecated
+  # for PreToolUse but still emitted alongside for older hosts).
   jq -nc \
     --arg reason "$kind: $detail" \
-    '{decision:"block", reason:$reason}'
+    '{decision:"block", reason:$reason,
+      hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$reason}}'
   exit 0
 }
 

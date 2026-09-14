@@ -3206,7 +3206,14 @@ fi
 # CT-MODE-RM-3: taxonomy file is English-only (CLAUDE.md Language rule)
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ -f "$RM_TAXONOMY" ]; then
-  RM_NONLATIN=$(grep -cE '[ぁ-んァ-ヶ一-龥]' "$RM_TAXONOMY" 2>/dev/null || true)
+  # Locale-independent: match the UTF-8 byte ranges of Hiragana/Katakana
+  # (U+3040-U+30FF -> E3 81..83 xx) and CJK Unified Ideographs (U+4E00-U+9FFF
+  # -> E4..E9 xx xx) under LC_ALL=C. A character-class range such as
+  # a Hiragana-to-Katakana character range is locale-dependent: in the C locale it false-trips on ANY
+  # multibyte text (e.g. an em-dash), and under C.UTF-8 grep rejects it with
+  # "Invalid collation character" (masked by `|| true` into a silent PASS).
+  RM_CJK_RE=$(printf '\xe3[\x81-\x83][\x80-\xbf]|[\xe4-\xe9][\x80-\xbf][\x80-\xbf]')
+  RM_NONLATIN=$(LC_ALL=C grep -cE "$RM_CJK_RE" "$RM_TAXONOMY" 2>/dev/null || true)
   RM_NONLATIN=${RM_NONLATIN:-0}
   if [ "$RM_NONLATIN" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} CT-MODE-RM-3: stop-reason-taxonomy.md contains no Japanese characters"

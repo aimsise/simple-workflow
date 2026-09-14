@@ -13,13 +13,13 @@ The plugin assumes the following CLIs are available on `PATH`:
 
 ## Hooks
 
-### hooks.json: ordering-dependent hooks MUST be top-level entries
+### hooks.json: hooks on the same event run in parallel — never rely on ordering
 
-Anthropic's hook ordering contract guarantees **strict sequential execution only between top-level entries** of any hook array. A `hooks: []` array nested inside a single top-level entry does NOT guarantee ordering between its inner hooks — they may execute in parallel within the same tick.
+The documented Claude Code contract (hooks reference, "All matching hooks run in parallel") gives **no ordering guarantee at all** between the handlers that match one event — neither between the entries of a nested `hooks: []` array nor between separate top-level matcher entries. Every hook that fires on the same event must therefore be **order-independent**: it may not assume that a sibling hook has already written a state file, appended a `runtime_metrics` entry, dropped a sentinel, or bumped a counter in the same tick, and any shared read-modify-write (the `runtime_metrics` append in `hooks/lib/runtime-metrics.sh`) must be serialised with its own lock (`<state_file>.lock`, a `mkdir` lock so it works on macOS and Linux alike).
 
-**Rule**: if two hooks have an ordering dependency (one writes state that the next reads, one sets a sentinel the next checks, etc.), each MUST be its own **top-level entry** in the array. Never group ordering-dependent hooks inside a shared nested `hooks: []` array.
+**Rule**: keep each hook its own top-level entry (that still isolates enablement, `timeout`, and failure reporting per hook), but design as if all hooks on an event start simultaneously. Sequencing that genuinely matters must be expressed in one hook, or by keying the second hook on durable state the first one leaves on disk (it will observe that state on a LATER event, not in the same tick).
 
-This rule was distilled from a v6.7.0 dogfood incident in which a verify hook nested with `autopilot-continue.sh` inside one Stop entry ran for 59 ms with zero artifacts written — the symptom of a same-tick race. The fix in v6.7.1 (commit `12266241`) split the entries to top-level. The downstream research feature that surfaced the bug was later abandoned, but the structural rule generalises and stands on its own.
+History: a v6.7.0 dogfood incident in which a verify hook nested with `autopilot-continue.sh` inside one Stop entry ran for 59 ms with zero artifacts written was originally read as a nested-array race and "fixed" in v6.7.1 (commit `12266241`) by splitting the entries to top-level. The current documentation shows that split never bought an ordering guarantee — the entries still run concurrently — so the durable rule is order-independence, not entry placement.
 
 ### Runtime env knobs
 
