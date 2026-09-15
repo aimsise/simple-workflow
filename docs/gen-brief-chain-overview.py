@@ -227,7 +227,7 @@ def build(theme, out):
     text((PX0 + PX1) / 2, 528, "Each ticket  →  its own Pull Request", size=13, bold=True, color=C["pr"][2], anchor="mm")
 
     # caption (ties to harness + points to detail)
-    text(40, 580, "Throughout, lifecycle hooks DRIVE the run (Stop / SubagentStop re-inject \"continue\") and GUARD every write;",
+    text(40, 580, "Throughout, lifecycle hooks DRIVE the run (Stop re-injects \"continue\"; SubagentStop holds each executor to its phase) and GUARD every write;",
          size=11.5, color=GR)
     rich(40, 600, [("each executor works in an isolated worktree, merged at every wave boundary.  ", GR, False),
                   ("Full flow — agents · hooks · harness — below.", C["ink"], True)], size=11.5)
