@@ -50,7 +50,7 @@ allowed-tools:
   # (wave-loop step 2a) so the gitignored state tree resolves to the shared main checkout (T-008).
   # Scoped to `ln -s` (symlink creation) only — never a hardlink/other ln form.
   - "Bash(ln -s:*)"
-argument-hint: "<parent-slug> [uc=on|off|metric-only] [parallel=on|off]"
+argument-hint: "<parent-slug> [uc=on|off|metric-only] [parallel=on|off|metric-only] [parallel_max=N]"
 ---
 
 ## Pre-computed Context
