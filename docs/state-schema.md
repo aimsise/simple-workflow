@@ -1,129 +1,122 @@
 # `autopilot-state.yaml` schema reference
 
-This document is the single source of truth for the shape of
-`autopilot-state.yaml`, the file that the autopilot orchestrator and its
-read-only hook helpers (`hooks/lib/parse-state-file.sh`) consult to detect an
-autopilot run, walk the ticket list, and reason about per-ticket lifecycle.
+`autopilot-state.yaml` is the brief-level run state that `/autopilot` writes
+and the lifecycle hooks read through `hooks/lib/parse-state-file.sh`. Each
+ticket's own lifecycle lives in a separate `phase-state.yaml`
+(`skills/create-ticket/references/phase-state-schema.md`).
 
-The v8.0.0 release froze the canonical shape described below. Earlier (v7-era)
-runs produced a strictly-readable legacy variant that is preserved here for
-forward-compat reasoning; the parser library reads both, but writers (autopilot
-SKILL, ship hooks) only emit canonical v8.
+**Source of truth.** The field-by-field writer contract — every field, when it
+is written, and how it survives resume — is
+[`skills/autopilot/references/state-file.md`](../skills/autopilot/references/state-file.md),
+which `/autopilot` writes from. This document does not repeat it. It covers
+what the hooks depend on, the fields that belong to hooks, the older shapes
+the parsers still accept, and the legacy migration tool. If the two ever
+disagree, `state-file.md` is right and this file is the one to fix.
 
-## Canonical v8 schema
+## What the hooks read
 
-Top-level keys (in document order produced by canonical writers):
+| Field | Read by | Used for |
+|---|---|---|
+| `tickets[].status`, `tickets[].steps.{scout,impl,ship}`, `tickets[].ticket_dir` | `parse_ticket_statuses` / `parse_ticket_ship_dirs`, the Stop and checkpoint guards, the auto-compact hooks | Detecting an active run, pending work and ticket boundaries. The ticket count is the number of `tickets[]` entries. |
+| `parallel_mode` | `resolve_parallel_mode` (overridden by `SW_PARALLEL_HOOKS_MODE`) | Choosing the serial or the wave-aware path; an absent field means `off`. |
+| `wave_count`, `current_wave`, `wave_status` | `autopilot-continue.sh`, `post-ship-state-auto-compact.sh`, `pre-next-scout-auto-compact.sh` | Wave-boundary decisions under `parallel_mode: on`. |
+| `main_checkout_root` | `impl-checkpoint-guard.sh`, `scout-checkpoint-guard.sh` | Finding the authoritative state from inside a per-ticket worktree. |
 
-- `version: 1` — file ABI version. Reserved; bump only when the on-disk
-  encoding (not the field set) changes.
-- `parent_slug: <slug>` — the autopilot brief's slug.
-- `started: <RFC3339>` — orchestrator boot timestamp.
-- `execution_mode: split | unified` — whether tickets ran in split (per-ticket
-  Skill chain) or unified (single SKILL invocation) mode.
-- `risk_tolerance: aggressive | moderate | conservative` — policy tier copied
-  from `autopilot-policy.yaml`.
-- `ticket_mapping: { <logical_id>: <ticket_dir-fullpath> }` — map from
-  logical ticket id to the ticket directory as a fullpath rooted under
-  `.simple-workflow/backlog/...`. The value MUST be a fullpath; basename-only
-  values are a v7 legacy shape (see below).
-- `processing_order: [<logical_id>, ...]` — ordered list of `logical_id`
-  values. **Invariant: this list is the single source of truth for the
-  ticket count and execution order.**
-- `human_overrides: []` — list of explicit human-supplied policy/capability
-  overrides recorded by autopilot. Default empty array when absent.
-- `kb_overrides: []` — list of overrides sourced from the KB. Default empty
-  array.
-- `decisions_made: []` — append-only decision log. Default empty array.
-- `manual_bash_fallbacks: []` — append-only log of manual bash fallbacks taken
-  when a hook degraded. Default empty array.
-- `runtime_metrics: []` — append-only autopilot metric stream. Default empty
-  array.
-- `tickets: [<ticket-entry>]` — **list-canonical** array of per-ticket records.
-  Entry shape:
-  - `logical_id: <slug>-part-<N>`
-  - `ticket_dir: .simple-workflow/backlog/{done,active,product_backlog}/<parent_slug>/<NNN-...>/`
-    — always a fullpath ending with `/`. Never a basename.
-  - `status: completed | in_progress | failed | skipped | pending`
-  - `invocation_method: { scout, impl, ship: skill | mcp | bash }`
-  - `steps: { scout, impl, ship: completed | in_progress | pending | failed }`
-  - `pr_url: <url> | null` — defaults to `null` when no PR was opened yet.
-  - `failure_reason: <string> | null` — defaults to `null`.
+`runtime_metrics` is written by hooks rather than read (see
+[Hook-owned fields](#hook-owned-fields)). Everything else a run records —
+`total_tickets`, `ticket_mapping`, `execution_mode`, `ultracode_mode`,
+`invocation_method`, and the per-ticket `pr_url` / `branch` / `head_sha` /
+`failure_reason` transcribed on the wave-parallel path — is orchestrator state
+that no hook consumes.
 
-## Legacy v7 fields (read-only support)
+Two properties the hooks rely on:
 
-The parser helpers in `hooks/lib/parse-state-file.sh` accept the following v7
-fields for backward compatibility, but canonical v8 writers MUST NOT emit them:
+1. **`tickets` is a list and `steps.<phase>` is a string.** Writers emit
+   `tickets:` as a YAML list of `- logical_id: …` entries, each with a flat
+   `steps:` map whose values are strings on their own line.
+2. **`ticket_dir` is a fullpath.** Every `tickets[].ticket_dir` (and every
+   `ticket_mapping` value) is a fullpath under `.simple-workflow/backlog/`,
+   never a bare directory name.
 
-- `boundary: pipeline_start` — v7 surfaced the boundary that the autopilot
-  loop entered through. v8 drops it; consumers compute boundary state from
-  `tickets[].steps` instead.
-- `total_tickets: <int>` — v7 cached `len(tickets)`. v8 derives the count
-  from `processing_order` (or `tickets` length when `processing_order`
-  is unset). Counter fields are redundant and prone to drift.
-- `completed_tickets: <int>`, `failed_tickets: <int>`, `skipped_tickets: <int>`
-  — v7 cached per-status aggregates. v8 derives them by walking
-  `tickets[].status` on demand.
-- `ticket_mapping: { <logical_id>: <basename> }` — v7 stored the basename of
-  the ticket directory. v8 uses the fullpath; the migration tool rewrites
-  basename values into fullpaths from `tickets[].ticket_dir`.
-- `tickets[].depends_on: []` — v7 surfaced an explicit per-ticket dependency
-  list. v8 represents ordering through `processing_order` only.
+New fields may be added at the top level or inside `tickets[]` without bumping
+`version:`; renaming or removing a field is a breaking change.
 
-The parser helpers normalise these on read: legacy fields are ignored when
-their v8 counterparts are present, and missing v8 fields fall back to the
-v7 source where defined.
+## Hook-owned fields
 
-## Invariants
+`HOOK_OWNED_FIELDS` in `hooks/lib/state-authority.sh` currently holds one
+field, `.runtime_metrics`: an append-only list that only hooks write. Six hooks
+append to it — the Stop and checkpoint guards (`autopilot-continue.sh`,
+`impl-checkpoint-guard.sh`, `scout-checkpoint-guard.sh`), `pre-compact-save.sh`,
+and the two auto-compact hooks — all through `append_runtime_metrics_entry`
+(`hooks/lib/runtime-metrics.sh`), which serialises the append with a
+`<state_file>.lock` directory lock. The entry shape is documented in
+`state-file.md` under `## runtime_metrics: schema`.
 
-The following invariants are checked by `tests/test-state-parsers.sh` and
-documented here so future writers do not regress them:
+The orchestrator must not rewrite or blank this list with `Write` / `Edit`: a
+hook may have appended to it earlier in the same turn, and rewriting the whole
+list silently drops that entry. `hooks/pre-write-safety.sh` and
+`hooks/pre-edit-safety.sh` detect such a change and, depending on
+`SW_STATE_FIELD_GUARD_MODE`, log it (`metric-only`, the default) or block it
+(`on`) with a reason that points to this file.
 
-1. **`processing_order` is the SSoT for ticket count.** The number of entries
-   in `processing_order` MUST equal the number of `tickets[]` entries with a
-   `logical_id` present in `processing_order`. Counts derived from any other
-   field (`total_tickets`, `len(ticket_mapping)`) are advisory only and
-   subject to legacy-drift.
-2. **`ticket_dir` is always a fullpath.** Every `tickets[].ticket_dir` value
-   begins with `.simple-workflow/backlog/` and ends with `/`. Every
-   `ticket_mapping` value is the same fullpath. Basename-only values are a
-   v7 legacy shape and trigger the migration tool's `ticket_mapping`
-   rewrite step.
-3. **`tickets[]` is list-canonical.** The canonical encoding is a YAML list
-   (`tickets:\n  - logical_id: ...`). The parser helpers tolerate a map
-   encoding (`tickets:\n  shelftrack-part-1: { ... }`) for compatibility
-   with a single observed orchestrator slip
-   (`test_simple_workflow28`), but writers MUST emit list form.
-4. **Forward-compatible additions only.** New fields MAY be added at the top
-   level or inside `tickets[]` entries without bumping `version:`. Renames or
-   removals are breaking and require the migration tool and a major release.
+Status fields are guarded separately: `hooks/pre-state-transition.sh` vets
+status transitions made with `Write` / `Edit`, and detection 3 of
+`hooks/pre-bash-contract-guard.sh` (`SW_BASH_STATE_GUARD_MODE`) catches the
+same mutation done through Bash (`yq -i`, `sed -i`, a redirect). Route status
+changes through the owning skill (`/scout`, `/impl`, `/ship`) or through
+`Write` / `Edit` so these guards see them.
+
+## Older shapes the parsers still accept
+
+Writers must not produce these, but the helpers in
+`hooks/lib/parse-state-file.sh` read them so an older or slightly malformed
+run can still be resumed:
+
+- `steps.<phase>` written as a nested map instead of a string
+  (`parse_ticket_ship_dirs`, an orchestrator slip observed in
+  `test_simple_workflow27`).
+- `tickets:` written as a map keyed by `logical_id` instead of a list
+  (`parse_ticket_statuses`, observed in `test_simple_workflow28`).
+- The v7 cached counters `completed_tickets` / `failed_tickets` /
+  `skipped_tickets` and `boundary: pipeline_start` — ignored; the hooks derive
+  progress from `tickets[]`.
+- A `create-ticket` key under `steps` / `invocation_method`, left by runs from
+  before ticket creation moved out of `/autopilot`.
 
 ## Migration guidance
 
-Use `tools/migrate-state-schema.sh` to rewrite a v7-shaped file into
-canonical v8:
+`tools/migrate-state-schema.sh` normalises a v7-era file. It was written for a
+"canonical v8" shape planned for v8.0.0 that the `/autopilot` writer never
+adopted, so its output differs from what a current run writes, although the
+hooks read both:
 
 ```bash
 bash tools/migrate-state-schema.sh \
   --in  <path/to/v7/autopilot-state.yaml> \
-  --out <path/to/v8/autopilot-state.yaml>
+  --out <path/to/migrated/autopilot-state.yaml>
 ```
 
-The migration is idempotent: running it again on an already-v8 file produces
-zero diff (verified by AC-9 in P2-4).
+The migration is idempotent (a second run produces zero diff) and
+non-destructive:
 
-The migration performs the following non-destructive steps:
-
-1. Drop legacy `total_tickets`, `completed_tickets`, `failed_tickets`,
-   `skipped_tickets`, and `boundary` fields if present.
+1. Drop `total_tickets`, `completed_tickets`, `failed_tickets`,
+   `skipped_tickets` and `boundary`. A current run still writes
+   `total_tickets`; dropping it is harmless because the hooks count
+   `tickets[]`.
 2. Add `processing_order` from `tickets[].logical_id` in document order when
    it is missing.
-3. Add `human_overrides: []`, `kb_overrides: []`, `decisions_made: []`, and
-   `manual_bash_fallbacks: []` if missing.
+3. Add `human_overrides: []`, `kb_overrides: []`, `decisions_made: []` and
+   `manual_bash_fallbacks: []` when missing.
 4. Add `pr_url: null` and `failure_reason: null` to every `tickets[]` entry
-   that does not already carry those keys.
-5. Rewrite each `ticket_mapping` value that is a basename (no `/`) into the
+   that lacks them.
+5. Rewrite each `ticket_mapping` value that is a bare directory name into the
    matching `tickets[].ticket_dir` fullpath.
 
-The script implements a three-tier dependency fallback per the project
-convention: `yq` (mikefarah v4) preferred, falling back to `python3 + PyYAML`,
-and finally failing loudly when neither is available.
+`processing_order`, `human_overrides`, `kb_overrides` and `decisions_made`
+exist only in migrated files: no writer emits them and no hook reads them.
+Human overrides are reported in `autopilot-log.md`, and `risk_tolerance` stays
+in `autopilot-policy.yaml`. A state file written by v8.0.0 or later needs no
+migration.
+
+The tool follows the project's dependency fallback: `yq` (mikefarah v4) first,
+then `python3 + PyYAML`, and a loud failure when neither is available.

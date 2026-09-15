@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------- canvas / scale
 S = 2
-W, H = 1200, 2000
+W, H = 1200, 2240
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ------------------------------------------------------------------------- fonts
@@ -253,25 +253,37 @@ def build(theme, out):
 
     # 4. /autopilot
     A0 = y
-    box(MX0, A0, MX1, A0 + 84, SKILL_FILL, SKILL_BD)
+    box(MX0, A0, MX1, A0 + 116, SKILL_FILL, SKILL_BD)
     text(MX0 + 16, A0 + 22, "/autopilot", size=15.5, bold=True, color=SKILL_TX)
     text(MX0 + 104, A0 + 23, "· skill — orchestrator", size=11.5, color=GRAY)
-    text(MX0 + 16, A0 + 52, "runs each ticket in dependency (topological) order", size=12, color=INK)
+    rich(MX0 + 16, A0 + 50, [("groups tickets into topological ", INK, False), ("waves", LOOP, True),
+                            (" (a ticket is ready when every dep is done)", INK, False)], size=12)
+    rich(MX0 + 16, A0 + 73, [("spawns one ", INK, False), ("ticket-executor", AGENT_TX, True),
+                            (" per ready ticket  —  concurrently (cap 4)", INK, False)], size=12)
+    rich(MX0 + 16, A0 + 96, [("single writer of ", INK, False), ("autopilot-state.yaml", IO_TX, True),
+                            ("  ·  merges branches each wave boundary", INK, False)], size=12)
 
-    y = trans(A0 + 84, ["Stop hook  autopilot-continue  re-injects a \"continue\" prompt every",
-                        "turn — this is what DRIVES the loop; state files make the run resumable"])
+    y = trans(A0 + 116, ["Stop hook  autopilot-continue  DRIVES the wave loop — collect the wave ·",
+                        "integrate completed branches · spawn the next; state files make it resumable"])
 
-    # PER-TICKET LOOP box
+    # PER-WAVE LOOP box
     OLY0 = y + 4
     OLX0, OLX1 = 40, 666
-    text(OLX0 + 16, OLY0 + 18, "PER-TICKET LOOP  —  one pass per ticket", size=13, bold=True, color=LOOP)
-    text(OLX0 + 16, OLY0 + 38, "(auto-/compact resets the context window at every ticket boundary)", size=10.5, color=LOOP)
+    text(OLX0 + 16, OLY0 + 18, "PER-WAVE LOOP  —  one topological wave per pass", size=13, bold=True, color=LOOP)
+    text(OLX0 + 16, OLY0 + 38, "(auto-/compact resets the context window at every wave boundary)", size=10.5, color=LOOP)
+    rich(OLX0 + 16, OLY0 + 60, [("wave k:  the orchestrator spawns ", GRAY, False),
+                               ("one ticket-executor per ready ticket", AGENT_TX, True),
+                               (", concurrently — one shown in detail", GRAY, False)], size=10.5)
 
     SX0, SX1 = 64, 638
     SCX = (SX0 + SX1) / 2
 
+    # ticket-executor frame (wraps the per-ticket pipeline; the wave runs one per ready ticket)
+    EX0, EX1 = 50, 652
+    EY0 = OLY0 + 82
+
     # 5. /scout
-    S0 = OLY0 + 60
+    S0 = EY0 + 44
     box(SX0, S0, SX1, S0 + 118, SKILL_FILL, SKILL_BD)
     text(SX0 + 14, S0 + 20, "/scout", size=14.5, bold=True, color=SKILL_TX)
     text(SX0 + 76, S0 + 21, "· skill (thin orchestrator) — chains two sub-skills:", size=11, color=GRAY)
@@ -336,7 +348,7 @@ def build(theme, out):
             text(ax0 + aw / 2, ay0 + 24, nm, size=11, bold=True, color=AGENT_TX, anchor="mm")
 
     y = trans(I0 + IMPL_H, ["subagents return < 500-token summaries; full artifacts stay on",
-                           "disk (context conservation) — the orchestrator window stays lean"])
+                           "disk (context conservation) — the executor window stays lean"])
 
     # 7. /ship
     SH0 = y
@@ -349,35 +361,53 @@ def build(theme, out):
                              ("gh", IO_TX, True)], size=12)
     rich(SX0 + 14, SH0 + 96, [("move ticket  →  ", INK, False), ("backlog/done/", IO_TX, True)], size=12)
 
+    # close the ticket-executor frame around /scout .. /ship
+    EY1 = SH0 + 122 + 16
+    box(EX0, EY0, EX1, EY1, None, AGENT_BD, width=2, radius=12)
+    rich(EX0 + 16, EY0 + 18, [("ticket-executor", AGENT_TX, True),
+                             ("  ·  subagent — runs the whole pipeline in its own git worktree", GRAY, False)], size=10.5)
+
+    # wave barrier + cross-wave integration (orchestrator, at the wave boundary)
+    IBY0 = EY1 + 22
+    IBY1 = IBY0 + 64
+    d.line([P(SCX), P(EY1), P(SCX), P(IBY0)], fill=LINE, width=P(2))
+    arrowhead(SCX, IBY0, "down")
+    box(SX0, IBY0, SX1, IBY1, TRANS_FILL, TRANS_BD, width=1.6, radius=10)
+    rich(SX0 + 16, IBY0 + 23, [("wave barrier", LOOP, True),
+                              (" — the orchestrator waits for every executor in the wave,", INK, False)], size=11)
+    rich(SX0 + 16, IBY0 + 44, [("then merges each completed branch  →  ", INK, False),
+                              ("ap-integration/<parent>", IO_TX, True),
+                              ("  (the next wave's base)", GRAY, False)], size=11)
+
     # decision diamond
-    DCX, DCY = SCX, SH0 + 122 + 56
-    d.line([P(SCX), P(SH0 + 122), P(SCX), P(DCY - 30)], fill=LINE, width=P(2))
+    DCX, DCY = SCX, IBY1 + 56
+    d.line([P(SCX), P(IBY1), P(SCX), P(DCY - 30)], fill=LINE, width=P(2))
     arrowhead(SCX, DCY - 30, "down")
     d.polygon([(P(DCX), P(DCY - 28)), (P(DCX + 104), P(DCY)),
                (P(DCX), P(DCY + 28)), (P(DCX - 104), P(DCY))],
               fill=DIAMOND_FILL, outline=LOOP, width=P(2))
-    text(DCX, DCY, "more tickets?", size=11.5, bold=True, color=DIAMOND_TX, anchor="mm")
+    text(DCX, DCY, "more waves?", size=11.5, bold=True, color=DIAMOND_TX, anchor="mm")
 
     OLY1 = DCY + 52
     dashed_rect(OLX0, OLY0, OLX1, OLY1, LOOP, width=2.4, dash=11, gap=6)
 
-    # yes -> loop back up to /scout
-    LBX = 50
+    # yes -> loop back up to spawn the next wave
+    LBX = 42
     dashed_line(DCX - 104, DCY, LBX, DCY, LOOP, 2.4, 9, 6)
-    dashed_line(LBX, DCY, LBX, S0 + 50, LOOP, 2.4, 9, 6)
-    dashed_line(LBX, S0 + 50, SX0, S0 + 50, LOOP, 2.4, 9, 6)
-    arrowhead(SX0, S0 + 50, "right", color=LOOP)
-    text_bg(DCX - 150, DCY, "yes  —  next ticket", size=10.5, color=LOOP, bold=True)
+    dashed_line(LBX, DCY, LBX, EY0 + 16, LOOP, 2.4, 9, 6)
+    dashed_line(LBX, EY0 + 16, EX0, EY0 + 16, LOOP, 2.4, 9, 6)
+    arrowhead(EX0, EY0 + 16, "right", color=LOOP)
+    text_bg(DCX - 150, DCY, "yes  —  next wave", size=10.5, color=LOOP, bold=True)
 
     # no -> PR
     d.line([P(SCX), P(DCY + 28), P(SCX), P(OLY1 + 46)], fill=LINE, width=P(2))
     arrowhead(SCX, OLY1 + 46, "down")
-    text_bg(SCX + 96, OLY1 + 24, "no (all tickets done)", size=10.5, color=GRAY)
+    text_bg(SCX + 96, OLY1 + 24, "no (all waves done)", size=10.5, color=GRAY)
 
     # PR
     PR0 = OLY1 + 48
     box(MX0, PR0, MX1, PR0 + 48, PR_FILL, PR_BD)
-    text(MCX, PR0 + 24, "All tickets shipped   →   Pull Request(s) on GitHub",
+    text(MCX, PR0 + 24, "Each ticket   →   its own Pull Request on GitHub",
          size=13, bold=True, color=PR_TX, anchor="mm")
 
     # HOOKS lane
@@ -407,7 +437,8 @@ def build(theme, out):
     hy = hitem(hy, "pre-bash / write / edit-safety.sh", "PII · destructive · identity guards")
     hy = hitem(hy, "pre-state-transition.sh", "block illegal status writes")
     hy = hitem(hy, "pre-bash-contract-guard.sh", "block bash state-mutation")
-    hy = hitem(hy, "pre-next-scout-auto-compact.sh", "/compact at ticket boundary")
+    hy = hitem(hy, "pre-skill-contract-guard.sh", "review agents may not run pipeline skills")
+    hy = hitem(hy, "pre-next-scout-auto-compact.sh", "/compact at ticket boundary (serial)")
     hy = hitem(hy, "pre-askuserquestion-guard.sh", "non-interactive gate")
     hy += 8
     hy = hgroup(hy, "PreCompact")
@@ -415,14 +446,18 @@ def build(theme, out):
     hy += 8
     hy = hgroup(hy, "PostToolUse")
     hy = hitem(hy, "post-phase-checkpoint.sh", "persist phase-state.yaml")
-    hy = hitem(hy, "post-ship-state-auto-compact.sh", "/compact safety net")
+    hy = hitem(hy, "post-ship-state-auto-compact.sh", "/compact at wave boundary · serial safety net")
+    hy = hitem(hy, "accept-set-verify.sh", "check the evaluator's accept-set sweep")
     hy = hitem(hy, "post-skill-cleanup.sh", "")
     hy += 8
-    hy = hgroup(hy, "Stop   (the loop drivers)")
+    hy = hgroup(hy, "Stop   (the loop driver)")
     ac_y = hy
-    hy = hitem(hy, "autopilot-continue.sh", "re-injects \"continue\"  =  the loop", marker=True)
-    hy = hitem(hy, "impl- / scout-checkpoint-guard.sh", "block premature stop mid-phase")
+    hy = hitem(hy, "autopilot-continue.sh", "re-injects \"continue\" / the next-wave step", marker=True)
+    hy = hitem(hy, "impl- / scout-checkpoint-guard.sh", "block a premature stop mid-phase (serial)")
     hy = hitem(hy, "session-stop-log.sh", "")
+    hy += 8
+    hy = hgroup(hy, "SubagentStop   (per ticket-executor)")
+    hy = hitem(hy, "impl- / scout-checkpoint-guard.sh", "enforce mid-phase on the executor transcript")
 
     hy += 12
     d.line([P(HX0 + 18), P(hy), P(HX1 - 18), P(hy)], fill=SEP, width=P(1))
@@ -432,23 +467,24 @@ def build(theme, out):
     for ln in ["• Pre-*-safety / contract / state guards vet every",
                "  Write / Edit / Bash before it runs.",
                "• auto-compact hooks refresh the context window",
-               "  between tickets so it never fills up.",
-               "• Stop hooks re-inject \"continue\" until every ticket",
-               "  reaches backlog/done/ — that IS the per-ticket loop."]:
+               "  between waves so it never fills up.",
+               "• Stop re-injects \"continue\" until every wave is done",
+               "  — that IS the per-wave loop; SubagentStop guards",
+               "  enforce mid-phase on each ticket-executor."]:
         text(HX0 + 26, hy, ln, size=10, color=SLATE)
         hy += 17
 
-    # connector: autopilot-continue -> PER-TICKET LOOP box
+    # connector: autopilot-continue -> PER-WAVE LOOP box
     gapx = 680
     dashed_line(HX0, ac_y, gapx, ac_y, LOOP, 2.4, 8, 5)
     dashed_line(gapx, ac_y, gapx, OLY0 + 26, LOOP, 2.4, 8, 5)
     dashed_line(gapx, OLY0 + 26, OLX1, OLY0 + 26, LOOP, 2.4, 8, 5)
     arrowhead(OLX1, OLY0 + 26, "left", color=LOOP)
-    text_bg(OLX0 + 470, OLY0 + 26, "Stop hook drives the loop", size=10.5, color=LOOP, bold=True)
+    text_bg(OLX0 + 470, OLY0 + 26, "Stop hook drives the wave loop", size=10.5, color=LOOP, bold=True)
 
     # HARNESS key panel
     KY0 = PR0 + 84
-    KY1 = KY0 + 214
+    KY1 = KY0 + 244
     box(MX0, KY0, HX1, KY1, HARN_FILL, HARN_BD, width=2, radius=12)
     text(MX0 + 18, KY0 + 24, "The harness applied across the whole run", size=14, bold=True, color=HARN_TX)
     text(MX0 + 18, KY0 + 47, "Together these mechanisms ARE the plugin's closed inner loop of loop engineering — the scheduler (\"outer\") loop is delegated to Claude Code (/loop · /schedule).",
@@ -456,10 +492,11 @@ def build(theme, out):
     ky = KY0 + 76
     HARN = [
         ("Information firewall", "code authors and code judges never share a context — the Generator (implementer) and Evaluator (ac-evaluator) are separate fresh subagents, so the judge cannot be biased by the author."),
-        ("Context conservation", "every subagent returns a < 500-token summary; full artifacts (investigation, plan, eval rounds) live on disk; auto-/compact runs between tickets."),
-        ("State machine", "autopilot-state.yaml + one phase-state.yaml per ticket record every step, so any compaction, crash or /clear is resumable from the last checkpoint."),
-        ("Bounded closed loops", "the per-ticket loop and the verify loop (Generator/Evaluator, up to 9 rounds) stop only when the Acceptance-Criteria contract passes or a round cap is hit."),
-        ("Lifecycle guards", "hooks vet every Write / Edit / Bash, snapshot state before /compact, and decide continue-vs-stop on every turn."),
+        ("Context conservation", "every subagent returns a < 500-token summary; full artifacts (investigation, plan, eval rounds) live on disk; auto-/compact runs between waves."),
+        ("State machine", "autopilot-state.yaml (the orchestrator is its single writer, at wave boundaries) + one phase-state.yaml per ticket record every step, so any compaction, crash or /clear is resumable."),
+        ("Worktree isolation", "each ticket-executor runs in its own git worktree; the orchestrator merges completed branches into ap-integration/<parent> at every wave boundary, so concurrent tickets never collide."),
+        ("Bounded closed loops", "the per-wave loop and the verify loop (Generator/Evaluator, up to 9 rounds) stop only when the Acceptance-Criteria contract passes or a round cap is hit."),
+        ("Lifecycle guards", "hooks vet every Write / Edit / Bash, snapshot state before /compact, and decide continue-vs-stop on every turn (Stop) and per executor (SubagentStop)."),
     ]
     for title, desc in HARN:
         ex = rich(MX0 + 18, ky, [("• ", HARN_TX, True), (title + " — ", HARN_TX, True)], size=11)

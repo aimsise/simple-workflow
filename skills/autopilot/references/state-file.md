@@ -360,9 +360,13 @@ on every entry — no wave index is persisted. Only `wave_count` /
 `current_wave` / `wave_status` / `main_checkout_root` (observability
 projections) are written.
 
-**No behaviour change yet.** These fields are additive and unread by any
-hook until the T-004/5/6 rework; a legacy or serial (`PARALLEL_MODE == off`)
-run omits them entirely (a byte-identical state file).
+**Readers.** `hooks/autopilot-continue.sh`,
+`hooks/post-ship-state-auto-compact.sh` and
+`hooks/pre-next-scout-auto-compact.sh` read the wave cursor, and the two
+checkpoint guards (`hooks/impl-checkpoint-guard.sh`,
+`hooks/scout-checkpoint-guard.sh`) read `main_checkout_root`; a legacy or
+serial (`PARALLEL_MODE == off`) run omits these fields entirely (a
+byte-identical state file).
 
 ## `autopilot-state.yaml` location precedence
 
