@@ -20,6 +20,8 @@ allowed-tools:
   - Read
   - Write
   - Edit
+  - Glob
+  - AskUserQuestion
   - "Bash(date:*)"
   - "Bash(mv:*)"
   - "Bash(mkdir:*)"

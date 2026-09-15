@@ -24,19 +24,19 @@ Recover context and detect next action for the current working session.
 User arguments: $ARGUMENTS
 
 Current branch:
-!`git branch --show-current`
+!`git branch --show-current 2>/dev/null || echo "(not a git repository)"`
 
 Recent history:
-!`git log --oneline -5`
+!`git log --oneline -5 2>/dev/null || echo "(no commits yet)"`
 
 Default branch:
 !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main`
 
 Changes from default branch:
-!`git diff --shortstat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main)`
+!`git diff --shortstat $(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' | grep . || echo main) 2>/dev/null || echo "(default branch not found locally — skipped)"`
 
 Working tree:
-!`git status --short`
+!`git status --short 2>/dev/null || true`
 
 ## Instructions
 

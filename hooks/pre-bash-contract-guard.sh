@@ -20,7 +20,7 @@
 #            "cwd": "/path/to/repo", "session_id": "...",
 #            "transcript_path": "..."}
 #   stdout: empty when the command is allowed; otherwise a single JSON
-#           object with shape {"decision":"block","reason":"<text>"}.
+#           object with shape {"decision":"block","reason":"<text>","hookSpecificOutput":{"permissionDecision":"deny",...}}.
 #   exit:   0 in both allow and block paths (block is conveyed via the
 #           JSON decision field). Non-zero only on internal errors that
 #           prevent the hook from making a decision.
@@ -31,7 +31,7 @@
 #   2. autopilot context inside, `git commit ...` direct invocation:
 #        - Allowed when the /ship Skill has written a `.ship-commit-nonce`
 #          sentinel under the active autopilot tree BEFORE its Step-3 commit
-#          (skills/ship/SKILL.md Step 2.5) -- a non-forgeable file-existence
+#          (skills/ship/SKILL.md Step 2.5) -- a file-existence signal that no model-writable STATE field can imitate (not a cryptographic proof: any process can create the file; it is a role firewall for an honest orchestrator, see docs/harness-conformance-audit-2026-09.md);
 #          signal (FIX-2, v9.0.1; replaces the prior forgeable
 #          `phases.ship.status: in-progress` proxy a model could write).
 #        - Blocked otherwise as `unauthorized_ship_inline` (UNCONDITIONAL --
@@ -108,9 +108,13 @@ fi
 emit_block() {
   local kind="$1"
   local detail="$2"
+  # PreToolUse decision shape: `hookSpecificOutput.permissionDecision` is the
+  # documented contract (the top-level `decision`/`reason` pair is deprecated
+  # for PreToolUse but still emitted alongside for older hosts).
   jq -nc \
     --arg reason "$kind: $detail" \
-    '{decision:"block", reason:$reason}'
+    '{decision:"block", reason:$reason,
+      hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$reason}}'
   exit 0
 }
 
@@ -157,7 +161,7 @@ AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"   # UNCONDITIONAL strip -- bare AND 
 #
 # A direct `git commit` inside an autopilot run is authorized ONLY when the
 # /ship Skill has written a `.ship-commit-nonce` sentinel BEFORE its Step-3
-# commit (skills/ship/SKILL.md Step 2.5). The nonce is a non-forgeable
+# commit (skills/ship/SKILL.md Step 2.5). The nonce is not derived from any model-writable state field but is NOT unforgeable (any Bash write sink can create it); it is a
 # file-existence signal: unlike the prior `phases.ship.status: in-progress`
 # proxy (which a model can write into any phase-state.yaml), the nonce is
 # dropped by /ship itself immediately before the commit and removed on every

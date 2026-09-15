@@ -23,11 +23,18 @@
 #
 # Public contract:
 #
-#   last_turn_declares_policy_gate_stop <transcript_path>
-#     - Returns 0 iff the LAST assistant turn in the JSONL transcript at
-#       <transcript_path> contains, inside a `text`-type content block, the
-#       marker matching `[AUTOPILOT-POLICY] ... action=stop` on one logical
-#       line.
+#   last_turn_declares_policy_gate_stop <transcript_path> [last_assistant_message]
+#     - When the optional second argument is NON-EMPTY it is treated as the
+#       authoritative final assistant text (the `last_assistant_message`
+#       field Claude Code passes to Stop / SubagentStop hooks since v2.1.47):
+#       returns 0 iff THAT text contains the marker; the transcript is NOT
+#       read. This is the preferred path — the transcript file is written
+#       asynchronously and may lag the turn that just ended.
+#     - Otherwise (argument absent or empty — older hosts, or a caller that
+#       only has a transcript): returns 0 iff the LAST assistant turn in the
+#       JSONL transcript at <transcript_path> contains, inside a `text`-type
+#       content block, the marker matching `[AUTOPILOT-POLICY] ... action=stop`
+#       on one logical line.
 #     - Returns 1 (non-zero) for any of:
 #         * no marker anywhere;
 #         * the marker only in an EARLIER (non-last) assistant turn;
@@ -62,9 +69,17 @@
 # `set -e`.
 _DPGS_MARKER_RE='\[AUTOPILOT-POLICY\][^"]*action=stop'
 
-# last_turn_declares_policy_gate_stop <transcript_path>
+# last_turn_declares_policy_gate_stop <transcript_path> [last_assistant_message]
 last_turn_declares_policy_gate_stop() {
   local transcript="${1:-}"
+  local last_message="${2:-}"
+  # Fast path: the harness handed us the final assistant text directly.
+  if [ -n "$last_message" ]; then
+    if printf '%s\n' "$last_message" | grep -qE "$_DPGS_MARKER_RE"; then
+      return 0
+    fi
+    return 1
+  fi
   [ -n "$transcript" ] || return 1
   [ -f "$transcript" ] || return 1
   # Empty file → no declaration.

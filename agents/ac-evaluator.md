@@ -138,7 +138,7 @@ tools:
   - "shell(wc:*)"
   - "shell(head:*)"
   - "shell(tail:*)"
-model: sonnet  # M5/v8.3.0+: the opus variant is the byte-identical sibling agents/ac-evaluator-hi.md (model: opus); the orchestrator spawns ac-evaluator-hi when the Step 3a resolver sets EVALUATOR_MODEL=opus (criticality=critical OR verification_depth=exhaustive), because the Agent JSONSchema rejects a per-spawn model: override (Strategy-B). Keep the two bodies byte-identical except this line and the name: line (CT-EV-MODEL).
+model: sonnet  # M5/v8.3.0+: the opus variant is the byte-identical sibling agents/ac-evaluator-hi.md (model: opus); the orchestrator spawns ac-evaluator-hi when the Step 3a resolver sets EVALUATOR_MODEL=opus (criticality=critical OR verification_depth=exhaustive), spawning by agent file is the canonical model selection (Strategy-B; the Agent tool's newer per-invocation model parameter is not relied on, so the spawned file's model: line stays the auditable source of truth). Keep the two bodies byte-identical except this line and the name: line (CT-EV-MODEL).
 maxTurns: 200  # raised in T-2; 60 is the documented floor, orchestrator passes a soft turn budget in the prompt via AC_COUNT * 4
 ---
 
@@ -146,7 +146,8 @@ maxTurns: 200  # raised in T-2; 60 is the documented floor, orchestrator passes 
 
 Before rendering the per-AC verdict, you MUST load
 `skills/impl/references/tautological-assertion-rules.md` (resolve the path
-relative to the repository root) and apply the four canonical rules — **R1**
+relative to the PLUGIN root, `${CLAUDE_PLUGIN_ROOT}` — the file ships with the
+plugin and does not exist in the user's repository) and apply the four canonical rules — **R1**
 (reference equality of the same symbol), **R2** (vacuous numeric boundary),
 **R3** (constant-only boolean assertion), **R4** (oracle circularity) — to every test file that the round
 under review added or modified. Apply the rules from round 1 onward. The

@@ -12,6 +12,10 @@ description: >-
   "find references", "explore the codebase".
 context: fork
 agent: researcher
+# Since Claude Code v2.1.218 a `context: fork` skill runs in the BACKGROUND by
+# default and its result only arrives in a later turn. This skill is chain-called
+# by a pipeline skill that reads the artifact in the SAME turn, so it must wait.
+background: false
 model: sonnet
 argument-hint: "<topic or question to investigate>"
 allowed-tools:
@@ -26,7 +30,7 @@ allowed-tools:
 Investigate the following topic: $ARGUMENTS
 
 Current repo state:
-!`git status --short | head -20`
+!`git status --short 2>/dev/null | head -20 || true`
 
 ## Pre-computed Context
 

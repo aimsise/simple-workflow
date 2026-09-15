@@ -191,6 +191,42 @@ fi
 # three Stop hooks do NOT inline the literal `[AUTOPILOT-POLICY]` regex but
 # DO source the helper + call the function.
 # ---------------------------------------------------------------------------
+echo "--- last_assistant_message argument (Stop / SubagentStop input, CC >= 2.1.47) ---"
+# Helper: call the detector with a transcript AND a message; expect rc.
+assert_detect_msg() {
+  local desc="$1"; local tp="$2"; local msg="$3"; local expected="$4"
+  local rc
+  set +e
+  bash -c "source '$HELPER'; last_turn_declares_policy_gate_stop \"\$1\" \"\$2\"" _ "$tp" "$msg" >/dev/null 2>&1
+  rc=$?
+  set -e
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  if [ "$rc" -eq "$expected" ]; then
+    echo -e "  ${GREEN}PASS${NC} $desc (rc=$rc)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $desc (expected rc=$expected, got rc=$rc)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+MSG_STOP='Stopping here.
+[AUTOPILOT-POLICY] gate=unexpected_error action=stop reason=missing_split_plan'
+MSG_ALLOW='Continuing.
+[AUTOPILOT-POLICY] gate=scout action=allow reason=evaluated'
+# (i) message carries the marker -> rc 0 even though the transcript has NO marker
+#     (the transcript may lag the turn; the message is authoritative).
+assert_detect_msg "message with marker wins over a marker-less transcript" \
+  "$FIXTURES_DIR/policy_gate_stop_earlier_turn_only.jsonl" "$MSG_STOP" 0
+# (ii) message WITHOUT the marker -> rc 1 even though the transcript's last turn has it.
+assert_detect_msg "message without marker wins over a transcript that has one" \
+  "$FIXTURES_DIR/policy_gate_stop_last_turn.jsonl" "$MSG_ALLOW" 1
+# (iii) empty message -> falls back to the transcript scan (rc 0 on the positive fixture).
+assert_detect_msg "empty message falls back to the transcript scan" \
+  "$FIXTURES_DIR/policy_gate_stop_last_turn.jsonl" "" 0
+# (iv) message with marker + missing transcript -> rc 0 (no transcript needed).
+assert_detect_msg "message with marker needs no transcript file" \
+  "/nonexistent/transcript.jsonl" "$MSG_STOP" 0
+
 echo "--- AC-6: DRY — detection only in the helper ---"
 for hook in autopilot-continue.sh impl-checkpoint-guard.sh scout-checkpoint-guard.sh; do
   HOOK_PATH="$HOOK_DIR/$hook"

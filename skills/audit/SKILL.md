@@ -14,8 +14,10 @@ disable-model-invocation: false
 allowed-tools:
   - Agent
   - Read
+  - Write
   - Glob
   - Grep
+  - "Bash(source:*)"  # Step 4b sources ${CLAUDE_PLUGIN_ROOT}/hooks/lib/audit-coverage.sh
 argument-hint: "[only_security_scan=true|false] [round=N] [ticket-dir=<dir-name>] [depth=standard|thorough|exhaustive] [branch or commit range (optional)]"
 ---
 
@@ -45,19 +47,19 @@ The following agent invocations are **contractual** — `/audit` MUST delegate t
 - `Fail this audit immediately if any required agent cannot be invoked via the Agent tool` — the Error Handling section treats agent failure as Critical = 1; **never silently treat a failed agent as PASS or PASS_WITH_CONCERNS**.
 
 Current branch:
-!`git branch --show-current`
+!`git branch --show-current 2>/dev/null || true`
 
 Active tickets:
 !`ls -d .simple-workflow/backlog/active/*/ 2>/dev/null || echo "(none)"`
 
 Staged changes:
-!`git diff --cached --stat`
+!`git diff --cached --stat 2>/dev/null || true`
 
 Unstaged changes:
-!`git diff --stat`
+!`git diff --stat 2>/dev/null || true`
 
 Changed files:
-!`git diff --cached --name-only && git diff --name-only`
+!`{ git diff --cached --name-only && git diff --name-only; } 2>/dev/null || true`
 
 ## Instructions
 
@@ -300,7 +302,10 @@ If no ticket directory was detected, skip this persistence step (no audit-round 
 ### 4b. Emit audit-coverage block via `audit_coverage_emit` (`hooks/lib/audit-coverage.sh`)
 
 After writing `{ticket-dir}/quality-round-{n}.md` (Step 4a), source
-`hooks/lib/audit-coverage.sh` and call:
+`${CLAUDE_PLUGIN_ROOT}/hooks/lib/audit-coverage.sh` (the helper ships inside the
+plugin — `hooks/lib/audit-coverage.sh` is a plugin-root path, NOT a path in the
+user's repository, so a cwd-relative `source hooks/lib/audit-coverage.sh` only
+works when the plugin repository itself is the cwd) and call:
 
     audit_coverage_emit "{ticket-dir}/quality-round-{n}.md"
 

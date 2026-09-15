@@ -363,7 +363,7 @@ if [ "$PSI_MODE" != "off" ]; then
         # SW_POST_SHIP_INTEGRITY=metric-only — log only, no write.
         continue
       fi
-      if command -v yq >/dev/null 2>&1; then
+      if _psf_have yq; then
         # yq -i is atomic; on failure the original file is preserved.
         yq -i '
           .overall_status = "done" |

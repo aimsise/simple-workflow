@@ -813,6 +813,85 @@ fi
 cleanup_session "$SID"
 rm -rf "$TMP"
 
+# (T-PAR-1b): SubagentStop + parallel=on + agent_transcript_path → the executor's
+# OWN transcript (agent_transcript_path) is scanned, NOT the parent session's
+# transcript_path (per the hook contract the orchestrator's). The parent transcript
+# is an unrelated ac-evaluator transcript that would silent-exit; the executor
+# transcript carries the 3-AND → decision=block proves the preference.
+echo "--- (T-PAR-1b): SubagentStop + agent_transcript_path preferred over transcript_path ---"
+TMP=$(mktemp -d)
+make_parallel_autopilot_state "$TMP" "par-brief" "on"
+make_transcript "$TMP/parent-transcript.jsonl" "$TRANSCRIPT_AC_EVALUATOR"
+make_transcript "$TMP/executor-transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_EMIT_NO_CHECKPOINT"
+SID="scout-cp-tpar1b-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/parent-transcript.jsonl" --arg a "$TMP/executor-transcript.jsonl" --arg s "$SID" \
+  '{transcript_path: $t, agent_transcript_path: $a, agent_type: "ticket-executor", session_id: $s, hook_event_name: "SubagentStop"}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$DECISION" = "block" ] && [ "$LAST_EXIT_CODE" -eq 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} (T-PAR-1b): SubagentStop scans agent_transcript_path (executor) → decision=block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (T-PAR-1b): expected decision=block from the executor transcript, exit 0"
+  echo -e "       Exit: $LAST_EXIT_CODE  Decision: '$DECISION'  Stderr: ${LAST_STDERR:0:200}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (BG-STAND-DOWN): main Stop with a background subagent in flight -> stand down
+# (exit 0, no block) even though the fixture would otherwise block; a
+# SubagentStop with the same (parent-scoped) list still enforces.
+echo "--- (BG-STAND-DOWN): background subagent in flight -> main Stop stands down; SubagentStop still enforces ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_SCOUT_IN_PROGRESS"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_EMIT_NO_CHECKPOINT"
+SID="scout-cp-bg-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s, hook_event_name: "Stop", background_tasks: [{id: "task-1", type: "subagent", status: "running", agent_type: "ticket-executor"}]}')
+run_guard_hook "$INPUT" "$TMP"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+DECISION=$(echo "$LAST_STDOUT" | jq -r '.decision // ""' 2>/dev/null || echo "")
+if [ "$LAST_EXIT_CODE" -eq 0 ] && [ "$DECISION" != "block" ] && grep -qF 'standing down: 1 background agent task' <<<"$LAST_STDERR"; then
+  echo -e "  ${GREEN}PASS${NC} (BG-STAND-DOWN): main Stop + background subagent -> exit 0, no block"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (BG-STAND-DOWN): expected exit 0 + no block; exit=$LAST_EXIT_CODE decision='$DECISION' stderr='${LAST_STDERR:0:160}'"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
+# (REL-NAT): four consecutive Stop ticks with NO state-file progress → three
+# blocks then a natural release on the 4th tick (see the impl guard's REL-NAT:
+# the hook's own runtime_metrics append must not reset its release counter).
+echo "--- (REL-NAT): 4 consecutive ticks → block, block, block, release ---"
+TMP=$(mktemp -d)
+make_phase_state "$TMP" "001-test" "$PHASE_STATE_SCOUT_IN_PROGRESS"
+make_transcript "$TMP/transcript.jsonl" "$TRANSCRIPT_PLAN2DOC_EMIT_NO_CHECKPOINT"
+SID="scout-cp-relnat-$$"
+cleanup_session "$SID"
+INPUT=$(jq -n --arg t "$TMP/transcript.jsonl" --arg s "$SID" '{transcript_path: $t, session_id: $s, hook_event_name: "Stop"}')
+REL_SEQ=""
+for _tick in 1 2 3 4; do
+  run_guard_hook "$INPUT" "$TMP"
+  _dec=$(echo "$LAST_STDOUT" | jq -r '.decision // "none"' 2>/dev/null || echo "none")
+  if grep -qF -- '[SCOUT-CHECKPOINT-RELEASE]' <<<"$LAST_STDOUT"; then _dec="release"; fi
+  REL_SEQ="$REL_SEQ$_dec,"
+done
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if [ "$REL_SEQ" = "block,block,block,release," ]; then
+  echo -e "  ${GREEN}PASS${NC} (REL-NAT): sequence block,block,block,release (own metrics write no longer resets the counter)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} (REL-NAT): expected block,block,block,release — got: $REL_SEQ"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+cleanup_session "$SID"
+rm -rf "$TMP"
+
 # (T-PAR-2): Stop + parallel=on → stand down (exit 0, [SCOUT-CHECKPOINT] log).
 echo "--- (T-PAR-2): main Stop + parallel=on → stand down ---"
 TMP=$(mktemp -d)

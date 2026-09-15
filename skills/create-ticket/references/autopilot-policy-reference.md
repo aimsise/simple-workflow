@@ -12,15 +12,19 @@ generation-side agent runs on is fixed in its agent-file frontmatter:
 
 | Agent | `model:` | Rationale |
 |---|---|---|
-| `agents/implementer.md` | `opus` (always) | High-volume work where the retry economy of the stronger model beats size-routing: at the current price ratio (Opus ≈ 1.67× Sonnet per 1M tokens) a single extra evaluation round on a downgraded generator erases the routing saving, so opus is the cost-rational default. |
+| `agents/implementer.md` | `opus` (always) | High-volume work where the retry economy of the stronger model beats size-routing: at the price ratio current when this policy was set (Opus ≈ 1.67× Sonnet per 1M tokens; `opus` now resolves to the current Opus generation and the `fable` alias selects a higher tier above it — re-check the ratio before changing the pin) a single extra evaluation round on a downgraded generator erases the routing saving, so opus is the cost-rational default. |
 | `agents/planner.md` | `inherit` | Small-output, high-leverage step — a planning error loses the whole implement + evaluate round. Inheriting the session model lifts the planning ceiling to whatever model the session runs (raising the bar on newest model families). |
 | `agents/decomposer.md` | `inherit` | Same shape — a decomposition error is lost per ticket. Inherits the session model. |
 
-`inherit` resolves to the session model by default. The resolution order is
-`CLAUDE_CODE_SUBAGENT_MODEL` env var > a per-invocation override passed by the
-caller > the agent frontmatter > the session model. To force the whole
+`inherit` resolves to the session model by default. Claude Code resolves a
+subagent's model in this order: a per-invocation `model` passed by the caller
+(as `/plan2doc` does for its size-routed planner spawn — `sonnet` for Size S,
+`opus` otherwise — which therefore outranks the planner's `inherit` on that
+path) > the agent frontmatter (`inherit` = the session model) >
+`CLAUDE_CODE_SUBAGENT_MODEL` > the session model. To force the whole
 generation + verification fleet onto one model regardless of these per-agent
-pins, set `CLAUDE_CODE_SUBAGENT_MODEL` in the environment before launching.
+pins, set `CLAUDE_CODE_SUBAGENT_MODEL` together with
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` in the environment before launching.
 
 The evaluation-side model allocation (sonnet by default, opus for
 `criticality == critical` or the `exhaustive` tier via the byte-identical

@@ -63,11 +63,11 @@ Parse `$ARGUMENTS` for the following:
 - All other tokens are treated as the refactoring target and goal description.
 
 Current state:
-!`git status --short`
-!`git diff --stat`
+!`git status --short 2>/dev/null || true`
+!`git diff --stat 2>/dev/null || true`
 
 Current branch:
-!`git branch --show-current`
+!`git branch --show-current 2>/dev/null || true`
 
 Active tickets:
 !`ls -d .simple-workflow/backlog/active/*/ 2>/dev/null || echo "(none)"`

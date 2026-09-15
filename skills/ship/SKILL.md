@@ -39,6 +39,11 @@ allowed-tools:
   - "Bash(mkdir:*)"
   - "Bash(rmdir:*)"
   - "Bash(date:*)"
+  - "Bash(rm:*)"      # step 2.5 nonce cleanup (.ship-commit-nonce)
+  - "Bash(source:*)"  # review-gate content-identity check (${CLAUDE_PLUGIN_ROOT}/hooks/lib/audit-coverage.sh)
+  - "Bash(find:*)"
+  - "Bash(sort:*)"
+  - "Bash(head:*)"
 argument-hint: "[target-branch] [merge=true] [ticket-dir=<dir-name>]"
 ---
 
@@ -208,7 +213,7 @@ Failure paths (no-changes, no-remote, push failure, gh-auth failure, merge confl
 
 3. **Create commit** (the nonce was written for the ticket in step 2.5):
    a. `git diff --stat` and `git diff --cached --stat`.
-   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new user-code files. `.simple-workflow/` is expected to be gitignored via the `hooks/session-start.sh` setup; do NOT attempt to force-add it with `-f`. If it appears in `git status`, the setup hook failed — warn the user rather than paper over. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files (gitignore handles exclusion).
+   b. For unstaged changes, select files by context. Autopilot mode (autopilot-policy.yaml exists) → stage all modified/new user-code files with EXACTLY `git add . && git rm -r -q --cached --ignore-unmatch .simple-workflow` (never a bare `git add -A` / `git add .` alone, and never an exclude pathspec such as `':!.simple-workflow'` — inside a wave-parallel worktree the trailing-slash form is fatal (`pathspec ... is beyond a symbolic link`) and any exclude form exits 1 with the ignored-path advice in the main checkout, breaking `&&` chains): in a wave-parallel worktree `.simple-workflow` is a SYMLINK into the main checkout that the directory-only `.gitignore` pattern does not cover, and a committed symlink merged into the main checkout destroys the real state tree; the `git rm --cached` step unstages the symlink if it slipped in and is a silent no-op (exit 0) otherwise. `.simple-workflow/` is expected to be gitignored via the `hooks/session-start.sh` setup; do NOT attempt to force-add it with `-f`. If it appears in `git status`, the setup hook failed — warn the user rather than paper over. Interactive mode: `AskUserQuestion`. **Non-interactive fallback**: stage all modified/new files (gitignore handles exclusion).
    c. `git add` selected files.
    d. Conventional commit message (feat/fix/improve/chore/docs/test/perf) focused on the "why"; `git log --oneline -5` for style.
    e. Commit via HEREDOC. **Audit Summary embedding**: when a ticket-dir is detected in step 5 and a `.simple-workflow/backlog/done/{ticket-dir}/audit-round-*.md` exists, the canonical `Audit Summary: <Status> (Critical=<N>, Warnings=<N>, Suggestions=<N>)` line MUST appear in the commit message body per the "Audit Summary embedding" section above. Note: this commit is created in step 3 BEFORE the ticket move in step 5.b — to satisfy the contract, resolve `ticket-dir` first (step 5 lookup logic), then read the audit-round file from `.simple-workflow/backlog/active/{ticket-dir}/` (its pre-move location) when building the commit message body. The contract is on the final committed message text, not on filesystem ordering.
@@ -220,7 +225,7 @@ Failure paths (no-changes, no-remote, push failure, gh-auth failure, merge confl
 
    > **Worktree path-resolution (W-3, autopilot `PARALLEL_MODE == on`).** Under the parallel wave scheduler, `/ship` runs inside a per-ticket executor worktree (cwd = `<MAIN_REPO>/.claude/worktrees/agent-<id>`, the platform-created `isolation:"worktree"` worktree). The gitignored `.simple-workflow/` state tree is ABSENT in a fresh worktree, but the executor self-created a `.simple-workflow` → `<MAIN_REPO>/.simple-workflow` **symlink** inside the worktree as its first step (autopilot wave-loop step 2a), so EVERY bare relative `.simple-workflow/...` path in Step 5 — the 5.b ticket-move (`active/` → `done/`, the `mkdir -p` / `mv` / `rmdir` targets) AND the 5.d post-move rewrite surfaces (5.d.1 audit-round files, 5.d.2 the brief-side `autopilot-state.yaml`, 5.d.3 the autopilot-log) AND the no-remote local-ship path below — **transparently follows the symlink to the shared main checkout**. Step 5 therefore needs NO change and NO `ARTIFACT_ROOT` argument: the SAME bare relative paths resolve to `<MAIN_REPO>` via the symlink under a worktree, and to the cwd (= the main checkout) on the serial `/autopilot` / manual `/ship` path — behaviour is byte-identical in both. The per-ticket PR (`/ship <default-branch> ticket-dir=<NNN-slug>`, NO `merge=true`) and the no-remote `steps.ship: completed` carve-out are untouched.
 
-   - **Explicit `ticket-dir=`**: If provided, check `.simple-workflow/backlog/active/{dir-name}`. Exists → use it (skip branch matching). Else print WARNING "ticket-dir '{dir-name}' not found in .simple-workflow/backlog/active/ — falling back to branch name matching." and fall through.
+   - **Explicit `ticket-dir=`**: If provided, check `.simple-workflow/backlog/active/{dir-name}`; when that path does not exist, also check the nested parent-slug layout `.simple-workflow/backlog/active/*/{dir-name}` (tickets created by `/create-ticket brief=…` live under `active/{parent-slug}/{NNN-slug}`; a bare `{NNN-slug}` name must resolve there too — the `done/` move then targets `done/{parent-slug}/{NNN-slug}`, preserving the parent segment). Exists → use it (skip branch matching). Else print WARNING "ticket-dir '{dir-name}' not found in .simple-workflow/backlog/active/ — falling back to branch name matching." and fall through.
    - **Fallback — branch matching**: For each dir in `.simple-workflow/backlog/active/`, strip the leading `NNN-` (e.g. `001-add-search-feature` → `add-search-feature`). If branch contains this slug, set `ticket-dir` to the full dir name.
    - No match → skip silently.
 
@@ -270,7 +275,7 @@ Proceed to Phase 2.
 9. **Review gate**: Verify the latest code review covers the committed content.
     - If no ticket completed in step 5, skip this gate (proceed to step 10).
     - Locate latest review: `ls -t .simple-workflow/backlog/done/{ticket-dir}/quality-round-*.md 2>/dev/null | head -1`. No file → treat as "no review", jump to **Gate-failure flow** below.
-    - **Content-identity check**: source `hooks/lib/audit-coverage.sh` and call `audit_coverage_check "{quality-round-path}"`. Interpret stdout/exit:
+    - **Content-identity check**: source `${CLAUDE_PLUGIN_ROOT}/hooks/lib/audit-coverage.sh` (the plugin-root copy of `hooks/lib/audit-coverage.sh` — never a cwd-relative path, which only resolves inside the plugin repository itself) and call `audit_coverage_check "{quality-round-path}"`. Interpret stdout/exit:
       - `OK <N>` (exit 0): print `[REVIEW-GATE] audit-coverage match (<N> files) — gate passed`, proceed to step 10. **No interactive prompt, no autopilot-policy lookup.**
       - `STALE <reason>` (exit 1): print `[REVIEW-GATE] audit-coverage stale: <reason>`, jump to **Gate-failure flow**.
       - `LEGACY` (exit 2): fall back to the legacy mtime comparison. Compare quality-round mtime against `git log -1 --format=%ct HEAD`. If review predates commit, jump to **Gate-failure flow**; otherwise proceed to step 10 with `[REVIEW-GATE] legacy mtime ok`.

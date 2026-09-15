@@ -121,10 +121,12 @@ once from the full `AC_COUNT` and passed to all three.
 
 **Evaluator model in the multi-verifier branch (M5, v8.3.0+)**: `exhaustive` tier
 resolves `EVALUATOR_MODEL == opus` at Step 3a, so all three lens spawns use the opus
-agent file `simple-workflow:ac-evaluator-hi` (the per-spawn `model:` override is rejected
-by the Agent JSONSchema — the same Strategy-B limitation as the soft turn budget above;
-the model is therefore selected by which agent file is spawned, never by a per-invocation
-field). The lens directives, the soft turn budget (field `j`), and the refute-then-synthesize merge are
+agent file `simple-workflow:ac-evaluator-hi` (the model is selected by which agent file is
+spawned: the twin files predate the Agent tool's per-invocation `model` parameter — which
+the current harness accepts and ranks above the frontmatter `model:` — and are retained so
+the spawned file, its `model:` line, and the persisted report stay auditable; the soft turn
+budget above is still a prompt-level contract because the Agent tool has no `maxTurns`
+parameter). The lens directives, the soft turn budget (field `j`), and the refute-then-synthesize merge are
 otherwise unchanged; `ac-evaluator-hi.md` is byte-identical to `ac-evaluator.md` except
 its `name:` and `model:` lines, so it recognises the `--- lens: <i>/3 ---` header and
 applies the assigned lens identically.

@@ -270,18 +270,18 @@ The resolver also fills two struct fields the floor RAISES:
   resolves `evaluator_model` to `opus` when `criticality == critical` OR
   `depth_tier == exhaustive` (the Generator already always runs on opus — see the
   **Generator model policy** in
-  `skills/create-ticket/references/autopilot-policy-reference.md`). **Platform
-  caveat**: the Agent tool's JSONSchema does NOT accept a per-invocation `model:`
-  override — the SAME Strategy-B limitation that forces the soft turn budget instead of a
-  per-spawn `maxTurns` (`skills/impl/references/ac-evaluator-orchestration.md`
-  `## Turn-budget formula`). The orchestrator therefore selects a DEDICATED agent file:
+  `skills/create-ticket/references/autopilot-policy-reference.md`). **Selection path**: the Agent tool accepts a per-invocation `model` override (it
+  outranks the agent's frontmatter), but the orchestrator deliberately selects a
+  DEDICATED agent file so the escalation is auditable from the spawn's `subagent_type`
+  alone (the soft turn budget in `skills/impl/references/ac-evaluator-orchestration.md`
+  `## Turn-budget formula` is a separate, still-standing Strategy-B choice):
   when `evaluator_model == opus` it spawns `simple-workflow:ac-evaluator-hi`
   (`agents/ac-evaluator-hi.md`, `model: opus`, body byte-identical to `ac-evaluator`
   except its `name:` and `model:` frontmatter lines) instead of
-  `simple-workflow:ac-evaluator`; otherwise it spawns `ac-evaluator` unchanged. A v8.3
-  dogfood pre-verifies empirically whether a per-spawn `model:` argument is in fact
-  rejected; if it is accepted the two-file workaround can later collapse, but the
-  byte-identical-body invariant is the supported path today (guarded by CT-EV-MODEL). If
+  `simple-workflow:ac-evaluator`; otherwise it spawns `ac-evaluator` unchanged. The per-spawn
+  `model` argument is accepted by the current harness, so the two-file layout could
+  later collapse into a per-spawn override; the byte-identical-body invariant remains
+  the supported path today (guarded by CT-EV-MODEL). If
   maintaining the second agent file is judged too costly, M5 degrades to
   red-team-budget-only (evaluator stays sonnet at every tier) — set the floor's evaluator
   bump aside without touching the budget column.
