@@ -151,14 +151,7 @@ Envelope: `Status: PASS|FAIL` + per-AC findings. `PASS` → CWP. `FAIL` → retr
 
 **Split (N>1)**: independent per sub-ticket. Any FAIL after retry/escalation → `/create-ticket` stops atomically (no directories, no counter change).
 
-#### Canonical Gate 1 / Gate 2 examples
-
-The rubric [references/ac-quality-criteria.md](references/ac-quality-criteria.md) anchors these BAD/GOOD strings; duplicated here verbatim (no cross-file interpolation). The AC-example drift guard keeps both copies in sync.
-
-- BAD: "Improve performance" (no threshold)
-- GOOD: "Response time under 200ms for 95th percentile"
-- BAD: "Support large files" ("large" undefined)
-- GOOD: "Stream files over 100MB without loading into memory"
+Gate 1 / Gate 2 BAD/GOOD examples live only in [references/ac-quality-criteria.md](references/ac-quality-criteria.md) Gates 1-2, which reach the evaluator inside the inlined canonical block; this file keeps no copy.
 
 ## Common Write Path
 

@@ -31,15 +31,7 @@ You receive the ticket content from the caller. Evaluate it against Gates 1-10 (
 - Your Feedback field must contain specific, actionable improvements. For each FAIL, explain exactly how to fix it. Vague feedback like "improve clarity" is not acceptable.
 - You MUST NOT modify the ticket. Use Write only to save your evaluation report.
 - You MUST honour every item in the canonical block's `## Evaluator MUST NOT` list and every gate's own MUST NOT FAIL and `n/a` conditions (for example the Gate 3 impl-side panel carve-out and the Gate 4 observation-point carve-out).
-
-### Canonical Gate 1 / Gate 2 examples
-
-These are the BAD/GOOD example strings the canonical criteria file (`skills/create-ticket/references/ac-quality-criteria.md`) anchors. They are duplicated here verbatim because the plugin architecture does not support cross-file interpolation; the AC example drift guard (Cat Z) verifies both copies stay in sync.
-
-- **BAD**: "Improve performance" (no threshold defined)
-- **GOOD**: "Response time under 200ms for 95th percentile"
-- **BAD**: "Support large files" ("large" is undefined)
-- **GOOD**: "Stream files over 100MB without loading into memory"
+- Gate 1 / Gate 2 BAD/GOOD examples are part of the inlined canonical block; this file keeps no copy.
 
 ## Context Conservation Protocol
 

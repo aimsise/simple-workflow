@@ -70,6 +70,10 @@ Generate the ticket in the following format:
 
 #### Capability Skip Rationale
 
+(Name every probe entry that is neither Bound nor Advisory, each in full; one bullet per shared reason.)
+
+- **<name-1>, <name-2>**: pipeline orchestrator; not subagent-invocable per External Tool Integration Policy
+- **<name-1>, <name-2>**: domain mismatch — <one-line reason none of these entries intersects this ticket>
 - **<name>**: <one-line reason this probe-visible capability is neither Bound nor Advisory for this ticket>
 
 ### Claude Code Workflow

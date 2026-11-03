@@ -1972,64 +1972,158 @@ y_check_token_count "skills/tune/SKILL.md"
 echo ""
 
 # =============================================================================
-# Category Z: create-ticket / ticket-evaluator AC example drift guard (FU-11)
-# Diff: As pointed out in the Round-2 review, the Gate 1/Gate 2 BAD/GOOD
-#        examples in the `#### AC Quality Criteria` section of Phase 3 in
-#        skills/create-ticket/SKILL.md are verbatim duplicates of the ones in
-#        agents/ticket-evaluator.md. Since the plugin mechanism does not support
-#        cross-file content interpolation, runtime de-duplication is
-#        impossible. As an alternative, this category guarantees in CI that
-#        the 4 canonical example strings exist in BOTH files, immediately
-#        detecting the case where only one is edited. Independent textual
-#        agreement contract, separate from Cat W (ac-evaluator structure),
-#        Cat X (Mandatory table), and Cat Y (token helper).
+# Category Z: Gate 1 / Gate 2 BAD/GOOD example single-location guard (FU-11)
+# The canonical rubric skills/create-ticket/references/ac-quality-criteria.md
+# is the ONLY location of the Gate 1 / Gate 2 BAD/GOOD examples. The
+# ticket-evaluator receives that file inline in every spawn (the
+# <canonical_ac_criteria> block), so the examples reach it without a copy.
+# This category pins each canonical BAD literal, paired with its GOOD bullet
+# (by GOOD body prefix), inside its gate section of the rubric, AND the absence
+# of both strings from the two former copy sites (agents/ticket-evaluator.md,
+# skills/create-ticket/SKILL.md), AND the absence of any BAD/GOOD example line
+# (list or table, any case) in those two files, so a re-introduced copy FAILs,
+# AND the inline-injection premise in every ticket-evaluator spawner.
+# Independent of Cat W (ac-evaluator structure), Cat X (Mandatory table), and
+# Cat Y (token helper).
+# PR-4 re-point: the former guard required 4 strings in BOTH copy sites, but
+#   those copies had drifted from the rubric (2 of the 4 strings were not the
+#   rubric's text), so it guarded the duplication, not the examples. P1-11
+#   removed both copies; the guard now pins the single remaining location,
+#   and its two GOOD-string pins moved to the rubric's GOOD bullets.
 # =============================================================================
-echo "--- Cat Z: create-ticket / ticket-evaluator AC example drift guard ---"
+echo "--- Cat Z: Gate 1 / Gate 2 BAD/GOOD example single-location guard ---"
 
-# --- Category Z: AC example drift guard ---
-# Canonical Gate 1/Gate 2 BAD/GOOD example strings that MUST appear in both
-# agents/ticket-evaluator.md AND skills/create-ticket/SKILL.md. If any string
-# disappears from either file, the duplicated examples have drifted silently
-# and this test fires.
-Z_CANONICAL_EXAMPLES=(
-  "Improve performance"
-  "Response time under 200ms for 95th percentile"
-  "Support large files"
-  "Stream files over 100MB without loading into memory"
-)
-
+Z_RUBRIC="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
 Z_TICKET_EVALUATOR="$REPO_DIR/agents/ticket-evaluator.md"
 Z_CREATE_TICKET="$REPO_DIR/skills/create-ticket/SKILL.md"
 
-# Assert that a literal string appears in BOTH canonical files. Uses grep -qF --
-# to guarantee exact (non-regex) literal matching. Emits a single combined
-# assertion per string; failure message names which file(s) are missing it so
-# drift is self-diagnosing.
-z_check_both_files() {
-  local literal="$1"
+# Each entry: "<rubric gate heading>|<canonical BAD literal>|<GOOD body prefix>".
+# The GOOD body prefix is the start of the GOOD string paired with that BAD.
+Z_CANONICAL_BAD_EXAMPLES=(
+  '## Gate 1: Testability|Improve performance|Response time under 200ms'
+  '## Gate 1: Testability|The CLI is user-friendly|`cli --help` exits 0'
+  '## Gate 2: Unambiguity|Support large files|Stream input files over 100 MiB'
+  '## Gate 2: Unambiguity|Handle errors gracefully|On read failure, print'
+)
+# A BAD/GOOD example line in any list or table style, matched case-insensitively:
+# `- **BAD**: "..."`, `- BAD: "..."`, `* Good: ...`, `+ GOOD: ...`,
+# `1. **BAD**: ...`, `2) GOOD: ...`, `| BAD | GOOD |`.
+Z_EXAMPLE_BULLET_RE='^[[:space:]]*([-*+]|[0-9]+[.)]|\|)[[:space:]]*(\*\*)?(BAD|GOOD)(\*\*)?[[:space:]]*[:|]'
+
+# Report two strings' state in a former copy site: absent | FILE-MISSING |
+# PRESENT(<which>), where <which> names the string(s) found: bad, good, bad+good.
+z_copy_state() {
+  local file="$1" bad="$2" good="$3" which=""
+  if [ ! -f "$file" ]; then
+    echo "FILE-MISSING"
+    return
+  fi
+  grep -qF -- "$bad" "$file" && which="bad"
+  grep -qF -- "$good" "$file" && which="${which:+$which+}good"
+  if [ -n "$which" ]; then
+    echo "PRESENT($which)"
+  else
+    echo "absent"
+  fi
+}
+
+# One assertion per canonical BAD literal: present in the rubric's gate section
+# as a `- **BAD**: "<literal>"` bullet whose next non-blank line is a
+# `- **GOOD**: "<GOOD body prefix>` bullet, and both strings absent from both
+# former copy sites.
+z_check_single_location() {
+  local heading="$1" literal="$2" good="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
-  local in_te="false" in_ct="false"
-  if [ -f "$Z_TICKET_EVALUATOR" ] && grep -qF -- "$literal" "$Z_TICKET_EVALUATOR"; then
-    in_te="true"
+  local in_rubric="MISSING"
+  if [ -f "$Z_RUBRIC" ] && awk -v h="$heading" -v lit="- **BAD**: \"$literal\"" -v good="- **GOOD**: \"$good" '
+      $0 == h { insec = 1; next }
+      insec && /^## / { insec = 0 }
+      insec && want { if ($0 ~ /^[[:space:]]*$/) next; if (index($0, good) == 1) found = 1; want = 0 }
+      insec && index($0, lit) == 1 { want = 1 }
+      END { exit(found ? 0 : 1) }
+    ' "$Z_RUBRIC"; then
+    in_rubric="present"
   fi
-  if [ -f "$Z_CREATE_TICKET" ] && grep -qF -- "$literal" "$Z_CREATE_TICKET"; then
-    in_ct="true"
-  fi
-  if [ "$in_te" = "true" ] && [ "$in_ct" = "true" ]; then
-    echo -e "  ${GREEN}PASS${NC} Z: canonical AC example present in both ticket-evaluator.md and create-ticket/SKILL.md: '$literal'"
+  local te_state ct_state
+  te_state=$(z_copy_state "$Z_TICKET_EVALUATOR" "$literal" "$good")
+  ct_state=$(z_copy_state "$Z_CREATE_TICKET" "$literal" "$good")
+  if [ "$in_rubric" = "present" ] && [ "$te_state" = "absent" ] && [ "$ct_state" = "absent" ]; then
+    echo -e "  ${GREEN}PASS${NC} Z: canonical BAD example lives only in the rubric (${heading#\#\# }, paired with GOOD '$good...'): '$literal'"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
-    echo -e "  ${RED}FAIL${NC} Z: AC example drift detected for '$literal'"
-    echo -e "       agents/ticket-evaluator.md       : $([ "$in_te" = "true" ] && echo present || echo MISSING)"
-    echo -e "       skills/create-ticket/SKILL.md    : $([ "$in_ct" = "true" ] && echo present || echo MISSING)"
-    echo -e "       Fix: restore the canonical string in both files (duplicated intentionally; plugin architecture does not support cross-file interpolation)."
+    echo -e "  ${RED}FAIL${NC} Z: BAD/GOOD example single-location breach for '$literal'"
+    echo -e "       rubric ($heading, BAD + GOOD '$good...' pair): $in_rubric (want present)"
+    echo -e "       agents/ticket-evaluator.md       : $te_state (want absent)"
+    echo -e "       skills/create-ticket/SKILL.md    : $ct_state (want absent)"
+    echo -e "       Fix: keep the BAD/GOOD pair in skills/create-ticket/references/ac-quality-criteria.md only; the other two files point at it."
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 }
 
-for z_literal in "${Z_CANONICAL_EXAMPLES[@]}"; do
-  z_check_both_files "$z_literal"
+for z_entry in "${Z_CANONICAL_BAD_EXAMPLES[@]}"; do
+  z_rest="${z_entry#*|}"
+  z_check_single_location "${z_entry%%|*}" "${z_rest%%|*}" "${z_rest#*|}"
 done
+
+# One assertion: neither former copy site carries any BAD/GOOD example line,
+# so a re-introduced copy FAILs even when its strings differ from the rubric's.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+z_te_bullets="FILE-MISSING"
+z_ct_bullets="FILE-MISSING"
+if [ -f "$Z_TICKET_EVALUATOR" ]; then
+  z_te_bullets=$(grep -ciE -- "$Z_EXAMPLE_BULLET_RE" "$Z_TICKET_EVALUATOR" || true)
+fi
+if [ -f "$Z_CREATE_TICKET" ]; then
+  z_ct_bullets=$(grep -ciE -- "$Z_EXAMPLE_BULLET_RE" "$Z_CREATE_TICKET" || true)
+fi
+if [ "$z_te_bullets" = "0" ] && [ "$z_ct_bullets" = "0" ]; then
+  echo -e "  ${GREEN}PASS${NC} Z: no BAD/GOOD example line (list or table) in agents/ticket-evaluator.md or skills/create-ticket/SKILL.md (rubric is the single location)"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Z: BAD/GOOD example line found outside the rubric"
+  echo -e "       agents/ticket-evaluator.md       : $z_te_bullets line(s) (want 0)"
+  echo -e "       skills/create-ticket/SKILL.md    : $z_ct_bullets line(s) (want 0)"
+  echo -e "       Fix: delete the copy; Gate 1 / Gate 2 examples live only in skills/create-ticket/references/ac-quality-criteria.md."
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# One assertion: every ticket-evaluator spawner keeps the inline-injection
+# premise this guard rests on, i.e. lines carrying both the opening and the
+# closing <canonical_ac_criteria> marker. agent-spawn-prompts.md needs >=3
+# (the every-spawn rule, initial spawn step 2 and retry step c), so dropping the
+# markers from any one of them FAILs. The evaluator-side mandate is pinned
+# separately (PR3_TEV_PTR in Cat AQ).
+Z_SPAWNER_MARKERS=(
+  "skills/create-ticket/SKILL.md|1"
+  "skills/create-ticket/references/agent-spawn-prompts.md|3"
+  "skills/create-ticket/references/mode-dispatch-flows.md|1"
+)
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+z_marker_ok="true"
+z_marker_report=""
+for z_spawner in "${Z_SPAWNER_MARKERS[@]}"; do
+  z_rel="${z_spawner%%|*}"
+  z_min="${z_spawner#*|}"
+  z_file="$REPO_DIR/$z_rel"
+  if [ -f "$z_file" ]; then
+    z_got=$(awk 'index($0, "<canonical_ac_criteria>") && index($0, "</canonical_ac_criteria>") { n++ } END { print n + 0 }' "$z_file")
+  else
+    z_got="FILE-MISSING"
+  fi
+  if [ "$z_got" = "FILE-MISSING" ] || [ "$z_got" -lt "$z_min" ]; then
+    z_marker_ok="false"
+  fi
+  z_marker_report="$z_marker_report $z_rel=$z_got>=$z_min"
+done
+if [ "$z_marker_ok" = "true" ]; then
+  echo -e "  ${GREEN}PASS${NC} Z: every ticket-evaluator spawner inlines the rubric between <canonical_ac_criteria> markers ($z_marker_report )"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} Z: a ticket-evaluator spawner lost the <canonical_ac_criteria> inline-injection markers"
+  echo -e "       marker lines (open + close):$z_marker_report"
+  echo -e "       Fix: restore the marker pair in each spawn step; the rubric is the only source of the Gate 1 / Gate 2 examples."
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 
@@ -8067,6 +8161,33 @@ fi
 assert_true \
   "CT-AQ-9 (Advisory Recommending semantics): agents/{implementer,researcher,test-writer}.md carry '### Consultation discipline' + 'Silent omission' + 'skip rationale' ($aq9_consumer_hits / 3 files pass) AND ac-quality-criteria.md carries 'Consumer-side consultation discipline' (got=$aq9_acqc_hit>=1)" \
   "$aq9_result"
+
+# CT-AQ-10 (Gate 6.5 grading invariant, P1-12): grouped Skip Rationale bullets
+# never relax completeness. Scoped to the rubric's Gate 6.5 section, it pins
+# the unnamed-entry FAIL rule, the "named in a bullet" bucket definition, both
+# grouped shapes (the domain-mismatch set and the pipeline-orchestrator
+# self-skip set each name every entry they skip), the grouping-only non-FAIL
+# sentence with its unclassified clause, and the Evaluator MUST check. Kept
+# separate from CT-AQ-1 so a failure names its own cause.
+aq10_sec=$(sed -n '/^## Gate 6\.5: Probe Completeness$/,/^## Gate 7/p' "$ACQC_AQ")
+aq10_fail=$(printf '%s\n' "$aq10_sec" | grep -cF 'A probe entry that appears in none of the three buckets is a Gate 6.5 FAIL' || true)
+aq10_named=$(printf '%s\n' "$aq10_sec" | grep -cF 'the entry is named in a bullet of `#### Capability Skip Rationale`' || true)
+aq10_domain=$(printf '%s\n' "$aq10_sec" | grep -cF 'naming every entry it skips' || true)
+aq10_selfskip=$(printf '%s\n' "$aq10_sec" | grep -cF 'in one bullet naming each of them that the probe lists' || true)
+aq10_grouped=$(printf '%s\n' "$aq10_sec" | grep -cF 'A grouped bullet classifies every name it lists, so grouping alone is never a Gate 6.5 FAIL; an entry no bullet names in full stays unclassified' || true)
+aq10_eval=$(printf '%s\n' "$aq10_sec" | grep -cF 'verify each probe entry is classified into one of the three buckets' || true)
+aq10_result="false"
+if [ "$aq10_fail" -ge 1 ] \
+   && [ "$aq10_named" -ge 1 ] \
+   && [ "$aq10_domain" -ge 1 ] \
+   && [ "$aq10_selfskip" -ge 1 ] \
+   && [ "$aq10_grouped" -ge 1 ] \
+   && [ "$aq10_eval" -ge 1 ]; then
+  aq10_result="true"
+fi
+assert_true \
+  "CT-AQ-10 (Gate 6.5 grouped skip rationale keeps completeness): ac-quality-criteria.md Gate 6.5 has the unnamed-entry FAIL rule (got=$aq10_fail>=1), 'named in a bullet' bucket (got=$aq10_named>=1), domain-mismatch naming (got=$aq10_domain>=1), self-skip naming (got=$aq10_selfskip>=1), grouping-only non-FAIL + unclassified clause (got=$aq10_grouped>=1), Evaluator MUST three-bucket check (got=$aq10_eval>=1)" \
+  "$aq10_result"
 
 echo ""
 
