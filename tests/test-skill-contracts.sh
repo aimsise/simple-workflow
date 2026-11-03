@@ -11390,10 +11390,14 @@ PAR_POSTSHIP="$REPO_DIR/hooks/post-ship-state-auto-compact.sh"
 PAR_PRENEXT="$REPO_DIR/hooks/pre-next-scout-auto-compact.sh"
 
 # CT-PARALLEL-SUBSTOP-1 (T-005): the checkpoint guards relocate to SubagentStop. hooks.json gains a
-# SubagentStop array with EXACTLY two top-level entries (impl + scout checkpoint guards as separate
-# entries per the Anthropic ordering rule), autopilot-continue is ABSENT from it, and both guards
-# carry the symmetric `[<HOOK>-CHECKPOINT] parallel stand-down` prose + read hook_event_name.
-psub1_substop_len=$(jq -r '(.hooks.SubagentStop | length) // 0' "$PAR_HOOKSJSON" 2>/dev/null || echo 0)
+# SubagentStop array with EXACTLY two top-level checkpoint-guard entries (impl + scout checkpoint
+# guards as separate entries per the Anthropic ordering rule), autopilot-continue is ABSENT from it,
+# and both guards carry the symmetric `[<HOOK>-CHECKPOINT] parallel stand-down` prose + read
+# hook_event_name. P1-13 extension: the array also holds the ticket-evaluator-scoped
+# create-ticket-metrics.sh entry (pinned by CT-CTM-1), so the length counted here excludes that one
+# entry and the total is pinned at 3.
+psub1_substop_len=$(jq -r '[.hooks.SubagentStop[]? | select([.hooks[]?.command] | any(test("create-ticket-metrics")) | not)] | length' "$PAR_HOOKSJSON" 2>/dev/null || echo 0)
+psub1_substop_total=$(jq -r '(.hooks.SubagentStop | length) // 0' "$PAR_HOOKSJSON" 2>/dev/null || echo 0)
 psub1_has_impl=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | any(test("impl-checkpoint-guard"))' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
 psub1_has_scout=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | any(test("scout-checkpoint-guard"))' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
 psub1_no_apc=$(jq -r '[.hooks.SubagentStop[]?.hooks[]?.command] | all(test("autopilot-continue")|not)' "$PAR_HOOKSJSON" 2>/dev/null || echo false)
@@ -11402,11 +11406,11 @@ psub1_impl_sd=$(grep -cF '[IMPL-CHECKPOINT] parallel stand-down' "$PAR_IMPLGUARD
 psub1_scout_he=$(grep -cF 'hook_event_name' "$PAR_SCOUTGUARD" || true)
 psub1_impl_he=$(grep -cF 'hook_event_name' "$PAR_IMPLGUARD" || true)
 psub1_result="false"
-if [ "$psub1_substop_len" = "2" ] && [ "$psub1_has_impl" = "true" ] && [ "$psub1_has_scout" = "true" ] \
+if [ "$psub1_substop_len" = "2" ] && [ "$psub1_substop_total" = "3" ] && [ "$psub1_has_impl" = "true" ] && [ "$psub1_has_scout" = "true" ] \
   && [ "$psub1_no_apc" = "true" ] && [ "$psub1_scout_sd" -ge 1 ] && [ "$psub1_impl_sd" -ge 1 ] \
   && [ "$psub1_scout_he" -ge 1 ] && [ "$psub1_impl_he" -ge 1 ]; then psub1_result="true"; fi
 assert_true \
-  "CT-PARALLEL-SUBSTOP-1 (checkpoint guards -> SubagentStop): hooks.json SubagentStop len ($psub1_substop_len=2) impl ($psub1_has_impl) scout ($psub1_has_scout) autopilot-continue-absent ($psub1_no_apc); scout stand-down ($psub1_scout_sd>=1) impl stand-down ($psub1_impl_sd>=1); scout hook_event ($psub1_scout_he>=1) impl hook_event ($psub1_impl_he>=1)" \
+  "CT-PARALLEL-SUBSTOP-1 (checkpoint guards -> SubagentStop): hooks.json SubagentStop checkpoint-guard len ($psub1_substop_len=2) total incl. create-ticket-metrics ($psub1_substop_total=3) impl ($psub1_has_impl) scout ($psub1_has_scout) autopilot-continue-absent ($psub1_no_apc); scout stand-down ($psub1_scout_sd>=1) impl stand-down ($psub1_impl_sd>=1); scout hook_event ($psub1_scout_he>=1) impl hook_event ($psub1_impl_he>=1)" \
   "$psub1_result"
 
 # CT-AC-WAVE-1 (T-006): the auto-compact hooks re-key from per-ticket-boundary to per-wave-drained.
@@ -12327,6 +12331,71 @@ if [ "$rmw_count" -ge 6 ] && [ -z "$rmw_missing" ]; then rmw_result="true"; fi
 assert_true \
   "CT-RM-WRITERS (runtime_metrics writer sync): state-file.md names all $rmw_count runtime-metrics.sh writers (missing:${rmw_missing:- none})" \
   "$rmw_result"
+
+echo ""
+echo "--- Cat CTM: /create-ticket Phase 4 verdict log (P1-13) ---"
+
+# =============================================================================
+# CT-CTM-1 (registration): hooks/create-ticket-metrics.sh is registered EXACTLY
+# once across every hooks.json event, as its OWN top-level SubagentStop entry
+# (a single hook in the entry) with the matcher `^(simple-workflow:)?ticket-evaluator$`;
+# the hook file exists and is executable; it repeats the agent_type check with
+# the unconditional `simple-workflow:` prefix strip (for a CLI that ignores the
+# matcher); and it never prints a `"decision"` (exit 2 / a decision on
+# SubagentStop would keep the evaluator from stopping). The behaviour itself
+# (exit 0 on every path, rows, seq, kill switch) is covered by
+# tests/test-create-ticket-metrics.sh. CT-PARALLEL-SUBSTOP-1 pins the
+# SubagentStop total at 3 with this entry included.
+# =============================================================================
+CTM_HOOKS_JSON="$REPO_DIR/hooks/hooks.json"
+CTM_HOOK="$REPO_DIR/hooks/create-ticket-metrics.sh"
+ctm1_all=$(jq -r '[.hooks[][] | select([.hooks[]?.command] | any(test("create-ticket-metrics\\.sh$")))] | length' "$CTM_HOOKS_JSON" 2>/dev/null || echo 0)
+ctm1_substop=$(jq -r '[.hooks.SubagentStop[]? | select(.matcher == "^(simple-workflow:)?ticket-evaluator$" and (.hooks | length) == 1 and (.hooks[0].command | test("/hooks/create-ticket-metrics\\.sh$")))] | length' "$CTM_HOOKS_JSON" 2>/dev/null || echo 0)
+ctm1_exec="false"
+if [ -f "$CTM_HOOK" ] && [ -x "$CTM_HOOK" ]; then ctm1_exec="true"; fi
+ctm1_strip=$(grep -cF 'AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"' "$CTM_HOOK" 2>/dev/null || true)
+ctm1_guard=$(grep -cF '[ "$AGENT_TYPE" = "ticket-evaluator" ] || exit 0' "$CTM_HOOK" 2>/dev/null || true)
+ctm1_decision=$(grep -cF '"decision"' "$CTM_HOOK" 2>/dev/null || true)
+ctm1_result="false"
+if [ "$ctm1_all" = "1" ] && [ "$ctm1_substop" = "1" ] && [ "$ctm1_exec" = "true" ] \
+   && [ "${ctm1_strip:-0}" -ge 1 ] && [ "${ctm1_guard:-0}" -ge 1 ] && [ "${ctm1_decision:-0}" -eq 0 ]; then
+  ctm1_result="true"
+fi
+assert_true \
+  "CT-CTM-1 (verdict-log hook registration): entries across all events ($ctm1_all=1), own SubagentStop entry with the ticket-evaluator matcher ($ctm1_substop=1), file executable ($ctm1_exec), in-script prefix strip ($ctm1_strip>=1) + agent_type guard ($ctm1_guard>=1), no \"decision\" output ($ctm1_decision=0)" \
+  "$ctm1_result"
+
+# =============================================================================
+# CT-CTM-2 (documentation): CLAUDE.md `### Runtime env knobs` carries the
+# SW_CREATE_TICKET_METRICS_MODE bullet (default on, metric-only / off, the
+# deliberate unknown -> on inversion, the (B) harness-own label); the
+# /create-ticket SKILL.md Phase 4 range carries the one recording sentence (the
+# hook writes .simple-workflow/metrics/create-ticket.jsonl, the orchestrator
+# MUST NOT write it); docs/state-schema.md names the file under its
+# `## Phase 4 verdict log` heading with the seq row.
+# =============================================================================
+CTM_CLAUDEMD="$REPO_DIR/CLAUDE.md"
+CTM_SKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+CTM_SCHEMA="$REPO_DIR/docs/state-schema.md"
+ctm2_bullet=$(grep -E '^- `SW_CREATE_TICKET_METRICS_MODE` — default `on`' "$CTM_CLAUDEMD" 2>/dev/null || true)
+ctm2_bullet_n=$(printf '%s\n' "$ctm2_bullet" | grep -c 'SW_CREATE_TICKET_METRICS_MODE' || true)
+ctm2_bullet_tokens=0
+for ctm2_tok in '`metric-only`' '`off`' '**Unknown values resolve to `on`**' 'hooks/create-ticket-metrics.sh' '.simple-workflow/metrics/create-ticket.jsonl' '(B) harness-own'; do
+  if printf '%s\n' "$ctm2_bullet" | grep -qF -- "$ctm2_tok"; then ctm2_bullet_tokens=$((ctm2_bullet_tokens + 1)); fi
+done
+ctm2_p4=$(awk '/^### Phase 4: Ticket Evaluation/{f=1} f && /^## /{exit} f{print}' "$CTM_SKILL" 2>/dev/null || true)
+ctm2_p4_sentence=$(printf '%s\n' "$ctm2_p4" | grep -F 'hooks/create-ticket-metrics.sh' | grep -F '.simple-workflow/metrics/create-ticket.jsonl' | grep -cF 'the orchestrator MUST NOT write' || true)
+ctm2_schema_heading=$(grep -c '^## Phase 4 verdict log$' "$CTM_SCHEMA" 2>/dev/null || true)
+ctm2_schema_file=$(grep -cF '.simple-workflow/metrics/create-ticket.jsonl' "$CTM_SCHEMA" 2>/dev/null || true)
+ctm2_schema_seq=$(grep -cE '^\| `seq` \| integer \|' "$CTM_SCHEMA" 2>/dev/null || true)
+ctm2_result="false"
+if [ "${ctm2_bullet_n:-0}" -eq 1 ] && [ "$ctm2_bullet_tokens" -eq 6 ] && [ "${ctm2_p4_sentence:-0}" -eq 1 ] \
+   && [ "${ctm2_schema_heading:-0}" -eq 1 ] && [ "${ctm2_schema_file:-0}" -ge 1 ] && [ "${ctm2_schema_seq:-0}" -eq 1 ]; then
+  ctm2_result="true"
+fi
+assert_true \
+  "CT-CTM-2 (verdict-log docs): CLAUDE.md knob bullet ($ctm2_bullet_n=1) with values / inversion / file / (B) tokens ($ctm2_bullet_tokens=6); SKILL.md Phase 4 recording sentence ($ctm2_p4_sentence=1); state-schema.md heading ($ctm2_schema_heading=1) file ($ctm2_schema_file>=1) seq row ($ctm2_schema_seq=1)" \
+  "$ctm2_result"
 
 echo ""
 

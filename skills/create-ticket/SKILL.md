@@ -151,6 +151,8 @@ Envelope: `Status: PASS|FAIL` + per-AC findings. `PASS` → CWP. `FAIL` → retr
 
 **Split (N>1)**: independent per sub-ticket. Any FAIL after retry/escalation → `/create-ticket` stops atomically (no directories, no counter change).
 
+**Verdict log**: `hooks/create-ticket-metrics.sh` (SubagentStop) records the verdict of every ticket-evaluator stop in this phase, initial and retry, as one line in `.simple-workflow/metrics/create-ticket.jsonl`, and the orchestrator MUST NOT write, edit or truncate that file.
+
 Gate 1 / Gate 2 BAD/GOOD examples live only in [references/ac-quality-criteria.md](references/ac-quality-criteria.md) Gates 1-2, which reach the evaluator inside the inlined canonical block; this file keeps no copy.
 
 ## Common Write Path
