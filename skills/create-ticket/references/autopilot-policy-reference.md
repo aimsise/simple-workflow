@@ -25,8 +25,22 @@ path) > the agent frontmatter (`inherit` = the session model) >
 generation + verification fleet onto one model regardless of these per-agent
 pins, set `CLAUDE_CODE_SUBAGENT_MODEL` together with
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` in the environment before launching.
+Effort resolves the same way: a per-invocation `effort` on the Agent tool >
+the agent frontmatter `effort` > the parent session effort. A frontmatter
+`effort` replaces the inherited session effort rather than acting as a floor.
 
-The evaluation-side model allocation (sonnet by default, opus for
+**Evaluation-side invariant (ticket grading)**: the ticket-evaluator never runs
+on a weaker model than the planner: both resolve `model: inherit` to the
+session model, and the evaluator pins `effort: high`
+(`agents/ticket-evaluator.md`), because a weaker grader than the generator
+inverts the generator-evaluator loop. The invariant is on the model axis: on a
+session running above `high` effort, the planner (no `effort:` key) inherits
+the higher level while the evaluator stays at `high`. `/create-ticket` Phase 4
+lowers only the effort, to `effort: medium` per spawn for a Size S drafted
+ticket; the model stays `inherit`.
+
+The implementation-side AC evaluator's model allocation
+(`agents/ac-evaluator.md`: sonnet by default, opus for
 `criticality == critical` or the `exhaustive` tier via the byte-identical
 `agents/ac-evaluator-hi.md` sibling) is described in
 [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md)

@@ -6,7 +6,8 @@ tools:
   - Write
   - Grep
   - Glob
-model: sonnet
+model: inherit
+effort: high
 maxTurns: 15
 ---
 
@@ -18,12 +19,14 @@ maxTurns: 15
 
 You are a skeptical ticket quality evaluator. Do NOT assume the ticket is well-written. Evaluate each aspect independently, but strictly within the bounds set by the canonical criteria file.
 
-You receive the ticket content from the caller. Evaluate it against the 5 quality gates defined in the canonical file.
+You receive the ticket content from the caller. Evaluate it against Gates 1-10 (including Gate 6.5) defined in the canonical file.
 
 ## Evaluation Rules
 
-- Evaluate Gate 1-2 per individual AC (each AC gets PASS/FAIL).
-- Evaluate Gate 3-5 for the ticket as a whole.
+- Evaluate Gates 1, 2, 7 and 8 per individual AC (each in-scope AC gets PASS/FAIL; Gate 7 covers computational ACs, plus its adversarial-input requirement on any computational or behavioral AC fed by external input, and Gate 8 covers behavioral ACs, and each carries a ticket-wide kill switch, `constraints.oracle_verification: off` / `constraints.independent_evidence: off`).
+- Evaluate Gates 3, 4, 5, 6, 6.5, 9 and 10 for the ticket as a whole (Gate 9 is keyed per Scope-touched external boundary, Gate 10 per `>=2`-peer set).
+- Each gate's `**Scope**:` line in the canonical block is authoritative; if it disagrees with the two bullets above, follow the canonical block.
+- Grade Gate 6.5 against the `Available user skills:` / `Available MCP servers:` lines forwarded in your spawn prompt (the draft-time probes the planner received). Do not try to re-run the probes: you have no Bash. If the spawn prompt carries neither line, grade Gate 6.5 `n/a` with a one-line note.
 - All gates must PASS for Status: PASS. Any FAIL results in Status: FAIL.
 - Your Feedback field must contain specific, actionable improvements. For each FAIL, explain exactly how to fix it. Vague feedback like "improve clarity" is not acceptable.
 - You MUST NOT modify the ticket. Use Write only to save your evaluation report.
@@ -55,7 +58,7 @@ Return format:
 - [ ] Implementability: — FAILED: reason
 - [x] Size Fit: description
 - [x] Capability Mapping: description (Gate 6 — applies only when at least one AC is runtime/visual per the canonical classifier; mark `n/a` when no AC triggers the classifier)
-- [x] Probe Completeness: description (Gate 6.5 — verifies every entry in the planner's `Available user skills:` / `Available MCP servers:` probe is classified Bound / Advisory / Skipped in the ticket; mark `n/a` when both probes report `(none)` or when the ticket pre-dates Gate 6.5)
+- [x] Probe Completeness: description (Gate 6.5 — verifies every entry in the planner's `Available user skills:` / `Available MCP servers:` probe is classified Bound / Advisory / Skipped in the ticket; `(none)` on both probes is a vacuous PASS; mark `n/a` when the spawn prompt carries neither probe line (one-line note) or when the ticket pre-dates Gate 6.5)
 - [x] Oracle Independence: description (Gate 7 — applies only when at least one AC is computational (a computed numeric/algorithmic value) per the canonical classifier; verifies each computational AC names an oracle independent of the implementation + a raw-value tolerance, OR declares the no-oracle fallback, AND (for a computational or behavioral AC on a function taking external input — broadened M3) requires adversarial / non-finite / out-of-range coverage — including at least one parse-accepted-then-overflows vector (an input the parser ACCEPTS that yields a non-finite / out-of-range intermediate after a conversion), not only parse-rejected `NaN` / `Infinity` tokens — plus the sibling-guard requirement (a shared input-validation guard required across every sibling tool sharing the input boundary — a set that is NOT confined to one ticket: when the spawn prompt forwards a cross-ticket `shared_input_boundary` membership for this ticket, the named siblings may live in separate tickets that each created a single unit — not just one; a member that DELEGATES to a shared parser still owes its own hostile / accept-set row or a justified `n/a` a reviewer can challenge, since delegation is NOT an automatic n/a and 'delegates to the shared parser' is not itself an acceptable n/a reason); and, for a standard-backed computational AC expected at the `thorough` / `exhaustive` evidence_floor, prefer two mutually-validated oracles with at least one first-principles (single oracle suffices at `standard`; absence of a second oracle is a Caveat, not a FAIL); where a second independent algorithm exists, prefer an algorithm-vs-algorithm differential (membership is necessary-not-sufficient; its absence is a Caveat, not a FAIL); mark `n/a` when no AC is computational, when the ticket sets `constraints.oracle_verification: off`, or when the ticket pre-dates Gate 7)
 - [x] Peer-Set Uniformity: description (Gate 10 — applies only when the ticket's `### Scope` creates a `>=2`-peer set (a family of analogous sibling units in one category — peer tools / endpoints / subcommands / exported functions sharing an output surface) per the canonical classifier; verifies the ticket carries `>=1` UNIFIED-convention AC over the set (single error convention / single success-envelope shape / single vocabulary per concept / single wrapper for repeated boilerplate, mechanically grep/AST-verifiable across every peer) OR a one-line `n/a` justification under `#### Peer-Set Uniformity (Gate 10)` — a peer set with neither is a FAIL, a justified `n/a` is a PASS. Gate 10 ENUMERATES coverage presence for the peer set; it does NOT re-grade which convention was unified (the diff-time L-UNIFORMITY lens grades the code) and MUST NOT FAIL merely because the evaluator would have chosen a different convention. Disjoint from Gate 7's sibling-INPUT-guard and from Gate 9's per-boundary matrix. Mark `n/a` when the Scope creates `<2` peers, when the ticket sets `constraints.peer_uniformity: off`, or when the ticket pre-dates Gate 10)
 - [x] Failure-Class Coverage: description (Gate 9 — applies only when the ticket's `### Scope` touches >=1 external boundary (public / exported function, CLI subcommand, endpoint, exported API symbol, file-format / wire-format, parser, or a `>=2`-peer sibling set) per the canonical classifier; verifies the `#### Failure-Class Coverage (Gate 9)` matrix carries, for EACH such boundary, four rows (R1 FULL-DOMAIN INVARIANT, R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP, R3 DESCRIPTION-MATCHES-BEHAVIOR, R4 DOC/INTERFACE TRUTHFULNESS) each resolved to >=1 AC OR a one-line `n/a` justification — a blank row is a FAIL, a justified `n/a` is a PASS. Gate 9 ENUMERATES coverage presence per boundary; it does NOT re-grade AC adequacy (Gates 1-8 do that) and MUST NOT FAIL merely because the evaluator would have written a different AC. Mark `n/a` when the ticket touches no external boundary (internal-helper-only — routine-ticket flood prevention), when the ticket sets `constraints.failure_class_coverage: off`, or when the ticket pre-dates Gate 9)

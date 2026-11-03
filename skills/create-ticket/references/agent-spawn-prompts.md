@@ -118,6 +118,8 @@ The orchestrator MUST invoke the `simple-workflow:ticket-evaluator` via the Agen
 
 For every `ticket-evaluator` spawn (both the initial evaluation and any retry re-spawn), the orchestrator MUST `Read` the file `skills/create-ticket/references/ac-quality-criteria.md` and inline-inject its full content between the literal marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>`. The evaluator does NOT read the canonical file itself — it consumes only the marker block in its spawn prompt, so failure to inject is a contract violation that will cause the evaluator to fail-fast with ERROR. If the `Read` cannot resolve the canonical file, stop with an ERROR rather than spawning the evaluator without the rubric.
 
+**Probe lines (Gate 6.5)**: every `ticket-evaluator` spawn prompt (initial AND retry) MUST also carry the `Available user skills:` line AND the `Available MCP servers:` line verbatim — the same Pre-computed Context probe lines inlined into the planner spawn for this ticket, `(none)` passed through unchanged. The evaluator has no Bash and grades Gate 6.5 only against these draft-time lines, so omitting them is a contract violation that silently degrades Gate 6.5 to `n/a`.
+
 **When split (N > 1, any mode)**: Run the evaluation process below **independently per sub-ticket**. If any sub-ticket FAILs after exhausting retry/escalation, the entire create-ticket stops (all sub-tickets affected; no directories created; counter untouched).
 
 **When not split (N = 1)**: Run the evaluation for the single ticket.
@@ -125,7 +127,7 @@ For every `ticket-evaluator` spawn (both the initial evaluation and any retry re
 ### Per-ticket evaluation process
 
 1. Read the ticket content from Phase 3.
-2. Spawn the **simple-workflow:ticket-evaluator** with the ticket content. Include the canonical AC Quality Criteria inline in the spawn prompt, delimited by `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` (using the rubric text just `Read` from `references/ac-quality-criteria.md`).
+2. Spawn the **simple-workflow:ticket-evaluator** with the ticket content. Include the canonical AC Quality Criteria inline in the spawn prompt, delimited by `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` (using the rubric text just `Read` from `references/ac-quality-criteria.md`), plus the two probe lines above. Effort per spawn: pass `effort: medium` when the Size letter of the drafted ticket being graded is S (read it from the draft, not the decomposer skeleton: the planner may revise the Size letter, and a non-split run has no skeleton); otherwise pass no effort, so the agent default (`effort: high`) applies. If the Agent tool's schema exposes no per-invocation `effort` parameter (older Claude Code CLIs), omit it and the frontmatter `effort: high` applies; if a spawn is rejected over the field, re-spawn once without it. Never fail the ticket over the effort field.
 3. Output envelope: the evaluator returns a `Status: PASS|FAIL` line plus a per-AC findings list. Treat any other shape as ERROR.
 4. Decision:
    - **PASS** → proceed to Common Write Path.
@@ -146,7 +148,7 @@ The planner MUST honor the retry-spawn FS-search ban. Under v8.0.0 the planner's
 - The retry planner MUST NOT shell out to look for ticket directories, `.simple-workflow/backlog/...`, or any `ticket.md` artifact under any path; the canonical input is the inlined draft text only.
 - These suppressions are **intentional** even when the underlying tool permission would allow the call. Treat the constraint as a hard contract: if the inlined draft is malformed or missing, fail-fast with `ERROR: retry spawn missing inlined prior draft` rather than reaching for the filesystem.
 
-c. Re-spawn the **simple-workflow:ticket-evaluator** on the revised ticket. Again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair. Missing the marker block causes the evaluator to fail-fast with ERROR.
+c. Re-spawn the **simple-workflow:ticket-evaluator** on the revised ticket. Again include the canonical AC Quality Criteria inline in this retry spawn prompt, delimited by the same `<canonical_ac_criteria>` ... `</canonical_ac_criteria>` marker pair. Missing the marker block causes the evaluator to fail-fast with ERROR. Also carry the same two probe lines (verbatim, `(none)` passed through; see **Probe lines (Gate 6.5)** above) and apply the same per-spawn effort rule as step 2, keyed on the revised draft's Size letter.
 
 d. Max 2 rounds (initial + 1 revision). If still FAIL, run the autopilot-policy escalation below.
 

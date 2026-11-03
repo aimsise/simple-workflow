@@ -71,7 +71,7 @@ For each ticket skeleton returned by the decomposer, in topological order, invok
 
 ### Step F-8: Per-ticket evaluation
 
-For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected between the marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (Read the rubric file at spawn time). Apply the retry/escalation policy described in SKILL.md Phase 4 (max 2 rounds, gate check on `gates.ticket_quality_fail` when `brief=` is present).
+For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected between the marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (Read the rubric file at spawn time), plus the `Available user skills:` / `Available MCP servers:` probe lines verbatim and the per-spawn effort rule, per SKILL.md Phase 4. Apply the retry/escalation policy described in SKILL.md Phase 4 (max 2 rounds, gate check on `gates.ticket_quality_fail` when `brief=` is present).
 
 If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with **no** directories created and **no** counter change. This is the atomicity guarantee of findings mode.
 
