@@ -10039,14 +10039,16 @@ assert_true \
   "CT-AR-13 (sibling-guard enforcement): canonical ($ar13_acqc>=1), test-authoring-guidance ($ar13_tag>=1), ac-evaluator ($ar13_acev>=1), planner via rubric pointer + Gate 7 rule sentence ($ar13_planner>=1), verification-depth ($ar13_vd>=1), implementer ($ar13_impl>=1), test-writer ($ar13_tw>=1) all require the guard across sibling tools" \
   "$ar13_result"
 
-# CT-AR-14 (outputSchema advisory, Fix C): the canonical rubric carries a Planner MUST bullet
-# requiring an MCP-server ticket's registered tools to declare an outputSchema (advisory MCP
-# hygiene, explicitly NOT a Gate 7 FAIL trigger). Lightweight presence check only.
+# CT-AR-14 (declared-return-schema advisory, Fix C): the canonical rubric carries a Planner
+# MUST bullet requiring an externally invoked tool / endpoint that advertises a structured
+# return to declare its return schema (advisory interface hygiene, explicitly NOT a Gate 7
+# FAIL trigger); an MCP server tool's `outputSchema` is the illustrative example the bullet
+# cites, and this lightweight presence check keys on that example token.
 ar14_acqc=$(grep -cF 'outputSchema' "$ACQC_AR" || true)
 ar14_result="false"
 if [ "$ar14_acqc" -ge 1 ]; then ar14_result="true"; fi
 assert_true \
-  "CT-AR-14 (outputSchema advisory): ac-quality-criteria.md Planner MUST carries the MCP outputSchema bullet ($ar14_acqc>=1)" \
+  "CT-AR-14 (declared-return-schema advisory): ac-quality-criteria.md Planner MUST carries the declared-return-schema bullet, citing outputSchema as its example ($ar14_acqc>=1)" \
   "$ar14_result"
 
 echo ""
