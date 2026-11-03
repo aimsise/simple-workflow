@@ -108,6 +108,7 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
      - The research file path(s) that were read (if any).
      - The original `$ARGUMENTS` string (verbatim).
      - The list of available skills/agents from Step 3.
+     - The rubric's absolute path — `${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-criteria.md` with the variable expanded (the plugin-relative path does not exist in the user's repository) — so the planner can `Read` the Gate 6 / 6.5 rules that govern the plan's `## Capabilities` section per `agents/planner.md` Pre-emit Self-Audit step 6.
      - An explicit instruction that the planner MUST write the full plan to the output path, including these sections:
        - **Overview** and goals
        - **Affected files** and components

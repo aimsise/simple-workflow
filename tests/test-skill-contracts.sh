@@ -7818,8 +7818,9 @@ echo ""
 # Invariants drift-guarded by this category:
 #     1. ac-quality-criteria.md ships `## Gate 6.5: Probe Completeness`
 #        section + the three-bucket vocabulary (Bound / Advisory / Skipped).
-#     2. agents/planner.md ships Pre-emit Self-Audit step 7 (Gate 6.5
-#        probe completeness cross-check) with the three bucket markers.
+#     2. agents/planner.md Pre-emit Self-Audit applies the rubric (step 6,
+#        Gate 6.5 included; PR-3 removed the former step-7 restatement) and
+#        the rubric carries the three bucket markers.
 #     3. agents/ticket-evaluator.md Gate Results template lists Probe
 #        Completeness (Gate 6.5) row.
 #     4. ticket-template.md ships `### Advisory Capabilities` block AND
@@ -7841,6 +7842,50 @@ PLANNER_AQ="$REPO_DIR/agents/planner.md"
 TEV_AQ="$REPO_DIR/agents/ticket-evaluator.md"
 TT_AQ="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
 
+# PR-3 (P1-6 / P1-10, create-ticket modernization): planner.md and
+# ticket-evaluator.md no longer restate the rubric's gate rules. The planner
+# applies ac-quality-criteria.md through its Pre-emit Self-Audit step 6; the
+# ticket-evaluator grades only against the inlined <canonical_ac_criteria>
+# block. A planner / ticket-evaluator cell of a symmetry CT below is therefore
+# satisfied when that agent points to the rubric (PR3_PLANNER_PTR /
+# PR3_TEV_PTR) AND the rubric itself carries the cell's token.
+PR3_PLANNER_PTR=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_AQ" \
+                   | grep -cF 'Apply every gate of the canonical rubric `skills/create-ticket/references/ac-quality-criteria.md` (Gates 1-10, including Gate 6.5)' || true)
+# The pointer only counts while the same Pre-emit range keeps the mandate that
+# makes it operative: the steps MUST run, and a failing draft is never emitted.
+pr3_ptr_mustrun=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_AQ" | grep -cF 'MUST run steps 1-6' || true)
+pr3_ptr_noemit=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_AQ" | grep -cF 'never emitted as-is' || true)
+if [ "$pr3_ptr_mustrun" -lt 1 ] || [ "$pr3_ptr_noemit" -lt 1 ]; then PR3_PLANNER_PTR=0; fi
+
+# CT-PR3-RUBRIC-READ (PR-3 / P1-6 handoff wiring): agents/planner.md no longer
+# restates the gate rules, so every planner spawner must hand the planner the
+# rubric's absolute path, and the planner must resolve it and fail open
+# visibly. All three spawners are pinned (/create-ticket Phase 3 + retry step b
+# + the three per-mode planner steps, /refactor Phase 1, /plan2doc Step 4) so
+# an asymmetric drop of the handoff FAILs (CLAUDE.md ## Plans).
+PR3_ASP="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+PR3_CTSKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+PR3_MDF="$REPO_DIR/skills/create-ticket/references/mode-dispatch-flows.md"
+PR3_REFACTOR="$REPO_DIR/skills/refactor/SKILL.md"
+PR3_PLAN2DOC="$REPO_DIR/skills/plan2doc/SKILL.md"
+rr_asp_phase3=$(awk '/^Additional context for the planner:/,/^### Partition/' "$PR3_ASP" | grep -F '{rubric_path}' | grep -cF 'MUST `Read`' || true)
+rr_asp_retry=$(grep -E '^b\. Re-spawn' "$PR3_ASP" | grep -cF "the rubric's absolute path" || true)
+rr_ctskill=$(grep -cF 'spawn prompt carries its resolved absolute path' "$PR3_CTSKILL" || true)
+rr_mdf=$(grep -cF '{rubric_path}' "$PR3_MDF" || true)
+rr_refactor=$(awk '/^### Phase 1: Planning/,/^### Phase 2/' "$PR3_REFACTOR" | grep -cF '${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-criteria.md' || true)
+rr_plan2doc=$(awk '/^4\. \*\*MUST invoke the .planner. agent/,/^5\. \*\*Return summary/' "$PR3_PLAN2DOC" | grep -cF '${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-criteria.md' || true)
+rr_planner_resolve=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_AQ" | grep -cF '${CLAUDE_PLUGIN_ROOT}' || true)
+rr_planner_failopen=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_AQ" | grep -F 'name the unresolved path' | grep -cF 'Blockers:' || true)
+rr_result="false"
+if [ "$rr_asp_phase3" -ge 1 ] && [ "$rr_asp_retry" -ge 1 ] && [ "$rr_ctskill" -ge 1 ] && [ "$rr_mdf" -ge 3 ] \
+   && [ "$rr_refactor" -ge 1 ] && [ "$rr_plan2doc" -ge 1 ] && [ "$rr_planner_resolve" -ge 1 ] && [ "$rr_planner_failopen" -ge 1 ]; then
+  rr_result="true"
+fi
+assert_true \
+  "CT-PR3-RUBRIC-READ (planner rubric-path handoff, all spawners): spawn-prompts Phase 3 {rubric_path}+MUST Read ($rr_asp_phase3>=1), retry step b ($rr_asp_retry>=1), create-ticket SKILL ($rr_ctskill>=1), per-mode steps ($rr_mdf>=3), /refactor Phase 1 ($rr_refactor>=1), /plan2doc Step 4 ($rr_plan2doc>=1), planner resolve ($rr_planner_resolve>=1) + visible fail-open ($rr_planner_failopen>=1)" \
+  "$rr_result"
+PR3_TEV_PTR=$(grep -cF 'That inlined block is your sole source of truth for every gate (Gates 1-10' "$TEV_AQ" || true)
+
 # CT-AQ-1: ac-quality-criteria.md ships `## Gate 6.5: Probe Completeness`
 # section and the three bucket vocabulary tokens (Bound, Advisory, Skipped
 # with rationale).
@@ -7859,13 +7904,17 @@ assert_true \
   "CT-AQ-1 (canonical Gate 6.5 section): ac-quality-criteria.md has '## Gate 6.5: Probe Completeness' (section=$aq1_section>=1) and the three buckets (Bound=$aq1_bound>=1, Advisory=$aq1_advisory>=1, Skipped=$aq1_skipped>=1)" \
   "$aq1_result"
 
-# CT-AQ-2: planner.md ships Pre-emit Self-Audit step 7 (Gate 6.5 probe
-# completeness cross-check). Look for the literal step-7 marker AND the
-# three-bucket vocabulary in the planner's body.
-aq2_step7=$(grep -cF '7. **Gate 6.5 probe completeness cross-check**' "$PLANNER_AQ" || true)
-aq2_bound_bucket=$(grep -cE '\*\*Bound\*\*:' "$PLANNER_AQ" || true)
-aq2_advisory_bucket=$(grep -cE '\*\*Advisory\*\*:' "$PLANNER_AQ" || true)
-aq2_skipped_bucket=$(grep -cE '\*\*Skipped\*\*:' "$PLANNER_AQ" || true)
+# CT-AQ-2: planner.md applies Gate 6.5 through its Pre-emit Self-Audit
+# rubric pointer (step 6), and the rubric carries the three-bucket vocabulary.
+# PR-3 re-point: the planner's step-7 restatement of Gate 6.5 (step marker +
+# '**Bound**:' / '**Advisory**:' / '**Skipped**:' bucket bullets) was removed
+# as a duplicate of the rubric. The step marker is replaced by the planner's
+# rubric pointer; the bucket vocabulary is checked in the rubric's Gate 6.5
+# section (CT-AQ-1 tokens) and in its Planner MUST three-bucket bullet.
+aq2_step7=$PR3_PLANNER_PTR
+aq2_bound_bucket=$(grep -cF '**Bound**' "$ACQC_AQ" || true)
+aq2_advisory_bucket=$(grep -cF '**Advisory**' "$ACQC_AQ" || true)
+aq2_skipped_bucket=$(grep -cF 'Bound (in `### Capabilities`), Advisory (in `### Advisory Capabilities`), or Skipped (in `#### Capability Skip Rationale`)' "$ACQC_AQ" || true)
 aq2_result="false"
 if [ "$aq2_step7" -ge 1 ] \
    && [ "$aq2_bound_bucket" -ge 1 ] \
@@ -7874,7 +7923,7 @@ if [ "$aq2_step7" -ge 1 ] \
   aq2_result="true"
 fi
 assert_true \
-  "CT-AQ-2 (planner Pre-emit step 7): agents/planner.md has step 7 marker (got=$aq2_step7>=1) and three-bucket vocabulary (Bound=$aq2_bound_bucket>=1, Advisory=$aq2_advisory_bucket>=1, Skipped=$aq2_skipped_bucket>=1)" \
+  "CT-AQ-2 (planner applies Gate 6.5): agents/planner.md Pre-emit Self-Audit points to the rubric (got=$aq2_step7>=1) and the rubric carries the three-bucket vocabulary (Bound=$aq2_bound_bucket>=1, Advisory=$aq2_advisory_bucket>=1, Planner MUST Bound/Advisory/Skipped bullet=$aq2_skipped_bucket>=1)" \
   "$aq2_result"
 
 # CT-AQ-3: ticket-evaluator.md Result template lists Probe Completeness
@@ -7978,17 +8027,18 @@ assert_true \
   "CT-AQ-7 (Advisory handoff in orchestrators): skills/{impl,refactor}/SKILL.md carry 'Advisory capabilities (per ticket)' handoff instruction ($aq7_hits / 2 files pass)" \
   "$aq7_result"
 
-# CT-AQ-8: ac-quality-criteria.md Gate 6.5 section AND planner.md step 7
-# both reference the `(none)` exception wording so the vacuous-pass path
-# is documented in both authoring sites.
+# CT-AQ-8: ac-quality-criteria.md Gate 6.5 documents the `(none)` exception
+# (vacuous pass), and planner.md applies it through its rubric pointer.
 aq8_acqc_none=$(grep -cF '`(none)` exception' "$ACQC_AQ" || true)
-aq8_planner_none=$(grep -cF '`(none)` exception' "$PLANNER_AQ" || true)
+# PR-3 re-point: the planner no longer restates the Gate 6.5 '(none)' exception;
+# it applies the rubric copy (aq8_acqc_none) through its Pre-emit pointer.
+aq8_planner_none=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && aq8_planner_none=$aq8_acqc_none
 aq8_result="false"
 if [ "$aq8_acqc_none" -ge 1 ] && [ "$aq8_planner_none" -ge 1 ]; then
   aq8_result="true"
 fi
 assert_true \
-  "CT-AQ-8 (probe '(none)' exception documented): ac-quality-criteria.md (got=$aq8_acqc_none>=1) AND agents/planner.md (got=$aq8_planner_none>=1) both reference the '(none) exception' for empty probes" \
+  "CT-AQ-8 (probe '(none)' exception documented): ac-quality-criteria.md (got=$aq8_acqc_none>=1) AND agents/planner.md via its rubric pointer (got=$aq8_planner_none>=1) both reference the '(none) exception' for empty probes" \
   "$aq8_result"
 
 # CT-AQ-9 (Advisory consultation discipline — Recommending, not just Permitting):
@@ -9314,8 +9364,8 @@ echo ""
 # Diff: New category. Drift-guards the oracle-independence feature line that
 #       closes the rounded-meet false-pass defect class (a test re-measuring
 #       with the code's own rounded value). Verifies the canonical Gate 7
-#       section, the planner self-audit step 8, the ticket-evaluator Gate 7
-#       row, the ac-evaluator oracle section + scratch carve-out, the R4
+#       section, the planner rubric pointer (Pre-emit step 6), the
+#       ticket-evaluator Gate 7 row, the ac-evaluator oracle section + scratch carve-out, the R4
 #       tautological rule, the test-authoring-guidance rubric + its wiring,
 #       the verification-depth criticality floor, and the oracle_verification
 #       policy field. Symmetry per CLAUDE.md ## Plans / ## Modifications.
@@ -9343,11 +9393,14 @@ assert_true \
   "CT-AR-1 (canonical Gate 7): ac-quality-criteria.md has '## Gate 7: Oracle Independence' (section=$ar1_section>=1), 'independent oracle' ($ar1_oracle>=1), 'raw' ($ar1_raw>=1), 'oracle_verification' kill switch ($ar1_kill>=1)" \
   "$ar1_result"
 
-# CT-AR-2: planner Pre-emit Self-Audit step 8 (Gate 7 oracle independence).
+# CT-AR-2: planner Pre-emit Self-Audit applies Gate 7 oracle independence.
+# PR-3 re-point: the step-8 restatement of Gate 7 was removed as a duplicate of
+# the rubric (canonical Gate 7 pinned by CT-AR-1); the planner now applies it
+# through the step-6 rubric pointer, which this pattern pins.
 assert_file_contains \
-  "CT-AR-2 (planner step 8): agents/planner.md ships Pre-emit Self-Audit step 8 (Gate 7 oracle independence cross-check)" \
+  "CT-AR-2 (planner applies Gate 7): agents/planner.md Pre-emit Self-Audit applies every rubric gate, Gate 7 oracle independence included" \
   "$PLANNER_AR" \
-  '8\. \*\*Gate 7 oracle independence cross-check\*\*'
+  'Apply every gate of the canonical rubric `skills/create-ticket/references/ac-quality-criteria\.md` \(Gates 1-10, including Gate 6\.5\)'
 
 # CT-AR-3: ticket-evaluator Gate 7 row in the Result template.
 ar3_oi=$(grep -cF 'Oracle Independence:' "$TEV_AR" || true)
@@ -9457,13 +9510,17 @@ assert_true \
 ar12_acqc=$(grep -ciF 'parse-accepted' "$ACQC_AR" || true)
 ar12_tag=$(grep -ciF 'parse-accepted' "$TAG_AR" || true)
 ar12_acev=$(grep -ciF 'parse-accepted' "$ACEV_AR" || true)
-ar12_planner=$(grep -ciF 'parse-accepted' "$PLANNER_AR" || true)
+# PR-3 re-point: planner cell = rubric pointer + the Gate 7 MUST sentence
+# ('NOT only parse-rejected' is unique to it; 'parse-accepted' alone is also
+# carried by Gate 9 R2).
+ar12_acqc_rule=$(grep -cF 'NOT only parse-rejected' "$ACQC_AR" || true)
+ar12_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && ar12_planner=$ar12_acqc_rule
 ar12_impl=$(grep -ciF 'parse-accepted' "$IMPL_AR" || true)
 ar12_tw=$(grep -ciF 'parse-accepted' "$TW_AR" || true)
 ar12_result="false"
 if [ "$ar12_acqc" -ge 1 ] && [ "$ar12_tag" -ge 1 ] && [ "$ar12_acev" -ge 1 ] && [ "$ar12_planner" -ge 1 ] && [ "$ar12_impl" -ge 1 ] && [ "$ar12_tw" -ge 1 ]; then ar12_result="true"; fi
 assert_true \
-  "CT-AR-12 (parse-accepted-overflow vector): Gate 7 ($ar12_acqc>=1), test-authoring-guidance ($ar12_tag>=1), ac-evaluator ($ar12_acev>=1), planner ($ar12_planner>=1), implementer ($ar12_impl>=1), test-writer ($ar12_tw>=1) all require a parse-accepted-then-overflows adversarial vector" \
+  "CT-AR-12 (parse-accepted-overflow vector): Gate 7 ($ar12_acqc>=1), test-authoring-guidance ($ar12_tag>=1), ac-evaluator ($ar12_acev>=1), planner via rubric pointer + Gate 7 MUST sentence ($ar12_planner>=1), implementer ($ar12_impl>=1), test-writer ($ar12_tw>=1) all require a parse-accepted-then-overflows adversarial vector" \
   "$ar12_result"
 
 # CT-AR-13 (sibling-guard requirement): the input-validation guard must be required across every
@@ -9474,14 +9531,19 @@ assert_true \
 ar13_acqc=$(grep -ciF 'sibling-guard' "$ACQC_AR" || true)
 ar13_tag=$(grep -ciF 'sibling tool' "$TAG_AR" || true)
 ar13_acev=$(grep -ciF 'sibling tool' "$ACEV_AR" || true)
-ar13_planner=$(grep -ciF 'sibling tool' "$PLANNER_AR" || true)
+# PR-3 re-point (P1-8): the sibling-guard rule lives once, in rubric Gate 7;
+# planner cell = rubric pointer + the rule's operative sentence (unique in the
+# rubric; the bare 'sibling-guard' label is also hit by cross-references, so it
+# would stay green with the rule itself deleted).
+ar13_acqc_rule=$(grep -cF 'sibling tool that accepts that input class' "$ACQC_AR" || true)
+ar13_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && ar13_planner=$ar13_acqc_rule
 ar13_vd=$(grep -ciF 'sibling tool' "$VD_AR" || true)
 ar13_impl=$(grep -ciF 'sibling tool' "$IMPL_AR" || true)
 ar13_tw=$(grep -ciF 'sibling tool' "$TW_AR" || true)
 ar13_result="false"
 if [ "$ar13_acqc" -ge 1 ] && [ "$ar13_tag" -ge 1 ] && [ "$ar13_acev" -ge 1 ] && [ "$ar13_planner" -ge 1 ] && [ "$ar13_vd" -ge 1 ] && [ "$ar13_impl" -ge 1 ] && [ "$ar13_tw" -ge 1 ]; then ar13_result="true"; fi
 assert_true \
-  "CT-AR-13 (sibling-guard enforcement): canonical ($ar13_acqc>=1), test-authoring-guidance ($ar13_tag>=1), ac-evaluator ($ar13_acev>=1), planner ($ar13_planner>=1), verification-depth ($ar13_vd>=1), implementer ($ar13_impl>=1), test-writer ($ar13_tw>=1) all require the guard across sibling tools" \
+  "CT-AR-13 (sibling-guard enforcement): canonical ($ar13_acqc>=1), test-authoring-guidance ($ar13_tag>=1), ac-evaluator ($ar13_acev>=1), planner via rubric pointer + Gate 7 rule sentence ($ar13_planner>=1), verification-depth ($ar13_vd>=1), implementer ($ar13_impl>=1), test-writer ($ar13_tw>=1) all require the guard across sibling tools" \
   "$ar13_result"
 
 # CT-AR-14 (outputSchema advisory, Fix C): the canonical rubric carries a Planner MUST bullet
@@ -9502,7 +9564,7 @@ echo ""
 #       feature line: the evidence-channels.md taxonomy (5 EC channels, 5 RT-*
 #       attack classes), the Gate 8 section (Gate 7 kept literal/intact), the
 #       evidence-mode multi-verifier lenses, the evidence_floor ladder + Step 3a
-#       resolution, the authoring-side planner step 9 + ticket-evaluator row, the
+#       resolution, the authoring-side planner rubric pointer + ticket-evaluator row, the
 #       independent_evidence kill switch, the RT-* namespace guard (§5.1 MF1), and
 #       the Gates 1-9 gate-count carriers (MF3/MF6). Symmetry per CLAUDE.md
 #       ## Plans / ## Modifications. Every grep token is HEAD=0 (revert flips it).
@@ -9587,15 +9649,18 @@ assert_true \
   "CT-EV-5 (Gate 8 wired symmetrically): impl SKILL 'independent evidence' ($ev5_impl>=1) + orchestration 'independent-evidence channels' ($ev5_orch>=1) + ac-evaluator '## Independent Evidence (behavioral ACs)' ($ev5_agent>=1)" \
   "$ev5_result"
 
-# CT-EV-6: authoring-side Gate 8 wired into the planner self-audit (step 9) AND
-# the ticket-evaluator Result template, mirroring CT-AR-2 + CT-AR-3.
-ev6_planner=$(grep -cE '9\. \*\*Gate 8 independent-evidence cross-check\*\*' "$PLANNER_EV" || true)
+# CT-EV-6: authoring-side Gate 8 wired into the planner self-audit (rubric
+# pointer, step 6) AND the ticket-evaluator Result template, mirroring
+# CT-AR-2 + CT-AR-3.
+# PR-3 re-point: the step-9 restatement of Gate 8 was removed as a duplicate of
+# the rubric (canonical Gate 8 pinned by CT-EV-1); planner cell = rubric pointer.
+ev6_planner=$PR3_PLANNER_PTR
 ev6_tev_row=$(grep -cF 'Independent Evidence: description (Gate 8' "$TEV_EV" || true)
 ev6_tev_g8=$(grep -cF 'Gate 8' "$TEV_EV" || true)
 ev6_result="false"
 if [ "$ev6_planner" -ge 1 ] && [ "$ev6_tev_row" -ge 1 ] && [ "$ev6_tev_g8" -ge 1 ]; then ev6_result="true"; fi
 assert_true \
-  "CT-EV-6 (Gate 8 authoring-side): planner step 9 ($ev6_planner>=1) + ticket-evaluator 'Independent Evidence: description (Gate 8' row ($ev6_tev_row>=1) + 'Gate 8' ($ev6_tev_g8>=1)" \
+  "CT-EV-6 (Gate 8 authoring-side): planner rubric pointer ($ev6_planner>=1) + ticket-evaluator 'Independent Evidence: description (Gate 8' row ($ev6_tev_row>=1) + 'Gate 8' ($ev6_tev_g8>=1)" \
   "$ev6_result"
 
 # CT-EV-7: the constraints.independent_evidence kill switch documented across the
@@ -9655,12 +9720,13 @@ HARNESS_EV="$REPO_DIR/skills/impl/references/independent-oracle-harness.md"
 # (>=1 first-principles) obligation is wired across the FULL author->verify
 # surface — canonical gate (ac-quality-criteria), taxonomy (evidence-channels),
 # producer rubric (test-authoring-guidance + implementer + test-writer),
-# authoring gate (planner step 8 + ticket-evaluator Gate-7 row), verifier
-# (ac-evaluator), and the floor doc (verification-depth). 'mutually-validated' is
-# the H1 signature token (pinned in all 9 binding-party files so a silent revert
-# of ANY cell — incl. the planner author + ticket-evaluator grader cells the
-# appendix symmetry matrix names — flips this to FAIL); 'first-principles'
-# (hyphenated) is pinned at the two ends (authoring gate + verifier).
+# authoring gate (planner + ticket-evaluator), verifier (ac-evaluator), and the
+# floor doc (verification-depth). 'mutually-validated' is the H1 signature
+# token, pinned directly in 7 files; since PR-3 the planner and ticket-evaluator
+# cells are pointer-derived (the agent points to the rubric AND the rubric
+# carries the token), so a revert of the rubric copy or of either pointer flips
+# this to FAIL; 'first-principles' (hyphenated) is pinned at the two ends
+# (authoring gate + verifier).
 ev10_acqc=$(grep -ciF 'mutually-validated' "$ACQC_EV" || true)
 ev10_ech=$(grep -ciF 'mutually-validated' "$ECH_EV" || true)
 ev10_tag=$(grep -ciF 'mutually-validated' "$TAG_EV" || true)
@@ -9668,14 +9734,15 @@ ev10_acev=$(grep -ciF 'mutually-validated' "$ACEV_EV" || true)
 ev10_vd=$(grep -ciF 'mutually-validated' "$VD_EV" || true)
 ev10_impl=$(grep -ciF 'mutually-validated' "$IMPLAGENT_EV" || true)
 ev10_tw=$(grep -ciF 'mutually-validated' "$TW_EV" || true)
-ev10_planner=$(grep -ciF 'mutually-validated' "$PLANNER_EV" || true)
-ev10_tev=$(grep -ciF 'mutually-validated' "$TEV_EV" || true)
+# PR-3 re-point: planner / ticket-evaluator cells = rubric pointer + the rubric's own token.
+ev10_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && ev10_planner=$ev10_acqc
+ev10_tev=0; [ "$PR3_TEV_PTR" -ge 1 ] && ev10_tev=$ev10_acqc
 ev10_fp_acqc=$(grep -ciF 'first-principles' "$ACQC_EV" || true)
 ev10_fp_acev=$(grep -ciF 'first-principles' "$ACEV_EV" || true)
 ev10_result="false"
 if [ "$ev10_acqc" -ge 1 ] && [ "$ev10_ech" -ge 1 ] && [ "$ev10_tag" -ge 1 ] && [ "$ev10_acev" -ge 1 ] && [ "$ev10_vd" -ge 1 ] && [ "$ev10_impl" -ge 1 ] && [ "$ev10_tw" -ge 1 ] && [ "$ev10_planner" -ge 1 ] && [ "$ev10_tev" -ge 1 ] && [ "$ev10_fp_acqc" -ge 1 ] && [ "$ev10_fp_acev" -ge 1 ]; then ev10_result="true"; fi
 assert_true \
-  "CT-EV-10 (H1 multi-oracle wired): 'mutually-validated' in ac-quality-criteria/evidence-channels/test-authoring/ac-evaluator/verification-depth/implementer/test-writer/planner/ticket-evaluator ($ev10_acqc/$ev10_ech/$ev10_tag/$ev10_acev/$ev10_vd/$ev10_impl/$ev10_tw/$ev10_planner/$ev10_tev each>=1) + 'first-principles' in gate+verifier ($ev10_fp_acqc/$ev10_fp_acev each>=1)" \
+  "CT-EV-10 (H1 multi-oracle wired): 'mutually-validated' in ac-quality-criteria/evidence-channels/test-authoring/ac-evaluator/verification-depth/implementer/test-writer + planner/ticket-evaluator via rubric pointer ($ev10_acqc/$ev10_ech/$ev10_tag/$ev10_acev/$ev10_vd/$ev10_impl/$ev10_tw/$ev10_planner/$ev10_tev each>=1) + 'first-principles' in gate+verifier ($ev10_fp_acqc/$ev10_fp_acev each>=1)" \
   "$ev10_result"
 
 # CT-EV-11 (H2 committed seeded fuzz, symmetry guard): rule 7 promoted from
@@ -9689,12 +9756,16 @@ ev11_acev=$(grep -ciF 'fixed-seed' "$ACEV_EV" || true)
 ev11_vd=$(grep -ciF 'fixed-seed' "$VD_EV" || true)
 ev11_impl=$(grep -ciF 'fixed-seed' "$IMPLAGENT_EV" || true)
 ev11_tw=$(grep -ciF 'fixed-seed' "$TW_EV" || true)
-ev11_planner=$(grep -ciF 'fixed-seed' "$PLANNER_EV" || true)
-ev11_tev=$(grep -ciF 'fixed-seed' "$TEV_EV" || true)
+# PR-3 re-point: the fixed-seed authoring guidance moved from planner step 9b /
+# the ticket-evaluator Gate 8 row into rubric Gate 8; planner / ticket-evaluator
+# cells = rubric pointer + the rubric's own token.
+ev11_acqc=$(grep -ciF 'fixed-seed' "$ACQC_EV" || true)
+ev11_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && ev11_planner=$ev11_acqc
+ev11_tev=0; [ "$PR3_TEV_PTR" -ge 1 ] && ev11_tev=$ev11_acqc
 ev11_result="false"
 if [ "$ev11_tag" -ge 1 ] && [ "$ev11_ech" -ge 1 ] && [ "$ev11_acev" -ge 1 ] && [ "$ev11_vd" -ge 1 ] && [ "$ev11_impl" -ge 1 ] && [ "$ev11_tw" -ge 1 ] && [ "$ev11_planner" -ge 1 ] && [ "$ev11_tev" -ge 1 ]; then ev11_result="true"; fi
 assert_true \
-  "CT-EV-11 (H2 committed seeded fuzz wired): 'fixed-seed' in test-authoring/evidence-channels/ac-evaluator/verification-depth/implementer/test-writer/planner/ticket-evaluator ($ev11_tag/$ev11_ech/$ev11_acev/$ev11_vd/$ev11_impl/$ev11_tw/$ev11_planner/$ev11_tev each>=1)" \
+  "CT-EV-11 (H2 committed seeded fuzz wired): 'fixed-seed' in test-authoring/evidence-channels/ac-evaluator/verification-depth/implementer/test-writer ($ev11_tag/$ev11_ech/$ev11_acev/$ev11_vd/$ev11_impl/$ev11_tw each>=1) + ac-quality-criteria ($ev11_acqc>=1) + planner/ticket-evaluator via rubric pointer ($ev11_planner/$ev11_tev each>=1)" \
   "$ev11_result"
 
 # CT-EV-12 (H3 algorithm-vs-algorithm, symmetry guard): EC-DIFFERENTIAL re-spec'd
@@ -9708,12 +9779,13 @@ ev12_acev=$(grep -ciF 'algorithm-vs-algorithm' "$ACEV_EV" || true)
 ev12_orch=$(grep -ciF 'algorithm-vs-algorithm' "$ORCH_EV" || true)
 ev12_impl=$(grep -ciF 'algorithm-vs-algorithm' "$IMPLAGENT_EV" || true)
 ev12_tw=$(grep -ciF 'algorithm-vs-algorithm' "$TW_EV" || true)
-ev12_planner=$(grep -ciF 'algorithm-vs-algorithm' "$PLANNER_EV" || true)
-ev12_tev=$(grep -ciF 'algorithm-vs-algorithm' "$TEV_EV" || true)
+# PR-3 re-point: planner / ticket-evaluator cells = rubric pointer + the rubric's own token.
+ev12_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && ev12_planner=$ev12_acqc
+ev12_tev=0; [ "$PR3_TEV_PTR" -ge 1 ] && ev12_tev=$ev12_acqc
 ev12_result="false"
 if [ "$ev12_acqc" -ge 1 ] && [ "$ev12_ech" -ge 1 ] && [ "$ev12_tag" -ge 1 ] && [ "$ev12_acev" -ge 1 ] && [ "$ev12_orch" -ge 1 ] && [ "$ev12_impl" -ge 1 ] && [ "$ev12_tw" -ge 1 ] && [ "$ev12_planner" -ge 1 ] && [ "$ev12_tev" -ge 1 ]; then ev12_result="true"; fi
 assert_true \
-  "CT-EV-12 (H3 algorithm-vs-algorithm wired): 'algorithm-vs-algorithm' in ac-quality-criteria/evidence-channels/test-authoring/ac-evaluator/orchestration/implementer/test-writer/planner/ticket-evaluator ($ev12_acqc/$ev12_ech/$ev12_tag/$ev12_acev/$ev12_orch/$ev12_impl/$ev12_tw/$ev12_planner/$ev12_tev each>=1)" \
+  "CT-EV-12 (H3 algorithm-vs-algorithm wired): 'algorithm-vs-algorithm' in ac-quality-criteria/evidence-channels/test-authoring/ac-evaluator/orchestration/implementer/test-writer + planner/ticket-evaluator via rubric pointer ($ev12_acqc/$ev12_ech/$ev12_tag/$ev12_acev/$ev12_orch/$ev12_impl/$ev12_tw/$ev12_planner/$ev12_tev each>=1)" \
   "$ev12_result"
 
 # CT-EV-13 (H13 independent-oracle-harness.md exists + reference-wired): the new
@@ -9767,7 +9839,8 @@ IMPLAGENT_EV="$REPO_DIR/agents/implementer.md"
 TAG_EV="$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
 ev_m3_2_acqc=$(grep -cF 'external-input boundary (computational or behavioral)' "$ACQC_EV" || true)
 ev_m3_2_acev=$(grep -ciF 'computational or behavioral' "$ACEV_EV" || true)
-ev_m3_2_planner=$(grep -ciF 'computational or behavioral' "$PLANNER_EV" || true)
+# PR-3 re-point: planner cell = rubric pointer + the rubric's canonical phrase.
+ev_m3_2_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && ev_m3_2_planner=$ev_m3_2_acqc
 ev_m3_2_tev=$(grep -ciF 'computational or behavioral' "$TEV_EV" || true)
 ev_m3_2_tw=$(grep -ciF 'computational or behavioral' "$TW_EV" || true)
 ev_m3_2_impl=$(grep -ciF 'computational or behavioral' "$IMPLAGENT_EV" || true)
@@ -9775,7 +9848,7 @@ ev_m3_2_tag=$(grep -ciF 'computational or behavioral' "$TAG_EV" || true)
 ev_m3_2_result="false"
 if [ "$ev_m3_2_acqc" -ge 1 ] && [ "$ev_m3_2_acev" -ge 1 ] && [ "$ev_m3_2_planner" -ge 1 ] && [ "$ev_m3_2_tev" -ge 1 ] && [ "$ev_m3_2_tw" -ge 1 ] && [ "$ev_m3_2_impl" -ge 1 ] && [ "$ev_m3_2_tag" -ge 1 ]; then ev_m3_2_result="true"; fi
 assert_true \
-  "CT-EV-M3-2 (Gate 7 broadened, 7-file symmetry): ac-quality-criteria canonical phrase ($ev_m3_2_acqc>=1) + 'computational or behavioral' in ac-evaluator/planner/ticket-evaluator/test-writer/implementer/test-authoring ($ev_m3_2_acev/$ev_m3_2_planner/$ev_m3_2_tev/$ev_m3_2_tw/$ev_m3_2_impl/$ev_m3_2_tag each>=1)" \
+  "CT-EV-M3-2 (Gate 7 broadened, 7-file symmetry): ac-quality-criteria canonical phrase ($ev_m3_2_acqc>=1) + 'computational or behavioral' in ac-evaluator/planner (via rubric pointer + canonical phrase)/ticket-evaluator/test-writer/implementer/test-authoring ($ev_m3_2_acev/$ev_m3_2_planner/$ev_m3_2_tev/$ev_m3_2_tw/$ev_m3_2_impl/$ev_m3_2_tag each>=1)" \
   "$ev_m3_2_result"
 
 # CT-EV-M3-3 (strongest-derivation oracle-kind recording, all-tier, M3): wired into
@@ -9897,7 +9970,7 @@ assert_true \
 # CT-EV-GATE9-3 (Gate 9 kill switch wired, canonical gate + policy doc + policy
 # template + planner audit, v8.4.0+): constraints.failure_class_coverage appears in
 # the Gate 9 Kill-switch line, the autopilot-policy-reference section, and the
-# planner step-10 read; failure_class_coverage appears in the policy template. All
+# planner's kill-switch bullet; failure_class_coverage appears in the policy template. All
 # net-new. This is the self-AC#3 'kill switch reverts' guard at the contract level.
 ev_g9_3_acqc=$(grep -cF 'constraints.failure_class_coverage' "$ACQC_EV" || true)
 ev_g9_3_apr=$(grep -cF 'constraints.failure_class_coverage' "$APR_EV" || true)
@@ -10099,12 +10172,15 @@ assert_true \
 shin_b_acqc=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACQC_EV" || true)
 shin_b_acev=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACEV_EV" || true)
 shin_b_acevhi=$(grep -ciF 'delegation is NOT an automatic n/a' "$ACEVHI_EV" || true)
-shin_b_planner=$(grep -ciF 'delegation is NOT an automatic n/a' "$PLANNER_EV" || true)
-shin_b_tev=$(grep -ciF 'delegation is NOT an automatic n/a' "$TEV_EV" || true)
+# PR-3 re-point (P1-8): the delegation clause lives once, in the rubric's Gate 7
+# sibling-guard requirement; planner / ticket-evaluator cells = rubric pointer +
+# the rubric's own clause.
+shin_b_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && shin_b_planner=$shin_b_acqc
+shin_b_tev=0; [ "$PR3_TEV_PTR" -ge 1 ] && shin_b_tev=$shin_b_acqc
 shin_b_result="false"
 if [ "$shin_b_acqc" -ge 1 ] && [ "$shin_b_acev" -ge 1 ] && [ "$shin_b_acevhi" -ge 1 ] && [ "$shin_b_planner" -ge 1 ] && [ "$shin_b_tev" -ge 1 ]; then shin_b_result="true"; fi
 assert_true \
-  "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+both twins+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + ac-evaluator-hi ($shin_b_acevhi>=1) + planner ($shin_b_planner>=1) + ticket-evaluator ($shin_b_tev>=1)" \
+  "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+both twins+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + ac-evaluator-hi ($shin_b_acevhi>=1) + planner via rubric pointer ($shin_b_planner>=1) + ticket-evaluator via rubric pointer ($shin_b_tev>=1)" \
   "$shin_b_result"
 
 # CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe scratch carve-out clarification,
@@ -10467,10 +10543,13 @@ assert_true "CT-AASC-19 (producer generative property-test lock-in, 3 surfaces):
 # A foreclosed internal representation (numeric type / precision model) under an advertised lossless/exact END is a
 # Gate 4 FAIL. Wired into ac-quality-criteria Gate 4 + the planner Pre-emit Self-Audit. RED-first: HEAD=0.
 aasc20_gate=$(grep -ciF 'Representation foreclosure' "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md" || true)
-aasc20_planner=$(grep -ciF 'representation-foreclosure' "$REPO_DIR/agents/planner.md" || true)
+# PR-3 re-point: the planner's Gate 4 representation-foreclosure self-audit
+# section was removed as a duplicate of the rubric's '### Representation
+# foreclosure' sub-rule (aasc20_gate); planner cell = rubric pointer + that rule.
+aasc20_planner=0; [ "$PR3_PLANNER_PTR" -ge 1 ] && aasc20_planner=$aasc20_gate
 aasc20_result="false"
 if [ "$aasc20_gate" -ge 1 ] && [ "$aasc20_planner" -ge 1 ]; then aasc20_result="true"; fi
-assert_true "CT-AASC-20 (Gate 4 representation-foreclosure rule + planner wiring): ac-quality ($aasc20_gate>=1) planner ($aasc20_planner>=1)" "$aasc20_result"
+assert_true "CT-AASC-20 (Gate 4 representation-foreclosure rule + planner wiring): ac-quality ($aasc20_gate>=1) planner via rubric pointer ($aasc20_planner>=1)" "$aasc20_result"
 
 # CT-AASC-21 (W-axis writer-pairing trigger clause in the orchestrator handoff; dogfood58 #1a).
 # The K-axis trigger clause had no W-axis sibling, so a paired reader+writer round-trip was encoded under an

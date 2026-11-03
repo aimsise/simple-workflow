@@ -167,7 +167,7 @@ kill switch for the Gate 8 / independent-evidence feature line; it is independen
 
 ## `constraints.failure_class_coverage`
 
-**Consumed by**: the `planner` Gate 9 self-audit (Pre-emit Self-Audit step 10) and
+**Consumed by**: the `planner` Gate 9 self-audit (Pre-emit Self-Audit step 6, which applies rubric Gate 9) and
 the `ticket-evaluator` Gate 9 grading. (Authoring-side only — Gate 9 ENUMERATES
 which Scope-touched external boundaries need an AC; it has no `/impl` /
 `ac-evaluator` consumer, since Gate 7 / Gate 8 GRADE the resulting ACs at
@@ -197,7 +197,7 @@ failure-class-coverage feature line; it is independent of
 
 ## `constraints.peer_uniformity`
 
-**Consumed by**: the `planner` Gate 10 self-audit (Pre-emit Self-Audit step 11) and
+**Consumed by**: the `planner` Gate 10 self-audit (Pre-emit Self-Audit step 6, which applies rubric Gate 10) and
 the `ticket-evaluator` Gate 10 grading. (Authoring-side only — Gate 10 ENUMERATES
 whether a `>=2`-peer set needs a unified-convention AC; its diff-time grader is the
 existing `ac-evaluator` **L-UNIFORMITY** failure-class lens, governed separately by

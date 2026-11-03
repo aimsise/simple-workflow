@@ -133,7 +133,7 @@ Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Commu
 
 **Partition owned by decomposer (all modes)**; planner never re-partitions. See [references/spec-decomposer-input.md](references/spec-decomposer-input.md).
 
-**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) for Gates 1-10 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs, Gate 9 failure-class coverage for Scope-touched external boundaries, Gate 10 peer-set uniformity for >=2-peer sets). ACs failing any gate are rejected by Phase 4.
+**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) (spawn prompt carries its resolved absolute path as `{rubric_path}` — `${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-criteria.md` with the variable expanded, the same file Phase 4 `Read`s for inline-injection; the planner `Read`s it) for Gates 1-10 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs, Gate 9 failure-class coverage for Scope-touched external boundaries, Gate 10 peer-set uniformity for >=2-peer sets). ACs failing any gate are rejected by Phase 4.
 
 #### Workflow selection (planner output)
 
@@ -147,7 +147,7 @@ By category: Security wraps with security-only audits, spec-first; CodeQuality u
 
 **Effort per spawn**: pass `effort: medium` when the drafted ticket's Size letter is S (read from the draft being graded, since the planner may revise the skeleton's Size); otherwise pass none, so the agent default (`effort: high`) applies. If the Agent tool's schema exposes no per-invocation `effort` parameter (older Claude Code CLIs), omit it and the frontmatter `effort: high` applies; if a spawn is rejected over the field, re-spawn once without it. Never fail the ticket over the effort field.
 
-Envelope: `Status: PASS|FAIL` + per-AC findings. `PASS` → CWP. `FAIL` → retry-with-feedback (max 2 rounds). Retry planner FS-search ban: works **solely from the inlined prior draft** + inlined Feedback (no filesystem search for `ticket.md`). Exhausted retries consult `autopilot-policy.yaml` `gates.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=<retry_with_feedback|stop> round={n}`. `brief_mode == manual` skips brief-parent fallback. Non-interactive: stop. Full: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md).
+Envelope: `Status: PASS|FAIL` + per-AC findings. `PASS` → CWP. `FAIL` → retry-with-feedback (max 2 rounds). Retry planner FS-search ban: works **solely from the inlined prior draft** + inlined Feedback, plus the rubric at its resolved absolute path (no filesystem search for `ticket.md`). Exhausted retries consult `autopilot-policy.yaml` `gates.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=<retry_with_feedback|stop> round={n}`. `brief_mode == manual` skips brief-parent fallback. Non-interactive: stop. Full: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md).
 
 **Split (N>1)**: independent per sub-ticket. Any FAIL after retry/escalation → `/create-ticket` stops atomically (no directories, no counter change).
 

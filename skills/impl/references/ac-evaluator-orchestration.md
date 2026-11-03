@@ -239,8 +239,8 @@ MAY surface a failure-class coverage gap the planner dropped (the grader becomes
 a coverage-gap finder, not only an AC grader). A surfaced gap is reported as
 advisory `[MEDIUM]` coverage-gap Feedback, NOT as a silent AC PASS and NOT as a
 Gate-3 ticket-quality FAIL (the matching carve-out lives in
-`skills/create-ticket/references/ac-quality-criteria.md` `## Evaluator MUST NOT`
-and `agents/ticket-evaluator.md`). A real defect a lens finds inside an AC's
+`skills/create-ticket/references/ac-quality-criteria.md` Gate 3
+(`**Impl-side panel carve-out**`), which `agents/ticket-evaluator.md` honours). A real defect a lens finds inside an AC's
 scope is graded on that AC as usual.
 
 **Proportionality — size gates DEPTH only, never the lens set**:

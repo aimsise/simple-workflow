@@ -99,8 +99,9 @@ fi
 # to install declared dependencies and add remotes without manual `! npm
 # install` interruptions. The mitigation against attacker-controlled
 # packages from prompt injection lives at the prompt level: the
-# `## Bound capabilities (per AC)` discipline and the planner Pre-emit
-# Self-Audit step 6(d) constrain what the productive subagent is asked
+# `## Bound capabilities (per AC)` discipline and the rubric's Gate 6
+# MCP-vs-verdict-agent rule (applied by the planner Pre-emit Self-Audit)
+# constrain what the productive subagent is asked
 # to do; the agent body's `## Bound Capabilities (Handoff from
 # Orchestrator)` section forbids speculative tool use.
 #
