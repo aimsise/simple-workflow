@@ -366,6 +366,13 @@ acev_fm_effort=$(grep -cE -- '^effort:' <<<"$acev_fm" || true)
 # PR-5 re-point: mirror the generator side of the invariant, agents/implementer.md also
 # carries no `effort:` key (both agents run at the session effort on a routine spawn).
 impl_fm_effort=$(extract_agent_frontmatter "$REPO_DIR/agents/implementer.md" | grep -cE -- '^effort:' || true)
+# Rubric-split / ticket-grading extension: the ticket-side evaluator agents/ticket-evaluator.md
+# also carries NO `effort:` key (it formerly pinned `effort: high`, which REPLACED the session
+# effort and made it grade below the planner in an xhigh / max session), so it grades at the
+# session effort the planner (no `effort:` key) drafts at; its model stays `inherit`.
+tev_fm=$(extract_agent_frontmatter "$REPO_DIR/agents/ticket-evaluator.md")
+tev_fm_effort=$(grep -cE -- '^effort:' <<<"$tev_fm" || true)
+tev_fm_inherit=$(grep -cE -- '^model: inherit([[:space:]]|$)' <<<"$tev_fm" || true)
 bad_effort=""
 for agent_md in "$REPO_DIR"/agents/*.md; do
   eff=$(extract_agent_frontmatter "$agent_md" | awk '/^effort:/{sub(/^effort:[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); print; exit}')
@@ -376,11 +383,12 @@ for agent_md in "$REPO_DIR"/agents/*.md; do
     esac
   fi
 done
-if [ "$acev_fm_opus" -eq 1 ] && [ "$acev_fm_effort" -eq 0 ] && [ "$impl_fm_effort" -eq 0 ] && [ -z "$bad_effort" ]; then
-  echo -e "  ${GREEN}PASS${NC} agents/ac-evaluator.md frontmatter pins model: opus with no effort: key, agents/implementer.md (the generator) has no effort: key either, and every agent effort: key is a valid level"
+if [ "$acev_fm_opus" -eq 1 ] && [ "$acev_fm_effort" -eq 0 ] && [ "$impl_fm_effort" -eq 0 ] \
+   && [ "$tev_fm_effort" -eq 0 ] && [ "$tev_fm_inherit" -eq 1 ] && [ -z "$bad_effort" ]; then
+  echo -e "  ${GREEN}PASS${NC} agents/ac-evaluator.md frontmatter pins model: opus with no effort: key, agents/implementer.md (the generator) has no effort: key either, agents/ticket-evaluator.md keeps model: inherit with no effort: key, and every agent effort: key is a valid level"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  echo -e "  ${RED}FAIL${NC} single-evaluator frontmatter / agent effort levels (model: opus=$acev_fm_opus expected 1, effort: lines=$acev_fm_effort expected 0, implementer effort: lines=$impl_fm_effort expected 0, invalid effort:${bad_effort:- none})"
+  echo -e "  ${RED}FAIL${NC} single-evaluator frontmatter / agent effort levels (model: opus=$acev_fm_opus expected 1, effort: lines=$acev_fm_effort expected 0, implementer effort: lines=$impl_fm_effort expected 0, ticket-evaluator effort: lines=$tev_fm_effort expected 0, ticket-evaluator model: inherit=$tev_fm_inherit expected 1, invalid effort:${bad_effort:- none})"
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

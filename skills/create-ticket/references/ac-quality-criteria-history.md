@@ -1,9 +1,9 @@
 # AC Quality Criteria: Rationale and History
 
-This file is a maintainer reference for `ac-quality-criteria.md` in the same directory. It keeps the motivation paragraphs, dogfood evidence, version-history asides and activation notes that were moved out of the rubric on 2026-11-03 so the rubric (inlined into every `ticket-evaluator` spawn and `Read` by the `planner`) carries rules only.
+This file is a maintainer reference for `ac-quality-criteria.md` and its grading companion `ac-quality-grading.md` in the same directory. It keeps the motivation paragraphs, dogfood evidence, version-history asides and activation notes that were moved out of the rubric on 2026-11-03 so the rubric (both files inlined into every `ticket-evaluator` spawn, the rules file alone `Read` by the `planner`) carries normative text only.
 
-- **Not normative.** Every MUST / MUST NOT / FAIL condition, `n/a` condition, classifier and kill switch lives in `ac-quality-criteria.md`, which wins on any disagreement. Normative clauses that were embedded in the paragraphs below were extracted into the rubric before the narrative moved here.
-- **Not injected.** No spawn prompt inlines this file, and no agent reads it when drafting or grading a ticket. Do not add it to any `<canonical_ac_criteria>` block.
+- **Not normative.** Every MUST / MUST NOT / FAIL condition, `n/a` condition, classifier and kill switch lives in `ac-quality-criteria.md` (the gate rules) or `ac-quality-grading.md` (the ticket-evaluator's grading procedure), which win on any disagreement. Normative clauses that were embedded in the paragraphs below were extracted into the rubric before the narrative moved here.
+- **Not injected.** No spawn prompt inlines this file, and no agent reads it when drafting or grading a ticket. The `<canonical_ac_criteria>` block carries exactly two files, `ac-quality-criteria.md` and then `ac-quality-grading.md`; do not add this file to it.
 - **Verbatim.** Each entry is the original text, grouped by the gate it came from. Where only part of a paragraph moved, the entry quotes just that part.
 
 ## Gate 6: Capability Mapping
@@ -142,6 +142,8 @@ Removed aside: "This is the per-brief kill switch for the failure-class-coverage
 
 **Evaluator note**: Gate 9 activates only after this section ships. Tickets drafted before Gate 9 are pre-Gate-9 and are graded `n/a` for Gate 9 (PASS verdicts on those tickets do not imply Gate 9 conformance). NOTE (model-judgment caveat): there is no machine-readable external-boundary field in the ticket schema — "which surfaces are Scope-touched external boundaries" and "is this row's AC sufficient" are model judgment over the ticket's free-text Scope and ACs (the same fragility class as the Gate 7 criticality floor). Gate 9 enforces that the matrix SECTION is present and resolved (every row -> AC or justified `n/a`) per boundary; it does NOT and cannot mechanically verify that the model identified the boundaries correctly or that each row's AC is adequate — that residual judgment is graded by the evaluator, not by a grep.
 
+(Since the 2026-11-03 rules/grading split, the current model-judgment caveat sits under the Gate 9 heading of `ac-quality-grading.md`.)
+
 ## Gate 10: Peer-Set Uniformity
 
 ### Motivation
@@ -164,6 +166,8 @@ Removed aside: "This is the per-brief kill switch for the peer-uniformity featur
 
 **Evaluator note**: Gate 10 activates only after this section ships. Tickets drafted before Gate 10 are pre-Gate-10 and are graded `n/a` for Gate 10 (PASS verdicts on those tickets do not imply Gate 10 conformance). Same model-judgment caveat as Gate 9: "which Scope units form a `>=2`-peer set" is model judgment over free-text Scope, not a grep — Gate 10 enforces that the unified AC (or a justified `n/a`) is PRESENT for an identified peer set; it does not and cannot mechanically verify the model partitioned the peers correctly.
 
+(Since the 2026-11-03 rules/grading split, the current model-judgment caveat sits under the Gate 10 heading of `ac-quality-grading.md`.)
+
 ## Planner MUST
 
 ### Gate 8 bullet: version label
@@ -172,7 +176,7 @@ Removed aside: "under the M3 AC-shape floor" (now `under the AC-shape floor`).
 
 ## Evaluator MUST NOT (drift-prevention list): items folded into their gates
 
-On 2026-11-03 the list was cut to its three cross-gate items. Each other item below was either already stated in its own gate or was folded into that gate as an `Evaluator MUST NOT FAIL when ...` sentence. The original items, verbatim:
+On 2026-11-03 the list was cut to its three cross-gate items. Each other item below was either already stated in its own gate or was folded into that gate as an `Evaluator MUST NOT FAIL when ...` sentence (since the 2026-11-03 rules/grading split, those sentences sit under the same gate heading in `ac-quality-grading.md`). The original items, verbatim:
 
 - **MUST NOT** treat a concrete API name that appears as a test-assertion observation point (Gate 4 carve-out above — e.g., `process.stdout.write`, `vi.spyOn(console, 'log')`, `fs.writeFileSync`) as HOW. Such names are part of the PASS/FAIL contract, not prescribed implementation.
 - **MUST NOT** invent edge cases outside the ticket's declared scope and then FAIL Gate 3 for their absence. (Failure-class eval panel carve-out, v8.4.0+: this MUST-NOT binds the *ticket-evaluator* — it does NOT restrict the *impl-side* `ac-evaluator` failure-class panel, whose lenses MAY surface a failure-class coverage gap the planner dropped and report it as advisory `[MEDIUM]` coverage-gap Feedback; that is the grader acting as a coverage-gap finder, not a Gate-3 ticket-quality FAIL. The ticket-evaluator still MUST NOT convert such an impl-side coverage-gap note into a Gate-3 FAIL. See `skills/impl/references/ac-evaluator-orchestration.md` `## Default failure-class panel` and `agents/ac-evaluator.md` `## Failure-class panel (default lenses)`.)

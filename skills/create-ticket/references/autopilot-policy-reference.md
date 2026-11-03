@@ -30,14 +30,13 @@ the agent frontmatter `effort` > the parent session effort. A frontmatter
 `effort` replaces the inherited session effort rather than acting as a floor.
 
 **Evaluation-side invariant (ticket grading)**: the ticket-evaluator never runs
-on a weaker model than the planner: both resolve `model: inherit` to the
-session model, and the evaluator pins `effort: high`
-(`agents/ticket-evaluator.md`), because a weaker grader than the generator
-inverts the generator-evaluator loop. The invariant is on the model axis: on a
-session running above `high` effort, the planner (no `effort:` key) inherits
-the higher level while the evaluator stays at `high`. `/create-ticket` Phase 4
-lowers only the effort, to `effort: medium` per spawn for a Size S drafted
-ticket; the model stays `inherit`.
+on a weaker model or at a lower effort than the planner, because a weaker
+grader than the generator inverts the generator-evaluator loop. Both resolve
+`model: inherit` to the session model, neither agent file carries an `effort:`
+key (`agents/ticket-evaluator.md`, `agents/planner.md`), and `/create-ticket`
+passes no per-spawn `effort` to either of them at any Size, so both run at the
+session effort. The invariant therefore holds on both the model and the effort
+axis, in every session including one running at `xhigh` or `max` effort.
 
 The implementation-side AC evaluator's model allocation (`agents/ac-evaluator.md`,
 one agent file: opus at every tier by default, the Generator's own model; no `effort:`
@@ -48,8 +47,8 @@ or a forced model) is described in
 [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md)
 `## Criticality scalar` / `## Effects ladder` and is unaffected by this policy. Its
 evaluator ≥ generator invariant, and that invariant's scope (both the model and the
-effort axis; unlike the ticket-evaluator above, the AC evaluator has no frontmatter
-`effort:`, so its one effort residual is a `max`-effort session, where a critical /
+effort axis; like the ticket-evaluator above, the AC evaluator has no frontmatter
+`effort:`, and its one effort residual is a `max`-effort session, where a critical /
 exhaustive evaluator runs at the passed `xhigh`), is stated once in that reference's
 `### Evaluator model + red-team budget`.
 

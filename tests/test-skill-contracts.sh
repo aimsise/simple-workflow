@@ -1996,6 +1996,9 @@ echo "--- Cat Z: Gate 1 / Gate 2 BAD/GOOD example single-location guard ---"
 Z_RUBRIC="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
 Z_TICKET_EVALUATOR="$REPO_DIR/agents/ticket-evaluator.md"
 Z_CREATE_TICKET="$REPO_DIR/skills/create-ticket/SKILL.md"
+# Rubric-split extension: the evaluator-only grading half of the rubric must not
+# carry a copy of the examples either (they stay in the rules file only).
+Z_GRADING="$REPO_DIR/skills/create-ticket/references/ac-quality-grading.md"
 
 # Each entry: "<rubric gate heading>|<canonical BAD literal>|<GOOD body prefix>".
 # The GOOD body prefix is the start of the GOOD string paired with that BAD.
@@ -2030,7 +2033,7 @@ z_copy_state() {
 # One assertion per canonical BAD literal: present in the rubric's gate section
 # as a `- **BAD**: "<literal>"` bullet whose next non-blank line is a
 # `- **GOOD**: "<GOOD body prefix>` bullet, and both strings absent from both
-# former copy sites.
+# former copy sites nor the grading file.
 z_check_single_location() {
   local heading="$1" literal="$2" good="$3"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
@@ -2044,10 +2047,14 @@ z_check_single_location() {
     ' "$Z_RUBRIC"; then
     in_rubric="present"
   fi
-  local te_state ct_state
+  local te_state ct_state gr_state
   te_state=$(z_copy_state "$Z_TICKET_EVALUATOR" "$literal" "$good")
   ct_state=$(z_copy_state "$Z_CREATE_TICKET" "$literal" "$good")
-  if [ "$in_rubric" = "present" ] && [ "$te_state" = "absent" ] && [ "$ct_state" = "absent" ]; then
+  # Rubric-split extension: the grading file is a third no-copy site for the
+  # literal strings too, so a copy pasted as prose or a blockquote (which the
+  # line-start bullet regex below does not match) still FAILs.
+  gr_state=$(z_copy_state "$Z_GRADING" "$literal" "$good")
+  if [ "$in_rubric" = "present" ] && [ "$te_state" = "absent" ] && [ "$ct_state" = "absent" ] && [ "$gr_state" = "absent" ]; then
     echo -e "  ${GREEN}PASS${NC} Z: canonical BAD example lives only in the rubric (${heading#\#\# }, paired with GOOD '$good...'): '$literal'"
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
@@ -2055,7 +2062,8 @@ z_check_single_location() {
     echo -e "       rubric ($heading, BAD + GOOD '$good...' pair): $in_rubric (want present)"
     echo -e "       agents/ticket-evaluator.md       : $te_state (want absent)"
     echo -e "       skills/create-ticket/SKILL.md    : $ct_state (want absent)"
-    echo -e "       Fix: keep the BAD/GOOD pair in skills/create-ticket/references/ac-quality-criteria.md only; the other two files point at it."
+    echo -e "       references/ac-quality-grading.md : $gr_state (want absent)"
+    echo -e "       Fix: keep the BAD/GOOD pair in skills/create-ticket/references/ac-quality-criteria.md only; the other files point at it."
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 }
@@ -2067,22 +2075,28 @@ done
 
 # One assertion: neither former copy site carries any BAD/GOOD example line,
 # so a re-introduced copy FAILs even when its strings differ from the rubric's.
+# Rubric-split extension: the grading file is checked as a third no-copy site.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 z_te_bullets="FILE-MISSING"
 z_ct_bullets="FILE-MISSING"
+z_gr_bullets="FILE-MISSING"
 if [ -f "$Z_TICKET_EVALUATOR" ]; then
   z_te_bullets=$(grep -ciE -- "$Z_EXAMPLE_BULLET_RE" "$Z_TICKET_EVALUATOR" || true)
 fi
 if [ -f "$Z_CREATE_TICKET" ]; then
   z_ct_bullets=$(grep -ciE -- "$Z_EXAMPLE_BULLET_RE" "$Z_CREATE_TICKET" || true)
 fi
-if [ "$z_te_bullets" = "0" ] && [ "$z_ct_bullets" = "0" ]; then
-  echo -e "  ${GREEN}PASS${NC} Z: no BAD/GOOD example line (list or table) in agents/ticket-evaluator.md or skills/create-ticket/SKILL.md (rubric is the single location)"
+if [ -f "$Z_GRADING" ]; then
+  z_gr_bullets=$(grep -ciE -- "$Z_EXAMPLE_BULLET_RE" "$Z_GRADING" || true)
+fi
+if [ "$z_te_bullets" = "0" ] && [ "$z_ct_bullets" = "0" ] && [ "$z_gr_bullets" = "0" ]; then
+  echo -e "  ${GREEN}PASS${NC} Z: no BAD/GOOD example line (list or table) in agents/ticket-evaluator.md, skills/create-ticket/SKILL.md or the grading file (the rules file is the single location)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} Z: BAD/GOOD example line found outside the rubric"
   echo -e "       agents/ticket-evaluator.md       : $z_te_bullets line(s) (want 0)"
   echo -e "       skills/create-ticket/SKILL.md    : $z_ct_bullets line(s) (want 0)"
+  echo -e "       references/ac-quality-grading.md : $z_gr_bullets line(s) (want 0)"
   echo -e "       Fix: delete the copy; Gate 1 / Gate 2 examples live only in skills/create-ticket/references/ac-quality-criteria.md."
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
@@ -7932,6 +7946,9 @@ echo ""
 echo "--- Cat AQ: Gate 6.5 probe completeness + Advisory pathway ---"
 
 ACQC_AQ="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+# Rubric split (rules / grading): the evaluator-only grading procedure lives in
+# ac-quality-grading.md, inlined after the rules file into every ticket-evaluator spawn.
+ACQG_AQ="$REPO_DIR/skills/create-ticket/references/ac-quality-grading.md"
 PLANNER_AQ="$REPO_DIR/agents/planner.md"
 TEV_AQ="$REPO_DIR/agents/ticket-evaluator.md"
 TT_AQ="$REPO_DIR/skills/create-ticket/references/ticket-template.md"
@@ -8169,13 +8186,17 @@ assert_true \
 # self-skip set each name every entry they skip), the grouping-only non-FAIL
 # sentence with its unclassified clause, and the Evaluator MUST check. Kept
 # separate from CT-AQ-1 so a failure names its own cause.
+# Rubric-split re-point: the Evaluator MUST check (aq10_eval) moved with the
+# grading procedure, so it is pinned in the grading file's Gate 6.5 section; the
+# other five pins stay on the rules file's Gate 6.5 section.
 aq10_sec=$(sed -n '/^## Gate 6\.5: Probe Completeness$/,/^## Gate 7/p' "$ACQC_AQ")
+aq10_gsec=$(sed -n '/^## Gate 6\.5: Probe Completeness$/,/^## Gate 7/p' "$ACQG_AQ" 2>/dev/null || true)
 aq10_fail=$(printf '%s\n' "$aq10_sec" | grep -cF 'A probe entry that appears in none of the three buckets is a Gate 6.5 FAIL' || true)
 aq10_named=$(printf '%s\n' "$aq10_sec" | grep -cF 'the entry is named in a bullet of `#### Capability Skip Rationale`' || true)
 aq10_domain=$(printf '%s\n' "$aq10_sec" | grep -cF 'naming every entry it skips' || true)
 aq10_selfskip=$(printf '%s\n' "$aq10_sec" | grep -cF 'in one bullet naming each of them that the probe lists' || true)
 aq10_grouped=$(printf '%s\n' "$aq10_sec" | grep -cF 'A grouped bullet classifies every name it lists, so grouping alone is never a Gate 6.5 FAIL; an entry no bullet names in full stays unclassified' || true)
-aq10_eval=$(printf '%s\n' "$aq10_sec" | grep -cF 'verify each probe entry is classified into one of the three buckets' || true)
+aq10_eval=$(printf '%s\n' "$aq10_gsec" | grep -cF 'verify each probe entry is classified into one of the three buckets' || true)
 aq10_result="false"
 if [ "$aq10_fail" -ge 1 ] \
    && [ "$aq10_named" -ge 1 ] \
@@ -8186,8 +8207,276 @@ if [ "$aq10_fail" -ge 1 ] \
   aq10_result="true"
 fi
 assert_true \
-  "CT-AQ-10 (Gate 6.5 grouped skip rationale keeps completeness): ac-quality-criteria.md Gate 6.5 has the unnamed-entry FAIL rule (got=$aq10_fail>=1), 'named in a bullet' bucket (got=$aq10_named>=1), domain-mismatch naming (got=$aq10_domain>=1), self-skip naming (got=$aq10_selfskip>=1), grouping-only non-FAIL + unclassified clause (got=$aq10_grouped>=1), Evaluator MUST three-bucket check (got=$aq10_eval>=1)" \
+  "CT-AQ-10 (Gate 6.5 grouped skip rationale keeps completeness): ac-quality-criteria.md Gate 6.5 has the unnamed-entry FAIL rule (got=$aq10_fail>=1), 'named in a bullet' bucket (got=$aq10_named>=1), domain-mismatch naming (got=$aq10_domain>=1), self-skip naming (got=$aq10_selfskip>=1), grouping-only non-FAIL + unclassified clause (got=$aq10_grouped>=1), ac-quality-grading.md Gate 6.5 Evaluator MUST three-bucket check (got=$aq10_eval>=1)" \
   "$aq10_result"
+
+# CT-AQ-11 (rubric split structure): the rubric is two files with disjoint roles.
+# ac-quality-criteria.md holds the gate rules (planner + ticket-evaluator) and
+# ac-quality-grading.md holds the evaluator-only grading procedure. Pins: the
+# grading file exists; both files carry the SAME ordered '## Gate' heading list
+# (11 gates incl. 6.5) and every grading gate section has a body; the
+# '## Evaluator MUST NOT' and '## Output Contract (Evaluator)' sections live in
+# the grading file only and '## Planner MUST' in the rules file only; the rules
+# file carries no 'MUST NOT FAIL' phrase and no 'evaluator MUST' in any case (bold
+# label or prose: the verdict procedure did not leak back) and the grading file no
+# '**Definition**:' and no '**Binding rule**' label (no gate rule leaked into it,
+# and no grading paragraph collides with a rules-file binding-rule label); both
+# frontmatters carry 'canonical: true', with the rules file bound to
+# [planner, ticket-evaluator] plus 'companion: ac-quality-grading.md' and the
+# grading file bound to [ticket-evaluator] plus 'companion: ac-quality-criteria.md'.
+aq11_fm() { awk 'BEGIN{f=0} /^---[[:space:]]*$/{f++; if (f==2) exit; next} f==1{print}' "$1" 2>/dev/null || true; }
+aq11_exists=0; [ -f "$ACQG_AQ" ] && aq11_exists=1
+aq11_rules_gates=$(grep -E '^## Gate ' "$ACQC_AQ" 2>/dev/null || true)
+aq11_grade_gates=$(grep -E '^## Gate ' "$ACQG_AQ" 2>/dev/null || true)
+aq11_gate_n=$(printf '%s\n' "$aq11_rules_gates" | grep -c '^## Gate ' || true)
+aq11_same=0
+if [ -n "$aq11_rules_gates" ] && [ "$aq11_rules_gates" = "$aq11_grade_gates" ]; then aq11_same=1; fi
+# Every grading gate section carries at least one non-blank body line.
+aq11_empty=$(awk '/^## /{ if (g && !body) e++; g = ($0 ~ /^## Gate /); body = 0; next } g && NF { body = 1 } END { if (g && !body) e++; print e + 0 }' "$ACQG_AQ" 2>/dev/null || echo 99)
+aq11_g_mustnot=$(grep -cE '^## Evaluator MUST NOT' "$ACQG_AQ" 2>/dev/null || true)
+aq11_r_mustnot=$(grep -cE '^## Evaluator MUST NOT' "$ACQC_AQ" || true)
+aq11_g_oc=$(grep -cE '^## Output Contract \(Evaluator\)$' "$ACQG_AQ" 2>/dev/null || true)
+aq11_r_oc=$(grep -cE '^## Output Contract \(Evaluator\)$' "$ACQC_AQ" || true)
+aq11_r_planner=$(grep -cE '^## Planner MUST$' "$ACQC_AQ" || true)
+aq11_g_planner=$(grep -cE '^## Planner MUST' "$ACQG_AQ" 2>/dev/null || true)
+aq11_r_mnf=$(grep -cF 'MUST NOT FAIL' "$ACQC_AQ" || true)
+aq11_r_evm=$(grep -ciF 'evaluator MUST' "$ACQC_AQ" || true)
+aq11_g_def=$(grep -cF '**Definition**:' "$ACQG_AQ" 2>/dev/null || true)
+aq11_g_brule=$(grep -cF '**Binding rule**' "$ACQG_AQ" 2>/dev/null || true)
+aq11_r_fm=$(aq11_fm "$ACQC_AQ")
+aq11_g_fm=$(aq11_fm "$ACQG_AQ")
+aq11_r_canon=$(printf '%s\n' "$aq11_r_fm" | grep -c '^canonical: true$' || true)
+aq11_g_canon=$(printf '%s\n' "$aq11_g_fm" | grep -c '^canonical: true$' || true)
+aq11_r_bind=$(printf '%s\n' "$aq11_r_fm" | grep -c '^binding_parties: \[planner, ticket-evaluator\]$' || true)
+aq11_g_bind=$(printf '%s\n' "$aq11_g_fm" | grep -c '^binding_parties: \[ticket-evaluator\]$' || true)
+aq11_g_comp=$(printf '%s\n' "$aq11_g_fm" | grep -c '^companion: ac-quality-criteria\.md$' || true)
+aq11_r_comp=$(printf '%s\n' "$aq11_r_fm" | grep -c '^companion: ac-quality-grading\.md$' || true)
+aq11_result="false"
+if [ "$aq11_exists" -eq 1 ] && [ "$aq11_same" -eq 1 ] && [ "$aq11_gate_n" -eq 11 ] && [ "$aq11_empty" -eq 0 ] \
+   && [ "$aq11_g_mustnot" -eq 1 ] && [ "$aq11_r_mustnot" -eq 0 ] && [ "$aq11_g_oc" -eq 1 ] && [ "$aq11_r_oc" -eq 0 ] \
+   && [ "$aq11_r_planner" -eq 1 ] && [ "$aq11_g_planner" -eq 0 ] \
+   && [ "$aq11_r_mnf" -eq 0 ] && [ "$aq11_r_evm" -eq 0 ] && [ "$aq11_g_def" -eq 0 ] && [ "$aq11_g_brule" -eq 0 ] \
+   && [ "$aq11_r_canon" -eq 1 ] && [ "$aq11_g_canon" -eq 1 ] && [ "$aq11_r_bind" -eq 1 ] && [ "$aq11_g_bind" -eq 1 ] \
+   && [ "$aq11_g_comp" -eq 1 ] && [ "$aq11_r_comp" -eq 1 ]; then
+  aq11_result="true"
+fi
+assert_true \
+  "CT-AQ-11 (rubric split structure): ac-quality-grading.md exists ($aq11_exists=1); identical ordered '## Gate' headings ($aq11_same=1, rules gates=$aq11_gate_n expected 11, empty grading gate sections=$aq11_empty expected 0); '## Evaluator MUST NOT' grading=$aq11_g_mustnot/rules=$aq11_r_mustnot (1/0); '## Output Contract (Evaluator)' grading=$aq11_g_oc/rules=$aq11_r_oc (1/0); '## Planner MUST' rules=$aq11_r_planner/grading=$aq11_g_planner (1/0); rules 'MUST NOT FAIL'=$aq11_r_mnf + 'evaluator MUST' (any case)=$aq11_r_evm (0/0); grading '**Definition**:'=$aq11_g_def + '**Binding rule**'=$aq11_g_brule (0/0); frontmatter canonical rules=$aq11_r_canon/grading=$aq11_g_canon, binding_parties rules=$aq11_r_bind/grading=$aq11_g_bind, companion rules=$aq11_r_comp/grading=$aq11_g_comp (all 1)" \
+  "$aq11_result"
+
+# CT-AQ-12 (rubric split wiring): the ticket-evaluator receives BOTH files inside
+# the ONE <canonical_ac_criteria> block, rules first, and the planner reads ONLY
+# the rules file. Pins: in every ticket-evaluator spawner, each line that carries
+# the opening AND closing marker names both ac-quality-criteria.md and
+# ac-quality-grading.md, the rules file first (first occurrence of the rules name
+# before the first occurrence of the grading name), and the number of such lines
+# meets the Cat Z floor (SKILL.md >=1, agent-spawn-prompts >=3: the every-spawn
+# rule, initial step 2, retry step c; mode-dispatch-flows >=1), so dropping either
+# file name from one spawn step, or reversing their order, FAILs; SKILL.md and
+# agent-spawn-prompts.md state 'the rules file first and the grading file second';
+# no planner spawn hands the planner the grading file: in those three spawners
+# every line naming ac-quality-grading is a marker line, except the SKILL.md
+# '**AC Quality Criteria binding**' line, where it may appear only inside the
+# 'never the evaluator-only' negation (which must be present), and
+# skills/plan2doc/SKILL.md and skills/refactor/SKILL.md never name it;
+# agents/planner.md names the rules file, never names ac-quality-grading.md, and
+# states in its Pre-emit Self-Audit that it does not read the grading companion;
+# agents/ticket-evaluator.md states on its marker line that the block carries both
+# halves and names both files, the rules file first.
+aq12_ok="true"
+aq12_report=""
+aq12_neg='never the evaluator-only [references/ac-quality-grading.md](references/ac-quality-grading.md)'
+for aq12_spawner in \
+  "skills/create-ticket/SKILL.md|1" \
+  "skills/create-ticket/references/agent-spawn-prompts.md|3" \
+  "skills/create-ticket/references/mode-dispatch-flows.md|1"; do
+  aq12_rel="${aq12_spawner%%|*}"
+  aq12_min="${aq12_spawner#*|}"
+  aq12_file="$REPO_DIR/$aq12_rel"
+  if [ -f "$aq12_file" ]; then
+    aq12_lines=$(awk 'index($0, "<canonical_ac_criteria>") && index($0, "</canonical_ac_criteria>") { n++ } END { print n + 0 }' "$aq12_file")
+    aq12_both=$(awk 'index($0, "<canonical_ac_criteria>") && index($0, "</canonical_ac_criteria>") && index($0, "ac-quality-criteria.md") && index($0, "ac-quality-grading.md") { n++ } END { print n + 0 }' "$aq12_file")
+    aq12_order=$(awk 'index($0, "<canonical_ac_criteria>") && index($0, "</canonical_ac_criteria>") { r = index($0, "ac-quality-criteria.md"); g = index($0, "ac-quality-grading.md"); if (r > 0 && g > 0 && r < g) n++ } END { print n + 0 }' "$aq12_file")
+    # Lines naming the grading file outside a marker line (a planner-side leak),
+    # with the SKILL.md binding line's 'never the evaluator-only' negation removed first.
+    aq12_off=$(awk -v neg="$aq12_neg" '
+      index($0, "ac-quality-grading") && !(index($0, "<canonical_ac_criteria>") && index($0, "</canonical_ac_criteria>")) {
+        l = $0
+        if (index(l, "**AC Quality Criteria binding**")) { i = index(l, neg); if (i) l = substr(l, 1, i - 1) substr(l, i + length(neg)) }
+        if (index(l, "ac-quality-grading")) n++
+      }
+      END { print n + 0 }' "$aq12_file")
+  else
+    aq12_lines=0; aq12_both="FILE-MISSING"; aq12_order=0; aq12_off="FILE-MISSING"
+  fi
+  if [ "$aq12_both" = "FILE-MISSING" ] || [ "$aq12_lines" -lt "$aq12_min" ] || [ "$aq12_both" -ne "$aq12_lines" ] \
+     || [ "$aq12_order" -ne "$aq12_lines" ] || [ "$aq12_off" != "0" ]; then
+    aq12_ok="false"
+  fi
+  aq12_report="$aq12_report ${aq12_rel##*/}=both:$aq12_both,rules-first:$aq12_order/marker:$aq12_lines(>=$aq12_min),off-marker:$aq12_off(=0)"
+done
+aq12_ct_neg=$(awk -v neg="$aq12_neg" 'index($0, "**AC Quality Criteria binding**") && index($0, "{rubric_path}") && index($0, neg) { n++ } END { print n + 0 }' "$REPO_DIR/skills/create-ticket/SKILL.md")
+aq12_order_ct=$(grep -cF 'the rules file first and the grading file second' "$REPO_DIR/skills/create-ticket/SKILL.md" || true)
+aq12_order_asp=$(grep -cF 'the rules file first and the grading file second' "$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md" || true)
+aq12_p2d=$(grep -cF 'ac-quality-grading' "$REPO_DIR/skills/plan2doc/SKILL.md" 2>/dev/null || true)
+aq12_ref=$(grep -cF 'ac-quality-grading' "$REPO_DIR/skills/refactor/SKILL.md" 2>/dev/null || true)
+[ -f "$REPO_DIR/skills/plan2doc/SKILL.md" ] || aq12_p2d="FILE-MISSING"
+[ -f "$REPO_DIR/skills/refactor/SKILL.md" ] || aq12_ref="FILE-MISSING"
+aq12_pl_rules=$(grep -cF 'ac-quality-criteria.md' "$PLANNER_AQ" || true)
+aq12_pl_grading=$(grep -cF 'ac-quality-grading' "$PLANNER_AQ" || true)
+aq12_pl_noread=$(sed -n '/^## Pre-emit Self-Audit/,/^## [^P]/p' "$PLANNER_AQ" | grep -cF 'the evaluator'"'"'s grading procedure lives in a separate companion file that only the `ticket-evaluator` receives, so do NOT read or search for it' || true)
+aq12_tev=$(awk 'index($0, "<canonical_ac_criteria>") && index($0, "The block carries both halves of the rubric") { r = index($0, "ac-quality-criteria.md"); g = index($0, "ac-quality-grading.md"); if (r > 0 && g > 0 && r < g) n++ } END { print n + 0 }' "$TEV_AQ")
+aq12_result="false"
+if [ "$aq12_ok" = "true" ] && [ "$aq12_ct_neg" -eq 1 ] && [ "$aq12_order_ct" -ge 1 ] && [ "$aq12_order_asp" -ge 1 ] \
+   && [ "$aq12_p2d" = "0" ] && [ "$aq12_ref" = "0" ] \
+   && [ "$aq12_pl_rules" -ge 1 ] && [ "$aq12_pl_grading" -eq 0 ] && [ "$aq12_pl_noread" -ge 1 ] && [ "$aq12_tev" -ge 1 ]; then
+  aq12_result="true"
+fi
+assert_true \
+  "CT-AQ-12 (rubric split wiring): every marker line of each ticket-evaluator spawner names both rubric files, rules first, and no other line names the grading file ($aq12_report ); SKILL.md binding line keeps the 'never the evaluator-only' negation ($aq12_ct_neg=1); 'the rules file first and the grading file second' in SKILL.md ($aq12_order_ct>=1) and agent-spawn-prompts.md ($aq12_order_asp>=1); plan2doc ($aq12_p2d=0) and refactor ($aq12_ref=0) SKILL.md never name the grading file; planner names the rules file ($aq12_pl_rules>=1), never the grading file ($aq12_pl_grading=0), and states it does not read it ($aq12_pl_noread>=1); ticket-evaluator marker line states the block carries both halves and names both files, rules first ($aq12_tev>=1)" \
+  "$aq12_result"
+
+# CT-AQ-13 (rubric split content pins): neither half of the rubric can lose or
+# leak content silently. (a) Grading anchor manifest: one distinctive phrase per
+# grading paragraph, bullet or verdict-limit sentence, each paired with the
+# grading-file section that must hold it; every phrase occurs EXACTLY once in
+# ac-quality-grading.md, inside its section, and ZERO times in the rules file
+# ac-quality-criteria.md. Deleting a grading clause (e.g. the Gate 9 blank-row
+# verdict limit or a drift-prevention bullet) FAILs on the grading count; moving or
+# copying a grading clause into the rules file (the planner's context) FAILs on the
+# rules count; moving it to another gate section FAILs on the section count.
+# (b) Rules-file binding rules: the rules file's Gate 6, 7, 8 and 10 sections each
+# carry exactly one paragraph opening with '**Binding rule**', which holds that
+# gate's key binding phrase, and the phrase does not occur in the grading file.
+aq13_manifest=(
+  '## Gate 1: Testability|whose outcome is Boolean'
+  '## Gate 1: Testability|testability is about verifiability, not ambition'
+  '## Gate 2: Unambiguity|two independent readers would converge on the same test'
+  '## Gate 2: Unambiguity|MUST NOT FAIL for phrasing preference when the meaning is unambiguous'
+  '## Gate 3: Completeness|MUST list any obvious scope gap by name'
+  "## Gate 3: Completeness|MUST NOT invent edge cases that are outside the ticket's stated scope"
+  '## Gate 3: Completeness|that is the grader acting as a coverage-gap finder, not a Gate 3 ticket-quality FAIL'
+  '## Gate 3: Completeness|MUST NOT convert such an impl-side coverage-gap note into a Gate 3 FAIL'
+  '## Gate 4: Implementability|solely because a specific stdlib function name appears inside a test-observation clause'
+  "## Gate 5: Size Fit|the evaluator MUST apply the rules file's tiebreak"
+  '## Gate 5: Size Fit|judging on a single axis is sufficient for PASS'
+  '## Gate 5: Size Fit|MUST NOT FAIL Gate 5 when a credible rationale is present'
+  '## Gate 5: Size Fit|MUST pick the axis that implies the larger size'
+  '## Gate 6.5: Probe Completeness|the orchestrator forwards in the evaluator spawn prompt'
+  '## Gate 6.5: Probe Completeness|does not re-run the probes'
+  '## Gate 6.5: Probe Completeness|If the spawn prompt carries no probe lines, grade Gate 6.5 as `n/a`'
+  '## Gate 6.5: Probe Completeness|Wording-only objections'
+  '## Gate 6.5: Probe Completeness|MUST NOT FAIL Gate 6.5 solely because the planner chose Advisory over Bound'
+  '## Gate 6.5: Probe Completeness|Bucket choice may be Feedback but is not a FAIL trigger'
+  '## Gate 7: Oracle Independence (computational ACs)|Gate 7 enforces independence, not oracle choice'
+  '## Gate 8: Independent Evidence|Gate 8 enforces independence, not channel choice'
+  '## Gate 8: Independent Evidence|channel-choice debate is Feedback, not a FAIL trigger'
+  '## Gate 9: Failure-Class Coverage|MUST NOT FAIL a boundary outside a `>=2`-peer set'
+  '## Gate 9: Failure-Class Coverage|Gate 9 FAILs only on a blank row'
+  '## Gate 9: Failure-Class Coverage|or a boundary with no matrix at all'
+  '## Gate 9: Failure-Class Coverage|Gate 9 only ENUMERATES which boundaries need an AC'
+  '## Gate 9: Failure-Class Coverage|Gate 9 does not re-grade evidence independence'
+  '## Gate 9: Failure-Class Coverage|no machine-readable external-boundary field'
+  '## Gate 9: Failure-Class Coverage|it does NOT and cannot mechanically verify that the boundaries were identified correctly'
+  '## Gate 10: Peer-Set Uniformity|Gate 10 FAILs only a peer set with neither a unified AC'
+  '## Gate 10: Peer-Set Uniformity|adequacy is graded by Gates 1-2 once the AC exists'
+  '## Gate 10: Peer-Set Uniformity|it does not and cannot mechanically verify the model partitioned the peers correctly'
+  '## Evaluator MUST NOT (drift-prevention list)|stop the pedantic-drift failure mode'
+  '## Evaluator MUST NOT (drift-prevention list)|on the basis of wording or phrasing preference alone'
+  "## Evaluator MUST NOT (drift-prevention list)|revised in direct response to a previous round's feedback"
+  '## Evaluator MUST NOT (drift-prevention list)|raising a different objection on the same text in the next round is drift'
+  '## Evaluator MUST NOT (drift-prevention list)|FAIL Gate 9 or Gate 10 on adequacy or choice'
+  '## Evaluator MUST NOT (drift-prevention list)|because it would have written a different AC for a row or unified a different convention'
+  '## Evaluator MUST NOT (drift-prevention list)|AC / convention-choice debate is Feedback, not a FAIL trigger'
+  '## Output Contract (Evaluator)|the evaluator file governs its shape'
+)
+aq13_bad=""
+for aq13_entry in "${aq13_manifest[@]}"; do
+  aq13_head="${aq13_entry%%|*}"
+  aq13_phrase="${aq13_entry#*|}"
+  aq13_g=$(grep -cF -- "$aq13_phrase" "$ACQG_AQ" 2>/dev/null || true)
+  aq13_r=$(grep -cF -- "$aq13_phrase" "$ACQC_AQ" 2>/dev/null || true)
+  aq13_s=$(awk -v h="$aq13_head" -v p="$aq13_phrase" '$0 == h { f = 1; next } f && /^## / { f = 0 } f && index($0, p) { n++ } END { print n + 0 }' "$ACQG_AQ" 2>/dev/null || echo 0)
+  if [ "$aq13_g" != "1" ] || [ "$aq13_s" != "1" ] || [ "$aq13_r" != "0" ]; then
+    aq13_bad="$aq13_bad [${aq13_head#\#\# } '$aq13_phrase': grading=$aq13_g in-section=$aq13_s rules=$aq13_r]"
+  fi
+done
+aq13_bind=(
+  '## Gate 6: Capability Mapping|each runtime/visual AC MUST appear in the `Bound AC(s)` column'
+  '## Gate 7: Oracle Independence (computational ACs)|each computational AC MUST either'
+  '## Gate 8: Independent Evidence|MUST name at least one evidence channel'
+  '## Gate 10: Peer-Set Uniformity|MUST carry `>=1` unified-convention AC'
+)
+for aq13_entry in "${aq13_bind[@]}"; do
+  aq13_head="${aq13_entry%%|*}"
+  aq13_phrase="${aq13_entry#*|}"
+  aq13_br=$(awk -v h="$aq13_head" '$0 == h { f = 1; next } f && /^## / { f = 0 } f && index($0, "**Binding rule**") == 1 { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+  aq13_bp=$(awk -v h="$aq13_head" -v p="$aq13_phrase" '$0 == h { f = 1; next } f && /^## / { f = 0 } f && index($0, "**Binding rule**") == 1 && index($0, p) { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+  aq13_bg=$(grep -cF -- "$aq13_phrase" "$ACQG_AQ" 2>/dev/null || true)
+  if [ "$aq13_br" != "1" ] || [ "$aq13_bp" != "1" ] || [ "$aq13_bg" != "0" ]; then
+    aq13_bad="$aq13_bad [rules ${aq13_head#\#\# } '**Binding rule**' lines=$aq13_br (want 1), with '$aq13_phrase'=$aq13_bp (want 1), phrase in grading=$aq13_bg (want 0)]"
+  fi
+done
+aq13_result="false"
+if [ -f "$ACQG_AQ" ] && [ -f "$ACQC_AQ" ] && [ -z "$aq13_bad" ]; then aq13_result="true"; fi
+assert_true \
+  "CT-AQ-13 (rubric split content pins): ${#aq13_manifest[@]} grading anchors each once in their ac-quality-grading.md section and absent from ac-quality-criteria.md, and the rules file's Gate 6/7/8/10 '**Binding rule**' paragraphs each present once with their key phrase (violations:${aq13_bad:- none})" \
+  "$aq13_result"
+
+# CT-TE-EFFORT-1 (ticket-evaluator grades at the planner's effort): a frontmatter
+# effort REPLACES the session effort, so the former 'effort: high' made the
+# evaluator grade BELOW the planner (which inherits the session effort) in an
+# xhigh / max session, and the per-spawn 'effort: medium' for a Size S draft
+# lowered it further. Pins: agents/ticket-evaluator.md frontmatter has no
+# '^effort:' line and exactly one '^model: inherit'; the /create-ticket Phase 4
+# range of SKILL.md and the Phase 4 range of agent-spawn-prompts.md carry no
+# 'effort: low|medium|high' literal and each states that no per-spawn effort is
+# passed (SKILL.md, initial step 2, retry step c); mode-dispatch-flows.md Step F-8
+# passes no per-spawn effort; autopilot-policy-reference.md no longer claims an
+# evaluator 'effort: high' / 'effort: medium' and states that neither agent file
+# carries an effort key; the workflow-patterns.md ticket-evaluator row drops the
+# 'effort high' / 'effort medium' routing; the Phase 4 ranges mention effort only
+# on those no-per-spawn lines (SKILL.md 1 line, agent-spawn-prompts.md 2 lines).
+# FAILs when any of them is re-added, literal or paraphrased.
+TE_EFF_CTSKILL="$REPO_DIR/skills/create-ticket/SKILL.md"
+TE_EFF_ASP="$REPO_DIR/skills/create-ticket/references/agent-spawn-prompts.md"
+TE_EFF_MDF="$REPO_DIR/skills/create-ticket/references/mode-dispatch-flows.md"
+TE_EFF_APR="$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md"
+TE_EFF_WP="$REPO_DIR/skills/create-ticket/references/workflow-patterns.md"
+teeff_fm=$(awk 'BEGIN{f=0} /^---[[:space:]]*$/{f++; if (f==2) exit; next} f==1{print}' "$TEV_AQ" 2>/dev/null || true)
+teeff_fm_effort=$(printf '%s\n' "$teeff_fm" | grep -c '^effort:' || true)
+teeff_fm_model=$(printf '%s\n' "$teeff_fm" | grep -c '^model: inherit$' || true)
+teeff_p4=$(awk '/^### Phase 4: Ticket Evaluation/{f=1} f && /^## /{exit} f{print}' "$TE_EFF_CTSKILL" 2>/dev/null || true)
+teeff_p4_lit=$(printf '%s\n' "$teeff_p4" | grep -cE 'effort: (low|medium|high)' || true)
+teeff_p4_none=$(printf '%s\n' "$teeff_p4" | grep -cF 'no per-spawn `effort` is passed to the ticket-evaluator at any Size' || true)
+# Paraphrase guard: the Phase 4 ranges mention effort (any case) only on the lines
+# that state no per-spawn effort is passed (SKILL.md: the **Effort** paragraph;
+# agent-spawn-prompts.md: step 2 and retry step c), so a re-added per-spawn effort
+# rule worded without an 'effort: <level>' literal still FAILs.
+teeff_p4_eff=$(printf '%s\n' "$teeff_p4" | grep -ciF 'effort' || true)
+teeff_asp=$(awk '/^## Phase 4: Ticket Evaluation/{f=1} f && /^## / && !/^## Phase 4/{exit} f{print}' "$TE_EFF_ASP" 2>/dev/null || true)
+teeff_asp_lit=$(printf '%s\n' "$teeff_asp" | grep -cE 'effort: (low|medium|high)' || true)
+teeff_asp_eff=$(printf '%s\n' "$teeff_asp" | grep -ciF 'effort' || true)
+teeff_asp_step2=$(printf '%s\n' "$teeff_asp" | grep -E '^2\. Spawn the \*\*simple-workflow:ticket-evaluator\*\*' | grep -cF 'Pass no per-spawn `effort` at any Size' || true)
+teeff_asp_stepc=$(printf '%s\n' "$teeff_asp" | grep -E '^c\. Re-spawn the \*\*simple-workflow:ticket-evaluator\*\*' | grep -cF 'pass no per-spawn `effort`' || true)
+teeff_mdf=$(awk '/^### Step F-8: Per-ticket evaluation/{f=1; next} f && /^### /{exit} f{print}' "$TE_EFF_MDF" 2>/dev/null | grep -cF 'no per-spawn effort' || true)
+teeff_mdf_old=$(grep -cF 'per-spawn effort rule' "$TE_EFF_MDF" || true)
+teeff_apr_old=$(grep -cE 'effort: (high|medium)' "$TE_EFF_APR" || true)
+teeff_apr_new=$(grep -cF 'neither agent file carries an `effort:`' "$TE_EFF_APR" || true)
+teeff_wp_row=$(grep -E '^\| ticket-evaluator \|' "$TE_EFF_WP" 2>/dev/null || true)
+teeff_wp_old=$(printf '%s\n' "$teeff_wp_row" | grep -cE 'effort (high|medium)' || true)
+teeff_wp_new=$(printf '%s\n' "$teeff_wp_row" | grep -cF 'no per-spawn effort at any Size' || true)
+teeff_result="false"
+if [ "$teeff_fm_effort" -eq 0 ] && [ "$teeff_fm_model" -eq 1 ] && [ -n "$teeff_p4" ] && [ "$teeff_p4_lit" -eq 0 ] && [ "$teeff_p4_none" -ge 1 ] \
+   && [ "$teeff_p4_eff" -eq 1 ] && [ "$teeff_asp_eff" -eq 2 ] \
+   && [ -n "$teeff_asp" ] && [ "$teeff_asp_lit" -eq 0 ] && [ "$teeff_asp_step2" -eq 1 ] && [ "$teeff_asp_stepc" -eq 1 ] \
+   && [ "$teeff_mdf" -ge 1 ] && [ "$teeff_mdf_old" -eq 0 ] && [ "$teeff_apr_old" -eq 0 ] && [ "$teeff_apr_new" -ge 1 ] \
+   && [ "$teeff_wp_old" -eq 0 ] && [ "$teeff_wp_new" -eq 1 ]; then
+  teeff_result="true"
+fi
+assert_true \
+  "CT-TE-EFFORT-1 (ticket-evaluator at the session effort): frontmatter no '^effort:' ($teeff_fm_effort=0) + 'model: inherit' ($teeff_fm_model=1); SKILL.md Phase 4 'effort: low|medium|high' ($teeff_p4_lit=0) + no-per-spawn statement ($teeff_p4_none>=1) + lines mentioning effort ($teeff_p4_eff=1); agent-spawn-prompts Phase 4 literals ($teeff_asp_lit=0) + lines mentioning effort ($teeff_asp_eff=2), step 2 ($teeff_asp_step2=1), retry step c ($teeff_asp_stepc=1); mode-dispatch F-8 ($teeff_mdf>=1, old rule $teeff_mdf_old=0); autopilot-policy-reference old effort claims ($teeff_apr_old=0) + no-effort-key statement ($teeff_apr_new>=1); workflow-patterns row old ($teeff_wp_old=0) / new ($teeff_wp_new=1)" \
+  "$teeff_result"
 
 echo ""
 
@@ -9693,6 +9982,7 @@ echo ""
 echo "--- Cat EV: Gate 8 independent evidence (v8.3.0) ---"
 
 ACQC_EV="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+ACQG_EV="$REPO_DIR/skills/create-ticket/references/ac-quality-grading.md"
 ECH_EV="$REPO_DIR/skills/impl/references/evidence-channels.md"
 ORCH_EV="$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
 ACEV_EV="$REPO_DIR/agents/ac-evaluator.md"
@@ -10050,15 +10340,18 @@ assert_true \
 # CT-EV-EVALPANEL-2 (coverage-gap carve-out symmetry, ticket-side + impl-side,
 # eval panel v8.4.0+): the shared fixed token 'coverage-gap finder' appears in the
 # ac-quality-criteria carve-out AND the orchestration panel section AND the
-# ac-evaluator body. Mirrors the CT-EV-M3-2 cross-file 'grep -ciF' symmetry guard
+# ac-evaluator body.
+# Rubric-split re-point: the ticket-side carve-out (Gate 3 impl-side panel
+# carve-out) binds the evaluator and moved to ac-quality-grading.md Gate 3, so
+# the ticket-side cell is pinned there, inside its Gate 3 section. Mirrors the CT-EV-M3-2 cross-file 'grep -ciF' symmetry guard
 # (case-insensitive — the ac-evaluator header capitalises 'Coverage-gap finder').
-ev_cg_acqc=$(grep -ciF 'coverage-gap finder' "$ACQC_EV" || true)
+ev_cg_acqc=$(sed -n '/^## Gate 3: Completeness$/,/^## Gate 4/p' "$ACQG_EV" 2>/dev/null | grep -ciF 'coverage-gap finder' || true)
 ev_cg_orch=$(grep -ciF 'coverage-gap finder' "$ORCH_EV" || true)
 ev_cg_acev=$(grep -ciF 'coverage-gap finder' "$ACEV_EV" || true)
 ev_cg_result="false"
 if [ "$ev_cg_acqc" -ge 1 ] && [ "$ev_cg_orch" -ge 1 ] && [ "$ev_cg_acev" -ge 1 ]; then ev_cg_result="true"; fi
 assert_true \
-  "CT-EV-EVALPANEL-2 (coverage-gap carve-out symmetry): ac-quality-criteria ($ev_cg_acqc>=1) + orchestration ($ev_cg_orch>=1) + ac-evaluator ($ev_cg_acev>=1)" \
+  "CT-EV-EVALPANEL-2 (coverage-gap carve-out symmetry): ac-quality-grading Gate 3 ($ev_cg_acqc>=1) + orchestration ($ev_cg_orch>=1) + ac-evaluator ($ev_cg_acev>=1)" \
   "$ev_cg_result"
 
 # CT-EV-GATE9-1 (Gate 9 failure-class coverage, canonical + author + grader 3-file
@@ -10175,6 +10468,9 @@ assert_true \
 # it legitimately carries every denylist literal below.
 decontam_norm_files=(
   "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
+  # Rubric-split extension: the evaluator-only grading half of the rubric is inlined into
+  # every ticket-evaluator spawn, so it is normative evaluation content as well.
+  "$REPO_DIR/skills/create-ticket/references/ac-quality-grading.md"
   "$REPO_DIR/agents/ac-evaluator.md"
   # PR-5 re-point: the retired opus twin is gone; agents/ac-evaluator.md above is the single evaluator file.
   "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"

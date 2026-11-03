@@ -22,7 +22,7 @@
 | `[SW-CHECKPOINT]` | output block | English-only YAML-parseable block emitted by phase-terminating skills (`/create-ticket`, `/scout`, `/impl`, `/ship`) as the last section of their output. Signals that `/clear` is safe and that `/catchup` can recover from `phase-state.yaml`. NOT emitted by `/audit`, `/plan2doc`, or `/catchup`. Canonical template: `skills/create-ticket/references/sw-checkpoint-template.md` |
 | planner | agent | Implementation plan design (inherit; effort low for Size S via `/plan2doc`) |
 | researcher | agent | Code research and analysis |
-| ticket-evaluator | agent | Ticket quality evaluation against the canonical Gates 1-10 (inherit, effort high; effort medium for Size S) |
+| ticket-evaluator | agent | Ticket quality evaluation against the canonical Gates 1-10 (inherit; session effort like the planner, no per-spawn effort at any Size) |
 | implementer | agent | Code implementation (opus, always) |
 | ac-evaluator | agent | AC compliance verification (opus; session effort like the implementer, xhigh for critical/exhaustive; model set by `SW_EVALUATOR_MODEL`) |
 
