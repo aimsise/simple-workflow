@@ -2000,13 +2000,17 @@ Z_CREATE_TICKET="$REPO_DIR/skills/create-ticket/SKILL.md"
 # carry a copy of the examples either (they stay in the rules file only).
 Z_GRADING="$REPO_DIR/skills/create-ticket/references/ac-quality-grading.md"
 
-# Each entry: "<rubric gate heading>|<canonical BAD literal>|<GOOD body prefix>".
-# The GOOD body prefix is the start of the GOOD string paired with that BAD.
+# Each entry: "<rubric gate heading>|<canonical BAD literal>|<GOOD body prefix>|<GOOD body>".
+# The GOOD body prefix is the start of the GOOD string paired with that BAD (the
+# former copy sites are scanned for it, so a partial copy still FAILs); the GOOD
+# body is the whole quoted GOOD string, which the rubric's GOOD line must equal, so
+# weakening a GOOD example after its prefix (a dropped percentile, load condition or
+# second substring) FAILs too.
 Z_CANONICAL_BAD_EXAMPLES=(
-  '## Gate 1: Testability|Improve performance|Response time under 200ms'
-  '## Gate 1: Testability|The CLI is user-friendly|`cli --help` exits 0'
-  '## Gate 2: Unambiguity|Support large files|Stream input files over 100 MiB'
-  '## Gate 2: Unambiguity|Handle errors gracefully|On read failure, print'
+  '## Gate 1: Testability|Improve performance|Response time under 200ms|Response time under 200ms for the 95th percentile of `/health` requests under 100 RPS'
+  '## Gate 1: Testability|The CLI is user-friendly|`cli --help` exits 0|`cli --help` exits 0 and stdout contains the substrings `Usage:` and `--version`'
+  '## Gate 2: Unambiguity|Support large files|Stream input files over 100 MiB|Stream input files over 100 MiB without loading them fully into memory (RSS growth under 50 MiB measured by `/usr/bin/time -v`)'
+  '## Gate 2: Unambiguity|Handle errors gracefully|On read failure, print|On read failure, print `ERROR: cannot read <path>: <errno>` to stderr and exit 1; do not write any output file'
 )
 # A BAD/GOOD example line in any list or table style, matched case-insensitively:
 # `- **BAD**: "..."`, `- BAD: "..."`, `* Good: ...`, `+ GOOD: ...`,
@@ -2031,17 +2035,17 @@ z_copy_state() {
 }
 
 # One assertion per canonical BAD literal: present in the rubric's gate section
-# as a `- **BAD**: "<literal>"` bullet whose next non-blank line is a
-# `- **GOOD**: "<GOOD body prefix>` bullet, and both strings absent from both
-# former copy sites nor the grading file.
+# as a `- **BAD**: "<literal>"` bullet whose next non-blank line is exactly the
+# `- **GOOD**: "<GOOD body>"` bullet, and both the BAD literal and the GOOD body
+# prefix absent from both former copy sites and the grading file.
 z_check_single_location() {
-  local heading="$1" literal="$2" good="$3"
+  local heading="$1" literal="$2" good="$3" good_full="$4"
   TESTS_TOTAL=$((TESTS_TOTAL + 1))
   local in_rubric="MISSING"
-  if [ -f "$Z_RUBRIC" ] && awk -v h="$heading" -v lit="- **BAD**: \"$literal\"" -v good="- **GOOD**: \"$good" '
+  if [ -f "$Z_RUBRIC" ] && awk -v h="$heading" -v lit="- **BAD**: \"$literal\"" -v good="- **GOOD**: \"$good_full\"" '
       $0 == h { insec = 1; next }
       insec && /^## / { insec = 0 }
-      insec && want { if ($0 ~ /^[[:space:]]*$/) next; if (index($0, good) == 1) found = 1; want = 0 }
+      insec && want { if ($0 ~ /^[[:space:]]*$/) next; if ($0 == good) found = 1; want = 0 }
       insec && index($0, lit) == 1 { want = 1 }
       END { exit(found ? 0 : 1) }
     ' "$Z_RUBRIC"; then
@@ -2059,7 +2063,7 @@ z_check_single_location() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "  ${RED}FAIL${NC} Z: BAD/GOOD example single-location breach for '$literal'"
-    echo -e "       rubric ($heading, BAD + GOOD '$good...' pair): $in_rubric (want present)"
+    echo -e "       rubric ($heading, BAD + whole GOOD '$good_full' pair): $in_rubric (want present)"
     echo -e "       agents/ticket-evaluator.md       : $te_state (want absent)"
     echo -e "       skills/create-ticket/SKILL.md    : $ct_state (want absent)"
     echo -e "       references/ac-quality-grading.md : $gr_state (want absent)"
@@ -2069,8 +2073,8 @@ z_check_single_location() {
 }
 
 for z_entry in "${Z_CANONICAL_BAD_EXAMPLES[@]}"; do
-  z_rest="${z_entry#*|}"
-  z_check_single_location "${z_entry%%|*}" "${z_rest%%|*}" "${z_rest#*|}"
+  IFS='|' read -r z_heading z_bad z_good z_good_full <<< "$z_entry"
+  z_check_single_location "$z_heading" "$z_bad" "$z_good" "$z_good_full"
 done
 
 # One assertion: neither former copy site carries any BAD/GOOD example line,
@@ -7518,17 +7522,19 @@ assert_true \
   "$am1_result"
 
 # CT-AM-2: ac-quality-criteria.md gains the `## Gate 6: Capability Mapping`
-# section AND the `## Planner MUST` bullet starting with the literal
-# `**MUST** emit a \`### Capabilities\``. Pins AC-2 and AC-3.
+# section AND, inside that section, the planner obligation sentence carrying the
+# literal `**MUST** emit a \`### Capabilities\`` (PR-7 moved it from a
+# `## Planner MUST` bullet into Gate 6, so the count is scoped to the Gate 6
+# section). Pins AC-2 and AC-3.
 ACQC_MD="$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
 am2_g6=$(grep -cE '^## Gate 6: Capability Mapping$' "$ACQC_MD" || true)
-am2_must=$(grep -cF '**MUST** emit a `### Capabilities`' "$ACQC_MD" || true)
+am2_must=$(awk '$0 == "## Gate 6: Capability Mapping" { f = 1; next } f && /^## / { f = 0 } f && index($0, "**MUST** emit a `### Capabilities`") { n++ } END { print n + 0 }' "$ACQC_MD" 2>/dev/null || echo 0)
 am2_result="false"
 if [ "$am2_g6" -eq 1 ] && [ "$am2_must" -ge 1 ]; then
   am2_result="true"
 fi
 assert_true \
-  "CT-AM-2: ac-quality-criteria.md carries '## Gate 6: Capability Mapping' (count=$am2_g6, expected 1) and the literal '**MUST** emit a \`### Capabilities\`' Planner MUST bullet (count=$am2_must, expected >=1) (pins AC-2, AC-3)" \
+  "CT-AM-2: ac-quality-criteria.md carries '## Gate 6: Capability Mapping' (count=$am2_g6, expected 1) and, inside that section, the Gate 6 planner MUST sentence with the literal '**MUST** emit a \`### Capabilities\`' (count=$am2_must, expected >=1) (pins AC-2, AC-3)" \
   "$am2_result"
 
 # CT-AM-3: create-ticket/SKILL.md Pre-computed Context contains exactly one
@@ -8021,11 +8027,13 @@ assert_true \
 # '**Bound**:' / '**Advisory**:' / '**Skipped**:' bucket bullets) was removed
 # as a duplicate of the rubric. The step marker is replaced by the planner's
 # rubric pointer; the bucket vocabulary is checked in the rubric's Gate 6.5
-# section (CT-AQ-1 tokens) and in its Planner MUST three-bucket bullet.
+# section (CT-AQ-1 tokens) and in the Gate 6.5 **Planner MUST** paragraph (PR-7
+# moved the three-bucket sentence there from a `## Planner MUST` bullet, so its
+# count is scoped to the Gate 6.5 section).
 aq2_step7=$PR3_PLANNER_PTR
 aq2_bound_bucket=$(grep -cF '**Bound**' "$ACQC_AQ" || true)
 aq2_advisory_bucket=$(grep -cF '**Advisory**' "$ACQC_AQ" || true)
-aq2_skipped_bucket=$(grep -cF 'Bound (in `### Capabilities`), Advisory (in `### Advisory Capabilities`), or Skipped (in `#### Capability Skip Rationale`)' "$ACQC_AQ" || true)
+aq2_skipped_bucket=$(awk '$0 == "## Gate 6.5: Probe Completeness" { f = 1; next } f && /^## / { f = 0 } f && index($0, "Bound (in `### Capabilities`), Advisory (in `### Advisory Capabilities`), or Skipped (in `#### Capability Skip Rationale`)") { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
 aq2_result="false"
 if [ "$aq2_step7" -ge 1 ] \
    && [ "$aq2_bound_bucket" -ge 1 ] \
@@ -8034,7 +8042,7 @@ if [ "$aq2_step7" -ge 1 ] \
   aq2_result="true"
 fi
 assert_true \
-  "CT-AQ-2 (planner applies Gate 6.5): agents/planner.md Pre-emit Self-Audit points to the rubric (got=$aq2_step7>=1) and the rubric carries the three-bucket vocabulary (Bound=$aq2_bound_bucket>=1, Advisory=$aq2_advisory_bucket>=1, Planner MUST Bound/Advisory/Skipped bullet=$aq2_skipped_bucket>=1)" \
+  "CT-AQ-2 (planner applies Gate 6.5): agents/planner.md Pre-emit Self-Audit points to the rubric (got=$aq2_step7>=1) and the rubric carries the three-bucket vocabulary (Bound=$aq2_bound_bucket>=1, Advisory=$aq2_advisory_bucket>=1, Gate 6.5 Planner MUST paragraph Bound/Advisory/Skipped sentence=$aq2_skipped_bucket>=1)" \
   "$aq2_result"
 
 # CT-AQ-3: ticket-evaluator.md Result template lists Probe Completeness
@@ -8422,6 +8430,81 @@ if [ -f "$ACQG_AQ" ] && [ -f "$ACQC_AQ" ] && [ -z "$aq13_bad" ]; then aq13_resul
 assert_true \
   "CT-AQ-13 (rubric split content pins): ${#aq13_manifest[@]} grading anchors each once in their ac-quality-grading.md section and absent from ac-quality-criteria.md, and the rules file's Gate 6/7/8/10 '**Binding rule**' paragraphs each present once with their key phrase (violations:${aq13_bad:- none})" \
   "$aq13_result"
+
+# CT-AQ-14 (rules-file obligation pins): the rules file states several obligations,
+# examples and kill-switch rules exactly once, in the gate that owns them, so a lost
+# or relocated sentence must FAIL a test rather than pass silently.
+# (a) Rules anchor manifest: each phrase occurs EXACTLY once in ac-quality-criteria.md,
+# inside its section, and ZERO times in ac-quality-grading.md. It covers the
+# Terminology "Policy kill switch" entry (the shared absent / unknown -> auto
+# fail-safe and the drafting-time rule every gate's **Kill switch** points to), the
+# planner obligations that live in their gates (Gate 5 rationale, Gate 6 section
+# placement + one-line note, Gate 6.5 classify-on-every-emit + FORBIDDEN sentence +
+# the Advisory `Used by` prohibition), Gate 7's downstream clause, Gate 8's
+# natural-channel sufficiency, the four Gate 9 row names, Gate 9's n/a scope and
+# delegation pointer, the Gate 10 shared-helper example + FAIL sentence, and the
+# `## Planner MUST` lead line.
+# (b) Gates 7, 8, 9 and 10 each carry exactly one paragraph opening '**Kill switch**:'
+# that names its key, the ticket-wide n/a scope and the Terminology pointer.
+# (c) `## Planner MUST` holds exactly one '- **MUST**' bullet, the outputSchema one, so
+# a gate rule re-duplicated there as a planner bullet FAILs.
+aq14_manifest=(
+  '## Terminology|- **Policy kill switch**: a gate'"'"'s **Kill switch** names a `constraints.<key>` read from `{ticket-dir}/autopilot-policy.yaml`; `<key>: off` grades that gate `n/a` over the scope the paragraph states.'
+  '## Terminology|Absent field / absent policy / unknown value → `auto` (gate active — fail-safe).'
+  '## Terminology|so an authoring-time gate is active unless a policy file already exists in the ticket dir'
+  '## Gate 5: Size Fit|The planner **MUST** write a one-line rationale when file-count and AC-count axes disagree on size'
+  '## Gate 6: Capability Mapping|The planner **MUST** emit a `### Capabilities` section between `### Implementation Notes` and `### Claude Code Workflow` whenever Gate 6 applies'
+  '## Gate 6: Capability Mapping|("All ACs are static; no runtime binding required.") is encouraged for clarity'
+  '## Gate 6.5: Probe Completeness|on first emit and on every retry re-emit. Silent omission of a probe-visible capability is FORBIDDEN.'
+  "## Gate 6.5: Probe Completeness|MUST NOT appear in an Advisory row's \`Used by\`"
+  '## Gate 7: Oracle Independence (computational ACs)|a brief-level `off` takes effect downstream at `/impl` and `ac-evaluator`'
+  '## Gate 8: Independent Evidence|**Natural-channel sufficiency**: the channel a competent test already provides counts'
+  '## Gate 9: Failure-Class Coverage|- **R1 FULL-DOMAIN INVARIANT**:'
+  '## Gate 9: Failure-Class Coverage|- **R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP**:'
+  '## Gate 9: Failure-Class Coverage|- **R3 DESCRIPTION-MATCHES-BEHAVIOR**:'
+  '## Gate 9: Failure-Class Coverage|- **R4 DOC/INTERFACE TRUTHFULNESS**:'
+  '## Gate 9: Failure-Class Coverage|is graded `n/a` for Gate 9 in full and the matrix is omitted'
+  '## Gate 9: Failure-Class Coverage|owes its own R2 hostile / accept-set row or a justified `n/a` exactly as that Gate 7 requirement states'
+  '## Gate 10: Peer-Set Uniformity|or an AC asserting a shared helper is called at all N peer sites with 0 hand-rolled copies'
+  '## Gate 10: Peer-Set Uniformity|A peer set with neither is a Gate 10 FAIL.'
+  "## Planner MUST|The planner MUST apply every gate's rules above to each draft it emits, the first included"
+)
+aq14_bad=""
+for aq14_entry in "${aq14_manifest[@]}"; do
+  aq14_head="${aq14_entry%%|*}"
+  aq14_phrase="${aq14_entry#*|}"
+  aq14_r=$(grep -cF -- "$aq14_phrase" "$ACQC_AQ" 2>/dev/null || true)
+  aq14_s=$(awk -v h="$aq14_head" -v p="$aq14_phrase" '$0 == h { f = 1; next } f && /^## / { f = 0 } f && index($0, p) { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+  aq14_g=$(grep -cF -- "$aq14_phrase" "$ACQG_AQ" 2>/dev/null || true)
+  if [ "$aq14_r" != "1" ] || [ "$aq14_s" != "1" ] || [ "$aq14_g" != "0" ]; then
+    aq14_bad="$aq14_bad [${aq14_head#\#\# } '${aq14_phrase:0:60}': rules=$aq14_r in-section=$aq14_s grading=$aq14_g]"
+  fi
+done
+aq14_ks=(
+  '## Gate 7: Oracle Independence (computational ACs)|`constraints.oracle_verification: off` grades Gate 7 `n/a` ticket-wide (Terminology: Policy kill switch)'
+  '## Gate 8: Independent Evidence|`constraints.independent_evidence: off` grades Gate 8 `n/a` ticket-wide (Terminology: Policy kill switch)'
+  '## Gate 9: Failure-Class Coverage|`constraints.failure_class_coverage: off` grades Gate 9 `n/a` ticket-wide (Terminology: Policy kill switch)'
+  '## Gate 10: Peer-Set Uniformity|`constraints.peer_uniformity: off` grades Gate 10 `n/a` ticket-wide (Terminology: Policy kill switch)'
+)
+for aq14_entry in "${aq14_ks[@]}"; do
+  aq14_head="${aq14_entry%%|*}"
+  aq14_phrase="${aq14_entry#*|}"
+  aq14_kn=$(awk -v h="$aq14_head" '$0 == h { f = 1; next } f && /^## / { f = 0 } f && index($0, "**Kill switch**:") == 1 { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+  aq14_kp=$(awk -v h="$aq14_head" -v p="$aq14_phrase" '$0 == h { f = 1; next } f && /^## / { f = 0 } f && index($0, "**Kill switch**:") == 1 && index($0, p) { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+  if [ "$aq14_kn" != "1" ] || [ "$aq14_kp" != "1" ]; then
+    aq14_bad="$aq14_bad [${aq14_head#\#\# } '**Kill switch**:' paragraphs=$aq14_kn (want 1), with key + scope + pointer=$aq14_kp (want 1)]"
+  fi
+done
+aq14_pm=$(awk '$0 == "## Planner MUST" { f = 1; next } f && /^## / { f = 0 } f && /^- \*\*MUST/ { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+aq14_pm_os=$(awk '$0 == "## Planner MUST" { f = 1; next } f && /^## / { f = 0 } f && /^- \*\*MUST/ && index($0, "outputSchema") { n++ } END { print n + 0 }' "$ACQC_AQ" 2>/dev/null || echo 0)
+if [ "$aq14_pm" != "1" ] || [ "$aq14_pm_os" != "1" ]; then
+  aq14_bad="$aq14_bad [Planner MUST '- **MUST**' bullets=$aq14_pm (want 1), outputSchema bullet=$aq14_pm_os (want 1)]"
+fi
+aq14_result="false"
+if [ -f "$ACQG_AQ" ] && [ -f "$ACQC_AQ" ] && [ -z "$aq14_bad" ]; then aq14_result="true"; fi
+assert_true \
+  "CT-AQ-14 (rules-file obligation pins): ${#aq14_manifest[@]} rules anchors each once in their ac-quality-criteria.md section and absent from ac-quality-grading.md, one '**Kill switch**:' paragraph per Gate 7/8/9/10 with its key and pointer, and a single outputSchema '- **MUST**' bullet under '## Planner MUST' (violations:${aq14_bad:- none})" \
+  "$aq14_result"
 
 # CT-TE-EFFORT-1 (ticket-evaluator grades at the planner's effort): a frontmatter
 # effort REPLACES the session effort, so the former 'effort: high' made the
