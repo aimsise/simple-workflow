@@ -11651,6 +11651,23 @@ assert_true \
   "CT-GEN-MODEL-4 (implementer opus pinned, size-routed description removed): '^model: opus' ($genm4_opus>=1) AND old size-routing description absent ($genm4_olddesc==0)" \
   "$genm4_result"
 
+# CT-GEN-MODEL-5: /plan2doc Step 4 passes NO per-invocation `model` to the planner
+# (a per-spawn model outranks the frontmatter and would defeat `model: inherit`)
+# and routes only `effort` by Size (`"low"` for Size S). FAILs when a quoted model
+# value is restored anywhere in the Step 4 range (the retired Size-routed
+# `"sonnet"` / `"opus"` mapping), when the explicit no-model directive is removed,
+# or when the Size-S effort row is dropped. Range = the CT-AM-4 Step 4 bounds.
+GENM_PLAN2DOC="$REPO_DIR/skills/plan2doc/SKILL.md"
+genm5_range=$(awk '/^4\. \*\*MUST invoke the .planner. agent/,/^5\. \*\*Return summary/' "$GENM_PLAN2DOC" 2>/dev/null || true)
+genm5_quoted_model=$(printf '%s\n' "$genm5_range" | grep -cE '"(sonnet|opus|haiku)"' || true)
+genm5_nomodel=$(printf '%s\n' "$genm5_range" | grep -cF '`model`: do NOT pass one' || true)
+genm5_effort_s=$(printf '%s\n' "$genm5_range" | grep -cE 'Size == S.*"low"' || true)
+genm5_result="false"
+if [ "$genm5_quoted_model" -eq 0 ] && [ "$genm5_nomodel" -ge 1 ] && [ "$genm5_effort_s" -ge 1 ]; then genm5_result="true"; fi
+assert_true \
+  "CT-GEN-MODEL-5 (/plan2doc passes no planner model, Size-routed effort only): quoted model values in Step 4 ($genm5_quoted_model==0) AND no-model directive ($genm5_nomodel>=1) AND Size S effort low ($genm5_effort_s>=1)" \
+  "$genm5_result"
+
 # =============================================================================
 # CT-RM-WRITERS (proposal 4 / ST-03): runtime_metrics writer enumeration sync.
 # The writer list in skills/autopilot/references/state-file.md must name EVERY

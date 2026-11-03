@@ -18,9 +18,9 @@ generation-side agent runs on is fixed in its agent-file frontmatter:
 
 `inherit` resolves to the session model by default. Claude Code resolves a
 subagent's model in this order: a per-invocation `model` passed by the caller
-(as `/plan2doc` does for its size-routed planner spawn — `sonnet` for Size S,
-`opus` otherwise — which therefore outranks the planner's `inherit` on that
-path) > the agent frontmatter (`inherit` = the session model) >
+(which is why `/plan2doc` passes none for its planner spawn — it routes only
+`effort`, `low` for Size S — so the planner's `inherit` holds on that path) >
+the agent frontmatter (`inherit` = the session model) >
 `CLAUDE_CODE_SUBAGENT_MODEL` > the session model. To force the whole
 generation + verification fleet onto one model regardless of these per-agent
 pins, set `CLAUDE_CODE_SUBAGENT_MODEL` together with

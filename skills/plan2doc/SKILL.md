@@ -1,8 +1,8 @@
 ---
 name: plan2doc
 description: >-
-  Creates an implementation plan by spawning the planner subagent with a
-  size-routed model (sonnet for Size S, opus for M/L/XL) and writing the
+  Creates an implementation plan by spawning the planner subagent on the
+  session model (Size S lowers the spawn effort to low) and writing the
   plan to disk. Use when (1) the user runs `/plan2doc <feature>` directly
   to draft a plan for a ticket workflow, (2) `/scout` delegates the plan
   step of a ticket workflow via the Skill tool, or (3) the user requests
@@ -46,14 +46,14 @@ Available MCP servers: !`( jq -r '.mcpServers // {} | keys[]' .mcp.json 2>/dev/n
 
 ## Mandatory Skill Invocations
 
-The following agent invocation is **contractual** — `/plan2doc` MUST delegate to the `planner` agent via the Agent tool. `/plan2doc` itself writes no plan content; its entire role is to detect Size, resolve the output destination, and spawn the `planner` agent with the appropriate model (sonnet for S, opus for M/L/XL). Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
+The following agent invocation is **contractual** — `/plan2doc` MUST delegate to the `planner` agent via the Agent tool. `/plan2doc` itself writes no plan content; its entire role is to detect Size, resolve the output destination, and spawn the `planner` agent with no per-invocation `model` (the planner's `model: inherit` resolves to the session model) and a Size-routed `effort` (`low` for S, none for M/L/XL). Any bypass is a contract violation and will be detected by the skill invocation audit (Phase A+).
 
 | Invocation Target | When | Skip consequence |
 |---|---|---|
 | `planner` agent (Agent tool) | Step 4 — always, after Size detection and output-path resolution | No structured plan written to the output path; `/impl` has no `### Acceptance Criteria` section to drive the Generator → Evaluator loop and will stop at Phase 1 step 6 with "ERROR: Plan has no Acceptance Criteria". Detected by absence of `plan.md` in the ticket dir (or `.simple-workflow/docs/plans/`) and absence of planner trace in skill invocation audit |
 
 **Binding rules**:
-- `MUST invoke the simple-workflow:planner agent via the Agent tool` with the correct `model` parameter (`sonnet` for Size S, `opus` otherwise). Never substitute by writing `plan.md` directly from `/plan2doc`.
+- `MUST invoke the simple-workflow:planner agent via the Agent tool` with NO `model` parameter (a per-invocation `model` outranks the agent frontmatter and would defeat the planner's `model: inherit`) and with `effort: low` for Size S only. Never substitute by writing `plan.md` directly from `/plan2doc`.
 - `NEVER bypass the planner via direct file operations` — `/plan2doc` must NOT write the plan content itself; the planner agent is the sole author.
 - `Fail the task immediately if the planner agent cannot be invoked via the Agent tool` — print the failure reason and the resolved output path so the user can retry.
 
@@ -96,9 +96,11 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
 
 4. **MUST invoke the `planner` agent via the Agent tool** (see `## Mandatory Skill Invocations` above for the binding rules). Set the `Agent` tool call as follows:
    - `subagent_type`: `simple-workflow:planner`
-   - `model`:
-     - If `Size == S` → `"sonnet"`
-     - If `Size` is `M`, `L`, `XL`, or unknown → `"opus"`
+   - `model`: do NOT pass one. A per-invocation `model` outranks the agent frontmatter, so passing any value would override the planner's `model: inherit`; omitting it lets the planner run on the session model for every Size.
+   - `effort`:
+     - If `Size == S` → `"low"`
+     - If `Size` is `M`, `L`, `XL`, or unknown → do not pass one (the session effort applies).
+     - If the Agent tool's schema exposes no per-invocation `effort` parameter (older Claude Code CLIs), omit it; if a spawn is rejected over the field, re-spawn once without it. Never fail the plan over the effort field.
    - `description`: `"Create implementation plan for <feature>"` (substitute the topic from `$ARGUMENTS`).
    - `prompt`: Pass the following to the planner agent as structured content:
      - The detected `Size` (S/M/L/XL) and how it was detected (ticket.md Size row, or default).
@@ -122,7 +124,7 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
    ```
 
    The line MUST appear exactly once per invocation and MUST match `^plan2doc: ac-source=ticket\.md verbatim=true$` (no leading or trailing whitespace, no extra tokens). Then print a short human-readable summary to the user containing:
-   - The resolved Size and model used (sonnet or opus)
+   - The resolved Size and the effort passed to the planner (`low` for Size S, session default otherwise)
    - The plan file path
    - A one-line synopsis from the planner's return value
 
@@ -133,7 +135,7 @@ When `ticket-dir` does not resolve to an existing `ticket.md` (i.e. the plan is 
 - **Empty arguments**: Print `Usage: /plan2doc <feature or change to plan>` and stop.
 - **Missing .simple-workflow/docs/ directories**: Create `.simple-workflow/docs/plans/` automatically.
 - **Missing .simple-workflow/backlog/ directories**: Create `.simple-workflow/backlog/active/{ticket-dir}/` automatically when `ticket-dir` is specified.
-- **ticket.md exists but has no `| Size |` row**: Treat as unknown Size and default to `M` (→ opus).
+- **ticket.md exists but has no `| Size |` row**: Treat as unknown Size and default to `M` (→ no per-spawn effort; session default).
 - **planner agent failure**: Report the error and the resolved output path so the user can retry.
 
 ## Subagent Skill-Access Handoff

@@ -58,7 +58,7 @@ Suggest **resume `/impl`** *(only when Rule 0 did not fire)*.
 
 - Check: `.simple-workflow/docs/research/` has files BUT `.simple-workflow/docs/plans/` has no related files
 - Also check: `.simple-workflow/backlog/active/**/investigation.md` exists BUT `.simple-workflow/backlog/active/**/plan.md` does not (depth-agnostic; covers nested layouts)
-- Guidance: Read the research first, then use `/plan2doc <feature>`. `/plan2doc` automatically uses sonnet for S-size and opus for M/L/XL.
+- Guidance: Read the research first, then use `/plan2doc <feature>`. `/plan2doc` runs the planner on the session model and lowers its effort to `low` for S-size tickets.
 
 ## Rule 3. Plans exist, no code diff from default branch — suggest **implement**
 

@@ -291,7 +291,7 @@ def build(theme, out):
                             ("researcher", AGENT_TX, True), ("  →  ", GRAY, False),
                             ("investigation.md", IO_TX, True)], size=12)
     rich(SX0 + 14, S0 + 76, [("/plan2doc", SKILL_TX, True), ("  →  ", GRAY, False),
-                            ("planner", AGENT_TX, True), (" (size-routed)  →  ", GRAY, False),
+                            ("planner", AGENT_TX, True), (" (size-routed effort)  →  ", GRAY, False),
                             ("plan.md", IO_TX, True)], size=12)
 
     y = trans(S0 + 118, ["investigation.md + plan.md land on disk  ·  the plan's Acceptance",
