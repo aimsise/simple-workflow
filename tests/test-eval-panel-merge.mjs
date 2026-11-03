@@ -423,6 +423,92 @@ try {
 }
 assertEq(parseError, null, "eval-panel.mjs parses as an async Workflow body");
 
+// (3) Spawn wiring, executed (not grepped): run the product body with stub sandbox
+//     globals and inspect the opts every agent() call receives. Pins the PR-5
+//     single-evaluator contract: a fixed agentType at every tier, the Step 3a
+//     evaluator_model forwarded verbatim as opts.model, a stringified `args`
+//     parsed back, and an unresolved model forwarded as opus (an omitted
+//     opts.model would inherit the session model).
+// PR-5 re-point: evaluator_effort is forwarded as opts.effort ONLY when it is
+//     "xhigh"; at "inherit" or undefined opts.effort is absent (the session
+//     effort applies, the same effort the Generator inherits), and any other
+//     value, including a stale "high", is absent AND logs a WARNING.
+console.log("- product-script spawn wiring (stubbed agent / parallel)");
+if (parseError === null) {
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const body = productSrc.replace(/^\s*export\s+const\s+meta\b/m, "const meta");
+  const workflowBody = new AsyncFunction(
+    "args", "agent", "parallel", "pipeline", "phase", "log", "budget", "workflow", body,
+  );
+  const probe = async (args) => {
+    const calls = [];
+    const agent = async (_prompt, opts) => {
+      calls.push(opts || {});
+      return { status: "PASS", acs: [{ id: "AC-1", verdict: "PASS" }], issues: [] };
+    };
+    const parallel = async (thunks) =>
+      Promise.all(thunks.map((x) => (typeof x === "function" ? x() : x)));
+    const noop = () => {};
+    const logs = [];
+    const logStub = (m) => logs.push(String(m));
+    const budgetStub = { total: null, spent: () => 0, remaining: () => Infinity };
+    let result = null;
+    let runError = null;
+    try {
+      result = await workflowBody(args, agent, parallel, noop, noop, logStub, budgetStub, noop);
+    } catch (e) {
+      runError = String(e && e.message ? e.message : e);
+    }
+    return { calls, result, runError, warned: logs.some((m) => m.includes("WARNING")) };
+  };
+  const wiringCases = [
+    // PR-5 re-point: the former opus/high case (effort forwarded) is now opus/inherit
+    // (effort absent, no WARNING); "high" is graded as a stale value below.
+    { label: "opus/inherit", args: { evaluator_model: "opus", evaluator_effort: "inherit" }, model: "opus", effort: undefined, warn: false },
+    { label: "sonnet/inherit", args: { evaluator_model: "sonnet", evaluator_effort: "inherit" }, model: "sonnet", effort: undefined, warn: false },
+    { label: "stale high", args: { evaluator_model: "opus", evaluator_effort: "high" }, model: "opus", effort: undefined, warn: true },
+    { label: "effort undefined", args: { evaluator_model: "opus" }, model: "opus", effort: undefined, warn: false },
+    { label: "sonnet/xhigh", args: { evaluator_model: "sonnet", evaluator_effort: "xhigh" }, model: "sonnet", effort: "xhigh", warn: false },
+    { label: "opus/xhigh", args: { evaluator_model: "opus", evaluator_effort: "xhigh" }, model: "opus", effort: "xhigh", warn: false },
+    {
+      label: "stringified args",
+      args: JSON.stringify({ evaluator_model: "sonnet", evaluator_effort: "xhigh" }),
+      model: "sonnet",
+      effort: "xhigh",
+      warn: false,
+    },
+    {
+      label: "stringified inherit",
+      args: JSON.stringify({ evaluator_model: "opus", evaluator_effort: "inherit" }),
+      model: "opus",
+      effort: undefined,
+      warn: false,
+    },
+    { label: "unresolved {}", args: {}, model: "opus", effort: undefined, warn: true },
+    { label: "garbage values", args: { evaluator_model: "Opus", evaluator_effort: "ultra" }, model: "opus", effort: undefined, warn: true },
+  ];
+  for (const wc of wiringCases) {
+    const { calls, result, runError, warned } = await probe(wc.args);
+    assertEq(runError, null, `${wc.label}: body runs without throwing`);
+    assertEq(calls.length, 3, `${wc.label}: 3 agent() spawns`);
+    assertEq(
+      calls.every((o) => o.agentType === "simple-workflow:ac-evaluator"),
+      true,
+      `${wc.label}: every spawn uses the single agentType simple-workflow:ac-evaluator`,
+    );
+    assertEq(calls.every((o) => o.model === wc.model), true, `${wc.label}: opts.model === ${wc.model} on every spawn`);
+    assertEq(
+      calls.every((o) => (wc.effort === undefined ? !("effort" in o) : o.effort === wc.effort)),
+      true,
+      `${wc.label}: opts.effort ${wc.effort === undefined ? "omitted" : `=== ${wc.effort}`} on every spawn`,
+    );
+    assertEq(result && result.status, "PASS", `${wc.label}: merged result returned`);
+    // A resolved value is forwarded silently; only an unresolved model or an
+    // unrecognised effort logs the WARNING ("inherit" and undefined are silent).
+    assertEq(warned, wc.warn, `${wc.label}: WARNING ${wc.warn ? "logged" : "not logged"}`);
+  }
+}
+
 const total = passes + failures;
 console.log(`\nPASS ${passes}/${total}`);
 if (failures > 0) {

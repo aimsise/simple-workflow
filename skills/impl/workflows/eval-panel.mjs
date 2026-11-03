@@ -3,10 +3,10 @@
 // This is the PRODUCT-Workflow (the committed script the shipped /impl Step 15
 // invokes at runtime when uc=on AND verification_depth is thorough or exhaustive
 // AND AC_COUNT < 30; v8.6.0 widened the gate from exhaustive-only so non-S
-// (M/L/XL) tickets use it, with a tier-appropriate model: sonnet at thorough,
-// opus at exhaustive). It is DISTINCT from any DEV-Workflow (a meta-layer
-// Workflow used to BUILD this feature, where agents edit tracked files). This
-// file is product runtime code.
+// (M/L/XL) tickets use it; the evaluator model / effort arrive resolved in
+// args.evaluator_model / args.evaluator_effort from /impl Step 3a). It is
+// DISTINCT from any DEV-Workflow (a meta-layer Workflow used to BUILD this
+// feature, where agents edit tracked files). This file is product runtime code.
 //
 // It runs in the Claude Code Workflow sandbox. FORBIDDEN here: Date.now(),
 // Math.random(), argless new Date(), the filesystem, any Node API, and importing
@@ -23,13 +23,19 @@
 // CONFIRMED-AT-DOGFOOD (not assumed): plugin-relative scriptPath resolution (how
 // the caller passes ${CLAUDE_PLUGIN_ROOT}/skills/impl/workflows/eval-panel.mjs),
 // whether the sandbox permits importing a sibling .mjs (it currently does not, so
-// the merge is inlined + mirrored), and whether opts.model selects a distinct
-// model (model is selected here by agentType / twin agent file, NOT by opts.model).
+// the merge is inlined + mirrored). The evaluator model / effort ride in the
+// documented agent() options opts.model / opts.effort (per-agent overrides of the
+// agentType's frontmatter); the agentType itself is fixed. The documented agent()
+// contract says an OMITTED opts.model / opts.effort inherits the session model /
+// effort (not the agentType frontmatter), so the model is always passed explicitly
+// below, while the effort is passed only at xhigh: an omitted opts.effort is the
+// intended `inherit` (the session effort, the same effort the Generator
+// inherits). A live dogfood of this per-agent override on this script is still owed.
 
 export const meta = {
   name: "eval-panel",
   description:
-    "High-assurance 3-lens ac-evaluator fan-out over one rubric and one git diff, merged per AC by the deterministic refute-then-synthesize rule (mirrors skills/impl/references/ac-evaluator-orchestration.md). Invoked by /impl Step 15 when uc=on and verification_depth is exhaustive; persists three eval-round-{n}-v{i}.md reports and returns the merged typed verdict for Step 16.",
+    "High-assurance 3-lens ac-evaluator fan-out over one rubric and one git diff, merged per AC by the deterministic refute-then-synthesize rule (mirrors skills/impl/references/ac-evaluator-orchestration.md). Invoked by /impl Step 15 when uc=on and verification_depth is thorough or exhaustive; persists three eval-round-{n}-v{i}.md reports and returns the merged typed verdict for Step 16.",
   phases: ["evaluate"],
 };
 
@@ -295,23 +301,40 @@ function mergeAcVerdicts(verifiers, { refuteMerge } = {}) {
 // ARGS MARSHALLING (dogfood54 fix): the caller (/impl Step 15) passes `args`
 // as a JSON object, but the Workflow tool call can serialise it to a JSON
 // STRING before it reaches this script's `args` global (observed in dogfood54:
-// a.evaluator_model came back undefined -> silent opus->sonnet downgrade on the
-// exhaustive tier). Be defensive: if `args` arrived as a string, parse it back
-// to an object so every field (evaluator_model, refute_merge, ...) resolves.
+// a.evaluator_model came back undefined -> the evaluator silently ran on the
+// wrong model on the exhaustive tier). Be defensive: if `args` arrived as a
+// string, parse it back to an object so every field (evaluator_model,
+// evaluator_effort, refute_merge, ...) resolves.
 let a = args || {};
 if (typeof a === "string") {
   try { a = JSON.parse(a); } catch { a = {}; }
 }
 if (!a || typeof a !== "object") a = {};
 
-// agentType is selected by the evaluator model (twin agent files), NOT by
-// opts.model: opus => the high-assurance twin, otherwise the default evaluator.
-const agentType =
-  a.evaluator_model === "opus"
-    ? "simple-workflow:ac-evaluator-hi"
-    : "simple-workflow:ac-evaluator";
-if (a.evaluator_model !== "opus" && a.evaluator_model !== "sonnet") {
-  log(`eval-panel: WARNING evaluator_model unresolved (got ${JSON.stringify(a.evaluator_model)}); defaulting agentType=${agentType} — check the Step 15 args marshalling`);
+// One evaluator agent at every tier. The Step 3a model is passed as the
+// per-agent opts.model, which outranks the agent frontmatter (model: opus; the
+// file has no effort: key). An omitted opts.model inherits the SESSION model
+// (documented agent() contract), not the frontmatter, so an unresolved
+// evaluator_model is forwarded as opus: the Step 3a `auto` resolution (the same
+// unknown -> auto fail-safe direction as SW_EVALUATOR_MODEL), never a sonnet
+// fallback, so a broken args marshalling can never grade below the Generator's
+// model. The Step 3a effort is forwarded as opts.effort ONLY when it is "xhigh"
+// (critical / exhaustive). At "inherit" (or undefined) opts.effort is omitted on
+// purpose, so each lens runs at the session effort, the same effort the
+// Generator inherits; any other value (e.g. a stale "high") is omitted with a
+// WARNING. An unresolved model and an unrecognised effort both log the WARNING.
+const agentType = "simple-workflow:ac-evaluator";
+const spawnOverrides = {};
+if (a.evaluator_model === "opus" || a.evaluator_model === "sonnet") {
+  spawnOverrides.model = a.evaluator_model;
+} else {
+  spawnOverrides.model = "opus";
+  log(`eval-panel: WARNING evaluator_model unresolved (got ${JSON.stringify(a.evaluator_model)}); forwarding opts.model=opus (the Step 3a auto resolution; an omitted opts.model would inherit the session model) — check the Step 15 args marshalling`);
+}
+if (a.evaluator_effort === "xhigh") {
+  spawnOverrides.effort = a.evaluator_effort;
+} else if (a.evaluator_effort !== undefined && a.evaluator_effort !== "inherit") {
+  log(`eval-panel: WARNING evaluator_effort unrecognised (got ${JSON.stringify(a.evaluator_effort)}; expected "inherit" or "xhigh"); omitting opts.effort so the session effort applies`);
 }
 
 const refuteMode = a.refute_merge === "off" ? "off" : "auto";
@@ -379,13 +402,14 @@ function buildPrompt(i) {
 
 phase("evaluate");
 log(
-  `eval-panel: spawning 3 lens-diverse evaluators (agentType=${agentType}, refute_merge=${refuteMode})`,
+  `eval-panel: spawning 3 lens-diverse evaluators (agentType=${agentType}, model=${spawnOverrides.model}, effort=${spawnOverrides.effort || "inherit"}, refute_merge=${refuteMode})`,
 );
 
 const verifiers = await parallel([
   () =>
     agent(buildPrompt(0), {
       agentType,
+      ...spawnOverrides,
       schema: EVAL_SCHEMA,
       label: "ac-evaluator V1 runtime/EC-RUNTIME",
       phase: "evaluate",
@@ -393,6 +417,7 @@ const verifiers = await parallel([
   () =>
     agent(buildPrompt(1), {
       agentType,
+      ...spawnOverrides,
       schema: EVAL_SCHEMA,
       label: "ac-evaluator V2 differential-or-property/EC-DIFFERENTIAL,EC-PROPERTY",
       phase: "evaluate",
@@ -400,6 +425,7 @@ const verifiers = await parallel([
   () =>
     agent(buildPrompt(2), {
       agentType,
+      ...spawnOverrides,
       schema: EVAL_SCHEMA,
       label: "ac-evaluator V3 oracle-or-fuzz/EC-ORACLE",
       phase: "evaluate",

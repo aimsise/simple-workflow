@@ -114,7 +114,7 @@ but is NOT independent evidence for a *behavioral* AC on its own.
   100 MiB is rejected, or 200 MiB is accepted). The verifier-side consumer of this
   channel is the [`doc-verifier`](../../../agents/doc-verifier.md) agent (it RUNs the
   advertised example / probes the advertised boundary under the `.simple-workflow/scratch/`
-  exec carve-out and diffs), and the `ac-evaluator` / `ac-evaluator-hi`
+  exec carve-out and diffs), and the `ac-evaluator`
   `## Independent Evidence (behavioral ACs)` duty. It is the standing evidence channel
   for Gate 9 rows R3 (DESCRIPTION-MATCHES-BEHAVIOR) and R4 (DOC/INTERFACE TRUTHFULNESS)
   in [`../../create-ticket/references/ac-quality-criteria.md`](../../create-ticket/references/ac-quality-criteria.md).

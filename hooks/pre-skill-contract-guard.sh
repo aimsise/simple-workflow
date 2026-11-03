@@ -96,7 +96,7 @@ PIPELINE_SKILLS=("simple-workflow:impl" "simple-workflow:audit" "simple-workflow
 # Skill-bearing review/evaluator agents. security-scanner / ticket-evaluator do
 # NOT carry the Skill tool, so Skill-deny is N/A for them (their phase-advance
 # Write vector is covered by FIX-3 Detection 4 instead).
-REVIEW_AGENTS=("ac-evaluator" "ac-evaluator-hi" "doc-verifier" "code-reviewer")
+REVIEW_AGENTS=("ac-evaluator" "doc-verifier" "code-reviewer")
 
 REVIEW_FIREWALL_MODE="${SW_REVIEW_FIREWALL_MODE:-metric-only}"
 if [ "$REVIEW_FIREWALL_MODE" = "off" ]; then

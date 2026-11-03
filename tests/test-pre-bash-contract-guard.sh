@@ -381,6 +381,30 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+# PR-5: each remaining name in the git-firewall case pattern is exercised, so dropping
+# ac-evaluator (now the single evaluator file) or code-reviewer from the denylist FAILs.
+run_guard_fw on "git commit -m x" "$TMP_FW" "ac-evaluator"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_commit_by_review_agent' <<<"$LAST_STDOUT"; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare ac-evaluator, on): git commit blocked"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (bare ac-evaluator): expected block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+run_guard_fw on "git push origin HEAD" "$TMP_FW" "simple-workflow:code-reviewer"
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+if grep -q -- '"decision":"block"' <<<"$LAST_STDOUT" \
+   && grep -q -- 'unauthorized_commit_by_review_agent' <<<"$LAST_STDOUT"; then
+  echo -e "  ${GREEN}PASS${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced simple-workflow:code-reviewer, on): git push blocked"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (namespaced code-reviewer): expected block. stdout: $LAST_STDOUT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 # metric-only -> fail-open (no block), stderr logs would-deny.
 run_guard_fw metric-only "git commit -m x" "$TMP_FW" "doc-verifier"
 TESTS_TOTAL=$((TESTS_TOTAL + 1))

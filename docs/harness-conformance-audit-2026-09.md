@@ -137,6 +137,8 @@ rewrite that is out of scope for a conformance pass.
 | H70 | low | operability | `hooks/pre-level1-guard.sh:11` | pre-level1-guard denies any Bash command that merely mentions the Level-1 filenames (read-only cat/grep/sed included) |
 | H71 | low | operability | `README.md:36` | No minimum Claude Code version is stated although the plugin depends on recent harness features |
 
+Follow-up to F45 / F96 / H21 / H47 / H63 (and partially H25): the twin evaluator file kept above was retired in the /create-ticket modernization PR-5. `agents/ac-evaluator.md` is now the single evaluator (frontmatter `model: opus` and no `effort:` key, so a routine spawn inherits the session effort like the generator), and `/impl` and the eval-panel Workflow pass the model per spawn (`SW_EVALUATOR_MODEL`, see `CLAUDE.md`) and the effort per spawn only at `xhigh`, for critical or `exhaustive` work.
+
 ### 4.2 Confirmed, deferred (follow-up tickets)
 
 | id | severity | category | location | finding |

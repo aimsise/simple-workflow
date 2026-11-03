@@ -1,6 +1,6 @@
 # Accept-set conformance harness (executed grammar-complement sweep)
 
-Binding parties: the `ac-evaluator` / `ac-evaluator-hi` (which EXECUTE the sweep
+Binding parties: the `ac-evaluator` (which EXECUTEs the sweep
 in scratch), and the `implementer` / `test-writer` (which commit the fixed
 rejection test to the PRODUCT tests when the sweep finds a leak). This file gives
 the **copyable SHAPE** of an executed accept-set conformance sweep so the

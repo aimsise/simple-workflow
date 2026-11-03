@@ -9973,8 +9973,8 @@ assert_true \
   "$ev_m3_2_result"
 
 # CT-EV-M3-3 (strongest-derivation oracle-kind recording, all-tier, M3): wired into
-# the canonical reference AND the verifier (the byte-identical hi mirror is guarded
-# by CT-EV-MODEL-1). 'oracle-kind' is HEAD=0.
+# the canonical reference AND the verifier (the single evaluator file since PR-5;
+# CT-EV-MODEL-1 pins the retired twin's absence). 'oracle-kind' is HEAD=0.
 ev_m3_3_vd=$(grep -cF 'oracle-kind' "$VD_EV" || true)
 ev_m3_3_acev=$(grep -cF 'oracle-kind' "$ACEV_EV" || true)
 ev_m3_3_result="false"
@@ -9995,10 +9995,10 @@ assert_true \
   "$ev_m8_1_result"
 # CT-EV-PANEL-1 (5-lens failure-class set + section, eval panel v8.4.0+): the five
 # lens tokens are wired into the orchestration reference AND the ac-evaluator body,
-# and the new section headings exist (incl. the -hi twin). All tokens net-new vs
-# the working tree (a revert of the panel edit flips each to FAIL). The -hi twin's
-# identical lenses are also guarded by CT-EV-MODEL-1 strip-then-diff.
-ACEVHI_EV="$REPO_DIR/agents/ac-evaluator-hi.md"
+# and the new section headings exist. All tokens net-new vs the working tree (a
+# revert of the panel edit flips each to FAIL).
+# PR-5 re-point: the opus twin agent file is retired (CT-EV-MODEL-1 pins its absence), so ACEVHI_EV now names the file the opus path spawns, agents/ac-evaluator.md itself; every former twin-mirror cell keeps pinning it (these *_hi cells are retained duplicates of their ac-evaluator neighbours for count preservation, not independent coverage).
+ACEVHI_EV="$ACEV_EV"
 ev_panel_lc_orch=$(grep -cF 'L-CORRECTNESS' "$ORCH_EV" || true)
 ev_panel_lr_orch=$(grep -cF 'L-ROBUSTNESS' "$ORCH_EV" || true)
 ev_panel_lcc_orch=$(grep -cF 'L-CONTRACT-CONFORMANCE' "$ORCH_EV" || true)
@@ -10012,16 +10012,16 @@ ev_panel_sec_hi=$(grep -cF '## Failure-class panel (default lenses)' "$ACEVHI_EV
 ev_panel_result="false"
 if [ "$ev_panel_lc_orch" -ge 1 ] && [ "$ev_panel_lr_orch" -ge 1 ] && [ "$ev_panel_lcc_orch" -ge 1 ] && [ "$ev_panel_lu_orch" -ge 1 ] && [ "$ev_panel_ls_orch" -ge 1 ] && [ "$ev_panel_lc_ac" -ge 1 ] && [ "$ev_panel_ls_ac" -ge 1 ] && [ "$ev_panel_sec_orch" -ge 1 ] && [ "$ev_panel_sec_ac" -ge 1 ] && [ "$ev_panel_sec_hi" -ge 1 ]; then ev_panel_result="true"; fi
 assert_true \
-  "CT-EV-PANEL-1 (failure-class 5-lens set + section): orch lenses ($ev_panel_lc_orch/$ev_panel_lr_orch/$ev_panel_lcc_orch/$ev_panel_lu_orch/$ev_panel_ls_orch each>=1) + ac-evaluator lenses ($ev_panel_lc_ac/$ev_panel_ls_ac) + sections orch($ev_panel_sec_orch)/ac($ev_panel_sec_ac)/hi($ev_panel_sec_hi) each>=1" \
+  "CT-EV-PANEL-1 (failure-class 5-lens set + section): orch lenses ($ev_panel_lc_orch/$ev_panel_lr_orch/$ev_panel_lcc_orch/$ev_panel_lu_orch/$ev_panel_ls_orch each>=1) + ac-evaluator lenses ($ev_panel_lc_ac/$ev_panel_ls_ac) + sections orch($ev_panel_sec_orch)/ac($ev_panel_sec_ac)/opus-path($ev_panel_sec_hi) each>=1" \
   "$ev_panel_result"
 
 # CT-EV-EVALPANEL-1 ([EVAL-PANEL] M8 observability emit + field m, eval panel
-# v8.4.0+): the panel emit is documented in the ac-evaluator body AND its
-# byte-identical -hi twin AND at /impl Step 15; the field-m '--- panel:' directive
+# v8.4.0+): the panel emit is documented in the ac-evaluator body AND at /impl
+# Step 15; the field-m '--- panel:' directive
 # is registered in the orchestration reference. grep -cF for bracketed token
 # (regex metacharacters). All tokens net-new (a revert flips each to FAIL).
-# Mirrors CT-EV-M8-1's bracketed-token idiom; the -hi count independently pins the
-# mirror beyond CT-EV-MODEL-1.
+# Mirrors CT-EV-M8-1's bracketed-token idiom; the opus-path cell reads the same single
+# evaluator file (PR-5 re-point via ACEVHI_EV).
 ev_evalpanel_acev=$(grep -cF '[EVAL-PANEL]' "$ACEV_EV" || true)
 ev_evalpanel_hi=$(grep -cF '[EVAL-PANEL]' "$ACEVHI_EV" || true)
 ev_evalpanel_impl=$(grep -cF '[EVAL-PANEL]' "$IMPL_EV" || true)
@@ -10029,7 +10029,7 @@ ev_evalpanel_field=$(grep -cF -- '--- panel:' "$ORCH_EV" || true)  # -- : patter
 ev_evalpanel_result="false"
 if [ "$ev_evalpanel_acev" -ge 1 ] && [ "$ev_evalpanel_hi" -ge 1 ] && [ "$ev_evalpanel_impl" -ge 1 ] && [ "$ev_evalpanel_field" -ge 1 ]; then ev_evalpanel_result="true"; fi
 assert_true \
-  "CT-EV-EVALPANEL-1 ([EVAL-PANEL] emit + field m): ac-evaluator ($ev_evalpanel_acev>=1) + ac-evaluator-hi mirror ($ev_evalpanel_hi>=1) + impl SKILL doc ($ev_evalpanel_impl>=1) + '--- panel:' field-m in orchestration ($ev_evalpanel_field>=1)" \
+  "CT-EV-EVALPANEL-1 ([EVAL-PANEL] emit + field m): ac-evaluator ($ev_evalpanel_acev>=1) + opus-path file ($ev_evalpanel_hi>=1) + impl SKILL doc ($ev_evalpanel_impl>=1) + '--- panel:' field-m in orchestration ($ev_evalpanel_field>=1)" \
   "$ev_evalpanel_result"
 
 # CT-EV-PANEL-KS-1 (constraints.eval_panel kill switch + [EVAL-PANEL-MODE] resolver,
@@ -10123,8 +10123,8 @@ assert_true \
 # vector, dogfood-hardening v8.4.0+): the failure-class panel's L-ROBUSTNESS lens AND
 # the canonical Gate 9 R2 hostile-input row now require probing hostile KEYS (not only
 # hostile values) where a unit builds a structure from untrusted input. The shared
-# token 'prototype-pollution' is wired into the ac-evaluator body + its byte-identical
-# -hi twin + the orchestration panel section + Gate 9 R2. 'prototype-pollution' is
+# token 'prototype-pollution' is wired into the ac-evaluator body (the single evaluator
+# file, read again as the opus-path cell) + the orchestration panel section + Gate 9 R2. 'prototype-pollution' is
 # net-new (a revert flips each to FAIL). Closes the csvjson dogfood __proto__
 # silent-data-loss miss (sw lost a __proto__ header column; uc did not).
 ev_protopol_acev=$(grep -cF 'prototype-pollution' "$ACEV_EV" || true)
@@ -10134,7 +10134,7 @@ ev_protopol_acqc=$(grep -cF 'prototype-pollution' "$ACQC_EV" || true)
 ev_protopol_result="false"
 if [ "$ev_protopol_acev" -ge 1 ] && [ "$ev_protopol_hi" -ge 1 ] && [ "$ev_protopol_orch" -ge 1 ] && [ "$ev_protopol_acqc" -ge 1 ]; then ev_protopol_result="true"; fi
 assert_true \
-  "CT-EV-PANEL-ROBUST-1 (L-ROBUSTNESS + Gate 9 R2 adversarial-key vector): ac-evaluator ($ev_protopol_acev>=1) + -hi mirror ($ev_protopol_hi>=1) + orchestration ($ev_protopol_orch>=1) + Gate 9 R2 ($ev_protopol_acqc>=1)" \
+  "CT-EV-PANEL-ROBUST-1 (L-ROBUSTNESS + Gate 9 R2 adversarial-key vector): ac-evaluator ($ev_protopol_acev>=1) + opus-path file ($ev_protopol_hi>=1) + orchestration ($ev_protopol_orch>=1) + Gate 9 R2 ($ev_protopol_acqc>=1)" \
   "$ev_protopol_result"
 
 # CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector,
@@ -10143,8 +10143,8 @@ assert_true \
 # lens AND the canonical Gate 9 R2 row now require probing inputs that satisfy the
 # rules' letter yet exceed the advertised surface (non-ASCII/Unicode-digit numerals,
 # leading-sign/whitespace forms, valid-but-non-canonical 01h / 1d0h0m0s). The shared
-# token 'strictness-leniency' is wired into the ac-evaluator body + its byte-identical
-# -hi twin + the orchestration panel section + Gate 9 R2. 'strictness-leniency' is
+# token 'strictness-leniency' is wired into the ac-evaluator body (the single evaluator
+# file, read again as the opus-path cell) + the orchestration panel section + Gate 9 R2. 'strictness-leniency' is
 # net-new (a revert flips each to FAIL). Closes the durfmt dogfood miss (a
 # 'strict-canonical' parser accepted a full-width-digit token / +5 / 01h / 1d0h0m0s).
 ev_strlen_acev=$(grep -cF 'strictness-leniency' "$ACEV_EV" || true)
@@ -10154,12 +10154,12 @@ ev_strlen_acqc=$(grep -cF 'strictness-leniency' "$ACQC_EV" || true)
 ev_strlen_result="false"
 if [ "$ev_strlen_acev" -ge 1 ] && [ "$ev_strlen_hi" -ge 1 ] && [ "$ev_strlen_orch" -ge 1 ] && [ "$ev_strlen_acqc" -ge 1 ]; then ev_strlen_result="true"; fi
 assert_true \
-  "CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector): ac-evaluator ($ev_strlen_acev>=1) + -hi mirror ($ev_strlen_hi>=1) + orchestration ($ev_strlen_orch>=1) + Gate 9 R2 ($ev_strlen_acqc>=1)" \
+  "CT-EV-PANEL-ROBUST-2 (L-ROBUSTNESS + Gate 9 R2 strictness-leniency vector): ac-evaluator ($ev_strlen_acev>=1) + opus-path file ($ev_strlen_hi>=1) + orchestration ($ev_strlen_orch>=1) + Gate 9 R2 ($ev_strlen_acqc>=1)" \
   "$ev_strlen_result"
 
 # CT-DECONTAM-1 (product-instance recidivism guard, decontamination phase). This
 # guard forbids product-INSTANCE tokens from leaking into the normative evaluation
-# content (the rubric, the two ac-evaluator twins, the orchestration / authoring /
+# content (the rubric, the ac-evaluator agent, the orchestration / authoring /
 # evidence references, and the planner/implementer/test-writer/ticket-evaluator
 # agents). Concrete product instances (e.g. a specific color-space call, a named
 # third-party library, a one-off durfmt literal) belong in transient dogfood
@@ -10176,7 +10176,7 @@ assert_true \
 decontam_norm_files=(
   "$REPO_DIR/skills/create-ticket/references/ac-quality-criteria.md"
   "$REPO_DIR/agents/ac-evaluator.md"
-  "$REPO_DIR/agents/ac-evaluator-hi.md"
+  # PR-5 re-point: the retired opus twin is gone; agents/ac-evaluator.md above is the single evaluator file.
   "$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
   "$REPO_DIR/skills/impl/references/test-authoring-guidance.md"
   "$REPO_DIR/skills/impl/references/evidence-channels.md"
@@ -10275,7 +10275,7 @@ assert_true \
 # CT-EV-SHARED-INPUT-XTICKET (cross-ticket shared-input-boundary signal + delegation-not-n/a
 # sibling-guard clause, P-A). Both net-new tokens are HEAD=0 (RED-first). PART A pins the structured
 # decomposer cross-ticket signal across producer + schema-SoT + forwarder; PART B pins the
-# delegation-not-n/a clause across canonical + both byte-identical ac-evaluator twins + planner
+# delegation-not-n/a clause across canonical + the ac-evaluator agent (opus-path cell = same file) + planner
 # self-audit + ticket-evaluator grade-line. The decomposer emits the signal UNCONDITIONALLY
 # (mirrors the existing unconditional peer_set: hint — decomposer.md reads no policy); downstream
 # Gate 7/9 grading reuses constraints.failure_class_coverage (CT-EV-GATE9-3), so no new knob CT.
@@ -10301,20 +10301,20 @@ shin_b_tev=0; [ "$PR3_TEV_PTR" -ge 1 ] && shin_b_tev=$shin_b_acqc
 shin_b_result="false"
 if [ "$shin_b_acqc" -ge 1 ] && [ "$shin_b_acev" -ge 1 ] && [ "$shin_b_acevhi" -ge 1 ] && [ "$shin_b_planner" -ge 1 ] && [ "$shin_b_tev" -ge 1 ]; then shin_b_result="true"; fi
 assert_true \
-  "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+both twins+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + ac-evaluator-hi ($shin_b_acevhi>=1) + planner via rubric pointer ($shin_b_planner>=1) + ticket-evaluator via rubric pointer ($shin_b_tev>=1)" \
+  "CT-EV-SHARED-INPUT-XTICKET PART B (delegation-not-n/a clause: canonical+evaluator file+planner+ticket-evaluator): acqc ($shin_b_acqc>=1) + ac-evaluator ($shin_b_acev>=1) + opus-path file ($shin_b_acevhi>=1) + planner via rubric pointer ($shin_b_planner>=1) + ticket-evaluator via rubric pointer ($shin_b_tev>=1)" \
   "$shin_b_result"
 
 # CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe scratch carve-out clarification,
 # AASC prereq). Reconciles the :199 "single exception ... computational AC" wording with
 # point 5's already-directed behavioral watchdog probe (an existing inconsistency); names
-# NO accept-set sweep (that is the gated AASC mechanism). Net-new token HEAD=0; byte-identical
-# in both twins (CT-EV-MODEL-1 covers the identity).
+# NO accept-set sweep (that is the gated AASC mechanism). Net-new token HEAD=0; pinned in the
+# single evaluator file (CT-EV-MODEL-1 pins the retired twin's absence).
 scev_acev=$(grep -ciF 'behavioral evidence probe' "$ACEV_EV" || true)
 scev_acevhi=$(grep -ciF 'behavioral evidence probe' "$ACEVHI_EV" || true)
 scev_result="false"
 if [ "$scev_acev" -ge 1 ] && [ "$scev_acevhi" -ge 1 ]; then scev_result="true"; fi
 assert_true \
-  "CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe carve-out clarification, both twins): ac-evaluator ($scev_acev>=1) + ac-evaluator-hi ($scev_acevhi>=1)" \
+  "CT-EV-SCRATCH-EVIDENCE (behavioral evidence-probe carve-out clarification, the single evaluator file): ac-evaluator ($scev_acev>=1) + opus-path file ($scev_acevhi>=1)" \
   "$scev_result"
 
 # CT-EV-SELFDOC-1 (EC-SELFDOC channel + both failure modes, v8.4.0+). HEAD=0.
@@ -10423,13 +10423,13 @@ assert_true \
   "$ev_sd6_result"
 
 
-# CT-AASC-1 (accept-set conformance EXECUTED sweep + persisted observability, both twins, v8.5.0+).
+# CT-AASC-1 (accept-set conformance EXECUTED sweep + persisted observability, the single evaluator file, v8.5.0+).
 # Load-bearing per charter section H: the ONLY truly additive element is the evaluator ACTUALLY
 # EXECUTING the grammar-complement sweep in scratch (not more prose contract). Pins (a) the
 # executed-sweep mandate (net-new phrase 'accept-set conformance' + the EXECUTE verb), and (b) the
 # [ACCEPT-SET-SWEEP] marker routed into the PERSISTED report body (the M8 falsifiability fix).
-# Both net-new tokens are HEAD=0 (verified RED-first: grep returns 0 files); byte-identical in both
-# twins (CT-EV-MODEL-1 strip-then-diff covers the identity). A revert flips each grep to FAIL.
+# Both net-new tokens are HEAD=0 (verified RED-first: grep returns 0 files); pinned in the single
+# evaluator file (CT-EV-MODEL-1 pins the retired twin's absence). A revert flips each grep to FAIL.
 aasc1_acev_phrase=$(grep -ciF 'accept-set conformance' "$ACEV_EV" || true)
 aasc1_hi_phrase=$(grep -ciF 'accept-set conformance' "$ACEVHI_EV" || true)
 aasc1_acev_marker=$(grep -cF '[ACCEPT-SET-SWEEP]' "$ACEV_EV" || true)
@@ -10439,14 +10439,14 @@ aasc1_hi_exec=$(grep -cF 'EXECUTE' "$ACEVHI_EV" || true)
 aasc1_result="false"
 if [ "$aasc1_acev_phrase" -ge 1 ] && [ "$aasc1_hi_phrase" -ge 1 ] && [ "$aasc1_acev_marker" -ge 1 ] && [ "$aasc1_hi_marker" -ge 1 ] && [ "$aasc1_acev_exec" -ge 1 ] && [ "$aasc1_hi_exec" -ge 1 ]; then aasc1_result="true"; fi
 assert_true \
-  "CT-AASC-1 (executed accept-set sweep + observability, both twins): ac-evaluator phrase ($aasc1_acev_phrase>=1) marker ($aasc1_acev_marker>=1) EXECUTE ($aasc1_acev_exec>=1) + -hi phrase ($aasc1_hi_phrase>=1) marker ($aasc1_hi_marker>=1) EXECUTE ($aasc1_hi_exec>=1)" \
+  "CT-AASC-1 (executed accept-set sweep + observability, the single evaluator file): ac-evaluator phrase ($aasc1_acev_phrase>=1) marker ($aasc1_acev_marker>=1) EXECUTE ($aasc1_acev_exec>=1) + opus-path phrase ($aasc1_hi_phrase>=1) marker ($aasc1_hi_marker>=1) EXECUTE ($aasc1_hi_exec>=1)" \
   "$aasc1_result"
 
-# CT-AASC-2 (four metamorphic relations + no-runnable-artifact caveat, both twins, v8.5.0+).
+# CT-AASC-2 (four metamorphic relations + no-runnable-artifact caveat, the single evaluator file, v8.5.0+).
 # Pins the executed sweep's four MR-* relations (MR-ALPHABET enumerates the Unicode decimal-digit
 # complement BMP+astral naming no script) and the compiled-language Caveat arm (blocker 2: a built
 # Rust/Go artifact cannot be run black-box, so a null must be distinguishable from a clean sweep).
-# All five tokens HEAD=0 (verified RED-first); byte-identical in both twins.
+# All five tokens HEAD=0 (verified RED-first); pinned in the single evaluator file.
 aasc2_ok="true"
 for aasc2_tok in 'MR-FINITE' 'MR-ALPHABET' 'MR-CANONICAL' 'MR-KEYFAITH' 'no-runnable-artifact'; do
   aasc2_a=$(grep -cF "$aasc2_tok" "$ACEV_EV" || true)
@@ -10454,7 +10454,7 @@ for aasc2_tok in 'MR-FINITE' 'MR-ALPHABET' 'MR-CANONICAL' 'MR-KEYFAITH' 'no-runn
   if [ "$aasc2_a" -lt 1 ] || [ "$aasc2_b" -lt 1 ]; then aasc2_ok="false"; echo "  CT-AASC-2 missing [$aasc2_tok] acev=$aasc2_a hi=$aasc2_b" >&2; fi
 done
 assert_true \
-  "CT-AASC-2 (4 metamorphic relations + no-runnable-artifact caveat, both twins): MR-FINITE/ALPHABET/CANONICAL/KEYFAITH + caveat present in ac-evaluator AND -hi ($aasc2_ok)" \
+  "CT-AASC-2 (4 metamorphic relations + no-runnable-artifact caveat, the single evaluator file): MR-FINITE/ALPHABET/CANONICAL/KEYFAITH + caveat present in ac-evaluator AND the opus-path file ($aasc2_ok)" \
   "$aasc2_ok"
 
 # CT-AASC-3 (producer-side accept-set retained-corpus obligation, both producers, v8.5.0+).
@@ -10485,14 +10485,14 @@ aasc5_grammar=$(grep -cF 'Grammar Card' "$AASC_DOC" 2>/dev/null || true)
 aasc5_result="false"
 if [ "$aasc5_exists" -eq 1 ] && [ "$aasc5_link_acev" -ge 1 ] && [ "$aasc5_link_hi" -ge 1 ] && [ "$aasc5_link_ech" -ge 1 ] && [ "$aasc5_ecmeta" -ge 1 ] && [ "$aasc5_grammar" -ge 1 ]; then aasc5_result="true"; fi
 assert_true \
-  "CT-AASC-5 (harness doc exists + wired + EC-METAMORPHIC + Grammar Card): exists ($aasc5_exists=1), linked from ac-evaluator ($aasc5_link_acev>=1) + -hi ($aasc5_link_hi>=1) + evidence-channels ($aasc5_link_ech>=1), EC-METAMORPHIC in evidence-channels ($aasc5_ecmeta>=1), Grammar Card in doc ($aasc5_grammar>=1)" \
+  "CT-AASC-5 (harness doc exists + wired + EC-METAMORPHIC + Grammar Card): exists ($aasc5_exists=1), linked from ac-evaluator ($aasc5_link_acev>=1) + opus-path ($aasc5_link_hi>=1) + evidence-channels ($aasc5_link_ech>=1), EC-METAMORPHIC in evidence-channels ($aasc5_ecmeta>=1), Grammar Card in doc ($aasc5_grammar>=1)" \
   "$aasc5_result"
 
-# CT-AASC-6 (deterministic accept-set trigger: orchestrator computes + inlines triggered-on=, both twins read it; v8.5.0+).
+# CT-AASC-6 (deterministic accept-set trigger: orchestrator computes + inlines triggered-on=, the evaluator reads it; v8.5.0+).
 # LOAD-BEARING per charter section H: moves the strict/canonical/lossless/limit + shared_input_boundary recognition out of
 # the evaluator (dogfood46 non-uniformity) into a deterministic Step-15 computation inlined as triggered-on=. Net-new tokens
 # 'triggered-on=' and (in SKILL.md) 'accept_set_conformance' are HEAD=0 (RED-first; bare 'triggered='/'accept-set' pre-exist
-# from STEP 5 and are NOT what this pins). Twins byte-identical.
+# from STEP 5 and are NOT what this pins). Single evaluator file since PR-5.
 aasc6_skill_constraint=$(grep -cF 'accept_set_conformance' "$IMPL_EV" || true)
 aasc6_skill_field=$(grep -cF 'triggered-on=' "$IMPL_EV" || true)
 aasc6_skill_emit=$(grep -cF '[ACCEPT-SET-TRIGGER]' "$IMPL_EV" || true)
@@ -10500,19 +10500,19 @@ aasc6_acev_read=$(grep -cF 'triggered-on=' "$ACEV_EV" || true)
 aasc6_hi_read=$(grep -cF 'triggered-on=' "$ACEVHI_EV" || true)
 aasc6_result="false"
 if [ "$aasc6_skill_constraint" -ge 1 ] && [ "$aasc6_skill_field" -ge 1 ] && [ "$aasc6_skill_emit" -ge 1 ] && [ "$aasc6_acev_read" -ge 1 ] && [ "$aasc6_hi_read" -ge 1 ]; then aasc6_result="true"; fi
-assert_true "CT-AASC-6 (deterministic trigger triggered-on= computed+inlined+read): SKILL constraint ($aasc6_skill_constraint>=1) field ($aasc6_skill_field>=1) emit ($aasc6_skill_emit>=1) + ac-evaluator reads ($aasc6_acev_read>=1) + -hi reads ($aasc6_hi_read>=1)" "$aasc6_result"
+assert_true "CT-AASC-6 (deterministic trigger triggered-on= computed+inlined+read): SKILL constraint ($aasc6_skill_constraint>=1) field ($aasc6_skill_field>=1) emit ($aasc6_skill_emit>=1) + ac-evaluator reads ($aasc6_acev_read>=1) + opus-path reads ($aasc6_hi_read>=1)" "$aasc6_result"
 
-# CT-AASC-7 (black-box no-impl-peek + self-incriminating shallow-sweep record, both twins; v8.5.0+).
+# CT-AASC-7 (black-box no-impl-peek + self-incriminating shallow-sweep record, the single evaluator file; v8.5.0+).
 # LOAD-BEARING per charter section H: dogfood46 skipped astral via an implementation-peek and recorded astral=n as a neutral
 # field. Pins the two GENUINELY-NEW anti-cues (the astral/no-script/property-enumeration prose already existed in STEP 5 and
-# is deliberately NOT re-pinned here to avoid accretion-pinning). Both tokens HEAD=0 (RED-first). Twins byte-identical.
+# is deliberately NOT re-pinned here to avoid accretion-pinning). Both tokens HEAD=0 (RED-first). Single evaluator file since PR-5.
 aasc7_ok="true"
 for aasc7_tok in 'implementation-peek' 'shallow sweep'; do
   aasc7_a=$(grep -cF "$aasc7_tok" "$ACEV_EV" || true)
   aasc7_b=$(grep -cF "$aasc7_tok" "$ACEVHI_EV" || true)
-  if [ "$aasc7_a" -lt 1 ] || [ "$aasc7_b" -lt 1 ]; then aasc7_ok="false"; echo "  CT-AASC-7 missing twin token [$aasc7_tok] acev=$aasc7_a hi=$aasc7_b" >&2; fi
+  if [ "$aasc7_a" -lt 1 ] || [ "$aasc7_b" -lt 1 ]; then aasc7_ok="false"; echo "  CT-AASC-7 missing evaluator token [$aasc7_tok] acev=$aasc7_a hi=$aasc7_b" >&2; fi
 done
-assert_true "CT-AASC-7 (black-box no-impl-peek + shallow-sweep self-incrimination, both twins): implementation-peek + shallow sweep present in ac-evaluator AND -hi ($aasc7_ok)" "$aasc7_ok"
+assert_true "CT-AASC-7 (black-box no-impl-peek + shallow-sweep self-incrimination, the single evaluator file): implementation-peek + shallow sweep present in ac-evaluator AND the opus-path file ($aasc7_ok)" "$aasc7_ok"
 
 # CT-AASC-8 (worked MR-KEYFAITH (b) shape: reflection-derived key generator + round-trip-faithfulness oracle; v8.5.0+).
 # LOAD-BEARING per charter section H: a (b) dogfood self-elicited the MR-KEYFAITH / K-axis sweep but executed a HAND-PICKED
@@ -10528,14 +10528,14 @@ assert_true \
   "CT-AASC-8 (worked MR-KEYFAITH (b) shape: reflection-derived generator + round-trip-faithfulness oracle): net-new (b)-shape phrase in harness doc ($aasc8_phrase>=1)" \
   "$aasc8_result"
 
-# CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive the dangerous-key corpus BY REFLECTION, both twins; v8.5.0+).
+# CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive the dangerous-key corpus BY REFLECTION, the single evaluator file; v8.5.0+).
 # LOAD-BEARING per charter section H: a (b) dogfood self-elicited the MR-KEYFAITH / K-axis sweep but executed a HAND-PICKED
 # key-literal corpus because the LENS shipped MR-KEYFAITH as bare/advisory prose while MR-ALPHABET (c) carried a strong
 # enumerate-by-PROPERTY/names-NO-script directive (which reached astral breadth in dogfood47). This brings the MR-KEYFAITH
 # CORPUS directive to (c)-parity: a MUST to DERIVE the candidate key corpus BY REFLECTION (naming NO key literal, exactly as
 # MR-ALPHABET selects by the decimal-digit PROPERTY) so every reserved / accessor / colliding key is covered for ALL inputs.
 # The GATING qualifier was upgraded to the shared two-tier gate in a later round (see CT-AASC-10). Net-new token
-# 'DERIVE the candidate key corpus BY REFLECTION' is HEAD=0 (RED-first). Twins byte-identical. Stays decontam-clean: the
+# 'DERIVE the candidate key corpus BY REFLECTION' is HEAD=0 (RED-first). Single evaluator file since PR-5. Stays decontam-clean: the
 # directive names no key-literal denylist token (CT-DECONTAM-1 must remain 0 hits).
 aasc9_tok='DERIVE the candidate key corpus BY REFLECTION'
 aasc9_a=$(grep -cF "$aasc9_tok" "$ACEV_EV" || true)
@@ -10543,14 +10543,14 @@ aasc9_b=$(grep -cF "$aasc9_tok" "$ACEVHI_EV" || true)
 aasc9_result="false"
 if [ "$aasc9_a" -ge 1 ] && [ "$aasc9_b" -ge 1 ]; then aasc9_result="true"; fi
 assert_true \
-  "CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive-by-reflection, both twins): directive present in ac-evaluator ($aasc9_a>=1) AND -hi ($aasc9_b>=1)" \
+  "CT-AASC-9 ((c)-parity MR-KEYFAITH CORPUS directive: derive-by-reflection, the single evaluator file): directive present in ac-evaluator ($aasc9_a>=1) AND the opus-path file ($aasc9_b>=1)" \
   "$aasc9_result"
 
-# CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins; (b)-finish round).
+# CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, the single evaluator file; (b)-finish round).
 # LOAD-BEARING: the MR-KEYFAITH lens shipped its divergence as **ASSUMED, not proven** / advisory-only, a WEAKER
 # floor than the other MRs. A concrete round-trip-faithfulness violation (a drop / overwrite / host-metadata mutation)
 # on a lossless / strict keyed boundary is now folded into the SAME standard two-tier oracle-authoritative FAIL gating
-# as MR-FINITE / MR-ALPHABET / MR-CANONICAL. This pins the folded-gate phrase present in BOTH twins AND the removal of
+# as MR-FINITE / MR-ALPHABET / MR-CANONICAL. This pins the folded-gate phrase present in the evaluator file AND the removal of
 # the old **ASSUMED, not proven** qualifier (RED-first: HEAD ships the ASSUMED text and not the folded phrase).
 aasc10_tok='SAME standard two-tier oracle-authoritative FAIL gating as the'
 aasc10_a=$(grep -cF "$aasc10_tok" "$ACEV_EV" || true)
@@ -10559,11 +10559,11 @@ aasc10_old_a=$(grep -cF 'ASSUMED, not proven' "$ACEV_EV" || true)
 aasc10_old_b=$(grep -cF 'ASSUMED, not proven' "$ACEVHI_EV" || true)
 # Sibling-artifact uniformity (CLAUDE.md Modifications rule): the cross-linked EC-taxonomy
 # reference both evaluators point to must NOT carry the stale ASSUMED/advisory-only posture,
-# else a reader there downgrades a genuine narrow-keyed-boundary leak the twins now FAIL-gate.
+# else a reader there downgrades a genuine narrow-keyed-boundary leak the evaluator now FAIL-gates.
 aasc10_old_ech=$(grep -cF 'ASSUMED, not proven' "$ECH_EV" || true)
 aasc10_result="false"
 if [ "$aasc10_a" -ge 1 ] && [ "$aasc10_b" -ge 1 ] && [ "$aasc10_old_a" -eq 0 ] && [ "$aasc10_old_b" -eq 0 ] && [ "$aasc10_old_ech" -eq 0 ]; then aasc10_result="true"; fi
-assert_true "CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, both twins + EC ref): folded-gate phrase acev ($aasc10_a>=1) hi ($aasc10_b>=1), ASSUMED removed acev ($aasc10_old_a=0) hi ($aasc10_old_b=0) evidence-channels ($aasc10_old_ech=0)" "$aasc10_result"
+assert_true "CT-AASC-10 (MR-KEYFAITH gating proven-upgrade, the single evaluator file + EC ref): folded-gate phrase acev ($aasc10_a>=1) hi ($aasc10_b>=1), ASSUMED removed acev ($aasc10_old_a=0) hi ($aasc10_old_b=0) evidence-channels ($aasc10_old_ech=0)" "$aasc10_result"
 
 # CT-AASC-11 (round-trip oracle from input-pairs last-write-wins; harness doc).
 # LOAD-BEARING: the worked MR-KEYFAITH (b) oracle must compute its expectation FROM THE INPUT PAIRS by last-write-wins,
@@ -10574,11 +10574,11 @@ aasc11_result="false"
 if [ "$aasc11_c" -ge 1 ]; then aasc11_result="true"; fi
 assert_true "CT-AASC-11 (round-trip oracle from input-pairs last-write-wins): net-new phrase in harness doc ($aasc11_c>=1)" "$aasc11_result"
 
-# CT-AASC-12 (reflection corpus incl private/internal slots + FULL set; doc + both twins).
+# CT-AASC-12 (reflection corpus incl private/internal slots + FULL set; doc + the single evaluator file).
 # LOAD-BEARING: a private-slot collision (an input key shadowing the structure's own internal storage slot) is a real
 # drop / overwrite class reflection already exposes, so the reflected corpus MUST be the FULL reflected set (never sliced)
 # and MUST include private / internal slot names. Pins both net-new tokens ('private / internal slot' + 'FULL reflected
-# set') across the harness doc AND both twins (RED-first: HEAD=0). Stays decontam-clean: no key-literal denylist token.
+# set') across the harness doc AND the evaluator file (RED-first: HEAD=0). Stays decontam-clean: no key-literal denylist token.
 aasc12_doc=$(grep -cF 'private / internal slot names' "$AASC_DOC" 2>/dev/null || true)
 aasc12_acev=$(grep -cF 'private / internal slot' "$ACEV_EV" || true)
 aasc12_hi=$(grep -cF 'private / internal slot' "$ACEVHI_EV" || true)
@@ -10587,7 +10587,7 @@ aasc12_acev_full=$(grep -cF 'FULL reflected set' "$ACEV_EV" || true)
 aasc12_hi_full=$(grep -cF 'FULL reflected set' "$ACEVHI_EV" || true)
 aasc12_result="false"
 if [ "$aasc12_doc" -ge 1 ] && [ "$aasc12_acev" -ge 1 ] && [ "$aasc12_hi" -ge 1 ] && [ "$aasc12_doc_full" -ge 1 ] && [ "$aasc12_acev_full" -ge 1 ] && [ "$aasc12_hi_full" -ge 1 ]; then aasc12_result="true"; fi
-assert_true "CT-AASC-12 (reflection corpus incl private/internal slots + FULL set, doc+both twins): private-slot doc ($aasc12_doc) acev ($aasc12_acev) hi ($aasc12_hi); FULL-set doc ($aasc12_doc_full) acev ($aasc12_acev_full) hi ($aasc12_hi_full)" "$aasc12_result"
+assert_true "CT-AASC-12 (reflection corpus incl private/internal slots + FULL set, doc+evaluator file): private-slot doc ($aasc12_doc) acev ($aasc12_acev) hi ($aasc12_hi); FULL-set doc ($aasc12_doc_full) acev ($aasc12_acev_full) hi ($aasc12_hi_full)" "$aasc12_result"
 
 # CT-AASC-13 (AASC verification hook registered: deterministic post-hoc conformance gate; v8.5.0+).
 # LOAD-BEARING per charter section H: the AASC sweep + its self-incrimination rule are ALREADY normative MUST in the
@@ -10615,25 +10615,27 @@ aasc14_result="false"
 if [ "$aasc14_pt" -ge 1 ] && [ "$aasc14_apr" -ge 1 ] && [ "$aasc14_orch" -ge 1 ]; then aasc14_result="true"; fi
 assert_true "CT-AASC-14 (accept_set_conformance kill switch documented): policy-template ($aasc14_pt>=1) + policy-reference ($aasc14_apr>=1) + orchestration block ($aasc14_orch>=1)" "$aasc14_result"
 
-# CT-AASC-15 (MR-ROUNDTRIP forward-direction relation: W-axis counterpart to MR-CANONICAL; harness doc + both twins).
+# CT-AASC-15 (MR-ROUNDTRIP forward-direction relation: W-axis counterpart to MR-CANONICAL; harness doc + the single evaluator file).
 # P0-1 of the dogfood56/57 forward-lossless fix: a writer that rounds an exactly-representable value to a lossy
 # canonical string (format(x) lossy at rc=0) slipped every parse-side MR. MR-ROUNDTRIP drives a value THROUGH the
 # writer and checks parse(format(x))==x over a grammar-derived inter-anchor band. RED-first: HEAD=0. DECONTAM-clean.
 aasc15_harness=$(grep -cF 'MR-ROUNDTRIP' "$REPO_DIR/skills/impl/references/accept-set-conformance-harness.md" || true)
 aasc15_acev=$(grep -cF 'MR-ROUNDTRIP' "$REPO_DIR/agents/ac-evaluator.md" || true)
-aasc15_hi=$(grep -cF 'MR-ROUNDTRIP' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+# PR-5 re-point: the retired opus twin's path -> ACEVHI_EV (= agents/ac-evaluator.md, the file the opus path spawns).
+aasc15_hi=$(grep -cF 'MR-ROUNDTRIP' "$ACEVHI_EV" || true)
 aasc15_result="false"
 if [ "$aasc15_harness" -ge 1 ] && [ "$aasc15_acev" -ge 1 ] && [ "$aasc15_hi" -ge 1 ]; then aasc15_result="true"; fi
-assert_true "CT-AASC-15 (MR-ROUNDTRIP forward relation, harness + both twins): harness ($aasc15_harness>=1) ac-evaluator ($aasc15_acev>=1) -hi ($aasc15_hi>=1)" "$aasc15_result"
+assert_true "CT-AASC-15 (MR-ROUNDTRIP forward relation, harness + the single evaluator file): harness ($aasc15_harness>=1) ac-evaluator ($aasc15_acev>=1) opus-path ($aasc15_hi>=1)" "$aasc15_result"
 
-# CT-AASC-16 (persisted '## Accept-set sweep' forward fields roundtrip=/intermediate-sampled=, both twins; P0-1).
+# CT-AASC-16 (persisted '## Accept-set sweep' forward fields roundtrip=/intermediate-sampled=, the single evaluator file; P0-1).
 # The persisted observability line gained the two W-axis forward fields so the determinism hook can enforce the
 # forward-depth gate and a dogfood can grep an anchors-only forward sweep. RED-first: HEAD=0.
 aasc16_acev=$(grep -cF 'intermediate-sampled=' "$REPO_DIR/agents/ac-evaluator.md" || true)
-aasc16_hi=$(grep -cF 'intermediate-sampled=' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+# PR-5 re-point: the retired opus twin's path -> ACEVHI_EV (= agents/ac-evaluator.md, the file the opus path spawns).
+aasc16_hi=$(grep -cF 'intermediate-sampled=' "$ACEVHI_EV" || true)
 aasc16_result="false"
 if [ "$aasc16_acev" -ge 1 ] && [ "$aasc16_hi" -ge 1 ]; then aasc16_result="true"; fi
-assert_true "CT-AASC-16 (forward sweep fields in both twins): ac-evaluator ($aasc16_acev>=1) -hi ($aasc16_hi>=1)" "$aasc16_result"
+assert_true "CT-AASC-16 (forward sweep fields in the single evaluator file): ac-evaluator ($aasc16_acev>=1) opus-path ($aasc16_hi>=1)" "$aasc16_result"
 
 # CT-AASC-17 (accept-set-verify hook P5 forward-depth gate: W roundtrip=y intermediate-sampled=n -> BLOCK; P0-1).
 # The recognition-independent enforcement half, parallel to P2 astral, same kill-switch/fail-open. RED-first: HEAD=0.
@@ -10681,13 +10683,14 @@ aasc21_result="false"
 if [ "$aasc21" -ge 1 ] && [ "$aasc21b" -ge 1 ]; then aasc21_result="true"; fi
 assert_true "CT-AASC-21 (W-axis writer-pairing trigger clause): for-the-W-axis ($aasc21>=1) + paired-writer-trigger ($aasc21b>=1)" "$aasc21_result"
 
-# CT-AASC-22 (deterministic canonical-W-label rule on MR-ROUNDTRIP, both twins; dogfood58 #1b).
+# CT-AASC-22 (deterministic canonical-W-label rule on MR-ROUNDTRIP, the single evaluator file; dogfood58 #1b).
 # The evaluator MUST encode a round-trip sweep as boundary=W, never an improvised numeric-external label. RED-first: HEAD=0.
 aasc22_acev=$(grep -ciF 'Encode this sweep as' "$REPO_DIR/agents/ac-evaluator.md" || true)
-aasc22_hi=$(grep -ciF 'Encode this sweep as' "$REPO_DIR/agents/ac-evaluator-hi.md" || true)
+# PR-5 re-point: the retired opus twin's path -> ACEVHI_EV (= agents/ac-evaluator.md, the file the opus path spawns).
+aasc22_hi=$(grep -ciF 'Encode this sweep as' "$ACEVHI_EV" || true)
 aasc22_result="false"
 if [ "$aasc22_acev" -ge 1 ] && [ "$aasc22_hi" -ge 1 ]; then aasc22_result="true"; fi
-assert_true "CT-AASC-22 (canonical-W-label rule both twins): ac-evaluator ($aasc22_acev>=1) -hi ($aasc22_hi>=1)" "$aasc22_result"
+assert_true "CT-AASC-22 (canonical-W-label rule the single evaluator file): ac-evaluator ($aasc22_acev>=1) opus-path ($aasc22_hi>=1)" "$aasc22_result"
 
 # CT-AASC-23 (hook P6 fail-loud on a round-trip-bearing non-W label; dogfood58 #2).
 # A round-trip-bearing sweep (roundtrip=y or intermediate-sampled=y) under a non-W boundary is non-conformant -> BLOCK,
@@ -10703,8 +10706,8 @@ assert_true "CT-AASC-23 (hook P6 round-trip-mislabel gate): ($aasc23>=1)" "$aasc
 # Diff: NEW category (v8.6.0). The uc= path is ADDITIVE — the no-uc / uc=off
 #       default is byte-identical to v8.5.0 — so these CTs pin the NET-NEW
 #       surface only (the arg grammar, the [UC-ORCH-MODE] marker, the chain=off
-#       ignore warning, the committed eval-panel.mjs + its EVAL_SCHEMA + twin
-#       agentTypes, the Step-15 UC_ORCH==on && exhaustive gating, and the
+#       ignore warning, the committed eval-panel.mjs + its EVAL_SCHEMA + fixed
+#       agentType, the Step-15 UC_ORCH==on && exhaustive gating, and the
 #       run-scoped ultracode_mode write/re-read/forward). No overlap with the
 #       AASC family above (which pins the accept-set sweep, not the dispatch
 #       mechanism) nor Cat M (Workflow Isolation). Reuses the IMPL_EV handle
@@ -10742,16 +10745,17 @@ assert_true \
   "$uco1_result"
 
 # CT-UC-ORCH-2 (committed PRODUCT-Workflow eval-panel script). The script file must
-# EXIST, declare `export const meta`, reference BOTH twin agentTypes
-# (simple-workflow:ac-evaluator + simple-workflow:ac-evaluator-hi), reference
+# EXIST, declare `export const meta`, spawn the single evaluator agentType
+# (simple-workflow:ac-evaluator, fixed at every tier), reference
 # EVAL_SCHEMA and the gating intent (the uc=on AND exhaustive condition documented in
 # its header). /impl Step 15 must reference the eval-panel.mjs scriptPath and gate the
 # dispatch on UC_ORCH==on AND VERIFICATION_DEPTH==exhaustive, and Workflow must be in
-# /impl allowed-tools. agentType selects the model (twin files), NOT opts.model.
+# /impl allowed-tools. The model / effort ride in opts.model / opts.effort (pinned by CT-EV-MODEL-2).
 uco2_exists=0; if [ -f "$UCO_PANEL" ]; then uco2_exists=1; fi
 uco2_meta=$(grep -cF 'export const meta' "$UCO_PANEL" 2>/dev/null || true)
 uco2_acev=$(grep -cF 'simple-workflow:ac-evaluator' "$UCO_PANEL" 2>/dev/null || true)
-uco2_hi=$(grep -cF 'simple-workflow:ac-evaluator-hi' "$UCO_PANEL" 2>/dev/null || true)
+# PR-5 re-point: the opus-twin agentType cell now pins the fixed single-evaluator agentType declaration.
+uco2_hi=$(grep -cF 'const agentType = "simple-workflow:ac-evaluator";' "$UCO_PANEL" 2>/dev/null || true)
 uco2_schema=$(grep -cF 'EVAL_SCHEMA' "$UCO_PANEL" 2>/dev/null || true)
 uco2_gateintent=$(grep -cF 'uc=on AND verification_depth is thorough or exhaustive' "$UCO_PANEL" 2>/dev/null || true)
 uco2_skill_scriptpath=$(grep -cF 'skills/impl/workflows/eval-panel.mjs' "$UCO_IMPL" || true)
@@ -10765,7 +10769,7 @@ if [ "$uco2_exists" -eq 1 ] && [ "$uco2_meta" -ge 1 ] && [ "$uco2_acev" -ge 1 ] 
   && [ "$uco2_schema" -ge 1 ] && [ "$uco2_gateintent" -ge 1 ] && [ "$uco2_skill_scriptpath" -ge 1 ] \
   && [ "$uco2_skill_gate_uc" -ge 1 ] && [ "$uco2_skill_gate_exh" -ge 1 ] && [ "$uco2_allowtool" -ge 1 ]; then uco2_result="true"; fi
 assert_true \
-  "CT-UC-ORCH-2 (committed Workflow eval-panel): exists ($uco2_exists=1) meta ($uco2_meta>=1) ac-evaluator ($uco2_acev>=1) -hi ($uco2_hi>=1) EVAL_SCHEMA ($uco2_schema>=1) gate-intent ($uco2_gateintent>=1); SKILL scriptPath ($uco2_skill_scriptpath>=1) gate UC_ORCH==on ($uco2_skill_gate_uc>=1) exhaustive ($uco2_skill_gate_exh>=1); Workflow allowed-tool ($uco2_allowtool>=1)" \
+  "CT-UC-ORCH-2 (committed Workflow eval-panel): exists ($uco2_exists=1) meta ($uco2_meta>=1) ac-evaluator ($uco2_acev>=1) fixed-agentType ($uco2_hi>=1) EVAL_SCHEMA ($uco2_schema>=1) gate-intent ($uco2_gateintent>=1); SKILL scriptPath ($uco2_skill_scriptpath>=1) gate UC_ORCH==on ($uco2_skill_gate_uc>=1) exhaustive ($uco2_skill_gate_exh>=1); Workflow allowed-tool ($uco2_allowtool>=1)" \
   "$uco2_result"
 
 # CT-UC-ORCH-3 (run-scoped continuity: ultracode_mode in autopilot-state.yaml). The
@@ -11586,11 +11590,14 @@ fx2rd_knob=$(grep -cF 'SW_REVIEW_FIREWALL_MODE' "$PBCG" || true)
 fx2rd_strip=$(grep -cF 'AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"' "$PBCG" || true)
 fx2rd_srcre=$(grep -cF 'add|commit|mv|push' "$PBCG" || true)
 fx2rd_tag=$(grep -cF 'unauthorized_commit_by_review_agent' "$PBCG" || true)
+# PR-5: the git-firewall case pattern names all three Skill-bearing review agents (the
+# behavioural cases in tests/test-pre-bash-contract-guard.sh cover each name).
+fx2rd_agents=$(grep -cF 'ac-evaluator|doc-verifier|code-reviewer)' "$PBCG" || true)
 fx2rd_result="false"
 if [ "$fx2rd_knob" -ge 1 ] && [ "$fx2rd_strip" -ge 1 ] && [ "$fx2rd_srcre" -ge 1 ] \
-   && [ "$fx2rd_tag" -ge 1 ]; then fx2rd_result="true"; fi
+   && [ "$fx2rd_tag" -ge 1 ] && [ "$fx2rd_agents" -ge 1 ]; then fx2rd_result="true"; fi
 assert_true \
-  "CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (Bash review-deny: knob-gated, unconditional prefix strip, git add/commit/mv/push, named tag): knob ($fx2rd_knob>=1) strip ($fx2rd_strip>=1) srcre ($fx2rd_srcre>=1) tag ($fx2rd_tag>=1)" \
+  "CT-FIX2-REVIEW-AGENT-COMMIT-DENIED (Bash review-deny: knob-gated, unconditional prefix strip, git add/commit/mv/push, named tag): knob ($fx2rd_knob>=1) strip ($fx2rd_strip>=1) srcre ($fx2rd_srcre>=1) tag ($fx2rd_tag>=1) agents ($fx2rd_agents>=1)" \
   "$fx2rd_result"
 
 # CT-FIX2-GIT-WORKTREE-EXEMPT (static): the git-source regex matches only
@@ -11608,7 +11615,8 @@ assert_true \
 # review agents, unconditional prefix strip, knob-gated, exit-0 fail-open.
 fx2sn_exists=0; [ -f "$PSCG" ] && fx2sn_exists=1
 fx2sn_ns=$(grep -cF 'simple-workflow:impl' "$PSCG" || true)
-fx2sn_review=$(grep -cF '"ac-evaluator" "ac-evaluator-hi" "doc-verifier" "code-reviewer"' "$PSCG" || true)
+# PR-5 re-point: the retired opus twin left the Skill-bearing review-agent list; the three remaining names stay pinned.
+fx2sn_review=$(grep -cF 'REVIEW_AGENTS=("ac-evaluator" "doc-verifier" "code-reviewer")' "$PSCG" || true)
 fx2sn_strip=$(grep -cF 'AGENT_TYPE="${AGENT_TYPE#simple-workflow:}"' "$PSCG" || true)
 fx2sn_knob=$(grep -cF 'SW_REVIEW_FIREWALL_MODE' "$PSCG" || true)
 fx2sn_result="false"
@@ -11646,7 +11654,8 @@ assert_true \
 # CT-FIX3-REVIEW-AGENT-ADVANCE-DENIED (static): Detection 4 keyed on the
 # full denylist regex (bare AND namespaced, INCLUDING ticket-evaluator),
 # knob-gated by SW_STATE_ADVANCE_GUARD_MODE, named tag.
-fx3rd_re=$(grep -cF '^(simple-workflow:)?(ac-evaluator|ac-evaluator-hi|doc-verifier|code-reviewer|security-scanner|ticket-evaluator)$' "$PST" || true)
+# PR-5 re-point: the retired opus twin left the Detection-4 denylist; the five remaining roles stay pinned.
+fx3rd_re=$(grep -cF '^(simple-workflow:)?(ac-evaluator|doc-verifier|code-reviewer|security-scanner|ticket-evaluator)$' "$PST" || true)
 fx3rd_knob=$(grep -cF 'SW_STATE_ADVANCE_GUARD_MODE' "$PST" || true)
 fx3rd_tag=$(grep -cF 'unauthorized_phase_advance_by_review_agent' "$PST" || true)
 fx3rd_te=$(grep -cF 'ticket-evaluator' "$PST" || true)
@@ -11699,7 +11708,7 @@ for agf in "$REPO_DIR"/agents/*.md; do
     fx3sync_checked=$((fx3sync_checked + 1))
     # Token-boundary membership in the Detection-4 denylist alternation: the name must appear as a
     # FULL token (bounded by ( | or )), so a short name that is a substring of a longer entry
-    # (ac-evaluator vs ac-evaluator-hi) cannot false-PASS and a removed short name IS caught.
+    # (a bare name that prefixes a longer hyphenated entry) cannot false-PASS and a removed short name IS caught.
     if ! grep -qE -- "[(|]${aname}[|)]" <<<"$fx3sync_denyline"; then
       fx3sync_missing="$fx3sync_missing $aname"
     fi
@@ -11733,50 +11742,112 @@ echo ""
 # Diff: New category (M5). Drift-guards the criticality scalar
 #       (criticality = blast_radius x irreversibility), the irreversibility axis +
 #       its constraints.irreversibility_floor kill switch (three-file symmetry like
-#       CT-AR-9), the evaluator_model bump wired across spawner + references, and
-#       the byte-identical-body ac-evaluator-hi.md fallback (graft #10). Every grep
-#       token is HEAD=0 (revert flips it).
+#       CT-AR-9), and the evaluator model / effort wired across spawner + references.
+#       PR-5 (/create-ticket modernization P0-3) retired the opus twin agent file:
+#       one evaluator file, per-spawn model / effort, SW_EVALUATOR_MODEL knob.
+#       Every grep token is HEAD=0 at its introduction (revert flips it).
 # =============================================================================
 echo "--- Cat EV-MODEL: criticality / evaluator-model allocation (v8.3.0) ---"
 
 ACEV_EVM="$REPO_DIR/agents/ac-evaluator.md"
-ACEVHI_EVM="$REPO_DIR/agents/ac-evaluator-hi.md"
 IMPL_EVM="$REPO_DIR/skills/impl/SKILL.md"
 VD_EVM="$REPO_DIR/skills/impl/references/verification-depth.md"
 ORCH_EVM="$REPO_DIR/skills/impl/references/ac-evaluator-orchestration.md"
 APR_EVM="$REPO_DIR/skills/create-ticket/references/autopilot-policy-reference.md"
 PT_EVM="$REPO_DIR/skills/brief/references/policy-template.md"
+CLAUDEMD_EVM="$REPO_DIR/CLAUDE.md"
+PANEL_EVM="$REPO_DIR/skills/impl/workflows/eval-panel.mjs"
 
-# CT-EV-MODEL-1 (graft #10 byte-identical-body guard): ac-evaluator-hi.md exists and
-# its body is byte-identical to ac-evaluator.md EXCEPT the frontmatter 'name:' and
-# 'model:' lines (the two intentional differences). diff over both files with those
-# lines stripped must be empty; hi carries '^model: opus', base '^model: sonnet', and
-# base carries the cross-reference comment. The strip-then-diff idiom keeps the full
-# verification body in lockstep so a future edit to ac-evaluator.md must be mirrored.
-evm1_hi_exists=0
-if [ -f "$ACEVHI_EVM" ]; then evm1_hi_exists=1; fi
-evm1_diff_empty="false"
-if [ "$evm1_hi_exists" -eq 1 ] && diff <(grep -vE '^(model|name):' "$ACEV_EVM") <(grep -vE '^(model|name):' "$ACEVHI_EVM") >/dev/null 2>&1; then evm1_diff_empty="true"; fi
-evm1_hi_opus=$(grep -c '^model: opus' "$ACEVHI_EVM" || true)
-evm1_lo_sonnet=$(grep -c '^model: sonnet' "$ACEV_EVM" || true)
-evm1_xref=$(grep -cF 'agents/ac-evaluator-hi.md (model: opus)' "$ACEV_EVM" || true)
+# CT-EV-MODEL-1 (PR-5 single-evaluator contract; REPLACES the retired byte-identity pin
+# between the evaluator and its opus twin). (a) the retired twin agent file is ABSENT;
+# (b) ZERO lines name it across agents/ skills/ hooks/ tests/ design-oracles/ CLAUDE.md
+# README.md ARCHITECTURE.md CONTRIBUTING.md .github/ (CHANGELOG.md and docs/ keep dated
+# history and are excluded; the token is
+# assembled from two halves so this test never matches its own source line); (c) the
+# single evaluator's frontmatter pins exactly one '^model: opus' line, the fallback that
+# applies when a spawner passes no per-spawn model. FAILs when the twin is
+# restored, when its name reappears in any scanned tree (a dangling spawn / denylist /
+# test reference), or when the frontmatter model drops back to sonnet.
+# PR-5 re-point: (c) now also pins that the frontmatter has NO '^effort:' line, mirroring
+# the generator agents/implementer.md, so a routine evaluator spawn inherits the session
+# effort exactly as the generator does (a frontmatter effort would REPLACE the inherited
+# session effort and could grade below the generator). FAILs when any effort: key is re-added.
+evm1_tok="ac-evaluator""-hi"
+evm1_absent=0
+if [ ! -e "$REPO_DIR/agents/${evm1_tok}.md" ]; then evm1_absent=1; fi
+evm1_refs=$( { grep -rnF -- "$evm1_tok" "$REPO_DIR/agents" "$REPO_DIR/skills" "$REPO_DIR/hooks" \
+  "$REPO_DIR/tests" "$REPO_DIR/design-oracles" "$REPO_DIR/CLAUDE.md" "$REPO_DIR/README.md" \
+  "$REPO_DIR/ARCHITECTURE.md" "$REPO_DIR/CONTRIBUTING.md" "$REPO_DIR/.github" 2>/dev/null || true; } \
+  | grep -c . || true)
+evm1_refs=${evm1_refs:-0}
+evm1_fm=$(awk 'BEGIN{f=0} /^---[[:space:]]*$/{f++; if (f==2) exit; next} f==1{print}' "$ACEV_EVM" 2>/dev/null || true)
+evm1_opus=$(printf '%s\n' "$evm1_fm" | grep -c '^model: opus' || true)
+# PR-5 re-point: '^effort: high' (expected 1) -> any '^effort:' line (expected 0).
+evm1_effort=$(printf '%s\n' "$evm1_fm" | grep -c '^effort:' || true)
 evm1_result="false"
-if [ "$evm1_hi_exists" -eq 1 ] && [ "$evm1_diff_empty" = "true" ] && [ "$evm1_hi_opus" -ge 1 ] && [ "$evm1_lo_sonnet" -ge 1 ] && [ "$evm1_xref" -ge 1 ]; then evm1_result="true"; fi
+if [ "$evm1_absent" -eq 1 ] && [ "$evm1_refs" -eq 0 ] && [ "$evm1_opus" -eq 1 ] && [ "$evm1_effort" -eq 0 ]; then evm1_result="true"; fi
+if [ "$evm1_refs" -ne 0 ]; then
+  { grep -rnF -- "$evm1_tok" "$REPO_DIR/agents" "$REPO_DIR/skills" "$REPO_DIR/hooks" \
+    "$REPO_DIR/tests" "$REPO_DIR/design-oracles" "$REPO_DIR/CLAUDE.md" "$REPO_DIR/README.md" \
+    "$REPO_DIR/ARCHITECTURE.md" "$REPO_DIR/CONTRIBUTING.md" "$REPO_DIR/.github" 2>/dev/null || true; } \
+    | sed "s|^$REPO_DIR/|       ref: |" | head -10 >&2
+fi
 assert_true \
-  "CT-EV-MODEL-1 (ac-evaluator-hi byte-identical except name/model): hi exists ($evm1_hi_exists=1), bodies identical sans name/model ($evm1_diff_empty), hi '^model: opus' ($evm1_hi_opus>=1), base '^model: sonnet' ($evm1_lo_sonnet>=1), cross-ref comment ($evm1_xref>=1)" \
+  "CT-EV-MODEL-1 (single evaluator file: retired opus twin absent ($evm1_absent=1), 0 references to it in agents/skills/hooks/tests/design-oracles/CLAUDE.md/README.md/ARCHITECTURE.md/CONTRIBUTING.md/.github (got $evm1_refs), ac-evaluator frontmatter '^model: opus' ($evm1_opus=1) + no '^effort:' line, like the generator ($evm1_effort=0))" \
   "$evm1_result"
 
-# CT-EV-MODEL-2: evaluator-model bump wired across the spawner (/impl Step 3a +
-# Step 15 agent-file selection) AND its references. The unique [EVALUATOR-MODEL]
-# stderr token is introduced only by this change.
+# CT-EV-MODEL-2: evaluator model / effort wired across the spawner (/impl Step 3a
+# SW_EVALUATOR_MODEL resolution + the WHOLE Step 15: the per-invocation model on the main
+# line, the Workflow-branch evaluator_model / evaluator_effort args, and the multi-verifier
+# sub-bullet), the eval-panel Workflow (opts.model / opts.effort spread into every agent()
+# call, an unresolved model forwarded as explicit opus, no hardcoded sonnet fallback), the
+# CLAUDE.md knob entry (all four values + the migration sentence), and the references.
+# The knob-value -> model mapping itself is pinned by CT-EV-MODEL-6.
+# PR-5 re-point: the former twin-spawn cells (simple-workflow + the opus twin name in
+# /impl and in the orchestration reference) now pin the per-invocation model wiring.
 evm2_impl_em=$(grep -cF 'EVALUATOR_MODEL' "$IMPL_EVM" || true)
-evm2_impl_hi=$(grep -cF 'simple-workflow:ac-evaluator-hi' "$IMPL_EVM" || true)
+evm2_3a=$(awk '/^3a\. \*\*Verification depth tier\*\*/{print; exit}' "$IMPL_EVM" 2>/dev/null || true)
+evm2_3a_knob=$(printf '%s\n' "$evm2_3a" | grep -cF 'SW_EVALUATOR_MODEL' || true)
+evm2_3a_failsafe=$(printf '%s\n' "$evm2_3a" | grep -cF '[EVALUATOR-MODEL] WARNING unknown SW_EVALUATOR_MODEL=<value>; using auto' || true)
+evm2_probe=$(grep -cF "printf 'SW_EVALUATOR_MODEL=%s'" "$IMPL_EVM" || true)
+# The WHOLE Step 15 (its main line through the line before Step 16), so the Workflow-branch
+# args and the multi-verifier sub-bullet are inside the scanned text, not only line one.
+evm2_s15=$(awk '/^15\. \*\*MUST invoke the AC Evaluator agent via the Agent tool\*\*/,/^16\. /' "$IMPL_EVM" 2>/dev/null || true)
+evm2_s15_model=$(printf '%s\n' "$evm2_s15" | grep -cF 'per-invocation `model: EVALUATOR_MODEL`' || true)
+evm2_s15_wfargs=$(printf '%s\n' "$evm2_s15" | grep -cF 'evaluator_model: EVALUATOR_MODEL, evaluator_effort: EVALUATOR_EFFORT' || true)
+evm2_s15_mverif=$(printf '%s\n' "$evm2_s15" | grep -cF 'invoke `simple-workflow:ac-evaluator` with the Step 3a `model: EVALUATOR_MODEL` and `effort: EVALUATOR_EFFORT`' || true)
+evm2_claude=$(grep -E '^- `SW_EVALUATOR_MODEL`' "$CLAUDEMD_EVM" 2>/dev/null || true)
+evm2_claude_vals=0
+# The enumerated Values clause (all four values, each with its meaning), the unknown-value
+# fail-safe direction, and the migration sentence, each as a literal fragment of the entry.
+for evm2_v in 'Values: `auto` (DEFAULT — opus at every tier' '`tiered` (the prior' '`opus` / `sonnet` (force that model at every tier)' \
+  'Unknown values resolve to `auto`' 'set `SW_EVALUATOR_MODEL=tiered` to restore the prior sonnet/opus routing'; do
+  printf '%s\n' "$evm2_claude" | grep -qF -- "$evm2_v" && evm2_claude_vals=$((evm2_claude_vals + 1))
+done
 evm2_vd=$(grep -cF 'evaluator model' "$VD_EVM" || true)
-evm2_orch=$(grep -cF 'ac-evaluator-hi' "$ORCH_EVM" || true)
+evm2_vd_knob=$(grep -cF 'SW_EVALUATOR_MODEL' "$VD_EVM" || true)
+evm2_orch=$(grep -cF 'with the per-invocation `model`' "$ORCH_EVM" || true)
+evm2_panel_model=$(grep -cF 'spawnOverrides.model = a.evaluator_model;' "$PANEL_EVM" || true)
+evm2_panel_effort=$(grep -cF 'spawnOverrides.effort = a.evaluator_effort;' "$PANEL_EVM" || true)
+# PR-5 re-point: opts.effort is forwarded ONLY under the xhigh guard (at inherit / undefined
+# it is omitted so the session effort applies, as for the generator): pin the exact guard,
+# exactly one effort assignment, and zero comparisons against a "high" effort value.
+evm2_panel_xhigh_guard=$(grep -cF 'if (a.evaluator_effort === "xhigh") {' "$PANEL_EVM" || true)
+evm2_panel_effort_assign=$(grep -cE 'spawnOverrides\.effort[[:space:]]*=[^=]' "$PANEL_EVM" || true)
+evm2_panel_high=$(grep -cE "evaluator_effort[[:space:]]*[!=]==?[[:space:]]*[\"']high[\"']|[\"']high[\"'][[:space:]]*[!=]==?[[:space:]]*a\\.evaluator_effort|includes\\(a\\.evaluator_effort\\)" "$PANEL_EVM" || true)
+# An unresolved evaluator_model is forwarded as opus (an omitted opts.model would inherit
+# the session model, not the frontmatter), never omitted and never sonnet.
+evm2_panel_fallback=$(grep -cF 'spawnOverrides.model = "opus";' "$PANEL_EVM" || true)
+evm2_panel_spread=$(grep -cF '...spawnOverrides,' "$PANEL_EVM" || true)
+evm2_panel_hardcoded=$(grep -cE "model[[:space:]]*[:=][[:space:]]*[\"']sonnet" "$PANEL_EVM" || true)
 evm2_result="false"
-if [ "$evm2_impl_em" -ge 1 ] && [ "$evm2_impl_hi" -ge 1 ] && [ "$evm2_vd" -ge 1 ] && [ "$evm2_orch" -ge 1 ]; then evm2_result="true"; fi
+if [ "$evm2_impl_em" -ge 1 ] && [ "$evm2_3a_knob" -ge 1 ] && [ "$evm2_3a_failsafe" -ge 1 ] && [ "$evm2_probe" -ge 1 ] \
+   && [ "$evm2_s15_model" -ge 1 ] && [ "$evm2_s15_wfargs" -ge 1 ] && [ "$evm2_s15_mverif" -ge 1 ] && [ "$evm2_claude_vals" -eq 5 ] && [ "$evm2_vd" -ge 1 ] && [ "$evm2_vd_knob" -ge 1 ] \
+   && [ "$evm2_orch" -ge 1 ] && [ "$evm2_panel_model" -ge 1 ] && [ "$evm2_panel_effort" -ge 1 ] \
+   && [ "$evm2_panel_xhigh_guard" -eq 1 ] && [ "$evm2_panel_effort_assign" -eq 1 ] && [ "$evm2_panel_high" -eq 0 ] \
+   && [ "$evm2_panel_fallback" -ge 1 ] && [ "$evm2_panel_spread" -eq 3 ] && [ "$evm2_panel_hardcoded" -eq 0 ]; then evm2_result="true"; fi
 assert_true \
-  "CT-EV-MODEL-2 (evaluator-model wired): impl SKILL EVALUATOR_MODEL ($evm2_impl_em>=1) + ac-evaluator-hi spawn ($evm2_impl_hi>=1), verification-depth 'evaluator model' column ($evm2_vd>=1), orchestration ac-evaluator-hi ($evm2_orch>=1)" \
+  "CT-EV-MODEL-2 (evaluator model/effort wired): impl EVALUATOR_MODEL ($evm2_impl_em>=1), Step 3a SW_EVALUATOR_MODEL ($evm2_3a_knob>=1) + unknown->auto WARNING ($evm2_3a_failsafe>=1), env probe ($evm2_probe>=1), Step 15 per-invocation model ($evm2_s15_model>=1) + Workflow args ($evm2_s15_wfargs>=1) + multi-verifier ($evm2_s15_mverif>=1), CLAUDE.md knob values+migration ($evm2_claude_vals=5), verification-depth 'evaluator model' ($evm2_vd>=1) + knob ($evm2_vd_knob>=1), orchestration per-invocation model ($evm2_orch>=1), eval-panel opts.model ($evm2_panel_model>=1) unresolved->opus ($evm2_panel_fallback>=1) opts.effort ($evm2_panel_effort>=1) under the xhigh-only guard ($evm2_panel_xhigh_guard=1, one assignment $evm2_panel_effort_assign=1, no \"high\" effort test $evm2_panel_high=0) spread x3 ($evm2_panel_spread=3) no hardcoded sonnet ($evm2_panel_hardcoded=0)" \
   "$evm2_result"
 
 # CT-EV-MODEL-3: irreversibility axis + its kill switch documented across the
@@ -11801,6 +11872,71 @@ if [ "$evm4_vd" -ge 1 ] && [ "$evm4_impl" -ge 1 ]; then evm4_result="true"; fi
 assert_true \
   "CT-EV-MODEL-4 (criticality scalar): verification-depth 'criticality = blast_radius' ($evm4_vd>=1) + impl SKILL [CRITICALITY] stderr ($evm4_impl>=1)" \
   "$evm4_result"
+
+# CT-EV-MODEL-5 (PR-5: evaluator effort tier + every spawn site + audit trail). Replaces
+# the Category D-2 row the retired opus twin used to contribute. Step 3a resolves
+# EVALUATOR_EFFORT (xhigh for critical / exhaustive, independent of SW_EVALUATOR_MODEL)
+# and emits model= effort= source= on [EVALUATOR-MODEL]; the Step 8 Evaluator Dry Run
+# passes the same per-invocation model (every ac-evaluator spawn site, not only Step 15);
+# the resolved model / effort are persisted as phases.impl.evaluator_model /
+# evaluator_effort (schema doc + init YAML), the audit trail the twin file used to provide.
+evm5_3a=$(awk '/^3a\. \*\*Verification depth tier\*\*/{print; exit}' "$IMPL_EVM" 2>/dev/null || true)
+# PR-5 re-point: the else-branch is `inherit` (no per-spawn effort, the session effort the
+# generator also inherits), not `high`; the emit value set is {inherit|xhigh}.
+evm5_effort_rule=$(printf '%s\n' "$evm5_3a" | grep -cF 'Resolve `EVALUATOR_EFFORT` independently of the knob: `xhigh` when `criticality == critical` OR `VERIFICATION_DEPTH == exhaustive`, else `inherit` (no per-spawn effort is passed, so the evaluator runs at the session effort, the same effort the Generator `agents/implementer.md` inherits' || true)
+evm5_emit=$(printf '%s\n' "$evm5_3a" | grep -cF '[EVALUATOR-MODEL] model={opus|sonnet} effort={inherit|xhigh} source={auto|tiered|forced}' || true)
+evm5_s8=$(awk '/^8\. \*\*Evaluator Dry Run\*\*/{print; exit}' "$IMPL_EVM" 2>/dev/null | grep -cF 'model: EVALUATOR_MODEL' || true)
+# The Step 16 single-shot recovery spawn and the partition spawns carry the same
+# per-invocation model / effort (the multi-verifier sub-bullet is pinned by CT-EV-MODEL-2).
+evm5_recovery=$(grep -cF 'per-invocation `model` / `effort` as the original spawn' "$REPO_DIR/skills/impl/references/ac-gate-decision.md" || true)
+evm5_partition=$(grep -cF 'Both invocations carry the Step 3a per-invocation `model` / `effort`' "$ORCH_EVM" || true)
+evm5_schema=$(grep -cF 'evaluator_model, evaluator_effort' "$REPO_DIR/skills/create-ticket/references/phase-state-schema.md" || true)
+evm5_init=$(grep -cE '^[[:space:]]+evaluator_(model|effort):' "$REPO_DIR/skills/impl/references/phase-state-impl-management.md" || true)
+# PR-5 re-point: pin the inherit -> no-per-spawn-effort clause at every Agent-path spawn
+# site (Step 8 dry run, Step 15 single, the partition pair, the Step 16 recovery spawn), so
+# reintroducing a fixed effort at `inherit` FAILs here and not only on the Workflow path
+# (which the eval-panel stub tests lock); and zero `effort: low|medium|high` literals in the
+# four evaluator-spawn docs (a fixed effort below the session effort is the weakening).
+evm5_s8_inh=$(awk '/^8\. \*\*Evaluator Dry Run\*\*/{print; exit}' "$IMPL_EVM" 2>/dev/null | grep -cF 'at `inherit` no effort, so the session effort applies' || true)
+evm5_s15_inh=$(awk '/^15\. \*\*MUST invoke the AC Evaluator agent via the Agent tool\*\*/{print; exit}' "$IMPL_EVM" 2>/dev/null | grep -cF 'at `inherit` pass no effort, so the evaluator runs at the session effort' || true)
+evm5_part_inh=$(grep -cF 'the `effort` only when `EVALUATOR_EFFORT == xhigh`; at `inherit` none is' "$ORCH_EVM" || true)
+evm5_rec_inh=$(grep -cF 'only when it resolves `xhigh`; at `inherit` pass none, so the session effort applies' "$REPO_DIR/skills/impl/references/ac-gate-decision.md" || true)
+evm5_fixed=$(cat "$IMPL_EVM" "$ORCH_EVM" "$REPO_DIR/skills/impl/references/ac-gate-decision.md" "$VD_EVM" 2>/dev/null | grep -cE 'effort:[[:space:]]*`?(low|medium|high)([^a-z]|$)' || true)
+evm5_result="false"
+if [ "$evm5_effort_rule" -ge 1 ] && [ "$evm5_emit" -ge 1 ] && [ "$evm5_s8" -ge 1 ] && [ "$evm5_recovery" -ge 1 ] && [ "$evm5_partition" -ge 1 ] && [ "$evm5_schema" -ge 1 ] && [ "$evm5_init" -eq 2 ] \
+   && [ "$evm5_s8_inh" -eq 1 ] && [ "$evm5_s15_inh" -eq 1 ] && [ "$evm5_part_inh" -eq 1 ] && [ "$evm5_rec_inh" -eq 1 ] && [ "$evm5_fixed" -eq 0 ]; then evm5_result="true"; fi
+assert_true \
+  "CT-EV-MODEL-5 (evaluator effort tier + every spawn site + audit trail): Step 3a EVALUATOR_EFFORT rule ($evm5_effort_rule>=1) + [EVALUATOR-MODEL] effort/source emit ($evm5_emit>=1), Step 8 dry-run per-invocation model ($evm5_s8>=1), Step 16 recovery ($evm5_recovery>=1), partition ($evm5_partition>=1), phase-state schema fields ($evm5_schema>=1), impl init YAML fields ($evm5_init=2), no per-spawn effort at inherit: Step 8 ($evm5_s8_inh=1) Step 15 ($evm5_s15_inh=1) partition ($evm5_part_inh=1) recovery ($evm5_rec_inh=1), no fixed effort: low|medium|high in the spawn docs ($evm5_fixed=0)" \
+  "$evm5_result"
+
+# CT-EV-MODEL-6 (PR-5: the knob-value -> model mapping itself). CT-EV-MODEL-2 pins that
+# Step 3a names SW_EVALUATOR_MODEL; this pins WHAT each value resolves to, so a one-word
+# downgrade (auto -> sonnet, unknown -> sonnet, off -> sonnet, an inverted tiered rule) or
+# a drifted canonical table row in verification-depth.md FAILs instead of shipping green.
+evm6_3a=$(awk '/^3a\. \*\*Verification depth tier\*\*/{print; exit}' "$IMPL_EVM" 2>/dev/null || true)
+evm6_hits=0
+for evm6_lit in 'unset / empty, or a probe line that did not run → `auto`' \
+  '`auto` → `opus` at every tier' \
+  '`tiered` → the prior v8.3.0+ routing, `opus` when `criticality == critical` OR `VERIFICATION_DEPTH == exhaustive`, else `sonnet`' \
+  '`opus` / `sonnet` → that model forced at every tier' \
+  'any other value → `auto` plus a one-line `[EVALUATOR-MODEL] WARNING unknown SW_EVALUATOR_MODEL=<value>; using auto`' \
+  '`opus` under `auto` (`off` disables depth, not the evaluator' \
+  'When `verification_depth: off`, `criticality=routine`, `EVALUATOR_EFFORT=inherit`' \
+  'evaluator effort is the inherited session effort exactly as before, see `EVALUATOR_EFFORT` below' \
+  'a floored `thorough` keeps `EVALUATOR_EFFORT == inherit`'; do
+  printf '%s\n' "$evm6_3a" | grep -qF -- "$evm6_lit" && evm6_hits=$((evm6_hits + 1))
+done
+# PR-5 re-point: three effort clauses added to the six model clauses (off -> inherit, the
+# tiered routine effort inherited as before, the UC-FLOOR thorough tier -> inherit), so
+# evm6_hits must be 9; the two table-row pins now also cover the evaluator-effort cell.
+evm6_vd_routine=$(grep -cF '| routine AND tier ∈ {standard, thorough} | opus | sonnet | inherit (no per-spawn effort' "$VD_EVM" || true)
+evm6_vd_critical=$(grep -cF '| critical OR tier == exhaustive | opus | opus | xhigh |' "$VD_EVM" || true)
+evm6_vd_invariant=$(grep -cF '**Invariant — evaluator ≥ generator**' "$VD_EVM" || true)
+evm6_result="false"
+if [ "$evm6_hits" -eq 9 ] && [ "$evm6_vd_routine" -ge 1 ] && [ "$evm6_vd_critical" -ge 1 ] && [ "$evm6_vd_invariant" -eq 1 ]; then evm6_result="true"; fi
+assert_true \
+  "CT-EV-MODEL-6 (SW_EVALUATOR_MODEL value->model mapping): Step 3a unset/auto/tiered/forced/unknown/off model clauses + off/tiered/UC-FLOOR inherit-effort clauses ($evm6_hits=9), verification-depth routine row auto=opus tiered=sonnet effort=inherit ($evm6_vd_routine>=1) + critical/exhaustive row opus/opus effort=xhigh ($evm6_vd_critical>=1) + single invariant statement ($evm6_vd_invariant=1)" \
+  "$evm6_result"
 
 # =============================================================================
 # Category GEN-MODEL: Generator model policy (proposal 1').
@@ -11845,10 +11981,16 @@ assert_true \
 # the retired size-routed description ("Opus model for L/XL tickets, Sonnet for S/M").
 genm4_opus=$(grep -c '^model: opus' "$GENM_IMPL_AGENT" || true)
 genm4_olddesc=$(grep -cF 'Opus model for L/XL tickets, Sonnet for S/M' "$GENM_IMPL_AGENT" || true)
+# PR-5 re-point: the evaluator >= generator effort invariant needs BOTH sides pinned. The
+# generator frontmatter carries no '^effort:' line (so it runs at the session effort, the
+# effort a routine evaluator inherits), and /impl Step 13 passes it no per-invocation
+# model / effort.
+genm4_effort=$(awk 'BEGIN{f=0} /^---[[:space:]]*$/{f++; if (f==2) exit; next} f==1{print}' "$GENM_IMPL_AGENT" 2>/dev/null | grep -c '^effort:' || true)
+genm4_s13=$(awk '/^13\. \*\*MUST invoke the Generator/,/^14\. /' "$REPO_DIR/skills/impl/SKILL.md" 2>/dev/null | grep -cF 'Pass no per-invocation `model` / `effort` to the Generator' || true)
 genm4_result="false"
-if [ "$genm4_opus" -ge 1 ] && [ "$genm4_olddesc" -eq 0 ]; then genm4_result="true"; fi
+if [ "$genm4_opus" -ge 1 ] && [ "$genm4_olddesc" -eq 0 ] && [ "$genm4_effort" -eq 0 ] && [ "$genm4_s13" -eq 1 ]; then genm4_result="true"; fi
 assert_true \
-  "CT-GEN-MODEL-4 (implementer opus pinned, size-routed description removed): '^model: opus' ($genm4_opus>=1) AND old size-routing description absent ($genm4_olddesc==0)" \
+  "CT-GEN-MODEL-4 (implementer opus pinned, size-routed description removed, no effort override): '^model: opus' ($genm4_opus>=1) AND old size-routing description absent ($genm4_olddesc==0) AND no frontmatter '^effort:' line ($genm4_effort==0) AND Step 13 passes no per-invocation model / effort ($genm4_s13==1)" \
   "$genm4_result"
 
 # CT-GEN-MODEL-5: /plan2doc Step 4 passes NO per-invocation `model` to the planner

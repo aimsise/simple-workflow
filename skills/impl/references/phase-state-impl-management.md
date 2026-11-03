@@ -29,6 +29,8 @@ phases:
     current_round: 1
     max_rounds: {resolved at runtime; integer literal at write time, e.g. 9}  # precedence: arg > policy > default 9; THEN + depth-tier bonus (+0/+3/+6 for standard/thorough/exhaustive from Step 3a) unless rounds=N supplied or verification_depth=off; soft cap 24 warning applies to the explicit arg only, not the derived value. See round-cap-parser.md + verification-depth.md
     verification_depth: {resolved in Step 3a; literal off|standard|thorough|exhaustive; advisory metadata — see verification-depth.md}
+    evaluator_model: {resolved in Step 3a; literal opus|sonnet; advisory metadata — the model every evaluator spawn of this run is given, see verification-depth.md}
+    evaluator_effort: {resolved in Step 3a; literal inherit|xhigh; advisory metadata — the evaluator effort (inherit = no per-spawn effort, the session effort applies), see verification-depth.md}
     phase_sub: generator-pending
     last_ac_status: null
     last_audit_status: null

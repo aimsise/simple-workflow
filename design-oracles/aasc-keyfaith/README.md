@@ -7,7 +7,7 @@ oracle — is language-agnostic, constructive, and false-positive-free. It is th
 keyed-structure (K-axis) sibling of `../aasc-accept-set/` (the MR-ALPHABET /
 class (c) proof). It is a **proof artifact, not normative plugin content** — the
 mechanism's prose lives in `skills/impl/references/accept-set-conformance-harness.md`
-(§ The worked MR-KEYFAITH (b) shape) and the `ac-evaluator` / `ac-evaluator-hi`
+(§ The worked MR-KEYFAITH (b) shape) and the `ac-evaluator`
 L-ROBUSTNESS lens. Nothing here is run by the test suites or by CI.
 
 ## What it proves

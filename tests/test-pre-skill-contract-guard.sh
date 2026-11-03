@@ -128,8 +128,9 @@ else
 fi
 
 # off -> disabled, silent allow.
-run_skill_guard off "simple-workflow:ship" "$TMP" "ac-evaluator-hi"
-assert_allow "(ac-evaluator-hi + simple-workflow:ship, off): disabled, allowed"
+# PR-5 re-point: the retired opus twin is no longer an agent; the off case now drives the bare denylisted ac-evaluator.
+run_skill_guard off "simple-workflow:ship" "$TMP" "ac-evaluator"
+assert_allow "(bare ac-evaluator + simple-workflow:ship, off): disabled, allowed"
 
 # empty agent_type (orchestrator) + pipeline skill, on -> allow (fail-open-on-empty).
 run_skill_guard on "simple-workflow:impl" "$TMP" ""

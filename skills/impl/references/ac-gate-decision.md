@@ -29,7 +29,10 @@ Print
 
 Invoke `simple-workflow:ac-evaluator` exactly once more via the Agent tool using the
 resumption prompt template below. This is a single-shot recovery —
-do NOT retry more than once, and do NOT use a loop.
+do NOT retry more than once, and do NOT use a loop. Pass the same
+per-invocation `model` / `effort` as the original spawn (the Step 3a
+`EVALUATOR_MODEL` / `EVALUATOR_EFFORT`, with the Step 15 fallback): the `effort`
+only when it resolves `xhigh`; at `inherit` pass none, so the session effort applies.
 
 ```
 # RECOVERY INVOCATION — substitute all {brace} placeholders before sending.

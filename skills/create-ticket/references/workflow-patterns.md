@@ -24,7 +24,7 @@
 | researcher | agent | Code research and analysis |
 | ticket-evaluator | agent | Ticket quality evaluation against the canonical Gates 1-10 (inherit, effort high; effort medium for Size S) |
 | implementer | agent | Code implementation (opus, always) |
-| ac-evaluator | agent | AC compliance verification (sonnet) |
+| ac-evaluator | agent | AC compliance verification (opus; session effort like the implementer, xhigh for critical/exhaustive; model set by `SW_EVALUATOR_MODEL`) |
 
 ---
 
