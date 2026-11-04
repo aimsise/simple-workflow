@@ -1,0 +1,44 @@
+# Paragraph drops: "<destination glob><TAB><anchor ERE>" (awk ERE, LC_ALL=C).
+# A hit on a list item drops that item (and its indented continuation); a hit
+# on a table row or on a line inside a fenced block drops that line only; any
+# other hit drops the whole paragraph (up to blank lines, headings, fences).
+# Every line must match at least once in its scope.
+
+# SKILL.md preamble: the argument variable and the load-time date probe
+SKILL.md	^Ticket description / findings path: \$ARGUMENTS$
+SKILL.md	^UTC time: !`
+# SKILL.md Mode dispatch / Error Handling: the plugin-developer decomposer
+# kill switch (an env var nobody sets on this host; reading it would cost a
+# shell permission prompt on every run)
+SKILL.md	^\*\*Step 0 capability guard \(every mode\)\*\*
+SKILL.md	^- [FBD]-0 reads `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER`
+SKILL.md	^If `=1`: print `ERROR: decomposer capability disabled
+SKILL.md	^\| `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1` \|
+# SKILL.md Phase 4: per-spawn effort and the hook-written verdict log
+SKILL.md	^\*\*Effort\*\*:
+SKILL.md	^\*\*Verdict log\*\*:
+
+# Spawn prompts: the plugin state-file freshness signal and the workflow chain
+references/agent-spawn-prompts.md	^1\. \*\*`phase-state\.yaml` provenance
+references/agent-spawn-prompts.md	^3\. Workflow recommendations based on category
+
+# Mode dispatch: brief_mode only gated the dropped policy propagation
+references/mode-dispatch-flows.md	^- `mode` → `\{brief_mode\}`
+references/mode-dispatch-flows.md	^The `\{brief_mode\}` value gates two downstream behaviors:
+
+# Write-path templates: phase-state schema pointer and pipeline recommendations
+references/write-path-templates.md	^- `skills/create-ticket/references/phase-state-schema\.md` for
+references/write-path-templates.md	^- Recommended workflow:
+references/write-path-templates.md	^Recommended workflow per ticket:
+
+# Brief template: the upstream title and intro (it cites the upstream brief
+# skill and its unshipped SKILL.md); overrides/brief-template-intro.md
+# inserts the replacement title and the contract this skill reads
+references/brief-template.md	^# brief\.md Body Template$
+references/brief-template.md	^This reference holds the Phase 3 `brief\.md` body schema
+
+# Researcher: the plugin's spawner taxonomy for the advisory field
+references/agents/researcher.md	^The researcher-side orchestrator
+references/agents/researcher.md	^- \*\*Explicit-Agent-tool spawners\*\*
+references/agents/researcher.md	^- \*\*Declarative spawner, standalone\*\*
+references/agents/researcher.md	^- \*\*`/scout`-mediated path\*\*

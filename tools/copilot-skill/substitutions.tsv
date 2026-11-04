@@ -1,0 +1,167 @@
+# Token substitutions: "<ERE><TAB><replacement>[<TAB><destination glob>]".
+# Applied with sed -E in file order to every shipped file in scope (default
+# scope: all). Replacement syntax is sed's: & is the whole match, \1..\9 are
+# groups, \& is a literal ampersand, \\ a literal backslash. Patterns are
+# POSIX ERE (no \b, \s, \w: sed -E on BSD lacks them). Every line must match
+# at least once in its scope. Specific sentence rewrites come first, then
+# paths, tool names, and the pipeline role phrases.
+
+# ---- SKILL.md: sentence rewrites -----------------------------------------
+\(`phase-state\.yaml` provenance, mtime	(mtime	SKILL.md
+ \(gating, v8\.0\.0\+ Phase 6 enforcement; mirrors `/impl` Step 14b\)		SKILL.md
+the Phase 6 audit trail	the advisory audit trail	SKILL.md
+The Phase 6 audit trail	The advisory audit trail	SKILL.md
+ to stderr	 as a trace line	SKILL.md
+Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors\. Do NOT hang\.	Non-interactive fallback: if `ask_user` is unavailable (asking is treated as deny in the GitHub.com cloud agent and in autopilot mode) or errors, skip Phase 2 and pass every assumption made in place of an answer to the planner, which lists them under a `### Assumptions` note in the ticket's Implementation Notes. Do NOT hang.	SKILL.md
+; workflow chain from \[references/workflow-patterns\.md\]\(references/workflow-patterns\.md\)		SKILL.md
+\(spawn prompt carries its resolved absolute path as `\{rubric_path\}` — `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-criteria\.md` with the variable expanded, the same rules file Phase 4 `Read`s first	(spawn prompt carries its path as `{rubric_path}` — this skill's `references/ac-quality-criteria.md` written repository-relative, e.g. `.github/skills/create-ticket/references/ac-quality-criteria.md`, or `~`-relative, never as an absolute home path; the same rules file Phase 4 `view`s first	SKILL.md
+\(both resolve as `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-criteria\.md` and `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-grading\.md` with the variable expanded, the directory of `\{rubric_path\}`; the plugin-relative paths do not exist in the user's repository\)	(both live in this skill's `references/` directory, the directory of `{rubric_path}`)	SKILL.md
+Exhausted retries consult `autopilot-policy\.yaml` `gates\.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `\[AUTOPILOT-POLICY\] gate=ticket_quality_fail action=<retry_with_feedback\|stop> round=\{n\}`\. `brief_mode == manual` skips brief-parent fallback\. Non-interactive: stop\.	Exhausted retries → present the unresolved issues via `ask_user` (proceed or stop); non-interactive (no `ask_user`, or asking treated as deny): stop.	SKILL.md
+W-6/W-7/W-10 in	W-7/W-10 in	SKILL.md
+\(4\) `\{ticket_dir_path_i\}/phase-state\.yaml` \(W-6\); \(5\) (`[^`]*split-plan\.md` \(W-7\) — unconditional \(N≥1\)); \(6\) policy propagation \(W-8\)\.	(4) \1.	SKILL.md
+, so no autopilot-context scan sees it\.	, so no later scan of the backlog sees it.	SKILL.md
+ No `rm` form is used: the safety hook denies recursive-force removal and this skill holds no `rm` grant \(`mv` is granted in `allowed-tools`\)\.	 No `rm` form is used: a quarantine stays recoverable and a recursive delete does not.	SKILL.md
+ \(from `/autopilot` split briefs\)	 (from split briefs)	SKILL.md
+, workflow `/scout → /impl → /ship`		SKILL.md
+\| `slug`, `chain` \(canonical.*\(≡ `chain=on`\)\. \|	| `slug`, `interview_complete` |	SKILL.md
+# Step 0 (the dropped capability guard) no longer exists: steps start at 1.
+\*\*([FBD])-0\.\.([FBD]-[0-9]+)\*\*	**\1-1..\2**	SKILL.md
+# Point brief mode at the shipped brief format.
+`brief=<path>` → Brief \(\*\*B-1\.\.B-8\*\*\)	`brief=<path>` → Brief (**B-1..B-8**; brief format: [references/brief-template.md](references/brief-template.md))	SKILL.md
+the rubric at its resolved absolute path	the rubric at its `{rubric_path}`	SKILL.md
+ a sibling of `backlog/` and `metrics/`	 a sibling of `backlog/`	SKILL.md
+# Backticked imperative phrases: keep the code span unbroken.
+via the Agent tool`	as a task subagent`	SKILL.md
+
+# ---- several files: plugin-internal wording --------------------------------
+Implementation Notes \+ category/size/workflow	Implementation Notes + category/size
+the rubric's absolute path	the rubric's path
+
+# ---- agent-spawn-prompts.md ------------------------------------------------
+the retry-with-feedback loop, the autopilot-policy gate lookup,	the retry-with-feedback loop, the exhausted-retry escalation,	references/agent-spawn-prompts.md
+can stay within the BP (token|body) budget	can stay short
+^2\. \*\*mtime freshness threshold\*\* — when `phase-state\.yaml` has no `phases\.scout\.artifacts\.investigation` entry, the file's	1. **mtime freshness threshold** — the file's	references/agent-spawn-prompts.md
+^3\. \*\*Content-hash signature\*\*	2. **Content-hash signature**	references/agent-spawn-prompts.md
+ with no matching `phase-state\.yaml` provenance, an mtime	 with an mtime	references/agent-spawn-prompts.md
+ This rule mirrors `skills/brief/SKILL\.md` Phase 2 .*on either side\.		references/agent-spawn-prompts.md
+\*\*Non-interactive fallback\*\*: If `AskUserQuestion` is unavailable / errors \(typical in `claude -p` / CI where stdin is not a TTY\), skip Phase 2 and proceed to Phase 3 with researcher findings only\. Note "Phase 2 skipped \(non-interactive mode\)" in the final summary\.	**Non-interactive fallback**: If `ask_user` is unavailable / errors (asking is treated as deny in the GitHub.com cloud agent and in autopilot mode), skip Phase 2 and proceed to Phase 3 with researcher findings only; pass every assumption made in place of an answer to the planner, which lists them under a `### Assumptions` note in the ticket's Implementation Notes, and note "Phase 2 skipped (non-interactive mode)" in the final summary.	references/agent-spawn-prompts.md
+\*\*MCP inheritance under v8\.0\.0\.\*\* The productive subagents .* regardless of server name\.	**MCP inheritance.** Every role runs as a general-purpose `task` subagent and therefore carries the session's full tool inventory, including every configured MCP server, regardless of server name.	references/agent-spawn-prompts.md
+ The verdict / read-only agents \(`ac-evaluator`, `code-reviewer`, `decomposer`, `security-scanner`, `ticket-evaluator`, `tune-analyzer`\) retain explicit `tools:` allowlists and do NOT inherit MCP\.		references/agent-spawn-prompts.md
+at `skills/create-ticket/references/ac-quality-criteria\.md` \(absolute path: `\{rubric_path\}`\)	at `references/ac-quality-criteria.md` (path: `{rubric_path}`)	references/agent-spawn-prompts.md
+Substitute `\{rubric_path\}` with the absolute path of the rubric's rules file	Substitute `{rubric_path}` with the repository-relative (or `~`-relative) path of this skill's rubric rules file	references/agent-spawn-prompts.md
+; the plugin-relative path does not exist in the user's repository\.	; never expand it to an absolute home path.	references/agent-spawn-prompts.md
+ The legacy planner-side partition mechanisms .* decomposer-led partition path\.		references/agent-spawn-prompts.md
+Both resolve under the plugin root, as .* the plugin-relative paths do not exist in the user's repository\.	Both live in this skill's `references/` directory (the directory of `{rubric_path}`).	references/agent-spawn-prompts.md
+ Pass no per-spawn `effort` at any Size \(SKILL\.md Phase 4 \*\*Effort\*\*\): the evaluator, whose agent file carries no `effort:` key, grades at the session effort the planner drafted at\.		references/agent-spawn-prompts.md
+ and, as in step 2, pass no per-spawn `effort`		references/agent-spawn-prompts.md
+run the autopilot-policy escalation below	run the exhausted-retry escalation below	references/agent-spawn-prompts.md
+Under v8\.0\.0 the planner's frontmatter omits the `tools:` field, so the agent inherits the parent session's full `Bash\(\*\)` and MCP inventory;	The planner runs as a general-purpose `task` subagent that carries the session's full shell and MCP inventory;	references/agent-spawn-prompts.md
+(he evaluator) has no Bash and grades	\1 runs no shell commands and grades
+the absolute path step b passes	the `{rubric_path}` step b passes	references/agent-spawn-prompts.md
+just `Read` from	just read with `view` from	references/agent-spawn-prompts.md
+re-`Read` for this spawn	re-read with `view` for this spawn	references/agent-spawn-prompts.md
+the orchestrator and the Phase 4 evaluator read it from disk	the orchestrator reads it from disk and inlines it into every Phase 4 evaluator spawn	references/agent-spawn-prompts.md
+
+# ---- mode-dispatch-flows.md ------------------------------------------------
+ SKILL\.md still retains the pinned step headings .* anchor static test contracts\.		references/mode-dispatch-flows.md
+\(max 2 rounds, gate check on `gates\.ticket_quality_fail` when `brief=` is present\)	(max 2 rounds, then the exhausted-retry escalation)	references/mode-dispatch-flows.md
+\(max 2 rounds, `autopilot-policy\.yaml` `gates\.ticket_quality_fail` consulted when `brief_mode == auto`, non-interactive fallback to stop\)	(max 2 rounds, then the exhausted-retry escalation, non-interactive fallback to stop)	references/mode-dispatch-flows.md
+ The Common Write Path's autopilot-policy propagation in Step W-8 honors `brief_mode == auto` exactly as before\.		references/mode-dispatch-flows.md
+ Bare description mode does NOT have an `autopilot-policy\.yaml` brief-parent fallback \(no brief is present\)\.		references/mode-dispatch-flows.md
+ verbatim and no per-spawn effort, per SKILL\.md Phase 4\.	 verbatim, per SKILL.md Phase 4.	references/mode-dispatch-flows.md
+Implementation Notes / Claude Code Workflow\)	Implementation Notes)	references/mode-dispatch-flows.md
+ The capability guard `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1` is honored uniformly: .*invokes no agent\.		references/mode-dispatch-flows.md
+unified Step-0\.\.Step-7 outline	unified Step-1..Step-8 outline	references/mode-dispatch-flows.md
+^Read the brief's YAML frontmatter\. Extract:$	Read the brief's YAML frontmatter (format: `references/brief-template.md`). Extract:	references/mode-dispatch-flows.md
+^(## .* Mode) \(([FBD])-0 … 	\1 (\2-1 … 	references/mode-dispatch-flows.md
+
+# ---- write-path-templates.md -----------------------------------------------
+Canonical templates referenced by `skills/create-ticket/SKILL\.md` Step W-6 \(`phase-state\.yaml` per-ticket pending template\), Step W-7	Canonical templates referenced by `SKILL.md` Step W-7	references/write-path-templates.md
+ \(`counter \+ N`, `\.ticket-counter`, `\[POLICY-PROPAGATION\] skipped: brief mode=manual`, atomicity rules\)	 (`counter + N`, `.ticket-counter`, atomicity rules)	references/write-path-templates.md
+The schema authorities are:	The schema authority is:	references/write-path-templates.md
+These two files MUST agree	The schema file MUST agree	references/write-path-templates.md
+\(`split-plan\.md` per-parent index\), and Step W-10	(`split-plan.md` per-parent index) and Step W-10	references/write-path-templates.md
+validation rules and first-unblocked tiebreak;	validation rules;	references/write-path-templates.md
+
+# ---- split-plan-schema.md / findings-schema.md / spec-decomposer-input.md --
+Producer: `skills/create-ticket/SKILL\.md` Step W-7 \(writer\) and Step W-11 \(first-unblocked rule\)\. Consumer: `skills/autopilot/references/split-plan-parsing\.md` \(parser, topological sort, wave layering\)\.	Producer: `SKILL.md` Step W-7 (writer). Consumer: any downstream step that processes the ticket set in dependency order.	references/split-plan-schema.md
+The `/autopilot` parser requires only	A downstream parser requires only	references/split-plan-schema.md
+the validation rules, and the first-unblocked tiebreak\.	and the validation rules.	references/split-plan-schema.md
+ and in `/autopilot`'s `ticket_mapping`		references/split-plan-schema.md
+Informational for `/autopilot`\.	Informational for downstream consumers.	references/split-plan-schema.md
+ The difference is the SW-CHECKPOINT recommendation shape \(Step W-11\): .*for N > 1\.		references/findings-schema.md
+a human-authored or `/investigate`-authored findings document	a human-authored or investigation-authored findings document	references/spec-decomposer-input.md
+
+# ---- interview-templates.md ------------------------------------------------
+^# Interview Templates for /brief$	# Interview Templates	references/interview-templates.md
+# Drop a quoted example phrase written in non-ASCII (non-English) text.
+ / "breaking [^ -~"]+"		references/interview-templates.md
+
+# ---- agent bodies ----------------------------------------------------------
+Use Grep/Glob to find relevant code, then Read to understand it	Use `grep` / `glob` to find relevant code, then `view` to understand it	references/agents/researcher.md
+ Omitting this field is a contract violation; the orchestrator that spawned you reads the field by regex .*\]$	 Omitting this field is a contract violation: the create-ticket orchestrator reads the field by regex on `^\\*\\*Advisory consultation\\*\\*:` and fails the round when it is absent.]	references/agents/researcher.md
+approaching your `maxTurns` ceiling	approaching your turn budget	references/agents/researcher.md
+in-house Read / Grep / Glob	in-house `view` / `grep` / `glob`	references/agents/researcher.md
+in-house Grep produced	in-house grep produced	references/agents/researcher.md
+even under v8\.0\.0 inherit-all, where every parent-session MCP server is in your tool inventory,	even though, as a general-purpose subagent, you carry every MCP server of the session in your tool inventory,	references/agents/*
+ \(v8\.0\.0\+, Gate 6\.5	 (Gate 6.5	references/agents/researcher.md
+ \(v8\.0\.0\+ — Recommending	 (Recommending	references/agents/researcher.md
+The reason: dogfood \(TW33-TW35\) showed that	The reason: experience showed that	references/agents/researcher.md
+ regardless of which spawner is in play\.	.	references/agents/researcher.md
+Do NOT write files\. Do NOT invoke Write/Edit\.	Do NOT write files. Do NOT invoke `create` / `edit`.	references/agents/decomposer.md
+NEVER write files\. Your tools are read-only\.	NEVER write files. Treat your tools as read-only: a general-purpose subagent carries every tool, so this rule is instruction-enforced.	references/agents/decomposer.md
+Follow the instructions provided by the caller \(plan2doc skill\)\.	Follow the instructions provided by the caller (the create-ticket skill).	references/agents/planner.md
+^\*\*Note on subagent permission model.*$	**Note on subagent permission model (retry-spawn FS-search suppression).** You run as a general-purpose `task` subagent that carries the session's full tool inventory, including the shell and every configured MCP server. The retry-spawn FS-search ban below is a **prompt-level hard contract enforced solely by this paragraph and the spawn prompt** — it is NOT enforced by any permission system. The canonical definition of this suppression and its rationale lives in `SKILL.md` Phase 4 (the retry planner FS-search ban contract). See also `## Side-effect ban` below.	references/agents/planner.md
+`Read` it at the absolute path your spawn prompt gives for it; otherwise resolve the path relative to the PLUGIN root, `\$\{CLAUDE_PLUGIN_ROOT\}` \(the file ships with the plugin and does not exist in the user's repository\)\.	`view` it at the path your spawn prompt gives for it (the file ships inside the create-ticket skill directory, e.g. `.github/skills/create-ticket/references/ac-quality-criteria.md`, not at the repository root).	references/agents/planner.md
+On the `/create-ticket` path the Phase 4 `ticket-evaluator`, which always receives the full rubric, then adjudicates; `/plan2doc` and `/refactor` spawn no ticket-evaluator, so on those paths also report the unresolved path under `Blockers:` in your return envelope\.	The Phase 4 `ticket-evaluator`, which always receives the full rubric, then adjudicates.	references/agents/planner.md
+laid out as in the plugin's 	laid out as in this skill's 	references/agents/planner.md
+Read the orchestrator's `Available capabilities` probe \(skills \+ MCP servers — .*surface\)\.	Read the orchestrator's `Available capabilities` probe (skills + MCP servers — the byte-identical `Available user skills:` / `Available MCP servers:` lines the create-ticket orchestrator computes in its `## Pre-computed Context` and inlines into your spawn prompt).	references/agents/planner.md
+Do not try to re-run the probes: you have no Bash\.	Do not try to re-run the probes: you run no shell commands.	references/agents/ticket-evaluator.md
+Use Write only to save your evaluation report\.	Use `create` only to save your evaluation report.	references/agents/ticket-evaluator.md
+
+# ---- rubric and grading (ZERO-LOSS: renaming only) ------------------------
+rubric text elsewhere in the plugin	rubric text elsewhere in this skill	references/ac-quality-criteria.md
+read from `\{ticket-dir\}/autopilot-policy\.yaml`;	read from an optional `ticket-policy.yaml` next to the ticket (`{ticket-dir}/ticket-policy.yaml`; an absent file means every gate applies in full);	references/ac-quality-criteria.md
+\(Step W-8 propagates it later\)	(this skill never writes it; a user may add one)	references/ac-quality-criteria.md
+\[`\.\./\.\./impl/references/([a-z-]+\.md)`\]\(\.\./\.\./impl/references/[a-z-]+\.md\)	the downstream implementation step's `\1`	references/ac-quality-criteria.md
+`agents/ac-evaluator\.md`	the downstream AC evaluator's instructions	references/ac-quality-criteria.md
+`skills/impl/references/([a-z-]+\.md)`	the downstream implementation step's `\1`	references/ac-quality-grading.md
+the impl-side `ac-evaluator`	the downstream AC evaluator's	references/ac-quality-grading.md
+The evaluator is hermetic \(Read / Write / Grep / Glob, no Bash\)	The evaluator is hermetic (by instruction: it reads only its spawn prompt, writes only its report, runs no shell commands)	references/ac-quality-grading.md
+
+# ---- all files: template anchor, policy file name --------------------------
+between `### Implementation Notes` and `### Claude Code Workflow`	after `### Implementation Notes`
+autopilot-policy\.yaml	ticket-policy.yaml
+
+# ---- all files: plugin namespace and paths ---------------------------------
+simple-workflow:
+(^|[^/A-Za-z0-9_.-])skills/create-ticket/references/	\1references/
+(^|[^/A-Za-z0-9_.-])skills/create-ticket/SKILL\.md	\1SKILL.md
+(^|[^/A-Za-z0-9_.-])skills/brief/references/interview-templates\.md	\1references/interview-templates.md
+(^|[^/A-Za-z0-9_.-])agents/(researcher|decomposer|planner|ticket-evaluator)\.md	\1references/agents/\2.md
+
+# ---- all files: tool names -------------------------------------------------
+AskUserQuestion	ask_user
+Agent tool	`task` tool
+`Read`	`view`
+`Write`	`create`
+`Edit`	`edit`
+`Grep`	`grep`
+`Glob`	`glob`
+`Bash\(([a-z0-9]+):\*\)`	`bash` running `\1`
+`?\$ARGUMENTS`?	the user's request text
+
+# ---- all files: AC evaluator role ------------------------------------------
+[Tt]he `ac-evaluator`	the downstream AC evaluator
+`ac-evaluator`	the downstream AC evaluator
+
+# ---- all files: pipeline skills as stable role phrases ---------------------
+# One role phrase per pipeline skill, used consistently. Only forms that occur
+# in the shipped text are listed; the denylist catches any new occurrence.
+`/impl`	the downstream implementation step
+`/scout`	the downstream investigation step
+`/plan2doc`	the downstream planning step
+`/refactor`	the downstream refactoring step
+`/autopilot`	the downstream batch runner
+([Tt]he) `/brief`	\1 upstream brief interview
+`/investigate`	the standalone investigation step

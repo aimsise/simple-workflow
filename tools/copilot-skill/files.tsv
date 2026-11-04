@@ -1,0 +1,18 @@
+# Shipped file map: <destination under create-ticket/><TAB><source relative to --src>.
+# Destinations under references/agents/ have their frontmatter stripped (the body is the task prompt).
+SKILL.md	skills/create-ticket/SKILL.md
+references/ac-quality-criteria.md	skills/create-ticket/references/ac-quality-criteria.md
+references/ac-quality-grading.md	skills/create-ticket/references/ac-quality-grading.md
+references/agent-spawn-prompts.md	skills/create-ticket/references/agent-spawn-prompts.md
+references/mode-dispatch-flows.md	skills/create-ticket/references/mode-dispatch-flows.md
+references/spec-decomposer-input.md	skills/create-ticket/references/spec-decomposer-input.md
+references/split-plan-schema.md	skills/create-ticket/references/split-plan-schema.md
+references/findings-schema.md	skills/create-ticket/references/findings-schema.md
+references/ticket-template.md	skills/create-ticket/references/ticket-template.md
+references/write-path-templates.md	skills/create-ticket/references/write-path-templates.md
+references/interview-templates.md	skills/brief/references/interview-templates.md
+references/agents/researcher.md	agents/researcher.md
+references/agents/decomposer.md	agents/decomposer.md
+references/agents/planner.md	agents/planner.md
+references/agents/ticket-evaluator.md	agents/ticket-evaluator.md
+references/brief-template.md	skills/brief/references/brief-body-template.md
