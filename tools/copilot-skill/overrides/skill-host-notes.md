@@ -4,8 +4,10 @@ mode: append
 ---
 ## Host notes
 
-This skill runs with no hooks installed, so three guarantees rest on these instructions alone:
+This skill runs with no hooks installed, so these guarantees rest on these instructions alone:
 
-- **PII**: never write an absolute home path (a path that begins with the user's home directory) into any generated file, spawn prompt or summary. Pass the rubric by its relative path `references/ac-quality-criteria.md` (written repository-relative, e.g. `.github/skills/create-ticket/references/ac-quality-criteria.md`, or `~`-relative for a personal skill), never expanded.
-- **Shell commands**: this skill declares no `allowed-tools`, so every shell command (`date`, `ls`, `mkdir`, `mv`) goes through the host's own permission prompt. Approve only the commands the steps above name.
+- **Tool names**: the tool names used here (`bash`, `view`, `create`, `edit`, `grep`, `glob`, `task`, `ask_user`) are those GitHub Copilot CLI lists; on another Copilot surface with equivalent read / write / shell / subagent / ask-user tools, map each name to that surface's tool.
+- **PII and secrets**: never write an absolute home path (a path that begins with the user's home directory) into any generated file, spawn prompt, ticket or summary. The one exception is `{scratch}` (Argument Parsing): a temporary directory under the system temporary directory, which may appear as an absolute path inside spawn prompts and in the Final summary's "saved at" lines, and is never written into a ticket or sent to a destination. Pass the rubric as `{rubric_path}` (Pre-computed Context: `{skill_root}` as found, repository-relative or `~`-prefixed), never expanded. The same holds for secrets: the value of the variable an `api:` destination's `auth_env=` names, and any other token, never appears in a prompt, ticket, summary, error line or file; a `bash` command refers to it only as `$VAR` (see `references/destinations.md`).
+- **Shell commands**: this skill declares no `allowed-tools`, so every shell command (`date`, `mktemp`, `ls`, `mkdir`, `mv`, `git`, `curl`, `jq`) goes through the host's own permission prompt. Approve only the commands the steps above name.
+- **Remote creates are not transactional**: an `mcp:` or `api:` destination cannot roll back, so a failure part-way leaves the items already created in place; the run prints their identifiers and stops (Step DL-4).
 - **Evaluator independence**: the ticket-evaluator is hermetic by instruction only. A general-purpose `task` subagent carries every tool; its prompt (`references/agents/ticket-evaluator.md`) forbids reading any file other than the ticket inlined in that prompt, and the orchestrator inlines both the ticket and the rubric so the evaluator never needs to.

@@ -49,3 +49,19 @@ autopilot-foldin
 # Personal information
 /Users/
 /home/
+# Decoupling: the generated skill must not depend on the plugin, its
+# backlog layout, its per-ticket directories or its investigation reuse path
+# (a local: destination keeps its own .ticket-counter, which stays allowed)
+simple-workflow
+\.simple-workflow
+product_backlog
+\{ticket-dir\}
+investigation_sha256
+Common Write Path
+Step W-[0-9]
+ticket-policy
+NOT EVALUATED
+mcp\.json
+Phase 1\.5
+ADVISORY-CONSULT
+\*\*P\?\*\*

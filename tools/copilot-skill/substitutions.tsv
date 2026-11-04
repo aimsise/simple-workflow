@@ -7,29 +7,35 @@
 # paths, tool names, and the pipeline role phrases.
 
 # ---- SKILL.md: sentence rewrites -----------------------------------------
-\(`phase-state\.yaml` provenance, mtime	(mtime	SKILL.md
- \(gating, v8\.0\.0\+ Phase 6 enforcement; mirrors `/impl` Step 14b\)		SKILL.md
-the Phase 6 audit trail	the advisory audit trail	SKILL.md
-The Phase 6 audit trail	The advisory audit trail	SKILL.md
- to stderr	 as a trace line	SKILL.md
-Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors\. Do NOT hang\.	Non-interactive fallback: if `ask_user` is unavailable (asking is treated as deny in the GitHub.com cloud agent and in autopilot mode) or errors, skip Phase 2 and pass every assumption made in place of an answer to the planner, which lists them under a `### Assumptions` note in the ticket's Implementation Notes. Do NOT hang.	SKILL.md
+# Phase 1: no investigation reuse; every transient file lives in {scratch}.
+^Modes: findings — satisfied by findings doc\. Brief — reuse .*$	Modes: findings — satisfied by findings doc. Brief and bare — always invoked. Pass `{scratch}/investigation.md` (the run scratch directory created in Argument Parsing) to the researcher as its output path and a distinct file under `{scratch}` to each planner spawn as its output path. Every transient file of the run lives under `{scratch}`; nothing is written to the destination before Delivery.	SKILL.md
+; ticket file under `\.simple-workflow/backlog/` within 10 s on closed stdin\)	; the run reaches Delivery without waiting on a closed stdin)	SKILL.md
+Findings mirrors upstream brief's `interview_complete`\.	Findings with frontmatter `interview_complete: true` skips Phase 2 too.	SKILL.md
+Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors\. Do NOT hang\.	Non-interactive fallback: if `ask_user` is unavailable (asking is treated as deny in the GitHub.com cloud agent and in non-interactive mode) or errors, skip Phase 2 and pass every assumption made in place of an answer to the planner, which lists them under a `### Assumptions` note in the ticket's Implementation Notes. Do NOT hang.	SKILL.md
 ; workflow chain from \[references/workflow-patterns\.md\]\(references/workflow-patterns\.md\)		SKILL.md
-\(spawn prompt carries its resolved absolute path as `\{rubric_path\}` — `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-criteria\.md` with the variable expanded, the same rules file Phase 4 `Read`s first	(spawn prompt carries its path as `{rubric_path}` — this skill's `references/ac-quality-criteria.md` written repository-relative, e.g. `.github/skills/create-ticket/references/ac-quality-criteria.md`, or `~`-relative, never as an absolute home path; the same rules file Phase 4 `view`s first	SKILL.md
-\(both resolve as `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-criteria\.md` and `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-grading\.md` with the variable expanded, the directory of `\{rubric_path\}`; the plugin-relative paths do not exist in the user's repository\)	(both live in this skill's `references/` directory, the directory of `{rubric_path}`)	SKILL.md
-Exhausted retries consult `autopilot-policy\.yaml` `gates\.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `\[AUTOPILOT-POLICY\] gate=ticket_quality_fail action=<retry_with_feedback\|stop> round=\{n\}`\. `brief_mode == manual` skips brief-parent fallback\. Non-interactive: stop\.	Exhausted retries → present the unresolved issues via `ask_user` (proceed or stop); non-interactive (no `ask_user`, or asking treated as deny): stop.	SKILL.md
-W-6/W-7/W-10 in	W-7/W-10 in	SKILL.md
-\(4\) `\{ticket_dir_path_i\}/phase-state\.yaml` \(W-6\); \(5\) (`[^`]*split-plan\.md` \(W-7\) — unconditional \(N≥1\)); \(6\) policy propagation \(W-8\)\.	(4) \1.	SKILL.md
-, so no autopilot-context scan sees it\.	, so no later scan of the backlog sees it.	SKILL.md
- No `rm` form is used: the safety hook denies recursive-force removal and this skill holds no `rm` grant \(`mv` is granted in `allowed-tools`\)\.	 No `rm` form is used: a quarantine stays recoverable and a recursive delete does not.	SKILL.md
- \(from `/autopilot` split briefs\)	 (from split briefs)	SKILL.md
-, workflow `/scout → /impl → /ship`		SKILL.md
+\(spawn prompt carries its resolved absolute path as `\{rubric_path\}` — `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-criteria\.md` with the variable expanded, the same rules file Phase 4 `Read`s first	(spawn prompt carries its path as `{rubric_path}` = `{skill_root}/references/ac-quality-criteria.md` from Pre-computed Context, never expanded to an absolute path; the same rules file Phase 4 `view`s first	SKILL.md
+\(both resolve as `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-criteria\.md` and `\$\{CLAUDE_PLUGIN_ROOT\}/skills/create-ticket/references/ac-quality-grading\.md` with the variable expanded, the directory of `\{rubric_path\}`; the plugin-relative paths do not exist in the user's repository\)	(both live in `{skill_root}/references/`, the directory of `{rubric_path}`)	SKILL.md
+`Fail this ticket` if evaluator cannot be invoked	`Fail the task` if evaluator cannot be invoked (nothing is delivered). Every evaluator spawn, initial and retry, gets `{scratch}/eval-{logical-id}-r{n}.md` as its report path (`n` = 1 for the initial round, 2 for the retry)	SKILL.md
+Exhausted retries consult `autopilot-policy\.yaml` `gates\.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `\[AUTOPILOT-POLICY\] gate=ticket_quality_fail action=<retry_with_feedback\|stop> round=\{n\}`\. `brief_mode == manual` skips brief-parent fallback\. Non-interactive: stop\.	Exhausted retries → present the unresolved issues via `ask_user` (proceed, with the ticket's Quality set to `FAIL (user-accepted)`, or stop); non-interactive (no `ask_user`, or asking treated as deny): stop.	SKILL.md
+\(no directories, no counter change\)	(nothing delivered)	SKILL.md
 \| `slug`, `chain` \(canonical.*\(≡ `chain=on`\)\. \|	| `slug`, `interview_complete` |	SKILL.md
+skip on upstream `interview_complete: true`	skip on findings `interview_complete: true`	SKILL.md
+category \(Security / CodeQuality / Doc / DevOps / Community\); size \(S/M/L/XL\)	category (Feature / Bug / Security / CodeQuality / Doc / DevOps / Community); size (S/M/L/XL); priority (`P1` / `P2` / `P3`, on the property scale in `references/agent-spawn-prompts.md` Phase 3)	SKILL.md
+`## Context` = brief\.md `## Vision` \+ `## Business Context` verbatim	`## Context` = brief.md `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints`, verbatim	SKILL.md
+^Same failures as D-4 — atomic\.$	Same result handling as D-4 (failures, `Status: partial`, and forwarding each ticket's `peer_set` / `shared_conventions` hints and `shared_input_boundary` membership into its planner and ticket-evaluator spawns) — atomic.	SKILL.md
+# Mode dispatch: every mode converges on Delivery; no researcher reuse path.
+All converge on Common Write Path\.	All converge on Delivery.	SKILL.md
+\| researcher \(reuse path\) \| researcher \(no reuse\) \|	| researcher | researcher |	SKILL.md
+\(re-used in W-3\)	(re-used in DL-1)	SKILL.md
+ → CWP	 → Delivery	SKILL.md
+ \(reused when fresh\)		SKILL.md
+# Decomposer overflow: Status partial continues with a warning.
+Failures: `Status: failed` →	Partial: `Status: partial` (more than 8 work units) → continue with the returned tickets and print `WARNING: decomposer dropped <n> work units beyond the 8-ticket cap: <titles>` (the Final summary repeats it). Failures: `Status: failed` →	SKILL.md
 # Step 0 (the dropped capability guard) no longer exists: steps start at 1.
 \*\*([FBD])-0\.\.([FBD]-[0-9]+)\*\*	**\1-1..\2**	SKILL.md
 # Point brief mode at the shipped brief format.
 `brief=<path>` → Brief \(\*\*B-1\.\.B-8\*\*\)	`brief=<path>` → Brief (**B-1..B-8**; brief format: [references/brief-template.md](references/brief-template.md))	SKILL.md
 the rubric at its resolved absolute path	the rubric at its `{rubric_path}`	SKILL.md
- a sibling of `backlog/` and `metrics/`	 a sibling of `backlog/`	SKILL.md
 # Backticked imperative phrases: keep the code span unbroken.
 via the Agent tool`	as a task subagent`	SKILL.md
 
@@ -40,18 +46,33 @@ the rubric's absolute path	the rubric's path
 # ---- agent-spawn-prompts.md ------------------------------------------------
 the retry-with-feedback loop, the autopilot-policy gate lookup,	the retry-with-feedback loop, the exhausted-retry escalation,	references/agent-spawn-prompts.md
 can stay within the BP (token|body) budget	can stay short
-^2\. \*\*mtime freshness threshold\*\* — when `phase-state\.yaml` has no `phases\.scout\.artifacts\.investigation` entry, the file's	1. **mtime freshness threshold** — the file's	references/agent-spawn-prompts.md
-^3\. \*\*Content-hash signature\*\*	2. **Content-hash signature**	references/agent-spawn-prompts.md
- with no matching `phase-state\.yaml` provenance, an mtime	 with an mtime	references/agent-spawn-prompts.md
+^Additional context for the planner:$	Additional context for the planner (the spawn prompt also names its output path: a distinct file under `{scratch}`, e.g. `{scratch}/draft-{parent-slug}-part-{M}.md` with a fresh name for every retry spawn, so a draft never lands outside the run scratch directory):	references/agent-spawn-prompts.md
+^2\. Category \(Security / CodeQuality / Doc / DevOps / Community\) and size \(S/M/L/XL\)\.$	2. Category (Feature / Bug / Security / CodeQuality / Doc / DevOps / Community), size (S/M/L/XL) and priority on an illustrative property scale: `P1` = blocks other work, or is a user-facing defect in shipped behaviour; `P2` = planned work that another ticket depends on; `P3` = everything else. The `Priority` cell always carries exactly one of `P1`, `P2`, `P3`.	references/agent-spawn-prompts.md
+If the available capabilities probe returned `\(none\)` and an AC is runtime/visual, list the gap under `#### Capability Gaps` and rewrite the AC to be static-verifiable\.	If both the `Available user skills:` and `Available MCP servers:` probes report `(none)`, every runtime/visual AC MUST be rewritten as static OR listed under `#### Capability Gaps`.	references/agent-spawn-prompts.md
+^2\. Spawn the \*\*(simple-workflow:)?ticket-evaluator\*\* with the ticket content\.	2. Spawn the **ticket-evaluator** with the ticket content, its report path `{scratch}/eval-{logical-id}-r1.md`, and this ticket's decomposer hints (`peer_set` / `shared_conventions`, and its `shared_input_boundary` membership).	references/agent-spawn-prompts.md
+ The researcher is only invoked again if the decomposer's Rationale flags missing context\.		references/agent-spawn-prompts.md
+^For fresh bare and brief runs \(no reuse\), .*$	In **bare and brief mode** the researcher always runs. The orchestrator passes it `{scratch}/investigation.md` as its output path, inside the run scratch directory that SKILL.md Argument Parsing creates with `mktemp -d`. Nothing is written to the destination before Delivery, which starts only after every ticket has a verdict; the orchestrator reads the scratch file when constructing the `scope_context` decomposer prompt in Step B-5 / D-4.	references/agent-spawn-prompts.md
+a ticket file is expected to appear under `\.simple-workflow/backlog/` within 10 seconds even with closed stdin	the run is expected to reach Delivery without waiting on stdin, even when stdin is closed	references/agent-spawn-prompts.md
+\*\*Findings mode\*\*: SKIP Phase 2 if the upstream brief \(if any\) had `interview_complete: true`\.	**Findings mode**: SKIP Phase 2 if the findings frontmatter carries `interview_complete: true`.	references/agent-spawn-prompts.md
+Findings mode follows the upstream brief's `interview_complete` value	Findings mode follows the findings frontmatter's `interview_complete` value	references/agent-spawn-prompts.md
+seven interview categories	six interview categories	references/agent-spawn-prompts.md
+across all seven categories	across all six categories	references/agent-spawn-prompts.md
+ before a ticket file appears under `\.simple-workflow/backlog/`\.	 before Delivery.	references/agent-spawn-prompts.md
+proceed to Common Write Path\.	proceed to Delivery.	references/agent-spawn-prompts.md
+look for ticket directories, `\.simple-workflow/backlog/\.\.\.`, or any	look for ticket directories, the destination (its directory, MCP server or API), or any	references/agent-spawn-prompts.md
  This rule mirrors `skills/brief/SKILL\.md` Phase 2 .*on either side\.		references/agent-spawn-prompts.md
-\*\*Non-interactive fallback\*\*: If `AskUserQuestion` is unavailable / errors \(typical in `claude -p` / CI where stdin is not a TTY\), skip Phase 2 and proceed to Phase 3 with researcher findings only\. Note "Phase 2 skipped \(non-interactive mode\)" in the final summary\.	**Non-interactive fallback**: If `ask_user` is unavailable / errors (asking is treated as deny in the GitHub.com cloud agent and in autopilot mode), skip Phase 2 and proceed to Phase 3 with researcher findings only; pass every assumption made in place of an answer to the planner, which lists them under a `### Assumptions` note in the ticket's Implementation Notes, and note "Phase 2 skipped (non-interactive mode)" in the final summary.	references/agent-spawn-prompts.md
+\*\*Non-interactive fallback\*\*: If `AskUserQuestion` is unavailable / errors \(typical in `claude -p` / CI where stdin is not a TTY\), skip Phase 2 and proceed to Phase 3 with researcher findings only\. Note "Phase 2 skipped \(non-interactive mode\)" in the final summary\.	**Non-interactive fallback**: If `ask_user` is unavailable / errors (asking is treated as deny in the GitHub.com cloud agent and in non-interactive mode), skip Phase 2 and proceed to Phase 3 with researcher findings only; pass every assumption made in place of an answer to the planner, which lists them under a `### Assumptions` note in the ticket's Implementation Notes, and note "Phase 2 skipped (non-interactive mode)" in the final summary.	references/agent-spawn-prompts.md
 \*\*MCP inheritance under v8\.0\.0\.\*\* The productive subagents .* regardless of server name\.	**MCP inheritance.** Every role runs as a general-purpose `task` subagent and therefore carries the session's full tool inventory, including every configured MCP server, regardless of server name.	references/agent-spawn-prompts.md
  The verdict / read-only agents \(`ac-evaluator`, `code-reviewer`, `decomposer`, `security-scanner`, `ticket-evaluator`, `tune-analyzer`\) retain explicit `tools:` allowlists and do NOT inherit MCP\.		references/agent-spawn-prompts.md
+The subagent treats unbound `mcp__\*` tools as off-limits even though they appear in its tool inventory \(per the agent body.s `## Bound Capabilities \(Handoff from Orchestrator\)` section\)\.	The subagent treats every unbound MCP tool (named by the MCP tool's full name as the host lists it) as off-limits even though it appears in its tool inventory (per the agent body's `## Side-effect ban`).	references/agent-spawn-prompts.md
 at `skills/create-ticket/references/ac-quality-criteria\.md` \(absolute path: `\{rubric_path\}`\)	at `references/ac-quality-criteria.md` (path: `{rubric_path}`)	references/agent-spawn-prompts.md
-Substitute `\{rubric_path\}` with the absolute path of the rubric's rules file	Substitute `{rubric_path}` with the repository-relative (or `~`-relative) path of this skill's rubric rules file	references/agent-spawn-prompts.md
-; the plugin-relative path does not exist in the user's repository\.	; never expand it to an absolute home path.	references/agent-spawn-prompts.md
+Substitute `\{rubric_path\}` with the absolute path of the rubric's rules file	Substitute `{rubric_path}` with `{skill_root}/references/ac-quality-criteria.md` (Pre-computed Context), the path of this skill's rubric rules file	references/agent-spawn-prompts.md
+; the plugin-relative path does not exist in the user's repository\.	; never expand it to an absolute path.	references/agent-spawn-prompts.md
+\(live rendering, console-error count, keyboard focus/hover, WCAG contrast, network I/O, FS-state-dependent\)	(e.g., illustrative only: live rendering, console-error count, keyboard focus/hover, WCAG contrast, network I/O, FS-state-dependent)	references/agent-spawn-prompts.md
  The legacy planner-side partition mechanisms .* decomposer-led partition path\.		references/agent-spawn-prompts.md
-Both resolve under the plugin root, as .* the plugin-relative paths do not exist in the user's repository\.	Both live in this skill's `references/` directory (the directory of `{rubric_path}`).	references/agent-spawn-prompts.md
+Fail immediately if it cannot be invoked\.	Fail the task (nothing is delivered) if it cannot be invoked.	references/agent-spawn-prompts.md
+Both resolve under the plugin root, as .* the plugin-relative paths do not exist in the user's repository\.	Both live in `{skill_root}/references/` (the directory of `{rubric_path}`).	references/agent-spawn-prompts.md
+\(all sub-tickets affected; no directories created; counter untouched\)	(all sub-tickets affected; nothing delivered)	references/agent-spawn-prompts.md
  Pass no per-spawn `effort` at any Size \(SKILL\.md Phase 4 \*\*Effort\*\*\): the evaluator, whose agent file carries no `effort:` key, grades at the session effort the planner drafted at\.		references/agent-spawn-prompts.md
  and, as in step 2, pass no per-spawn `effort`		references/agent-spawn-prompts.md
 run the autopilot-policy escalation below	run the exhausted-retry escalation below	references/agent-spawn-prompts.md
@@ -59,6 +80,7 @@ Under v8\.0\.0 the planner's frontmatter omits the `tools:` field, so the agent 
 (he evaluator) has no Bash and grades	\1 runs no shell commands and grades
 the absolute path step b passes	the `{rubric_path}` step b passes	references/agent-spawn-prompts.md
 just `Read` from	just read with `view` from	references/agent-spawn-prompts.md
+^c\. Re-spawn the \*\*(simple-workflow:)?ticket-evaluator\*\* on the revised ticket\.	c. Re-spawn the **ticket-evaluator** on the revised ticket, with its report path `{scratch}/eval-{logical-id}-r2.md` and the previous round's evaluator Feedback inlined under a `## Previous round feedback` heading so it can check each `Change rationale:` against the FAIL item it answers.	references/agent-spawn-prompts.md
 re-`Read` for this spawn	re-read with `view` for this spawn	references/agent-spawn-prompts.md
 the orchestrator and the Phase 4 evaluator read it from disk	the orchestrator reads it from disk and inlines it into every Phase 4 evaluator spawn	references/agent-spawn-prompts.md
 
@@ -66,72 +88,143 @@ the orchestrator and the Phase 4 evaluator read it from disk	the orchestrator re
  SKILL\.md still retains the pinned step headings .* anchor static test contracts\.		references/mode-dispatch-flows.md
 \(max 2 rounds, gate check on `gates\.ticket_quality_fail` when `brief=` is present\)	(max 2 rounds, then the exhausted-retry escalation)	references/mode-dispatch-flows.md
 \(max 2 rounds, `autopilot-policy\.yaml` `gates\.ticket_quality_fail` consulted when `brief_mode == auto`, non-interactive fallback to stop\)	(max 2 rounds, then the exhausted-retry escalation, non-interactive fallback to stop)	references/mode-dispatch-flows.md
- The Common Write Path's autopilot-policy propagation in Step W-8 honors `brief_mode == auto` exactly as before\.		references/mode-dispatch-flows.md
  Bare description mode does NOT have an `autopilot-policy\.yaml` brief-parent fallback \(no brief is present\)\.		references/mode-dispatch-flows.md
  verbatim and no per-spawn effort, per SKILL\.md Phase 4\.	 verbatim, per SKILL.md Phase 4.	references/mode-dispatch-flows.md
 Implementation Notes / Claude Code Workflow\)	Implementation Notes)	references/mode-dispatch-flows.md
- The capability guard `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1` is honored uniformly: .*invokes no agent\.		references/mode-dispatch-flows.md
+^All three modes converge on the Common Write Path documented in SKILL\.md\..*$	All three modes converge on Delivery (SKILL.md `## Delivery`).	references/mode-dispatch-flows.md
 unified Step-0\.\.Step-7 outline	unified Step-1..Step-8 outline	references/mode-dispatch-flows.md
+^- `slug_hint` \(optional\)$	- `slug_hint` (optional); `interview_complete` (optional; `true` skips Phase 2)	references/mode-dispatch-flows.md
+^- Else, kebab-case `title` \(lowercase ASCII, whitespace → `-`, strip non-`\[a-z0-9-\]`, truncate at 40 chars\)\.$	- Else, kebab-case `title` (lowercase ASCII, whitespace → `-`, strip non-`[a-z0-9-]`, drop leading hyphens, truncate at 40 chars); when that leaves an empty string (e.g. a title with no ASCII letter or digit), `{parent-slug}` = `work-{yyyymmddthhmmssz}`, the run's `UTC time:` lowercased with its punctuation removed (e.g. `work-20261105t120000z`). Either way `{parent-slug}` MUST match `^[a-z0-9][a-z0-9-]{0,39}$` before any shell use; a `slug_hint` that does not → print `ERROR: slug_hint must be kebab-case (lowercase letters, digits, hyphens)` and stop.	references/mode-dispatch-flows.md
+If the findings file was supplied alongside \(or was derived from\) a brief with frontmatter `interview_complete: true`	If the findings frontmatter carries `interview_complete: true`	references/mode-dispatch-flows.md
+decomposer wins if `slug_hint` was absent\.	decomposer wins if `slug_hint` was absent, unless its value fails the slug pattern of Step F-2 (then keep the derived one).	references/mode-dispatch-flows.md
+^Failure paths:$	`Status: partial` (more than 8 work units) is not a failure: continue with the returned tickets and print `WARNING: decomposer dropped <n> work units beyond the 8-ticket cap: <titles>` (the Final summary repeats it). Failure paths:	references/mode-dispatch-flows.md
+Failure paths \(identical to Findings Mode F-5 / F-6\):	Partial and failure paths (identical to Findings Mode F-5 / F-6):	references/mode-dispatch-flows.md
 ^Read the brief's YAML frontmatter\. Extract:$	Read the brief's YAML frontmatter (format: `references/brief-template.md`). Extract:	references/mode-dispatch-flows.md
+^- `slug` → `\{brief_slug\}` \(used as `\{parent-slug\}` unless overridden\)\.$	- `slug` → `{brief_slug}` (used as `{parent-slug}`); it MUST match `^[a-z0-9][a-z0-9-]{0,39}$`, otherwise print `ERROR: slug must be kebab-case (lowercase letters, digits, hyphens)` and stop.	references/mode-dispatch-flows.md
+ When `interview_complete: false` \(or absent\), the skill blocks on .*$	 When `interview_complete: false` (or absent), the skill runs the capped interview through `ask_user`; when `ask_user` is unavailable, the non-interactive fallback skips Phase 2 instead of waiting.	references/mode-dispatch-flows.md
+^`\{parent-slug\}` = kebab-case of the ticket description \(.*\)\.$	`{parent-slug}` = kebab-case of the ticket description (lowercase ASCII, whitespace → `-`, strip non-`[a-z0-9-]`, drop leading hyphens, truncate at 40 chars); when that leaves an empty string (e.g. a description with no ASCII letter or digit), `{parent-slug}` = `work-{yyyymmddthhmmssz}` from the run's `UTC time:` (e.g. `work-20261105t120000z`). The result matches `^[a-z0-9][a-z0-9-]{0,39}$`.	references/mode-dispatch-flows.md
 ^(## .* Mode) \(([FBD])-0 … 	\1 (\2-1 … 	references/mode-dispatch-flows.md
+^(### Step [FBD]-[0-9]+: Dispatch to) Common Write Path$	\1 Delivery	references/mode-dispatch-flows.md
+^Route to the Common Write Path regardless of N\..*$	Route to Delivery (SKILL.md `## Delivery`) regardless of N.	references/mode-dispatch-flows.md
+Receive the structured `## Result` block \(Status / Parent slug / Tickets / Topological order / Rationale\)\.	Receive the structured `## Result` block (Status / Parent slug / Tickets with their `peer_set` / `shared_conventions` hints / Topological order / `shared_input_boundary` / Rationale), and forward each ticket's hints and `shared_input_boundary` membership into that ticket's planner and ticket-evaluator spawns.	references/mode-dispatch-flows.md
+Body section `## Context`: the brief\.md `## Vision` \+ `## Business Context` sections concatenated verbatim	Body section `## Context`: the brief.md `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints` sections concatenated verbatim	references/mode-dispatch-flows.md
+^If the findings path does not exist on disk,	If the findings path does not exist (checked with `view`, never a shell test),	references/mode-dispatch-flows.md
+^If the brief path does not exist,	If the brief path does not exist (checked with `view`, never a shell test),	references/mode-dispatch-flows.md
+MUST be able to produce a ticket file under `\.simple-workflow/backlog/` within 10 seconds even if stdin is a closed file descriptor	MUST reach Delivery without waiting on stdin, even if stdin is a closed file descriptor	references/mode-dispatch-flows.md
+^(### Step B-3: Phase 1 — Researcher) \(with reuse condition\)$	\1	references/mode-dispatch-flows.md
+^Run SKILL\.md Phase 1\. For brief mode, the researcher writes .*$	Run SKILL.md Phase 1. The researcher writes `investigation.md` to `{scratch}/investigation.md`, inside the run scratch directory that SKILL.md Argument Parsing creates with `mktemp -d`.	references/mode-dispatch-flows.md
+^Run SKILL\.md Phase 1\. Researcher writes .*$	Run SKILL.md Phase 1. The researcher writes `investigation.md` to `{scratch}/investigation.md`, inside the run scratch directory that SKILL.md Argument Parsing creates with `mktemp -d`; it is invoked unconditionally.	references/mode-dispatch-flows.md
 
 # ---- write-path-templates.md -----------------------------------------------
-Canonical templates referenced by `skills/create-ticket/SKILL\.md` Step W-6 \(`phase-state\.yaml` per-ticket pending template\), Step W-7	Canonical templates referenced by `SKILL.md` Step W-7	references/write-path-templates.md
- \(`counter \+ N`, `\.ticket-counter`, `\[POLICY-PROPAGATION\] skipped: brief mode=manual`, atomicity rules\)	 (`counter + N`, `.ticket-counter`, atomicity rules)	references/write-path-templates.md
+^# Common Write Path Templates$	# Delivery Templates	references/write-path-templates.md
+^Canonical templates referenced by .*$	Canonical templates for Delivery: the `split-plan.md` per-parent index that a `local:` destination writes when N > 1 (`references/destinations.md`), and the final summary format of `SKILL.md` Step DL-5. The delivery rules (counter, atomicity, quarantine) live in `references/destinations.md`; this file only holds the verbatim block templates so SKILL.md can stay short.	references/write-path-templates.md
 The schema authorities are:	The schema authority is:	references/write-path-templates.md
 These two files MUST agree	The schema file MUST agree	references/write-path-templates.md
-\(`split-plan\.md` per-parent index\), and Step W-10	(`split-plan.md` per-parent index) and Step W-10	references/write-path-templates.md
-validation rules and first-unblocked tiebreak;	validation rules;	references/write-path-templates.md
+^## Step W-7 — `split-plan\.md` template \(per parent\)$	## `split-plan.md` template (`local:` destination, N > 1)	references/write-path-templates.md
+^Write `\.simple-workflow/backlog/product_backlog/\{parent-slug\}/split-plan\.md` following .*$	Write `{dir}/{parent-slug}/split-plan.md` following `references/split-plan-schema.md` (the normative field set, entry grammar, validation rules; this section carries only the verbatim template). Only a `local:<dir>` destination with N > 1 writes it. Exact schema:	references/write-path-templates.md
+\{1-3 sentence summary lifted from findings\.md Context section, or brief\.md Vision if brief mode\.\}	{1-3 sentence summary lifted from findings.md Context section, brief.md Vision in brief mode, or the description in bare mode.}	references/write-path-templates.md
+^On validation failure, print `ERROR: split-plan validation failed — <reason>` and exit non-zero\..*$	On validation failure, print `ERROR: split-plan validation failed — <reason>` and stop. The partial output is quarantined (moved with `mv` into `{dir}/.rollback/{parent-slug}-{ts}/`, never deleted) and `.ticket-counter` is untouched, per the write-failure rule in `references/destinations.md`.	references/write-path-templates.md
+\.simple-workflow/backlog/product_backlog/	{dir}/	references/write-path-templates.md
 
 # ---- split-plan-schema.md / findings-schema.md / spec-decomposer-input.md --
-Producer: `skills/create-ticket/SKILL\.md` Step W-7 \(writer\) and Step W-11 \(first-unblocked rule\)\. Consumer: `skills/autopilot/references/split-plan-parsing\.md` \(parser, topological sort, wave layering\)\.	Producer: `SKILL.md` Step W-7 (writer). Consumer: any downstream step that processes the ticket set in dependency order.	references/split-plan-schema.md
+^Normative schema for the per-parent ticket index that `/create-ticket` writes to .* on every successful run \(N >= 1; [^)]*\)\.	Normative schema for the per-parent ticket index that `/create-ticket` writes to `{dir}/{parent-slug}/split-plan.md` when it delivers N > 1 tickets to a `local:<dir>` destination (`references/destinations.md`); a single ticket, and every `mcp:` or `api:` destination, get no split plan.	references/split-plan-schema.md
+ Step W-7 and is NOT repeated here	 (the `split-plan.md` template) and is NOT repeated here	references/split-plan-schema.md
+Producer: `skills/create-ticket/SKILL\.md` Step W-7 \(writer\) and Step W-11 \(first-unblocked rule\)\. Consumer: `skills/autopilot/references/split-plan-parsing\.md` \(parser, topological sort, wave layering\)\.	Producer: the `local:` adapter in `references/destinations.md` (writer). Consumer: any downstream step that processes the ticket set in dependency order.	references/split-plan-schema.md
 The `/autopilot` parser requires only	A downstream parser requires only	references/split-plan-schema.md
+Path of the input findings file \(audit trail\)\.	Path of the input findings file (audit trail): relative to the repository root when the file lies inside it, otherwise its basename only (never an absolute path).	references/split-plan-schema.md
+in the W-7 template\.	in the `split-plan.md` template.	references/split-plan-schema.md
+allocated in Step W-2;	allocated by the `local:` adapter (`references/destinations.md`);	references/split-plan-schema.md
+^## Validation \(writer side, Step W-7\)$	## Validation (writer side)	references/split-plan-schema.md
+are created in Step W-4 before	are created before	references/split-plan-schema.md
+is defined once in `skills/create-ticket/SKILL\.md` Step W-4 and Step W-7\.	is defined once in the write-failure rule of `references/destinations.md`.	references/split-plan-schema.md
 the validation rules, and the first-unblocked tiebreak\.	and the validation rules.	references/split-plan-schema.md
  and in `/autopilot`'s `ticket_mapping`		references/split-plan-schema.md
 Informational for `/autopilot`\.	Informational for downstream consumers.	references/split-plan-schema.md
- The difference is the SW-CHECKPOINT recommendation shape \(Step W-11\): .*for N > 1\.		references/findings-schema.md
+\.simple-workflow/backlog/product_backlog/	{dir}/	references/split-plan-schema.md
+^2\. Otherwise kebab-case `title`: .*$	2. Otherwise kebab-case `title`: lowercase ASCII, whitespace -> hyphen, strip every character outside `[a-z0-9-]`, drop leading hyphens, truncate at 40 characters; when that leaves an empty string (e.g. a title with no ASCII letter or digit), use `work-{yyyymmddthhmmssz}` from the run's UTC time (e.g. `work-20261105t120000z`). The result, and a `slug_hint`, MUST match `^[a-z0-9][a-z0-9-]{0,39}$` (else `ERROR: slug_hint must be kebab-case (lowercase letters, digits, hyphens)`).	references/findings-schema.md
+^The number of `### N\.` headings is the ticket count N\. Both paths .*$	The number of `### N.` headings is the ticket count N. Both paths go through the same Delivery step (SKILL.md `## Delivery`). For a `local:<dir>` destination both nest under `{dir}/{parent-slug}/{NNN}-{slug}/`, and N > 1 also writes `{dir}/{parent-slug}/split-plan.md` (schema in `references/split-plan-schema.md`).	references/findings-schema.md
 a human-authored or `/investigate`-authored findings document	a human-authored or investigation-authored findings document	references/spec-decomposer-input.md
+the agent has read-only tools and the spawn prompt is the only context source	the agent must not write anything but its return envelope, and the spawn prompt is the only context source	references/spec-decomposer-input.md
+, eliminating the previous `planner\.Split Judgment` cohesion bias \(where a draft-first agent decided post-hoc whether to split its own draft\)		references/spec-decomposer-input.md
+<bare-description text verbatim, OR brief\.md `## Vision` \+ `## Business Context` sections>	<bare-description text verbatim, OR brief.md `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` and `## Constraints` sections>	references/spec-decomposer-input.md
 
 # ---- interview-templates.md ------------------------------------------------
 ^# Interview Templates for /brief$	# Interview Templates	references/interview-templates.md
 # Drop a quoted example phrase written in non-ASCII (non-English) text.
  / "breaking [^ -~"]+"		references/interview-templates.md
 
+# ---- ticket-template.md: destination-assigned identity, host roles --------
+^Generate the ticket in the following format:$	Generate the ticket in the following format. `{id}` is destination-assigned at Delivery (`references/destinations.md`): `T-{NNN}` for a `local:` destination; for an `mcp:` or `api:` destination the submitted body starts with `## [Title]` and the identifier the create call returns is recorded instead.	references/ticket-template.md
+^## T-\{NNN\}: \[Title\]$	## {id}: [Title]	references/ticket-template.md
+\| Dependencies \| \[Dependent tickets or --\] \|	| Dependencies | [Identifiers of the tickets this one depends on (logical ids `{parent-slug}-part-N` while drafting, destination identifiers once delivered), or --] |	references/ticket-template.md
+\| Priority \| \*\*P\?\*\* \|	| Priority | **P1 \\| P2 \\| P3** |	references/ticket-template.md
+implementer \\\| researcher \\\| test-writer	planner \\| <downstream role, e.g. the implementing engineer or agent; illustrative only>	references/ticket-template.md
+^- \*\*<name-1>, <name-2>\*\*: pipeline orchestrator;	- **<orchestrator-skill-1>, <orchestrator-skill-2>**: pipeline orchestrator;	references/ticket-template.md
+
 # ---- agent bodies ----------------------------------------------------------
+^\*\*Output path\*\*: If the caller specifies an output file path .*$	**Output path**: Write findings to the output file path the caller specifies (the create-ticket skill passes `investigation.md` inside the run scratch directory it created with `mktemp -d`). Create parent directories as needed.	references/agents/researcher.md
+, or `\.simple-workflow/docs/research/\{topic\}\.md` by default		references/agents/researcher.md
 Use Grep/Glob to find relevant code, then Read to understand it	Use `grep` / `glob` to find relevant code, then `view` to understand it	references/agents/researcher.md
- Omitting this field is a contract violation; the orchestrator that spawned you reads the field by regex .*\]$	 Omitting this field is a contract violation: the create-ticket orchestrator reads the field by regex on `^\\*\\*Advisory consultation\\*\\*:` and fails the round when it is absent.]	references/agents/researcher.md
+^\*\*Advisory consultation\*\*: \[REQUIRED FIELD.*$	**Advisory consultation**: [optional; `(none)` when present — see ## Advisory Capabilities below]	references/agents/researcher.md
+ The `\*\*Advisory consultation\*\*:` field is REQUIRED on every exit path .*$		references/agents/researcher.md
+ \(which would strand both your summary and the Advisory audit trail for any capability you invoked\)	 (which would strand your summary)	references/agents/researcher.md
+ — including the REQUIRED `\*\*Advisory consultation\*\*:` field —		references/agents/researcher.md
 approaching your `maxTurns` ceiling	approaching your turn budget	references/agents/researcher.md
-in-house Read / Grep / Glob	in-house `view` / `grep` / `glob`	references/agents/researcher.md
-in-house Grep produced	in-house grep produced	references/agents/researcher.md
-even under v8\.0\.0 inherit-all, where every parent-session MCP server is in your tool inventory,	even though, as a general-purpose subagent, you carry every MCP server of the session in your tool inventory,	references/agents/*
- \(v8\.0\.0\+, Gate 6\.5	 (Gate 6.5	references/agents/researcher.md
- \(v8\.0\.0\+ — Recommending	 (Recommending	references/agents/researcher.md
-The reason: dogfood \(TW33-TW35\) showed that	The reason: experience showed that	references/agents/researcher.md
- regardless of which spawner is in play\.	.	references/agents/researcher.md
 Do NOT write files\. Do NOT invoke Write/Edit\.	Do NOT write files. Do NOT invoke `create` / `edit`.	references/agents/decomposer.md
+Return a structured summary under 800 tokens\.	Return a structured summary under 500 tokens.	references/agents/decomposer.md
+with the most critical 8 and flag the overflow in Rationale\.	with the most critical 8 and flag the overflow in Rationale, naming the number of dropped work units and the title of each.	references/agents/decomposer.md
+only the structured fields \(Status, Parent slug, Tickets, Topological order, Rationale\)	only the structured fields (Status, Parent slug, Tickets with their `peer_set` / `shared_conventions` hints, Topological order, `shared_input_boundary`, Rationale)	references/agents/decomposer.md
 NEVER write files\. Your tools are read-only\.	NEVER write files. Treat your tools as read-only: a general-purpose subagent carries every tool, so this rule is instruction-enforced.	references/agents/decomposer.md
+ through the unified Common Write Path \(which writes a 1-entry `split-plan\.md`\)\.	 through the same Delivery step.	references/agents/decomposer.md
 Follow the instructions provided by the caller \(plan2doc skill\)\.	Follow the instructions provided by the caller (the create-ticket skill).	references/agents/planner.md
-^\*\*Note on subagent permission model.*$	**Note on subagent permission model (retry-spawn FS-search suppression).** You run as a general-purpose `task` subagent that carries the session's full tool inventory, including the shell and every configured MCP server. The retry-spawn FS-search ban below is a **prompt-level hard contract enforced solely by this paragraph and the spawn prompt** — it is NOT enforced by any permission system. The canonical definition of this suppression and its rationale lives in `SKILL.md` Phase 4 (the retry planner FS-search ban contract). See also `## Side-effect ban` below.	references/agents/planner.md
-`Read` it at the absolute path your spawn prompt gives for it; otherwise resolve the path relative to the PLUGIN root, `\$\{CLAUDE_PLUGIN_ROOT\}` \(the file ships with the plugin and does not exist in the user's repository\)\.	`view` it at the path your spawn prompt gives for it (the file ships inside the create-ticket skill directory, e.g. `.github/skills/create-ticket/references/ac-quality-criteria.md`, not at the repository root).	references/agents/planner.md
+^\*\*Output\*\*: \[plan file path\]$	**Output**: [ticket draft file path under {scratch}]	references/agents/planner.md
+^\*\*Summary\*\*: \[200 words or less overview\]$	**Summary**: [200 words or less on the ticket draft]	references/agents/planner.md
+^\*\*Steps\*\*: \[numbered implementation steps, one line each, max 10\]$	**Draft outline**: [title, category, size, priority and AC count of the draft, one line]	references/agents/planner.md
+^\*\*Next Steps\*\*: \[recommended actions\]$	**Next Steps**: [open questions or assumptions for the orchestrator, or (none)]	references/agents/planner.md
+^\*\*Note on subagent permission model.*$	**Note on subagent permission model (retry-spawn FS-search suppression).** You run as a general-purpose `task` subagent that carries the session's full tool inventory, including the shell and every configured MCP server. The retry-spawn FS-search ban below is a **prompt-level hard contract enforced solely by this paragraph and the spawn prompt** — it is NOT enforced by any permission system. The canonical definition of this suppression and its rationale lives in `references/agent-spawn-prompts.md` (`#### Retry planner FS-search ban (token-efficiency contract)`). See also `## Side-effect ban` below.	references/agents/planner.md
+`Read` it at the absolute path your spawn prompt gives for it; otherwise resolve the path relative to the PLUGIN root, `\$\{CLAUDE_PLUGIN_ROOT\}` \(the file ships with the plugin and does not exist in the user's repository\)\.	`view` it at the path your spawn prompt gives for it (`{skill_root}/references/ac-quality-criteria.md`, inside this skill's directory, not at the repository root).	references/agents/planner.md
 On the `/create-ticket` path the Phase 4 `ticket-evaluator`, which always receives the full rubric, then adjudicates; `/plan2doc` and `/refactor` spawn no ticket-evaluator, so on those paths also report the unresolved path under `Blockers:` in your return envelope\.	The Phase 4 `ticket-evaluator`, which always receives the full rubric, then adjudicates.	references/agents/planner.md
 laid out as in the plugin's 	laid out as in this skill's 	references/agents/planner.md
-Read the orchestrator's `Available capabilities` probe \(skills \+ MCP servers — .*surface\)\.	Read the orchestrator's `Available capabilities` probe (skills + MCP servers — the byte-identical `Available user skills:` / `Available MCP servers:` lines the create-ticket orchestrator computes in its `## Pre-computed Context` and inlines into your spawn prompt).	references/agents/planner.md
+are read from `\{ticket-dir\}/autopilot-policy\.yaml` as each gate's	resolve to `auto` on this host (this skill reads no policy file; the rubric's Terminology entry Policy kill switch states the host resolution, including `evidence_floor`: `thorough` for Size `L` or `XL`, else `standard`, raised by a `Depth:` line in your spawn prompt), as each gate's	references/agents/planner.md
 Do not try to re-run the probes: you have no Bash\.	Do not try to re-run the probes: you run no shell commands.	references/agents/ticket-evaluator.md
 Use Write only to save your evaluation report\.	Use `create` only to save your evaluation report.	references/agents/ticket-evaluator.md
 
-# ---- rubric and grading (ZERO-LOSS: renaming only) ------------------------
+# ---- rubric and grading -----------------------------------------------------
+# Zero-loss in intent: no gate, example or rule is removed. Host-bound
+# sentences (roles, tool access, files that are not shipped, settings this
+# host never has) are restated so they are true on this host; named
+# technologies used as examples are labelled illustrative.
 rubric text elsewhere in the plugin	rubric text elsewhere in this skill	references/ac-quality-criteria.md
-read from `\{ticket-dir\}/autopilot-policy\.yaml`;	read from an optional `ticket-policy.yaml` next to the ticket (`{ticket-dir}/ticket-policy.yaml`; an absent file means every gate applies in full);	references/ac-quality-criteria.md
-\(Step W-8 propagates it later\)	(this skill never writes it; a user may add one)	references/ac-quality-criteria.md
-\[`\.\./\.\./impl/references/([a-z-]+\.md)`\]\(\.\./\.\./impl/references/[a-z-]+\.md\)	the downstream implementation step's `\1`	references/ac-quality-criteria.md
-`agents/ac-evaluator\.md`	the downstream AC evaluator's instructions	references/ac-quality-criteria.md
-`skills/impl/references/([a-z-]+\.md)`	the downstream implementation step's `\1`	references/ac-quality-grading.md
+^- \*\*Policy kill switch\*\*: .*$	- **Policy kill switch**: a gate's **Kill switch** names a `constraints.<key>`; `<key>: off` grades that gate `n/a` over the scope the paragraph states, and an absent field / absent policy / unknown value → `auto` (gate active — fail-safe). **Host resolution** (this skill reads no policy file and no depth policy): every `constraints.<key>` kill switch resolves to `auto`, so every gate applies in full at drafting and at grading; `constraints.eval_panel` is off, so the diff-time failure-class panel (and its L-UNIFORMITY lens) never runs in this skill; and `evidence_floor` (the evidence depth a depth-gated rule requires) resolves from the ticket's Size as the downstream depth policy does with no policy file — `thorough` for Size `L` or `XL`, `standard` for `S` or `M` — and a `depth=thorough` / `depth=exhaustive` token in the request text (SKILL.md Argument Parsing) raises it, never lowers it; no criticality floor applies, since this host has no criticality judgment. A depth-gated requirement therefore applies at `thorough` or `exhaustive` and does not apply at `standard`.	references/ac-quality-criteria.md
+MUST NOT be flagged by the over-specification check: "assert	MUST NOT be flagged by the over-specification check (e.g., illustrative only): "assert	references/ac-quality-criteria.md
+prototype-pollution / accessor keys \(an accessor / reserved key the host structure treats specially\)	prototype-pollution / accessor keys (e.g., illustrative only; the property is: a key that collides with the container's own structural members, an accessor / reserved key the host structure treats specially)	references/ac-quality-criteria.md
+^Concrete carve-out examples that MUST be treated as PASS \(not HOW\):$	Concrete carve-out examples that MUST be treated as PASS (not HOW; e.g., illustrative only — the named APIs stand for any language's output, logging or file-write surface):	references/ac-quality-criteria.md
+\(non-exhaustive minimum list\):$	(non-exhaustive minimum list of observation-point properties; each named technology is e.g., illustrative only):	references/ac-quality-criteria.md
+^\*\*Subagent / main-thread asymmetry\*\*: .*$	**Subagent / main-thread asymmetry**: on this host every `task` subagent carries every tool of the session, so tool access never separates the roles; the separation is by instruction. The verdict / read-only roles are the `decomposer` and the `ticket-evaluator`. The ticket-evaluator is hermetic by instruction (its prompt forbids every tool but reading its own prompt and writing its report), so a `### Capabilities` row binding a runtime / visual AC with the ticket-evaluator (or the decomposer) in `Used by` MUST NOT reference an MCP capability (a `Name` that is an MCP tool's full name as the host lists it, or an MCP-server `Type`); such a row is a Gate 6 FAIL. For verdict-side verification of an MCP-mediated effect, split the binding (a productive role invokes the MCP tool; the verdict role verifies through a plain skill or a file-system invariant) or record the gap under `#### Capability Gaps`; cross-check this when binding.	references/ac-quality-criteria.md
+\(as supplied by `/create-ticket`, .* in their `## Pre-computed Context` block\)	(as supplied by this skill's `## Pre-computed Context` block)	references/ac-quality-criteria.md
+^2\. \*\*Advisory\*\* — .*$	2. **Advisory** — the entry appears as a `Name` cell in at least one row of `### Advisory Capabilities` (a section emitted between `### Capabilities` and `#### Capability Gaps`), which the named consumer (`Used by` column) is recommended to consult during authoring (implementation reference, library docs, design guidance, etc.). Advisory rows carry **no `Bound AC(s)` column**: they do not drive PASS/FAIL verdicts. The productive roles that may consult an Advisory entry are this skill's `planner` and whoever implements the ticket later (the `researcher` has already run when the ticket exists), named in free text (a downstream role name, e.g. the implementing engineer or agent; illustrative only); a productive role MAY invoke a listed Advisory skill / MCP tool during authoring without a speculative-invocation violation. Fill `Used by` with `planner` and / or that downstream role name; the verdict roles (`decomposer`, `ticket-evaluator`; the Gate 6 asymmetry list) carry no advisory-invocation exception and MUST NOT appear in an Advisory row's `Used by`; an MCP entry whose Advisory `Used by` lists a verdict role is a Gate 6.5 FAIL.	references/ac-quality-criteria.md
+^\*\*Self-skip exception\*\*: .*$	**Self-skip exception**: a skill that orchestrates implementation, review, shipping or batch execution, or ticket creation itself (as this skill does), is never a utility capability (e.g. a pipeline skill that drives a ticket from investigation to merge; illustrative only). Such skills MAY be classified as Skipped with the fixed rationale `pipeline orchestrator; not subagent-invocable per External Tool Integration Policy`, in one bullet naming each of them that the probe lists. This fixed-rationale path is automatic: the planner need not interrogate AC-relevance for these names.	references/ac-quality-criteria.md
+^\*\*Consumer-side consultation discipline \(Recommending semantics\)\*\*: .*$	**Consumer-side consultation discipline (Recommending semantics)**: Advisory binding is **not merely permitting** — every productive consumer an Advisory entry's `Used by` column lists (`planner` or the named downstream role) MUST either (a) **invoke** the listed skill / MCP tool (by the MCP tool's full name as the host lists it) at least once during its work, OR (b) **record a one-line skip rationale** under `### Limitations` (or `Next Steps` when the consumer's return envelope has no `### Limitations` heading) explaining why the entry was not consulted. Silent omission is a contract violation.	references/ac-quality-criteria.md
+^\*\*Multi-oracle requirement \(depth-gated, standard-backed computational ACs\)\*\*: .*$	**Multi-oracle requirement (depth-gated, standard-backed computational ACs)**: at a resolved `evidence_floor` of `thorough` or `exhaustive` (Terminology: Policy kill switch), an AC in a domain with a **published spec** (e.g., illustrative only: color / WCAG, crypto, dates, units, money rounding, spec parsers, accessibility ratios) MUST derive its expected value from **two or more oracles independent of the implementation's core, mutually-validated** — they MUST agree within an explicit tolerance BEFORE either is trusted — with **at least one derived from first principles** (the published spec formula, hand-implemented, no library at all); a single independent oracle suffices only at the `standard` floor. Canonical oracle-module shape: a test-side module that never imports the implementation under test, with a first-principles block (the spec formula, no library), an independent-library block (a library other than the one the implementation uses), a seeded pseudo-random generator for reproducible fuzz, and a second-algorithm differential helper; an expected value is trusted only when the first two agree within tolerance. **Degradation (never a block)**: with no published spec or no second independent oracle, the single-oracle path stands and the AC / Implementation Notes record a one-line Caveat that multi-oracle mutual validation was not available; Gate 7 never force-FAILs an AC for lacking a second oracle that does not exist. **At drafting** the two-oracle MUST binds the downstream verifier, not the draft, so a single named independent oracle satisfies the Gate 7 binding rule: the planner names a second, first-principles oracle where one exists (or states that only one exists), a missing second oracle or statement is a Caveat, not a ticket FAIL, and the two-oracle MUST binds the verifier when the resolved `evidence_floor` is `thorough` or `exhaustive`.	references/ac-quality-criteria.md
+ Authoring rubric: .*$	 Authoring guidance and verifier-side enforcement of this requirement belong to whoever implements and verifies the ticket downstream.	references/ac-quality-criteria.md
+ The five canonical evidence channels are defined in .*:$	 The five canonical evidence channels are defined here:	references/ac-quality-criteria.md
+\(see \[`\.\./\.\./impl/references/verification-depth\.md`\]\([^)]*\) effects ladder \+ `### AC-shape evidence-independence floor`\)	(Terminology: Policy kill switch; the AC-shape floor is the one this rule states)	references/ac-quality-criteria.md
+This reuses the Gate 7 overflow-vector \+ watchdog requirement \(a parse-accepted-then-overflows vector through a time-bounded watchdog\)	This reuses the Gate 7 adversarial-input requirement's parse-accepted-then-overflows vector, run under a time bound (a watchdog timeout that fails the test on a hang)	references/ac-quality-criteria.md
+\(failure mode A, description-vs-behavior drift — see .*`## Independent Evidence` duty\)\.	(the unit's OWN declared contract — docstring, type annotation, advertised example or limit — checked against its observed runtime behaviour through the real boundary, a specialization of EC-RUNTIME; failure mode A, description-vs-behavior drift); the verifier-side consumer is the downstream verifier (its documentation-truthfulness check and the independent-evidence duty of the downstream AC evaluator).	references/ac-quality-criteria.md
+the `doc-verifier` agent under the `\.simple-workflow/scratch/` exec carve-out	the downstream documentation-truthfulness verifier	references/ac-quality-criteria.md
+ See `skills/impl/references/ac-evaluator-orchestration\.md` .*$	 That panel belongs to a downstream verifier; this skill never runs it (rules file, Terminology: Policy kill switch).	references/ac-quality-grading.md
+and the diff-time L-UNIFORMITY lens grades the actual code\.	and a downstream diff-time review grades the actual code (this skill runs no diff-time lens; rules file, Terminology: Policy kill switch).	references/ac-quality-grading.md
 the impl-side `ac-evaluator`	the downstream AC evaluator's	references/ac-quality-grading.md
 The evaluator is hermetic \(Read / Write / Grep / Glob, no Bash\)	The evaluator is hermetic (by instruction: it reads only its spawn prompt, writes only its report, runs no shell commands)	references/ac-quality-grading.md
 
-# ---- all files: template anchor, policy file name --------------------------
+# ---- all files: template anchor, round cap, chat-agent wording -------------
 between `### Implementation Notes` and `### Claude Code Workflow`	after `### Implementation Notes`
-autopilot-policy\.yaml	ticket-policy.yaml
+\(max 2 rounds([,)])	(max 2 rounds: initial + 1 revision\1
+ and exit non-zero	 and stop
+Exit non-zero\.	Stop.
+exit non-zero	stop
+with a non-zero exit	and stops
+non-zero exit with	stop with
 
 # ---- all files: plugin namespace and paths ---------------------------------
 simple-workflow:
@@ -152,16 +245,10 @@ Agent tool	`task` tool
 `?\$ARGUMENTS`?	the user's request text
 
 # ---- all files: AC evaluator role ------------------------------------------
-[Tt]he `ac-evaluator`	the downstream AC evaluator
 `ac-evaluator`	the downstream AC evaluator
 
 # ---- all files: pipeline skills as stable role phrases ---------------------
 # One role phrase per pipeline skill, used consistently. Only forms that occur
 # in the shipped text are listed; the denylist catches any new occurrence.
 `/impl`	the downstream implementation step
-`/scout`	the downstream investigation step
-`/plan2doc`	the downstream planning step
-`/refactor`	the downstream refactoring step
-`/autopilot`	the downstream batch runner
 ([Tt]he) `/brief`	\1 upstream brief interview
-`/investigate`	the standalone investigation step
