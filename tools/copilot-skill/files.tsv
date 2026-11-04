@@ -1,5 +1,7 @@
 # Shipped file map: <destination under create-ticket/><TAB><source relative to --src>.
 # Destinations under references/agents/ have their frontmatter stripped (the body is the task prompt).
+# Source "-": no plugin source; the file starts empty and an append override
+# (overrides/*.md, "heading: (end of file)") supplies its whole content.
 SKILL.md	skills/create-ticket/SKILL.md
 references/ac-quality-criteria.md	skills/create-ticket/references/ac-quality-criteria.md
 references/ac-quality-grading.md	skills/create-ticket/references/ac-quality-grading.md
@@ -16,3 +18,4 @@ references/agents/decomposer.md	agents/decomposer.md
 references/agents/planner.md	agents/planner.md
 references/agents/ticket-evaluator.md	agents/ticket-evaluator.md
 references/brief-template.md	skills/brief/references/brief-body-template.md
+references/destinations.md	-

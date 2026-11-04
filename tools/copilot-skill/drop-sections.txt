@@ -2,11 +2,11 @@
 # A section runs from its heading to the next heading of the same or a higher
 # level (at the same fence depth). Every line must match at least once.
 
-# SKILL.md: plugin state file, workflow chain, pipeline policy, skill handoff
+# SKILL.md: plugin state file, workflow chain, skill handoff (the Common Write
+# Path, with its state-file and policy steps, is replaced whole by
+# overrides/skill-delivery.md)
 SKILL.md	## phase-state.yaml write ownership
 SKILL.md	#### Workflow selection (planner output)
-SKILL.md	### Step W-6: phase-state.yaml template (per ticket)
-SKILL.md	### Step W-8: autopilot-policy.yaml propagation
 SKILL.md	## Subagent Skill-Access Handoff
 
 # Mode dispatch: the plugin-developer decomposer kill switch (Step 0 per mode)
@@ -24,3 +24,18 @@ references/split-plan-schema.md	## Consumer note (`/autopilot`)
 
 # Findings schema: the examples are plugin test fixtures that are not shipped
 references/findings-schema.md	## Examples
+
+# Bound-capability handoff: only a ticket-carrying caller can fill it; this
+# skill never passes a ticket to the researcher or the decomposer
+references/agents/*	## Bound Capabilities (Handoff from Orchestrator)
+
+# Interview: the autonomous-decision category is pipeline policy
+references/interview-templates.md	## 7. Autonomous Decision Policy
+
+# Planner authoring-role block: it explains a bound-capability handoff to
+# downstream agents that this skill never performs
+references/agents/planner.md	## Bound Capabilities (Authoring Role)
+
+# Phase 1.5 (the advisory-field gate) is dropped whole: this skill hands the
+# researcher no Advisory entries, so the field is optional
+SKILL.md	### Phase 1.5: Advisory Consultation Pre-Check (gating, v8.0.0+ Phase 6 enforcement; mirrors `/impl` Step 14b)

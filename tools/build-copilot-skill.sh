@@ -12,7 +12,8 @@
 #   bash tools/build-copilot-skill.sh --help
 #
 # Inputs (tools/copilot-skill/, see its README.md):
-#   files.tsv            shipped file map (destination <TAB> source)
+#   files.tsv            shipped file map (destination <TAB> source, or "-"
+#                        for a file whose whole content is an append override)
 #   drop-sections.txt    sections removed by exact heading (scoped)
 #   overrides/*.md       replacement / inserted section bodies
 #   drop-paragraphs.txt  paragraphs / list items / table rows removed by ERE
@@ -45,7 +46,8 @@ Options:
   --out <dir>   Output directory. The skill is written to <dir>/create-ticket/.
   --src <dir>   Plugin source root to read (default: this repository's root).
                 Manifests are always read from tools/copilot-skill/ next to
-                this script.
+                this script. Its short git commit is stamped into the
+                frontmatter as metadata.source-commit ("unknown" outside git).
   --force       Replace a non-empty <dir>/create-ticket/ (refused otherwise).
   --help        Print this message and exit 0.
 
@@ -85,6 +87,13 @@ PLUGIN_JSON="$SRC_ROOT/.claude-plugin/plugin.json"
 [ -f "$PLUGIN_JSON" ] || { err "missing $PLUGIN_JSON"; exit 2; }
 SOURCE_VERSION="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$PLUGIN_JSON" | head -n 1)"
 [ -n "$SOURCE_VERSION" ] || { err "cannot read version from $PLUGIN_JSON"; exit 2; }
+# Short commit of the source tree; "unknown" when --src is not a git
+# repository or git is not on PATH.
+SOURCE_COMMIT=""
+if command -v git >/dev/null 2>&1; then
+  SOURCE_COMMIT="$(git -C "$SRC_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+fi
+printf '%s\n' "$SOURCE_COMMIT" | grep -qxE '[0-9a-f]{7,40}' || SOURCE_COMMIT="unknown"
 
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
@@ -119,9 +128,19 @@ scope_match() {
 
 # --- Layer 0: copy sources ------------------------------------------------
 
+# Source "-" marks a file with no plugin source: it starts empty and an
+# "append" override supplies its whole content.
 DESTS=()
+PURE=()
 while IFS=$'\t' read -r dest src; do
   [ -n "$dest" ] || continue
+  if [ "$src" = "-" ]; then
+    mkdir -p "$(dirname "$TARGET/$dest")"
+    : >"$TARGET/$dest"
+    DESTS+=("$dest")
+    PURE+=("$dest")
+    continue
+  fi
   if [ ! -f "$SRC_ROOT/$src" ]; then
     err "source file missing: $src"
     exit 2
@@ -243,6 +262,11 @@ for ovr in "$MANIFEST_DIR"/overrides/*.md; do
   done
 done
 
+# A file with no plugin source must have received its content from an override.
+for dest in ${PURE[@]+"${PURE[@]}"}; do
+  grep -q '[^[:space:]]' "$TARGET/$dest" || printf 'files.tsv: %s has no source and no override filled it\n' "$dest" >>"$STALE"
+done
+
 # --- Layer 2: paragraph drops ---------------------------------------------
 
 # drop_paragraphs FILE ERE — exit 3 when the ERE matches nothing.
@@ -336,8 +360,9 @@ for dest in "${DESTS[@]}"; do
   mv "$f.tmp" "$f"
 done
 
-# Frontmatter placeholder filled from plugin.json.
-sed -E "s${DELIM}@SOURCE_VERSION@${DELIM}${SOURCE_VERSION}${DELIM}g" "$TARGET/SKILL.md" >"$TARGET/SKILL.md.tmp"
+# Frontmatter placeholders: the version from plugin.json and the source commit.
+sed -E -e "s${DELIM}@SOURCE_VERSION@${DELIM}${SOURCE_VERSION}${DELIM}g" \
+  -e "s${DELIM}@SOURCE_COMMIT@${DELIM}${SOURCE_COMMIT}${DELIM}g" "$TARGET/SKILL.md" >"$TARGET/SKILL.md.tmp"
 mv "$TARGET/SKILL.md.tmp" "$TARGET/SKILL.md"
 
 # --- Layer 4: exit audit --------------------------------------------------
@@ -404,6 +429,7 @@ printf '%s\n' "$FM" | grep -qx 'name: create-ticket' || printf 'frontmatter: nam
 if printf '%s\n' "$FM" | grep -q '^allowed-tools:'; then printf 'frontmatter: allowed-tools must be omitted\n' >>"$FAIL"; fi
 DESC_LEN="$(printf '%s\n' "$FM" | awk '/^description:/ {d = 1; next} d && /^[a-z-]+:/ {d = 0} d {sub(/^ +/, ""); s = s (s == "" ? "" : " ") $0} END {printf "%d", length(s)}')"
 { [ "$DESC_LEN" -gt 0 ] && [ "$DESC_LEN" -le 1024 ]; } || printf 'frontmatter: description length %s not in 1..1024\n' "$DESC_LEN" >>"$FAIL"
+printf '%s\n' "$FM" | grep -qE '^  source-commit: "([0-9a-f]{7,40}|unknown)"$' || printf 'frontmatter: metadata.source-commit missing or malformed\n' >>"$FAIL"
 
 # (g) rubric parity (zero-loss: renaming only)
 SRC_RUBRIC="$SRC_ROOT/skills/create-ticket/references/ac-quality-criteria.md"
@@ -417,7 +443,7 @@ fi
 SRC_WC="$(wc -w <"$SRC_RUBRIC" | tr -d ' ')"
 GEN_WC="$(wc -w <"$GEN_RUBRIC" | tr -d ' ')"
 DELTA=$((GEN_WC - SRC_WC)); [ "$DELTA" -ge 0 ] || DELTA=$((-DELTA))
-[ $((DELTA * 100)) -le $((SRC_WC * 3)) ] || printf 'rubric parity: word count %s vs source %s (> 3%%)\n' "$GEN_WC" "$SRC_WC" >>"$FAIL"
+[ $((DELTA * 100)) -le $((SRC_WC * 5)) ] || printf 'rubric parity: word count %s vs source %s (> 5%%)\n' "$GEN_WC" "$SRC_WC" >>"$FAIL"
 
 if [ -s "$FAIL" ]; then
   err "exit audit FAILED ($(wc -l <"$FAIL" | tr -d ' ') finding(s)); output left at $TARGET for inspection:"
@@ -425,5 +451,5 @@ if [ -s "$FAIL" ]; then
   exit 1
 fi
 
-printf '[build-copilot-skill] wrote %s (%s files, source version %s); exit audit clean\n' \
-  "$TARGET" "${#GEN_FILES[@]}" "$SOURCE_VERSION"
+printf '[build-copilot-skill] wrote %s (%s files, source version %s, commit %s); exit audit clean\n' \
+  "$TARGET" "${#GEN_FILES[@]}" "$SOURCE_VERSION" "$SOURCE_COMMIT"

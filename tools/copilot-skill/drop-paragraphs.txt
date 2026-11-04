@@ -7,13 +7,12 @@
 # SKILL.md preamble: the argument variable and the load-time date probe
 SKILL.md	^Ticket description / findings path: \$ARGUMENTS$
 SKILL.md	^UTC time: !`
-# SKILL.md Mode dispatch / Error Handling: the plugin-developer decomposer
+# SKILL.md Mode dispatch: the plugin-developer decomposer
 # kill switch (an env var nobody sets on this host; reading it would cost a
 # shell permission prompt on every run)
 SKILL.md	^\*\*Step 0 capability guard \(every mode\)\*\*
 SKILL.md	^- [FBD]-0 reads `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER`
 SKILL.md	^If `=1`: print `ERROR: decomposer capability disabled
-SKILL.md	^\| `SIMPLE_WORKFLOW_DISABLE_DECOMPOSER=1` \|
 # SKILL.md Phase 4: per-spawn effort and the hook-written verdict log
 SKILL.md	^\*\*Effort\*\*:
 SKILL.md	^\*\*Verdict log\*\*:
@@ -26,10 +25,8 @@ references/agent-spawn-prompts.md	^3\. Workflow recommendations based on categor
 references/mode-dispatch-flows.md	^- `mode` → `\{brief_mode\}`
 references/mode-dispatch-flows.md	^The `\{brief_mode\}` value gates two downstream behaviors:
 
-# Write-path templates: phase-state schema pointer and pipeline recommendations
+# Write-path templates: the phase-state schema pointer
 references/write-path-templates.md	^- `skills/create-ticket/references/phase-state-schema\.md` for
-references/write-path-templates.md	^- Recommended workflow:
-references/write-path-templates.md	^Recommended workflow per ticket:
 
 # Brief template: the upstream title and intro (it cites the upstream brief
 # skill and its unshipped SKILL.md); overrides/brief-template-intro.md
@@ -37,8 +34,14 @@ references/write-path-templates.md	^Recommended workflow per ticket:
 references/brief-template.md	^# brief\.md Body Template$
 references/brief-template.md	^This reference holds the Phase 3 `brief\.md` body schema
 
-# Researcher: the plugin's spawner taxonomy for the advisory field
-references/agents/researcher.md	^The researcher-side orchestrator
-references/agents/researcher.md	^- \*\*Explicit-Agent-tool spawners\*\*
-references/agents/researcher.md	^- \*\*Declarative spawner, standalone\*\*
-references/agents/researcher.md	^- \*\*`/scout`-mediated path\*\*
+
+# Investigation reuse: every run spawns a fresh researcher into a mktemp
+# scratch directory, so the brief-mode reuse path and its freshness signals
+# (state-file provenance, mtime, content hash) are dropped everywhere
+references/agent-spawn-prompts.md	^In \*\*brief mode\*\*, Phase 1 is reused
+references/agent-spawn-prompts.md	^\*\*Freshness criterion\*\*
+references/agent-spawn-prompts.md	^2\. \*\*mtime freshness threshold\*\*
+references/agent-spawn-prompts.md	^3\. \*\*Content-hash signature\*\*
+references/agent-spawn-prompts.md	^When `\{ticket-dir\}/investigation\.md` is absent
+references/agent-spawn-prompts.md	^When the reuse path fires
+references/mode-dispatch-flows.md	^\*\*Reuse path\*\*: if the brief is bound
