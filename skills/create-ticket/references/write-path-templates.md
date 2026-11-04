@@ -4,7 +4,7 @@ Canonical templates referenced by `skills/create-ticket/SKILL.md` Step W-6 (`pha
 
 The schema authorities are:
 - `skills/create-ticket/references/phase-state-schema.md` for `phase-state.yaml`.
-- `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md` for `split-plan.md`.
+- `skills/create-ticket/references/split-plan-schema.md` for `split-plan.md`.
 
 These two files MUST agree with what is written below; if they diverge, the schema file wins and this template MUST be updated to match.
 
@@ -76,11 +76,11 @@ phases:
 
 6. Do NOT emit a top-level `ticket_dir:` line.
 
-**Atomicity**: On write failure, report the error but do NOT delete already-created `ticket.md` files — retry is idempotent on the state file.
+**Atomicity**: On a write failure, never delete anything. Apply the single quarantine rule of `skills/create-ticket/SKILL.md` Step W-4: move the partial parent directory to `.simple-workflow/rollback/{parent-slug}-{ts}/` with `mv`, print the `ERROR:` line naming that path, and leave `.ticket-counter` untouched. A re-run with the same inputs is safe because the counter was never incremented.
 
 ## Step W-7 — `split-plan.md` template (per parent)
 
-Write `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` following `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md`. For N=1, emit exactly one `### 1.` entry under `## Tickets`, with `depends_on: []`. `ticket_count: 1` in the frontmatter. Exact schema:
+Write `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` following `skills/create-ticket/references/split-plan-schema.md` (the normative field set, entry grammar, validation rules and first-unblocked tiebreak; this section carries only the verbatim template). For N=1, emit exactly one `### 1.` entry under `## Tickets`, with `depends_on: []`. `ticket_count: 1` in the frontmatter. Exact schema:
 
 ```markdown
 ---
@@ -124,14 +124,14 @@ version: 1
 {scope summary}
 ```
 
-Validation contract:
+Validation contract (normative source: `skills/create-ticket/references/split-plan-schema.md`; restated here for the writer):
 - Frontmatter `parent_slug` equals the parent directory basename.
 - Frontmatter `ticket_count` equals the number of `### N.` entries in `## Tickets` (exactly N entries).
 - Each entry's heading matches regex `^###[[:space:]]+[0-9]+\.[[:space:]]+{parent-slug}-part-[0-9]+:`.
 - Every entry has a `- depends_on:` line.
 - The `depends_on` graph is a DAG (topological sort returns N nodes).
 
-On validation failure, print `ERROR: split-plan validation failed — <reason>` and exit non-zero. No directories or artifacts persist (they were created during Step W-4 and must be rolled back per the atomicity rule).
+On validation failure, print `ERROR: split-plan validation failed — <reason>` and exit non-zero. Nothing persists under `product_backlog/`: the partial parent directory created in Step W-4 is quarantined (moved to `.simple-workflow/rollback/{parent-slug}-{ts}/` with `mv`, never deleted) per the Step W-4 rule in SKILL.md, and `.ticket-counter` is untouched.
 
 ## Step W-10 — Summary printing format
 

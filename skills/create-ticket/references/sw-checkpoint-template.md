@@ -62,7 +62,7 @@ context_advice: "Intermediate tool outputs from this phase remain in the main se
     NOT emit a plain `next_recommended:` line. The `<first-unblocked-ticket-dir>`
     is chosen by selecting all tickets with `depends_on: []` and taking the
     lexicographically smallest `ticket_dir` (per
-    `spec-split-plan-schema.md` § first-unblocked rule).
+    `skills/create-ticket/references/split-plan-schema.md` § first-unblocked rule).
   - **Failure path (any N)** → emit a single `next_recommended:` line with
     value `""` (empty string). Do NOT emit `next_recommended_auto:` /
     `next_recommended_manual:`, even for N > 1 runs, because no ticket

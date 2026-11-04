@@ -24,7 +24,7 @@ Substitute `<path>` with the literal path argument. Exit non-zero. Do NOT touch 
 
 ### Step F-2: Findings frontmatter validation
 
-Read the findings file. Parse its YAML frontmatter. Required keys per `.simple-workflow/docs/fix_structure/spec-findings-fixture.md`:
+Read the findings file. Parse its YAML frontmatter. Required keys per `skills/create-ticket/references/findings-schema.md`:
 
 - `title` (required)
 - `findings_version` (required; MUST equal `1` for this skill version)
