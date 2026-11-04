@@ -203,6 +203,7 @@ upstream brief
 build-copilot-skill
 Stopped:
 (^|[^/A-Za-z0-9_.-])tools/
+Limitations` of your output file
 ([a-z,] |\()Read\b'
 MISSING_DENY=""
 while IFS= read -r pat; do
@@ -329,6 +330,13 @@ references/findings-schema.md|ERROR: findings frontmatter is missing title
 references/mode-dispatch-flows.md|ERROR: findings frontmatter is missing title
 references/destinations.md|ERROR: mcp_<name>= must be <type>
 references/destinations.md|contains a character the curl config cannot carry
+SKILL.md|ERROR: brief frontmatter is missing slug
+references/mode-dispatch-flows.md|ERROR: brief frontmatter is missing slug
+SKILL.md|ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})
+references/agent-spawn-prompts.md|ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})
+SKILL.md|ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)
+references/destinations.md|ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)
+SKILL.md|ERROR: unknown destination kind in destination=<spec without query>
 NEEDLES
 check "the new ERROR: literals are present where they are raised" "$MISSING"
 check "SKILL.md names its role section ## Mandatory role invocations" \

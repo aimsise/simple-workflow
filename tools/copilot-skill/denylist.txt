@@ -87,5 +87,7 @@ upstream brief
 build-copilot-skill
 Stopped:
 (^|[^/A-Za-z0-9_.-])tools/
+# The ticket draft has no ### Limitations heading
+Limitations` of your output file
 # A capitalised Read mid-sentence is the Claude Code tool name
 ([a-z,] |\()Read\b

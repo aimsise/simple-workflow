@@ -29,7 +29,7 @@ Run the adapter of the destination kind over the tickets in topological order, e
 
 ### Step DL-4: Delivery failure
 
-- **`local:`**: a write failure is quarantined, never deleted, under `{dir}/.rollback/{parent-slug}-{ts}/` by the write-failure rule of [references/destinations.md](references/destinations.md); the counter stays untouched, so a re-run with the same inputs is safe.
+- **`local:`**: a write failure is quarantined, never deleted, under `{dir}/.rollback/{parent-slug}-{ts}/` by the write-failure rule of [references/destinations.md](references/destinations.md); the counter stays untouched, so a re-run with the same inputs is safe. If only the final counter write fails, the tickets stay in place and the run prints `ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)` and stops.
 - **`mcp:` / `api:`**: remote creates are not transactional. On a failure after `k` successful creates, print the `k` identifiers already created (in creation order), then the `ERROR:` line, and stop. Never delete or modify a remote item and never retry on your own: a re-run with the same input creates every ticket again, so the user decides how to finish.
 
 ### Step DL-5: Final summary
