@@ -1,0 +1,26 @@
+# Sections removed whole: "<destination glob><TAB><exact heading line>".
+# A section runs from its heading to the next heading of the same or a higher
+# level (at the same fence depth). Every line must match at least once.
+
+# SKILL.md: plugin state file, workflow chain, pipeline policy, skill handoff
+SKILL.md	## phase-state.yaml write ownership
+SKILL.md	#### Workflow selection (planner output)
+SKILL.md	### Step W-6: phase-state.yaml template (per ticket)
+SKILL.md	### Step W-8: autopilot-policy.yaml propagation
+SKILL.md	## Subagent Skill-Access Handoff
+
+# Mode dispatch: the plugin-developer decomposer kill switch (Step 0 per mode)
+references/mode-dispatch-flows.md	### Step F-0: Capability guard (environment variable)
+references/mode-dispatch-flows.md	### Step B-0: Capability guard (environment variable)
+references/mode-dispatch-flows.md	### Step D-0: Capability guard (environment variable)
+
+# Write-path templates: the phase-state.yaml template belongs to W-6
+references/write-path-templates.md	## Step W-6 — `phase-state.yaml` pending template (per ticket)
+
+# Split-plan schema: the first-unblocked rule fed the dropped W-11
+# recommendation; the consumer note documents the plugin's batch runner
+references/split-plan-schema.md	## First-unblocked rule (Step W-11, N > 1)
+references/split-plan-schema.md	## Consumer note (`/autopilot`)
+
+# Findings schema: the examples are plugin test fixtures that are not shipped
+references/findings-schema.md	## Examples
