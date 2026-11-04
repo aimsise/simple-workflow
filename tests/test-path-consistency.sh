@@ -246,8 +246,9 @@ echo ""
 #   full tool inventory (including MCP servers). For these, `^tools:` MUST be
 #   ABSENT from the frontmatter block.
 #
-#   Group C (6 verdict / read-only agents — ac-evaluator / code-reviewer /
-#   decomposer / security-scanner / ticket-evaluator / tune-analyzer) retain
+#   Group C (7 verdict / read-only agents — ac-evaluator / code-reviewer /
+#   decomposer / doc-verifier / security-scanner / ticket-evaluator /
+#   tune-analyzer) retain
 #   their explicit `tools:` allowlists for verdict independence / read-only
 #   invariants. For these, `^tools:` MUST be PRESENT.
 #
@@ -264,14 +265,13 @@ GROUP_A_AGENTS=(
 )
 
 # Group C — verdict / read-only agents that retain explicit tools: allowlist.
-# ac-evaluator-hi is the M5 (v8.3.0) opus sibling of ac-evaluator: same Group C
-# tools: allowlist, byte-identical body except its name:/model: lines.
 # doc-verifier is the EC-SELFDOC / doc-truthfulness verifier (v8.4.0+): a Group C
 # read-only agent with an explicit scoped tools: allowlist (scratch-only build/run
-# exec for advertised-example reproduction), registered exactly as ac-evaluator-hi was.
+# exec for advertised-example reproduction).
+# PR-5 re-point: the M5 opus twin of ac-evaluator was retired (one evaluator file, per-spawn
+# model / effort); its Group C slot is replaced by the frontmatter check after the loops below.
 GROUP_C_AGENTS=(
   "ac-evaluator"
-  "ac-evaluator-hi"
   "code-reviewer"
   "decomposer"
   "doc-verifier"
@@ -352,6 +352,46 @@ for slug in "${GROUP_C_AGENTS[@]}"; do
   assert_agent_frontmatter_valid_v8 "$REPO_DIR/agents/$slug.md" "yes"
 done
 
+# PR-5 re-point (replaces the retired opus twin's Group C slot): the single evaluator file
+# pins `model: opus` in its frontmatter (the fallback when a spawner passes no per-spawn
+# model) and carries NO `effort:` key, mirroring the generator agents/implementer.md, so a
+# routine spawn inherits the session effort exactly as the generator does; and every agent
+# frontmatter `effort:` key carries a level the harness accepts (low | medium | high |
+# xhigh | max).
+# PR-5 re-point: `effort: high` present (expected 1) -> any `effort:` line (expected 0).
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+acev_fm=$(extract_agent_frontmatter "$REPO_DIR/agents/ac-evaluator.md")
+acev_fm_opus=$(grep -cE -- '^model: opus([[:space:]]|$)' <<<"$acev_fm" || true)
+acev_fm_effort=$(grep -cE -- '^effort:' <<<"$acev_fm" || true)
+# PR-5 re-point: mirror the generator side of the invariant, agents/implementer.md also
+# carries no `effort:` key (both agents run at the session effort on a routine spawn).
+impl_fm_effort=$(extract_agent_frontmatter "$REPO_DIR/agents/implementer.md" | grep -cE -- '^effort:' || true)
+# Rubric-split / ticket-grading extension: the ticket-side evaluator agents/ticket-evaluator.md
+# also carries NO `effort:` key (it formerly pinned `effort: high`, which REPLACED the session
+# effort and made it grade below the planner in an xhigh / max session), so it grades at the
+# session effort the planner (no `effort:` key) drafts at; its model stays `inherit`.
+tev_fm=$(extract_agent_frontmatter "$REPO_DIR/agents/ticket-evaluator.md")
+tev_fm_effort=$(grep -cE -- '^effort:' <<<"$tev_fm" || true)
+tev_fm_inherit=$(grep -cE -- '^model: inherit([[:space:]]|$)' <<<"$tev_fm" || true)
+bad_effort=""
+for agent_md in "$REPO_DIR"/agents/*.md; do
+  eff=$(extract_agent_frontmatter "$agent_md" | awk '/^effort:/{sub(/^effort:[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); print; exit}')
+  if [ -n "$eff" ]; then
+    case "$eff" in
+      low|medium|high|xhigh|max) ;;
+      *) bad_effort="$bad_effort $(basename "$agent_md" .md)=$eff" ;;
+    esac
+  fi
+done
+if [ "$acev_fm_opus" -eq 1 ] && [ "$acev_fm_effort" -eq 0 ] && [ "$impl_fm_effort" -eq 0 ] \
+   && [ "$tev_fm_effort" -eq 0 ] && [ "$tev_fm_inherit" -eq 1 ] && [ -z "$bad_effort" ]; then
+  echo -e "  ${GREEN}PASS${NC} agents/ac-evaluator.md frontmatter pins model: opus with no effort: key, agents/implementer.md (the generator) has no effort: key either, agents/ticket-evaluator.md keeps model: inherit with no effort: key, and every agent effort: key is a valid level"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} single-evaluator frontmatter / agent effort levels (model: opus=$acev_fm_opus expected 1, effort: lines=$acev_fm_effort expected 0, implementer effort: lines=$impl_fm_effort expected 0, ticket-evaluator effort: lines=$tev_fm_effort expected 0, ticket-evaluator model: inherit=$tev_fm_inherit expected 1, invalid effort:${bad_effort:- none})"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 echo ""
 
 # --- Category 7: Agent reference reachability ---
@@ -374,6 +414,30 @@ for agent_md in "$REPO_DIR"/agents/*.md; do
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done
+
+# PR-5 re-point (replaces the retired opus twin's reachability row): the inverse direction.
+# Every namespaced `simple-workflow:<name>` reference under skills/ agents/ hooks/ must resolve
+# to an existing agents/<name>.md or skills/<name>/SKILL.md, so a retired or renamed agent
+# cannot leave a dangling spawn target or denylist entry behind.
+TESTS_TOTAL=$((TESTS_TOTAL + 1))
+ns_refs=$( { grep -rhoE 'simple-workflow:[a-z0-9][a-z0-9-]*' "$REPO_DIR/skills" "$REPO_DIR/agents" "$REPO_DIR/hooks" 2>/dev/null || true; } | sort -u)
+ns_count=0
+ns_dangling=""
+while IFS= read -r ns_ref; do
+  [ -z "$ns_ref" ] && continue
+  ns_count=$((ns_count + 1))
+  ns_name="${ns_ref#simple-workflow:}"
+  if [ ! -f "$REPO_DIR/agents/$ns_name.md" ] && [ ! -f "$REPO_DIR/skills/$ns_name/SKILL.md" ]; then
+    ns_dangling="$ns_dangling $ns_ref"
+  fi
+done <<<"$ns_refs"
+if [ "$ns_count" -ge 1 ] && [ -z "$ns_dangling" ]; then
+  echo -e "  ${GREEN}PASS${NC} all $ns_count namespaced simple-workflow:<name> references resolve to an agent or skill"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  ${RED}FAIL${NC} dangling namespaced references (checked $ns_count):${ns_dangling:- none}"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 echo ""
 
@@ -499,9 +563,10 @@ echo ""
 #       (e.g. Bash(git diff:*)). An unrestricted `"Bash(*)"` would silently
 #       widen a Group C agent's surface and is forbidden.
 #   (b) The set of agents whose frontmatter contains `^tools:` is exactly the
-#       6 Group C agents (ac-evaluator, code-reviewer, decomposer,
-#       security-scanner, ticket-evaluator, tune-analyzer) PLUS ac-evaluator-hi
-#       (the M5 v8.3.0 opus sibling of ac-evaluator, which copies its tools:).
+#       7 Group C agents (ac-evaluator, code-reviewer, decomposer, doc-verifier,
+#       security-scanner, ticket-evaluator, tune-analyzer).
+#       PR-5 re-point: the count is 7, not 8 — the M5 opus twin of ac-evaluator
+#       (which copied its tools:) was retired.
 echo "--- tools: allowlist enumeration (v8.0.0) ---"
 
 # (a) Zero agents may declare the unrestricted "Bash(*)" entry.
@@ -518,12 +583,11 @@ else
 fi
 
 # (b) Positive enumeration: the agents whose frontmatter contains `^tools:`
-# is exactly the 6 Group C agents. Compute the actual set and diff against
+# is exactly the 7 Group C agents. Compute the actual set and diff against
 # the expected set.
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 expected_tools_set=$(printf '%s\n' \
   "ac-evaluator" \
-  "ac-evaluator-hi" \
   "code-reviewer" \
   "decomposer" \
   "doc-verifier" \
@@ -545,7 +609,7 @@ actual_tools_set=$(
 )
 
 if [ "$actual_tools_set" = "$expected_tools_set" ]; then
-  echo -e "  ${GREEN}PASS${NC} the 8 agents with ^tools: in frontmatter are exactly Group C + ac-evaluator-hi + doc-verifier (ac-evaluator, ac-evaluator-hi, code-reviewer, decomposer, doc-verifier, security-scanner, ticket-evaluator, tune-analyzer)"
+  echo -e "  ${GREEN}PASS${NC} the 7 agents with ^tools: in frontmatter are exactly Group C (ac-evaluator, code-reviewer, decomposer, doc-verifier, security-scanner, ticket-evaluator, tune-analyzer)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   echo -e "  ${RED}FAIL${NC} agents with ^tools: do not match Group C"

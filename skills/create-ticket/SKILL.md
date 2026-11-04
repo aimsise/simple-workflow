@@ -133,7 +133,7 @@ Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Commu
 
 **Partition owned by decomposer (all modes)**; planner never re-partitions. See [references/spec-decomposer-input.md](references/spec-decomposer-input.md).
 
-**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) for Gates 1-10 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs, Gate 9 failure-class coverage for Scope-touched external boundaries, Gate 10 peer-set uniformity for >=2-peer sets). ACs failing any gate are rejected by Phase 4.
+**AC Quality Criteria binding**: planner MUST follow [references/ac-quality-criteria.md](references/ac-quality-criteria.md) (spawn prompt carries its resolved absolute path as `{rubric_path}` — `${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-criteria.md` with the variable expanded, the same rules file Phase 4 `Read`s first for inline-injection; the planner `Read`s it, and never the evaluator-only [references/ac-quality-grading.md](references/ac-quality-grading.md)) for Gates 1-10 (Gate 4 observation-point carve-out, Gate 5 size-mismatch rationale, Gate 7 oracle independence for computational ACs, Gate 8 independent evidence for behavioral ACs, Gate 9 failure-class coverage for Scope-touched external boundaries, Gate 10 peer-set uniformity for >=2-peer sets). ACs failing any gate are rejected by Phase 4.
 
 #### Workflow selection (planner output)
 
@@ -143,20 +143,17 @@ By category: Security wraps with security-only audits, spec-first; CodeQuality u
 
 `MUST invoke the simple-workflow:ticket-evaluator via the Agent tool`. `NEVER bypass` by self-assessing. `Fail this ticket` if evaluator cannot be invoked. Evaluator return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/ticket-evaluator.md`.
 
-**Canonical AC Quality Criteria inline-injection (every spawn — initial AND retry)**: orchestrator MUST `Read` [references/ac-quality-criteria.md](references/ac-quality-criteria.md) at spawn time and inline-inject the content between the markers `<canonical_ac_criteria>` and `</canonical_ac_criteria>`. Evaluator reads only the marker block (not the file). Missing markers fail-fast with ERROR.
+**Canonical AC Quality Criteria inline-injection (every spawn — initial AND retry)**: orchestrator MUST `Read` both [references/ac-quality-criteria.md](references/ac-quality-criteria.md) (the gate rules) and [references/ac-quality-grading.md](references/ac-quality-grading.md) (the evaluator-only grading procedure) at spawn time and inline-inject their full content, the rules file first and the grading file second, inside the one marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (both resolve as `${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-criteria.md` and `${CLAUDE_PLUGIN_ROOT}/skills/create-ticket/references/ac-quality-grading.md` with the variable expanded, the directory of `{rubric_path}`; the plugin-relative paths do not exist in the user's repository). Evaluator reads only the marker block (not the files). Missing markers fail-fast with ERROR. The same spawn prompt MUST also carry the `Available user skills:` and `Available MCP servers:` lines verbatim (the draft-time probes the planner received; the evaluator has no Bash and grades Gate 6.5 against them).
 
-Envelope: `Status: PASS|FAIL` + per-AC findings. `PASS` → CWP. `FAIL` → retry-with-feedback (max 2 rounds). Retry planner FS-search ban: works **solely from the inlined prior draft** + inlined Feedback (no filesystem search for `ticket.md`). Exhausted retries consult `autopilot-policy.yaml` `gates.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=<retry_with_feedback|stop> round={n}`. `brief_mode == manual` skips brief-parent fallback. Non-interactive: stop. Full: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md).
+**Effort**: no per-spawn `effort` is passed to the ticket-evaluator at any Size, initial or retry. `agents/ticket-evaluator.md` carries no `effort:` key (a frontmatter effort would replace the session effort), so the evaluator grades at the session effort, the same effort the planner (no `effort:` key, no per-spawn effort on this path) drafts at.
+
+Envelope: `Status: PASS|FAIL` + per-AC findings. `PASS` → CWP. `FAIL` → retry-with-feedback (max 2 rounds). Retry planner FS-search ban: works **solely from the inlined prior draft** + inlined Feedback, plus the rubric at its resolved absolute path (no filesystem search for `ticket.md`). Exhausted retries consult `autopilot-policy.yaml` `gates.ticket_quality_fail`; honor `retry_with_feedback` / `stop`; emit `[AUTOPILOT-POLICY] gate=ticket_quality_fail action=<retry_with_feedback|stop> round={n}`. `brief_mode == manual` skips brief-parent fallback. Non-interactive: stop. Full: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md).
 
 **Split (N>1)**: independent per sub-ticket. Any FAIL after retry/escalation → `/create-ticket` stops atomically (no directories, no counter change).
 
-#### Canonical Gate 1 / Gate 2 examples
+**Verdict log**: `hooks/create-ticket-metrics.sh` (SubagentStop) records the verdict of every ticket-evaluator stop in this phase, initial and retry, as one line in `.simple-workflow/metrics/create-ticket.jsonl`, and the orchestrator MUST NOT write, edit or truncate that file.
 
-The rubric [references/ac-quality-criteria.md](references/ac-quality-criteria.md) anchors these BAD/GOOD strings; duplicated here verbatim (no cross-file interpolation). The AC-example drift guard keeps both copies in sync.
-
-- BAD: "Improve performance" (no threshold)
-- GOOD: "Response time under 200ms for 95th percentile"
-- BAD: "Support large files" ("large" undefined)
-- GOOD: "Stream files over 100MB without loading into memory"
+Gate 1 / Gate 2 BAD/GOOD examples live only in [references/ac-quality-criteria.md](references/ac-quality-criteria.md) Gates 1-2, which reach the evaluator inside the inlined canonical block; this file keeps no copy.
 
 ## Common Write Path
 
@@ -248,7 +245,7 @@ Every `ERROR:` path is atomic: no directories created, `.ticket-counter` unchang
 
 When you spawn a subagent via the Agent tool, consult the `Available user skills:` line in the Pre-computed Context above. If a listed utility skill is relevant to that subagent's task, name it in the Agent prompt and instruct the subagent to use it via the Skill tool when it materially helps.
 
-- **Truly hermetic agents** (`security-scanner`, `ticket-evaluator`) carry no Skill tool, no MCP, no `Bash(*)`. If you spawn one, hand off nothing — speculative references only add noise.
+- **Truly hermetic agents** (`security-scanner`, `ticket-evaluator`) carry no Skill tool, no MCP, no `Bash(*)`. If you spawn one, hand off nothing — speculative references only add noise. Exception (this skill only): the Phase 4 `Available user skills:` / `Available MCP servers:` probe lines are Gate 6.5 grading input, not a capability handoff, and MUST still be forwarded verbatim to `ticket-evaluator`.
 - **Skill-bearing verdict / read-only agents** (`ac-evaluator`, `code-reviewer`, `decomposer`, `tune-analyzer`) retain explicit `tools:` allowlists and do NOT inherit MCP / `Bash(*)`. They DO carry the Skill tool and receive capability handoffs, but only via **deterministic per-AC binding** (the `## Bound capabilities (per AC)` block extracted from `{ticket-dir}/ticket.md`'s `### Capabilities` section) — never via ad-hoc speculation from the `Available user skills:` probe.
 - **Productive agents** (`implementer`, `planner`, `researcher`, `test-writer`) inherit-all under v8.0.0 — every parent-session MCP server and `Bash(*)` is in their tool inventory. Only `mcp__*` and Skills bound to an active AC via `## Bound capabilities (per AC)` may be invoked (per the agent body's `## Bound Capabilities (Handoff from Orchestrator)` section).
 - Never present a pipeline skill (`/scout`, `/impl`, `/audit`, `/ship`, `/autopilot`, `/brief`, `/catchup`, `/create-ticket`, `/investigate`, `/plan2doc`, `/refactor`, `/test`, `/tune`) as a utility for a subagent.

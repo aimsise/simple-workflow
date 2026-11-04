@@ -482,7 +482,7 @@ fi
 # the skip guards).
 ADVANCE_GUARD_MODE="${SW_STATE_ADVANCE_GUARD_MODE:-metric-only}"
 if [ "$ADVANCE_GUARD_MODE" != "off" ] && [ "$ADVANCEMENT_DETECTED" = "true" ] \
-   && printf '%s' "$AGENT_TYPE" | grep -qE '^(simple-workflow:)?(ac-evaluator|ac-evaluator-hi|doc-verifier|code-reviewer|security-scanner|ticket-evaluator)$'; then
+   && printf '%s' "$AGENT_TYPE" | grep -qE '^(simple-workflow:)?(ac-evaluator|doc-verifier|code-reviewer|security-scanner|ticket-evaluator)$'; then
   case "$ADVANCE_GUARD_MODE" in
     on)
       emit_block "unauthorized_phase_advance_by_review_agent" \

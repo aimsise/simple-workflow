@@ -95,6 +95,10 @@
       },
       {
         "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scout-checkpoint-guard.sh" }]
+      },
+      {
+        "matcher": "^(simple-workflow:)?ticket-evaluator$",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/create-ticket-metrics.sh" }]
       }
     ]
   }

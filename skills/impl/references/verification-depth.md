@@ -56,7 +56,7 @@ assurance and the matrix caps `conservative` at `thorough` even for XL.
 
 The floor below has always read a model-judgment over the AC text. M5 promotes that
 read into a SINGLE named scalar computed exactly once at `/impl` Step 3a so M5
-(evaluator model + red-team budget), M2 (red-team budget), and M3 (integration-review
+(evaluator effort / model + red-team budget), M2 (red-team budget), and M3 (integration-review
 depth) all read one value instead of re-deriving the judgment:
 
 ```
@@ -75,8 +75,10 @@ irreversibility axis fires; `routine` otherwise. `/impl` Step 3a emits
 `[CRITICALITY] level={routine|critical} blast_radius={S|M|L|XL}
 irreversibility={none|writes|network|money|destructive|external-system}` to stderr so a
 dogfood run can audit the derivation without re-deriving it. `criticality=routine` is the
-byte-identical-to-pre-v8.3 default: it never raises the depth tier, never bumps the
-evaluator model, and leaves the red-team budget at 0.
+byte-identical-to-pre-v8.3 default: it never raises the depth tier, never passes a
+per-spawn evaluator effort (`evaluator_effort = inherit`: the evaluator runs at the session
+effort, the same effort the generator inherits), never raises the model above sonnet under
+`SW_EVALUATOR_MODEL=tiered`, and leaves the red-team budget at 0.
 
 ## Criticality floor (computational / critical ACs)
 
@@ -135,7 +137,8 @@ movement (charges, transfers, ledger writes), DESTRUCTIVE operations
 — the resolved `criticality` is floored at `critical` even on an `S` ticket — which, exactly
 as the critical-domain computational condition does, floors the depth tier at `thorough`
 (raise `standard`→`thorough`, never lower a higher tier) AND, per the criticality scalar,
-bumps the evaluator model to opus and the red-team budget to full. Like the critical-domain
+raises the evaluator effort to `xhigh` (and, under `SW_EVALUATOR_MODEL=tiered`, the
+model to opus) and the red-team budget to full. Like the critical-domain
 condition, the irreversibility determination is a model-judgment read of the AC text
 (there is no deterministic ticket field); the cue list matches the irreversibility-axis
 cue list in `skills/impl/references/evidence-channels.md`. The axis only RAISES
@@ -155,10 +158,10 @@ leaving the matrix-derived depth scaling intact. Both default to active.
 ## Effects ladder
 
 The resolved tier and the criticality floor control these independent knobs — the
-`evidence_floor` column added by M1, and the `evaluator model` + `red-team budget`
+`evidence_floor` column added by M1, and the `evaluator model` / effort + `red-team budget`
 outputs by M5 (both v8.3.0+); the floor only RAISES them, never lowers. They are folded
 into the single resolved struct `{depth_tier, criticality, evidence_floor,
-evaluator_model, redteam_budget, domain_set}` that `/impl` Step 3a materialises into
+evaluator_model, evaluator_effort, redteam_budget, domain_set}` that `/impl` Step 3a materialises into
 `phases.impl.*`:
 
 | Tier | GE `max_rounds` bonus | `/audit` third-pass | Step 15 evaluators | `evidence_floor` (Gate 8 channels MANDATORY) |
@@ -258,43 +261,73 @@ shape is [`independent-oracle-harness.md`](independent-oracle-harness.md).
 
 ### Evaluator model + red-team budget (M5 / v8.3.0+)
 
-The resolver also fills two struct fields the floor RAISES:
+The resolver also fills the struct fields the floor RAISES. The evaluator model is
+set by the `SW_EVALUATOR_MODEL` environment knob, read once at `/impl` Step 3a (see
+`CLAUDE.md` `### Runtime env knobs`); the evaluator effort and the red-team budget
+follow the `criticality` scalar and the tier alone:
 
-| criticality / tier | evaluator model | red-team budget (M2, v8.5.0+) |
-|---|---|---|
-| routine AND tier ∈ {standard, thorough} | sonnet (`ac-evaluator`, today's behaviour) | 0 (no red-team phase) |
-| critical OR tier == exhaustive | opus (`ac-evaluator-hi`, see below) | full sweep — all 5 attack classes (`skills/impl/references/evidence-channels.md`) at high iteration hardness |
+| criticality / tier | evaluator model (`auto`, the default) | evaluator model (`tiered`) | evaluator effort | red-team budget (M2, v8.5.0+) |
+|---|---|---|---|---|
+| routine AND tier ∈ {standard, thorough} | opus | sonnet | inherit (no per-spawn effort: the session effort, the same effort the generator inherits) | 0 (no red-team phase) |
+| critical OR tier == exhaustive | opus | opus | xhigh | full sweep — all 5 attack classes (`skills/impl/references/evidence-channels.md`) at high iteration hardness |
 
-- **evaluator model**: today the evaluator is hardcoded sonnet (`skills/impl/SKILL.md`
-  Step 15 "always sonnet"; `agents/ac-evaluator.md` frontmatter `model: sonnet`). M5
-  resolves `evaluator_model` to `opus` when `criticality == critical` OR
-  `depth_tier == exhaustive` (the Generator already always runs on opus — see the
+`SW_EVALUATOR_MODEL=opus` / `=sonnet` force that model in both rows. An unknown value
+resolves `auto` with a one-line `[EVALUATOR-MODEL] WARNING` (the fail-safe direction is
+the stronger model, so a typo never downgrades the evaluator).
+
+**Invariant — evaluator ≥ generator** (the single statement; `skills/impl/SKILL.md`
+Step 3a, `CLAUDE.md` `SW_EVALUATOR_MODEL`, and
+`skills/create-ticket/references/autopilot-policy-reference.md` point here). Scope: both
+axes, model and effort.
+**Model axis**: it holds by construction under `auto` (the default) and a forced `opus`:
+the generator `agents/implementer.md` and the evaluator `agents/ac-evaluator.md` both pin
+`model: opus`, and every fallback resolves to opus (an older CLI without a per-invocation
+`model` falls back to the evaluator frontmatter; an unresolved `evaluator_model` reaching
+the eval-panel Workflow is forwarded as `opus`; an unknown knob value resolves `auto`).
+`tiered` (on routine tickets) and a forced `sonnet` (at every tier) are explicit opt-outs
+that relax it.
+**Effort axis**: it holds by construction at every `SW_EVALUATOR_MODEL` value. Neither
+the generator `agents/implementer.md` nor the evaluator `agents/ac-evaluator.md` has an
+`effort:` key, so both inherit the session effort; `/impl` passes a per-spawn evaluator
+effort only for `critical` / `exhaustive`, and only `xhigh` (`evaluator_effort = inherit`
+otherwise), and every fallback lands on the session effort, the generator's own level (an
+older CLI without a per-invocation `effort`, a spawn retried without the field, and an
+`evaluator_effort` the eval-panel Workflow does not recognise all omit it). The single
+residual is a session running at `max` effort: there a `critical` / `exhaustive` evaluator
+runs at the passed `xhigh`, one level below the generator's inherited `max`, while a
+`routine` evaluator still matches it. It is also the one cell that is lower than before the
+per-spawn effort existed: no effort was passed then, so that evaluator inherited `max` too.
+
+- **evaluator model / effort**: one agent file, `agents/ac-evaluator.md` (frontmatter
+  `model: opus`, no `effort:` key), serves every tier. `/impl` spawns
+  `simple-workflow:ac-evaluator` with the per-invocation `model` (always) and `effort`
+  (only when it resolves `xhigh`; at `inherit` none is passed) from Step 3a; the Agent tool
+  ranks a per-invocation value above the agent frontmatter, and the eval-panel Workflow
+  passes the same values as `opts.model` and, only at `xhigh`, `opts.effort`. Under the default `auto` the evaluator always runs on
+  opus, the same model as the Generator (which always runs on opus — see the
   **Generator model policy** in
-  `skills/create-ticket/references/autopilot-policy-reference.md`). **Selection path**: the Agent tool accepts a per-invocation `model` override (it
-  outranks the agent's frontmatter), but the orchestrator deliberately selects a
-  DEDICATED agent file so the escalation is auditable from the spawn's `subagent_type`
-  alone (the soft turn budget in `skills/impl/references/ac-evaluator-orchestration.md`
-  `## Turn-budget formula` is a separate, still-standing Strategy-B choice):
-  when `evaluator_model == opus` it spawns `simple-workflow:ac-evaluator-hi`
-  (`agents/ac-evaluator-hi.md`, `model: opus`, body byte-identical to `ac-evaluator`
-  except its `name:` and `model:` frontmatter lines) instead of
-  `simple-workflow:ac-evaluator`; otherwise it spawns `ac-evaluator` unchanged. The per-spawn
-  `model` argument is accepted by the current harness, so the two-file layout could
-  later collapse into a per-spawn override; the byte-identical-body invariant remains
-  the supported path today (guarded by CT-EV-MODEL). If
-  maintaining the second agent file is judged too costly, M5 degrades to
-  red-team-budget-only (evaluator stays sonnet at every tier) — set the floor's evaluator
-  bump aside without touching the budget column.
+  `skills/create-ticket/references/autopilot-policy-reference.md`), so the criticality
+  floor raises the evaluator's effort, not its model; `tiered` restores the v8.3.0+
+  routing in which the floor also bumps the model from sonnet to opus. Where the Agent
+  tool exposes no per-invocation `model` / `effort` (older CLIs), the spawn omits the
+  field, so the frontmatter `model: opus` and the session effort apply and the fallback
+  never lowers the evaluator below the generator on either axis. The audit trail is the `[EVALUATOR-MODEL] model= effort= source= reason=`
+  stderr line plus `phases.impl.evaluator_model` / `phases.impl.evaluator_effort` (the
+  soft turn budget in `skills/impl/references/ac-evaluator-orchestration.md`
+  `## Turn-budget formula` is a separate, still-standing Strategy-B choice).
 - **red-team budget**: `redteam_budget` (attack-class count × iteration hardness) is
   consumed by the M2 red-team pre-ship phase (v8.5.0). It scales with the SAME
   `criticality` scalar — a tiny irreversible-write ticket gets the full sweep even at
   Size S. In v8.3.0 M2 does not yet exist, so `redteam_budget` is recorded into the
   struct but has no consumer (a pure no-op until v8.5.0).
 
-**Fail-open**: a `routine` ticket at `standard`/`thorough` keeps `evaluator_model =
-sonnet` and `redteam_budget = 0`, byte-identical to pre-v8.3 behaviour.
-`constraints.verification_depth: off` disables the whole floor including the model bump
-and the budget. `constraints.oracle_verification: off` disables the critical-domain axis
+**Fail-open**: a `routine` ticket at `standard`/`thorough` keeps `evaluator_effort =
+inherit` (the session effort) and `redteam_budget = 0`; its `evaluator_model` is `opus`
+under `auto` and `sonnet` under `tiered` (the latter the pre-v8.3 model, at the inherited
+session effort exactly as before).
+`constraints.verification_depth: off` disables the whole floor including the effort bump,
+the `tiered` model bump, and the budget; under `auto` the model stays `opus` (`off`
+disables depth, not the evaluator's strength). `constraints.oracle_verification: off` disables the critical-domain axis
 of the floor (pre-v8.2.0); `constraints.irreversibility_floor: off` disables only the new
 irreversibility axis. Each kill switch defaults active (absent / unknown → `auto`).
 

@@ -138,7 +138,7 @@ tools:
   - "shell(wc:*)"
   - "shell(head:*)"
   - "shell(tail:*)"
-model: sonnet  # M5/v8.3.0+: the opus variant is the byte-identical sibling agents/ac-evaluator-hi.md (model: opus); the orchestrator spawns ac-evaluator-hi when the Step 3a resolver sets EVALUATOR_MODEL=opus (criticality=critical OR verification_depth=exhaustive), spawning by agent file is the canonical model selection (Strategy-B; the Agent tool's newer per-invocation model parameter is not relied on, so the spawned file's model: line stays the auditable source of truth). Keep the two bodies byte-identical except this line and the name: line (CT-EV-MODEL).
+model: opus  # the per-spawn model resolved at /impl Step 3a (SW_EVALUATOR_MODEL) takes precedence; this frontmatter model is the fallback. No effort: key (like agents/implementer.md): the evaluator inherits the session effort unless a spawn passes one
 maxTurns: 200  # raised in T-2; 60 is the documented floor, orchestrator passes a soft turn budget in the prompt via AC_COUNT * 4
 ---
 

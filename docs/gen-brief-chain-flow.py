@@ -291,7 +291,7 @@ def build(theme, out):
                             ("researcher", AGENT_TX, True), ("  →  ", GRAY, False),
                             ("investigation.md", IO_TX, True)], size=12)
     rich(SX0 + 14, S0 + 76, [("/plan2doc", SKILL_TX, True), ("  →  ", GRAY, False),
-                            ("planner", AGENT_TX, True), (" (size-routed)  →  ", GRAY, False),
+                            ("planner", AGENT_TX, True), (" (size-routed effort)  →  ", GRAY, False),
                             ("plan.md", IO_TX, True)], size=12)
 
     y = trans(S0 + 118, ["investigation.md + plan.md land on disk  ·  the plan's Acceptance",
@@ -411,7 +411,7 @@ def build(theme, out):
          size=13, bold=True, color=PR_TX, anchor="mm")
 
     # HOOKS lane
-    HY0, HY1 = 204, 1196
+    HY0, HY1 = 204, 1231
     box(HX0, HY0, HX1, HY1, HOOK_FILL, HOOK_BD, width=2, radius=12)
     text(HX0 + 18, HY0 + 24, "Lifecycle hooks  —  always-on", size=14, bold=True, color=HOOK_TX)
     text(HX0 + 18, HY0 + 45, "(hooks.json — fire around every tool call & every turn)", size=10, color=GRAY)
@@ -456,8 +456,9 @@ def build(theme, out):
     hy = hitem(hy, "impl- / scout-checkpoint-guard.sh", "block a premature stop mid-phase (serial)")
     hy = hitem(hy, "session-stop-log.sh", "")
     hy += 8
-    hy = hgroup(hy, "SubagentStop   (per ticket-executor)")
+    hy = hgroup(hy, "SubagentStop")
     hy = hitem(hy, "impl- / scout-checkpoint-guard.sh", "enforce mid-phase on the executor transcript")
+    hy = hitem(hy, "create-ticket-metrics.sh", "log each ticket-evaluator verdict")
 
     hy += 12
     d.line([P(HX0 + 18), P(hy), P(HX1 - 18), P(hy)], fill=SEP, width=P(1))

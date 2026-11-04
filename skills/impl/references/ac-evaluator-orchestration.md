@@ -54,6 +54,10 @@ AC-ID order (never by file or topic boundaries). Let part 1 cover AC-1
 through AC-⌊AC_COUNT/2⌋ and part 2 cover the remainder.
 
 - Invoke `simple-workflow:ac-evaluator` **twice** — once per partition.
+  Both invocations carry the Step 3a per-invocation `model` / `effort`
+  (`skills/impl/SKILL.md` Step 15), exactly as the single invocation does:
+  the `effort` only when `EVALUATOR_EFFORT == xhigh`; at `inherit` none is
+  passed, so the session effort applies, as it does for the Generator.
 - Persist reports as `eval-round-{n}-part-1.md` and
   `eval-round-{n}-part-2.md` (both paths under the same directory as
   the unpartitioned `eval-round-{n}.md` path would be, e.g.
@@ -119,17 +123,21 @@ fields (`a`-`h`, `j`) are identical across the three spawns; field `k`
 (partition) is absent here. The soft turn budget (field `j`) is computed
 once from the full `AC_COUNT` and passed to all three.
 
-**Evaluator model in the multi-verifier branch (M5, v8.3.0+)**: `exhaustive` tier
-resolves `EVALUATOR_MODEL == opus` at Step 3a, so all three lens spawns use the opus
-agent file `simple-workflow:ac-evaluator-hi` (the model is selected by which agent file is
-spawned: the twin files predate the Agent tool's per-invocation `model` parameter — which
-the current harness accepts and ranks above the frontmatter `model:` — and are retained so
-the spawned file, its `model:` line, and the persisted report stay auditable; the soft turn
-budget above is still a prompt-level contract because the Agent tool has no `maxTurns`
-parameter). The lens directives, the soft turn budget (field `j`), and the refute-then-synthesize merge are
-otherwise unchanged; `ac-evaluator-hi.md` is byte-identical to `ac-evaluator.md` except
-its `name:` and `model:` lines, so it recognises the `--- lens: <i>/3 ---` header and
-applies the assigned lens identically.
+**Evaluator model in the multi-verifier branch (M5, v8.3.0+)**: all three lens spawns
+target the single agent `simple-workflow:ac-evaluator` with the per-invocation `model` /
+`effort` resolved at Step 3a. `exhaustive` always resolves `EVALUATOR_EFFORT == xhigh`,
+and `EVALUATOR_MODEL == opus` under both `SW_EVALUATOR_MODEL=auto` (the default, opus at
+every tier) and `tiered` (opus for `exhaustive` / `critical`); a forced `opus` / `sonnet`
+applies as set. The Agent tool ranks a per-invocation `model` / `effort` above the
+frontmatter (`model: opus`; the file has no `effort:` key, so an omitted effort is the
+session effort); where it exposes neither (older CLIs) the spawn omits them and the
+frontmatter `model: opus` and the session effort apply; if a spawn is rejected over either field,
+re-spawn once without it, and never fail the round over these fields (the Step 15
+fallback). The soft turn budget above is still a
+prompt-level contract because the Agent tool has no `maxTurns` parameter. The lens
+directives, the soft turn budget (field `j`), and the refute-then-synthesize merge are
+otherwise unchanged; every lens spawn reads the same agent body, so it recognises the
+`--- lens: <i>/3 ---` header and applies the assigned lens identically.
 
 ### Refute-then-synthesize merge (after all three return)
 
@@ -239,8 +247,8 @@ MAY surface a failure-class coverage gap the planner dropped (the grader becomes
 a coverage-gap finder, not only an AC grader). A surfaced gap is reported as
 advisory `[MEDIUM]` coverage-gap Feedback, NOT as a silent AC PASS and NOT as a
 Gate-3 ticket-quality FAIL (the matching carve-out lives in
-`skills/create-ticket/references/ac-quality-criteria.md` `## Evaluator MUST NOT`
-and `agents/ticket-evaluator.md`). A real defect a lens finds inside an AC's
+`skills/create-ticket/references/ac-quality-grading.md` Gate 3
+(`**Impl-side panel carve-out**`), which `agents/ticket-evaluator.md` honours). A real defect a lens finds inside an AC's
 scope is graded on that AC as usual.
 
 **Proportionality — size gates DEPTH only, never the lens set**:

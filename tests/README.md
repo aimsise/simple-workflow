@@ -21,6 +21,7 @@ All hooks in `hooks/` have corresponding test files in `tests/`:
 | autopilot-continue.sh | test-autopilot-continue.sh, test-autopilot-runtime-metrics.sh | Stop-hook continuation, loop guards, policy-gate-stop honour, wave-aware continuation, `runtime_metrics` writes |
 | impl-checkpoint-guard.sh | test-impl-checkpoint-guard.sh | Post-`/audit` handoff guard (Stop + SubagentStop) |
 | scout-checkpoint-guard.sh | test-scout-checkpoint-guard.sh | Post-`/plan2doc` handoff guard (Stop + SubagentStop) |
+| create-ticket-metrics.sh | test-create-ticket-metrics.sh | `/create-ticket` Phase 4 verdict log (SubagentStop): verdict parsing (Result-block scope, fences, case), `seq`, log root anchor, kill switch, fail-open paths, no path on stderr, concurrent appends |
 | session-start.sh | test-session-start.sh, test-session-start-hook.sh, test-session-start-next-compact.sh | JSON output, context injection, branch detection, log cleanup, post-compact resume kick, `.next-compact-pending` replay |
 | session-stop-log.sh | test-session-stop-log.sh | Log creation and content |
 | pre-level1-guard.sh | (none) | Dev-repository-only guard registered in the tracked `.claude/settings.json` (not in `hooks/hooks.json`); exercised manually |

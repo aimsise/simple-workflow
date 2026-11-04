@@ -67,11 +67,11 @@ The literal word `circular` MUST appear in stdout. Exit non-zero. Do NOT touch `
 
 ### Step F-7: Per-ticket planner expansion
 
-For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size, findings context). Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow). Bind the planner to the canonical AC Quality Criteria at `skills/create-ticket/references/ac-quality-criteria.md` (see SKILL.md Phase 3).
+For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size, findings context). Receive the full `ticket.md` draft (Background / Scope / Acceptance Criteria / Implementation Notes / Claude Code Workflow). Bind the planner to the canonical AC Quality Criteria at `skills/create-ticket/references/ac-quality-criteria.md` (see SKILL.md Phase 3; the spawn prompt carries the rubric's absolute path `{rubric_path}`).
 
 ### Step F-8: Per-ticket evaluation
 
-For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected between the marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (Read the rubric file at spawn time). Apply the retry/escalation policy described in SKILL.md Phase 4 (max 2 rounds, gate check on `gates.ticket_quality_fail` when `brief=` is present).
+For each planner draft, invoke the `simple-workflow:ticket-evaluator` via the Agent tool with the canonical AC Quality Criteria inline-injected between the marker pair `<canonical_ac_criteria>` and `</canonical_ac_criteria>` (Read both rubric files at spawn time and inline them inside that one block, `references/ac-quality-criteria.md` first and `references/ac-quality-grading.md` second), plus the `Available user skills:` / `Available MCP servers:` probe lines verbatim and no per-spawn effort, per SKILL.md Phase 4. Apply the retry/escalation policy described in SKILL.md Phase 4 (max 2 rounds, gate check on `gates.ticket_quality_fail` when `brief=` is present).
 
 If ANY sub-ticket FAILs after exhausting retry/escalation, the entire `/create-ticket` stops with **no** directories created and **no** counter change. This is the atomicity guarantee of findings mode.
 
@@ -132,7 +132,7 @@ Failure paths (identical to Findings Mode F-5 / F-6): `Status: failed` → `ERRO
 
 ### Step B-6: Per-ticket planner expansion
 
-For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the brief content and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md` (see SKILL.md Phase 3). The planner does NOT re-partition — the decomposer already decided the ticket count in Step B-5.
+For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the brief content and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md` (see SKILL.md Phase 3; the spawn prompt carries the rubric's absolute path `{rubric_path}`). The planner does NOT re-partition — the decomposer already decided the ticket count in Step B-5.
 
 ### Step B-7: Per-ticket evaluation
 
@@ -178,7 +178,7 @@ Failure paths (identical to Findings Mode F-5 / F-6): `Status: failed` → `ERRO
 
 ### Step D-5: Per-ticket planner expansion
 
-For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the bare description and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md`. The planner does NOT re-partition — the decomposer already decided the ticket count in Step D-4.
+For each ticket skeleton returned by the decomposer, in topological order, invoke the `simple-workflow:planner` via the Agent tool with the skeleton (title, scope_summary, size) plus the bare description and Phase 1 investigation as supporting context. Bind the planner to `references/ac-quality-criteria.md` (see SKILL.md Phase 3; the spawn prompt carries the rubric's absolute path `{rubric_path}`). The planner does NOT re-partition — the decomposer already decided the ticket count in Step D-4.
 
 ### Step D-6: Per-ticket evaluation
 

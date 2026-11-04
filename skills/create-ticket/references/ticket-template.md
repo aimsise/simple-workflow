@@ -36,7 +36,7 @@ Generate the ticket in the following format:
 | Failure class | AC(s) or n/a justification |
 |------|------|
 | R1 FULL-DOMAIN INVARIANT (whole valid domain incl. min/max/empty/singleton/max-length/just-inside-each-boundary) | AC-... \| n/a: ... |
-| R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP (malformed/oversized/empty/out-of-domain -> bounded error in bounded time/space; no hang, no non-error success; when this unit is a member of a cross-ticket `shared_input_boundary` family it owes this row even if it DELEGATES to a shared parser — 'delegates to the shared parser' is not an acceptable n/a) | AC-... \| n/a: ... |
+| R2 HOSTILE + BOUNDED TERMINATION + RESOURCE-CAP (malformed/oversized/empty/out-of-domain -> bounded error in bounded time/space; no hang, no non-error success; a cross-ticket `shared_input_boundary` member owes this row even when delegating — see rubric Gate 7 sibling-guard) | AC-... \| n/a: ... |
 | R3 DESCRIPTION-MATCHES-BEHAVIOR (runtime matches the unit's own docstring/declared invariant) | AC-... \| n/a: ... |
 | R4 DOC/INTERFACE TRUTHFULNESS (each advertised example reproduces on a real build; advertised boundary == enforced boundary) | AC-... \| n/a: ... |
 
@@ -70,6 +70,10 @@ Generate the ticket in the following format:
 
 #### Capability Skip Rationale
 
+(Name every probe entry that is neither Bound nor Advisory, each in full; one bullet per shared reason.)
+
+- **<name-1>, <name-2>**: pipeline orchestrator; not subagent-invocable per External Tool Integration Policy
+- **<name-1>, <name-2>**: domain mismatch — <one-line reason none of these entries intersects this ticket>
 - **<name>**: <one-line reason this probe-visible capability is neither Bound nor Advisory for this ticket>
 
 ### Claude Code Workflow

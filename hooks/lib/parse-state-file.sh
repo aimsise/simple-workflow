@@ -9,6 +9,8 @@
 #   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)
 #   - hooks/post-phase-checkpoint.sh (PostToolUse:Write/Edit observer, PX-05)
 #   - hooks/post-ship-auto-compact.sh (PostToolUse:Skill auto-/compact, v7)
+#   - hooks/create-ticket-metrics.sh (SubagentStop verdict log, P1-13;
+#     `_psf_repo_root` only, sourced best-effort)
 #   - tests/test-hooks-lib.sh (unit tests for these helpers)
 #
 # Public contract (do not change without updating the consumers above):

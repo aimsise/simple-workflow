@@ -37,13 +37,13 @@
 #        - Blocked otherwise as `unauthorized_ship_inline` (UNCONDITIONAL --
 #          NOT gated by SW_REVIEW_FIREWALL_MODE; only the SIGNAL was re-keyed).
 #   2b. autopilot context inside, a review/evaluator agent (`.agent_type` in
-#        the FOUR Bash-bearing review agents ac-evaluator / ac-evaluator-hi /
-#        doc-verifier / code-reviewer) running `git add|commit|mv|push` ->
+#        the THREE Bash-bearing review agents ac-evaluator / doc-verifier /
+#        code-reviewer) running `git add|commit|mv|push` ->
 #        `unauthorized_commit_by_review_agent`, gated by SW_REVIEW_FIREWALL_MODE
 #        (default metric-only). `git worktree` is exempt. (security-scanner /
 #        ticket-evaluator carry no Bash, so they have no git surface here; their
 #        phase-advance Write vector is covered by pre-state-transition.sh
-#        Detection 4, whose denylist holds all SIX.) The FIX-2 firewall.
+#        Detection 4, whose denylist holds all FIVE.) The FIX-2 firewall.
 #   3. autopilot context inside, append to `manual_bash_fallbacks[]` whose
 #      reason text matches any FORBIDDEN_RATIONALE_PATTERNS entry:
 #        - Blocked as `context_budget_fallback`. Other rationales (e.g.
@@ -207,7 +207,7 @@ fi
 
 # (B) Review-agent git-source firewall (NEW, gated by SW_REVIEW_FIREWALL_MODE,
 # default metric-only). A review/evaluator subagent (ac-evaluator,
-# ac-evaluator-hi, doc-verifier, code-reviewer) legitimately runs read-only git
+# doc-verifier, code-reviewer) legitimately runs read-only git
 # (`git diff/status/log/show`) and `git worktree add/remove/list` for scratch
 # probes, but MUST NOT mutate history or staging: `git add`, `git commit`,
 # `git mv`, `git push`. S3 FAIL means the per-agent `tools:` allowlist does not
@@ -217,7 +217,7 @@ fi
 REVIEW_FIREWALL_MODE="${SW_REVIEW_FIREWALL_MODE:-metric-only}"
 if [ "$REVIEW_FIREWALL_MODE" != "off" ] && [ -n "$AGENT_TYPE" ]; then
   case "$AGENT_TYPE" in
-    ac-evaluator|ac-evaluator-hi|doc-verifier|code-reviewer)
+    ac-evaluator|doc-verifier|code-reviewer)
       # Match `git add|commit|mv|push` directly after `git ` (token-position
       # aware). `git worktree ...` does not match this alternation -> exempt.
       GIT_SRC_RE='(^|[|;&]|\$\(|`)[[:space:]]*(env[[:space:]]+|command[[:space:]]+)?git[[:space:]]+(add|commit|mv|push)([[:space:]]|$)'

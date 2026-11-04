@@ -43,7 +43,7 @@ The following skill invocations are **contractual** — `/scout` MUST delegate t
 
 **Binding rules**:
 - `MUST invoke /investigate via the Skill tool` — never substitute by running `Grep`/`Glob`/`Read` directly from within `/scout`.
-- `MUST invoke /plan2doc via the Skill tool` — never write `plan.md` by model output; `/plan2doc` is the only contract-compliant author of plan files because it spawns the `planner` agent with size-aware model selection.
+- `MUST invoke /plan2doc via the Skill tool` — never write `plan.md` by model output; `/plan2doc` is the only contract-compliant author of plan files because it spawns the `planner` agent on the session model with Size-routed effort.
 - `NEVER bypass these skills via direct file operations` — `/scout` must not write to `investigation.md` or `plan.md` itself.
 - `Fail the task immediately if /investigate or /plan2doc cannot be invoked via the Skill tool` — print the failure reason and stop.
 
@@ -144,10 +144,10 @@ the contract is unsatisfied — do NOT end your turn.
 6. Determine the final Size (informational only — `/plan2doc` will re-detect):
    - If Size was read from the ticket file in step 1, use that value.
    - Otherwise, read the research file for a Size field (S/M/L/XL). Default to M if absent.
-7. **MUST invoke `/plan2doc` via the Skill tool** with `<topic>` and the following arguments. **NEVER bypass /plan2doc** by writing `plan.md` directly — /plan2doc is the only contract-compliant author (it spawns the `planner` agent with size-aware model selection). Fail the task immediately if `/plan2doc` cannot be invoked.
+7. **MUST invoke `/plan2doc` via the Skill tool** with `<topic>` and the following arguments. **NEVER bypass /plan2doc** by writing `plan.md` directly — /plan2doc is the only contract-compliant author (it spawns the `planner` agent on the session model with Size-routed effort). Fail the task immediately if `/plan2doc` cannot be invoked.
    - If `ticket-dir` is set, append `(ticket-dir: .simple-workflow/backlog/active/{ticket-dir})` and `(research: .simple-workflow/backlog/active/{ticket-dir}/investigation.md)` to the arguments.
    - If `ticket-dir` is not set, use `(research: <research-file-path>)` as before.
-   - `/plan2doc` will internally select the planner model based on the Size in `ticket.md` (sonnet for S, opus for M/L/XL).
+   - `/plan2doc` passes no planner model (the planner inherits the session model) and routes only the spawn effort by the Size in `ticket.md` (`effort: low` for S, session default for M/L/XL).
    - `/plan2doc` MUST NOT write to `phase-state.yaml`; only `/scout` updates `phases.scout`.
    - **Return value cap**: Return per the Context Conservation Protocol in the planner agent definition — the spawned agent's return value MUST stay under 500 tokens (status, plan.md output path, 1-2 line summary). The full plan content lives in `plan.md`; the orchestrator reads it on demand.
 

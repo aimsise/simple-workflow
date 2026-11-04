@@ -18,19 +18,39 @@ generation-side agent runs on is fixed in its agent-file frontmatter:
 
 `inherit` resolves to the session model by default. Claude Code resolves a
 subagent's model in this order: a per-invocation `model` passed by the caller
-(as `/plan2doc` does for its size-routed planner spawn — `sonnet` for Size S,
-`opus` otherwise — which therefore outranks the planner's `inherit` on that
-path) > the agent frontmatter (`inherit` = the session model) >
+(which is why `/plan2doc` passes none for its planner spawn — it routes only
+`effort`, `low` for Size S — so the planner's `inherit` holds on that path) >
+the agent frontmatter (`inherit` = the session model) >
 `CLAUDE_CODE_SUBAGENT_MODEL` > the session model. To force the whole
 generation + verification fleet onto one model regardless of these per-agent
 pins, set `CLAUDE_CODE_SUBAGENT_MODEL` together with
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` in the environment before launching.
+Effort resolves the same way: a per-invocation `effort` on the Agent tool >
+the agent frontmatter `effort` > the parent session effort. A frontmatter
+`effort` replaces the inherited session effort rather than acting as a floor.
 
-The evaluation-side model allocation (sonnet by default, opus for
-`criticality == critical` or the `exhaustive` tier via the byte-identical
-`agents/ac-evaluator-hi.md` sibling) is described in
+**Evaluation-side invariant (ticket grading)**: the ticket-evaluator never runs
+on a weaker model or at a lower effort than the planner, because a weaker
+grader than the generator inverts the generator-evaluator loop. Both resolve
+`model: inherit` to the session model, neither agent file carries an `effort:`
+key (`agents/ticket-evaluator.md`, `agents/planner.md`), and `/create-ticket`
+passes no per-spawn `effort` to either of them at any Size, so both run at the
+session effort. The invariant therefore holds on both the model and the effort
+axis, in every session including one running at `xhigh` or `max` effort.
+
+The implementation-side AC evaluator's model allocation (`agents/ac-evaluator.md`,
+one agent file: opus at every tier by default, the Generator's own model; no `effort:`
+key, so a routine spawn runs at the session effort the Generator also inherits, with the
+per-spawn effort raised to `xhigh` for `criticality == critical` or the `exhaustive`
+tier; the `SW_EVALUATOR_MODEL` environment knob opts into `tiered` sonnet/opus routing
+or a forced model) is described in
 [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md)
-`## Criticality scalar` / `## Effects ladder` and is unaffected by this policy.
+`## Criticality scalar` / `## Effects ladder` and is unaffected by this policy. Its
+evaluator ≥ generator invariant, and that invariant's scope (both the model and the
+effort axis; like the ticket-evaluator above, the AC evaluator has no frontmatter
+`effort:`, and its one effort residual is a `max`-effort session, where a critical /
+exhaustive evaluator runs at the passed `xhigh`), is stated once in that reference's
+`### Evaluator model + red-team budget`.
 
 > **Migration note** — the per-ticket `constraints` knob that used to
 > size-route the Generator model (documented in this section in earlier
@@ -83,7 +103,7 @@ see `skills/impl/references/round-cap-parser.md`.
 
 **Default** (field absent OR policy file absent OR unknown value): `auto` (fail-safe to active).
 
-**Effect**: when `auto`, the M5 (v8.3.0+) IRREVERSIBILITY axis is active — an AC that verifies an irreversible real-world side-effect (persistent data writes, non-idempotent network mutation, money movement, destructive ops, or external-system calls that cannot be rolled back) floors `criticality` at `critical` even on an `S` ticket, which in turn raises the depth tier to at least `thorough`, bumps the evaluator model to opus (via the `ac-evaluator-hi` agent file), and sets the red-team budget to full (the latter consumed by M2 from v8.5.0). When `off`, ONLY the irreversibility axis is removed — the critical-domain computational floor (`constraints.oracle_verification`) and the matrix depth scaling (`constraints.verification_depth`) are unaffected. The full axis, cue list, evaluator-model column, and red-team-budget column live in [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md) `## Criticality scalar` / `## Criticality floor` / `## Effects ladder`. This is the per-brief kill switch for the irreversibility axis alone; use it when a brief's tickets routinely touch irreversible systems but the deeper verification + opus evaluator is unwanted.
+**Effect**: when `auto`, the M5 (v8.3.0+) IRREVERSIBILITY axis is active — an AC that verifies an irreversible real-world side-effect (persistent data writes, non-idempotent network mutation, money movement, destructive ops, or external-system calls that cannot be rolled back) floors `criticality` at `critical` even on an `S` ticket, which in turn raises the depth tier to at least `thorough`, raises the evaluator effort to `xhigh` (and, under `SW_EVALUATOR_MODEL=tiered`, the evaluator model to opus; the default already runs opus at every tier), and sets the red-team budget to full (the latter consumed by M2 from v8.5.0). When `off`, ONLY the irreversibility axis is removed — the critical-domain computational floor (`constraints.oracle_verification`) and the matrix depth scaling (`constraints.verification_depth`) are unaffected. The full axis, cue list, evaluator-model / effort columns, and red-team-budget column live in [`../../impl/references/verification-depth.md`](../../impl/references/verification-depth.md) `## Criticality scalar` / `## Criticality floor` / `## Effects ladder`. This is the per-brief kill switch for the irreversibility axis alone; use it when a brief's tickets routinely touch irreversible systems but the deeper verification + `xhigh` evaluator effort is unwanted.
 
 ## `constraints.oracle_verification`
 
@@ -153,7 +173,7 @@ kill switch for the Gate 8 / independent-evidence feature line; it is independen
 
 ## `constraints.failure_class_coverage`
 
-**Consumed by**: the `planner` Gate 9 self-audit (Pre-emit Self-Audit step 10) and
+**Consumed by**: the `planner` Gate 9 self-audit (Pre-emit Self-Audit step 6, which applies rubric Gate 9) and
 the `ticket-evaluator` Gate 9 grading. (Authoring-side only — Gate 9 ENUMERATES
 which Scope-touched external boundaries need an AC; it has no `/impl` /
 `ac-evaluator` consumer, since Gate 7 / Gate 8 GRADE the resulting ACs at
@@ -183,7 +203,7 @@ failure-class-coverage feature line; it is independent of
 
 ## `constraints.peer_uniformity`
 
-**Consumed by**: the `planner` Gate 10 self-audit (Pre-emit Self-Audit step 11) and
+**Consumed by**: the `planner` Gate 10 self-audit (Pre-emit Self-Audit step 6, which applies rubric Gate 10) and
 the `ticket-evaluator` Gate 10 grading. (Authoring-side only — Gate 10 ENUMERATES
 whether a `>=2`-peer set needs a unified-convention AC; its diff-time grader is the
 existing `ac-evaluator` **L-UNIFORMITY** failure-class lens, governed separately by
@@ -214,8 +234,8 @@ failure-class eval panel whose L-UNIFORMITY lens is the diff-time grader).
 
 ## `constraints.eval_panel`
 
-**Consumed by**: `/impl` (Step 3a `EVAL_PANEL` resolution; the `ac-evaluator` /
-`ac-evaluator-hi` per-ticket `[EVAL-PANEL]` panel emit at Step 15).
+**Consumed by**: `/impl` (Step 3a `EVAL_PANEL` resolution; the `ac-evaluator`
+per-ticket `[EVAL-PANEL]` panel emit at Step 15).
 
 **Accepted values**: `auto`, `on`, `off`.
 
@@ -279,8 +299,8 @@ switch for the refute-then-synthesize merge; it is independent of
 ## `constraints.accept_set_conformance`
 
 **Consumed by**: `/impl` (Step 15 `accept_set_conformance` resolution — the per-AC
-deterministic trigger + the EXECUTED accept-set sweep handoff to `ac-evaluator` /
-`ac-evaluator-hi`), the `ac-evaluator` `## Failure-class panel` L-ROBUSTNESS lens
+deterministic trigger + the EXECUTED accept-set sweep handoff to `ac-evaluator`),
+the `ac-evaluator` `## Failure-class panel` L-ROBUSTNESS lens
 (which EXECUTES the sweep for the `triggered-on=` ACs against an independent
 hand-coded spec oracle), and the `hooks/accept-set-verify.sh` PostToolUse gate
 (which verifies the persisted `## Accept-set sweep` line post-hoc).
@@ -325,7 +345,7 @@ feature line; it is independent of `constraints.verification_depth`,
 [`../../impl/references/evidence-channels.md`](../../impl/references/evidence-channels.md)
 — the `doc-verifier` agent (spawned by `/audit` Step 2 and `/refactor` Phase 3 Step 6,
 in parallel with the other reviewers, when this switch is active and a documentation /
-advertised-interface surface is touched), the `ac-evaluator` / `ac-evaluator-hi`
+advertised-interface surface is touched), the `ac-evaluator`
 `## Independent Evidence (behavioral ACs)` EC-SELFDOC duty, and the Gate 9 R3
 (DESCRIPTION-MATCHES-BEHAVIOR) / R4 (DOC/INTERFACE TRUTHFULNESS) authoring rows in
 [`ac-quality-criteria.md`](ac-quality-criteria.md).
