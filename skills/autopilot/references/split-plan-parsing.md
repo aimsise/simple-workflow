@@ -17,8 +17,9 @@ is NOT read.
 
 ## Frontmatter parse
 
-Per `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md`,
-the file MUST carry frontmatter with three keys:
+Per `skills/create-ticket/references/split-plan-schema.md` (the
+writer-side schema, which emits five keys), the file MUST carry
+frontmatter with at least these three keys:
 
 - `parent_slug` — MUST equal the `/autopilot` argument; mismatch is an
   error.

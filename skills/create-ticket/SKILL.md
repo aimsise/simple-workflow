@@ -19,6 +19,7 @@ allowed-tools:
   - "Bash(sha256sum:*)"
   - "Bash(shasum:*)"
   - "Bash(cp:*)"
+  - "Bash(mv:*)"
   - "Bash(mkdir:*)"
   - "Bash(date:*)"
   - "Bash(ls:*)"
@@ -157,7 +158,7 @@ Gate 1 / Gate 2 BAD/GOOD examples live only in [references/ac-quality-criteria.m
 
 ## Common Write Path
 
-All three modes converge here. `ticket.md` per [references/ticket-template.md](references/ticket-template.md); W-6/W-7/W-10 in [references/write-path-templates.md](references/write-path-templates.md). Every `ERROR:` here is atomic — no directories, `.ticket-counter` unchanged, non-zero exit.
+All three modes converge here. `ticket.md` per [references/ticket-template.md](references/ticket-template.md); W-6/W-7/W-10 in [references/write-path-templates.md](references/write-path-templates.md). Every `ERROR:` here is atomic — nothing persists under `product_backlog/` (W-1..W-3 create nothing; a W-4 / W-7 failure quarantines its partial parent directory per the W-4 rule), `.ticket-counter` unchanged, non-zero exit.
 
 ### Step W-1: Counter read & validate
 
@@ -173,7 +174,9 @@ Re-verify the `depends_on` graph: every `depends_on` references another ticket's
 
 ### Step W-4: Atomic directory creation + writes
 
-After validations: (1) `mkdir -p .simple-workflow/backlog/product_backlog/{parent-slug}/`; (2) create each `{ticket_dir_path_i}`; (3) write `{ticket_dir_path_i}/ticket.md` from [references/ticket-template.md](references/ticket-template.md), replacing `{NNN}` in `## T-{NNN}:`; (4) `{ticket_dir_path_i}/phase-state.yaml` (W-6); (5) `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (W-7) — unconditional (N≥1); (6) policy propagation (W-8). Write failure → best-effort cleanup (`rm -rf`); W-5 counter increment ONLY after every file written.
+After validations: (1) `mkdir -p .simple-workflow/backlog/product_backlog/{parent-slug}/`; (2) create each `{ticket_dir_path_i}`; (3) write `{ticket_dir_path_i}/ticket.md` from [references/ticket-template.md](references/ticket-template.md), replacing `{NNN}` in `## T-{NNN}:`; (4) `{ticket_dir_path_i}/phase-state.yaml` (W-6); (5) `.simple-workflow/backlog/product_backlog/{parent-slug}/split-plan.md` (W-7) — unconditional (N≥1); (6) policy propagation (W-8). W-5 counter increment ONLY after every file written.
+
+**Write failure → quarantine, never delete** (the single rollback rule; W-7 and the Error Handling table reuse it): `mkdir -p .simple-workflow/rollback/`, then `mv .simple-workflow/backlog/product_backlog/{parent-slug}/ .simple-workflow/rollback/{parent-slug}-{ts}/` where `{ts}` = `date -u +%Y%m%dT%H%M%SZ` (ISO-8601 UTC, colons removed). If the parent directory already existed before step (1), move only the entries this run created (each `{ticket_dir_path_i}` and `split-plan.md`) into that quarantine directory instead of the whole parent. Print `ERROR: create-ticket write failed — partial output quarantined at .simple-workflow/rollback/{parent-slug}-{ts}/ (<reason>)` and exit non-zero. Leave `.ticket-counter` untouched: the counter is incremented only in W-5, so a re-run with the same inputs is safe and re-allocates the same `{NNN}` numbers. The quarantine directory is a sibling of `backlog/` and `metrics/` and never lives under `product_backlog/`, so no autopilot-context scan sees it. No `rm` form is used: the safety hook denies recursive-force removal and this skill holds no `rm` grant (`mv` is granted in `allowed-tools`).
 
 ### Step W-5: Atomic counter write
 
@@ -185,7 +188,7 @@ Write per-ticket pending template + immediate `phases.create_ticket: in-progress
 
 ### Step W-7: split-plan.md template
 
-Write per [references/write-path-templates.md](references/write-path-templates.md) (schema: `.simple-workflow/docs/fix_structure/spec-split-plan-schema.md`). Validation: parent_slug = parent basename; ticket_count = `### N.` count; every entry has `- depends_on:`; graph DAG. Failure → `ERROR: split-plan validation failed — <reason>`; roll back W-4 dirs.
+Write per [references/write-path-templates.md](references/write-path-templates.md) (schema: [references/split-plan-schema.md](references/split-plan-schema.md)). Validation: parent_slug = parent basename; ticket_count = `### N.` count; every entry has `- depends_on:`; graph DAG. Failure → `ERROR: split-plan validation failed — <reason>`; quarantine the partial parent directory per the W-4 rule (`mv` to `.simple-workflow/rollback/`, never delete; counter untouched).
 
 ### Step W-8: autopilot-policy.yaml propagation
 
@@ -212,14 +215,14 @@ Emit `## [SW-CHECKPOINT]` per [references/sw-checkpoint-template.md](references/
 **Recommendation line — exactly ONE shape per run**:
 
 - Success N = 1: `next_recommended: /scout <ticket-dir>`; block MUST NOT contain `next_recommended_auto`.
-- Success N > 1: BOTH `next_recommended_auto: /autopilot {parent-slug}` AND `next_recommended_manual: /scout {first-unblocked-ticket-dir}` (separate lines, in order); no plain `next_recommended:`. `{first-unblocked-ticket-dir}` = lexicographically smallest `ticket_dir` with `depends_on: []` (per `spec-split-plan-schema.md` first-unblocked rule).
+- Success N > 1: BOTH `next_recommended_auto: /autopilot {parent-slug}` AND `next_recommended_manual: /scout {first-unblocked-ticket-dir}` (separate lines, in order); no plain `next_recommended:`. `{first-unblocked-ticket-dir}` = lexicographically smallest `ticket_dir` with `depends_on: []` (per [references/split-plan-schema.md](references/split-plan-schema.md) first-unblocked rule).
 - Failure (any N): `next_recommended: ""`; no `next_recommended_auto:` / `next_recommended_manual:`; `artifacts: []` on a single line.
 
 Dual-recommendation rationale: [references/sw-checkpoint-template.md](references/sw-checkpoint-template.md).
 
 ## Error Handling
 
-Every `ERROR:` path is atomic: no directories created, `.ticket-counter` unchanged, non-zero exit.
+Every `ERROR:` path is atomic: nothing persists under `product_backlog/` (pre-write-path errors create no directories; a W-4 / W-7 failure quarantines its partial parent directory under `.simple-workflow/rollback/` per the W-4 rule), `.ticket-counter` unchanged, non-zero exit.
 
 | Trigger | Output |
 |---|---|
@@ -235,7 +238,8 @@ Every `ERROR:` path is atomic: no directories created, `.ticket-counter` unchang
 | Decomposer empty Tickets | `ERROR: decomposer returned zero tickets` |
 | Decomposer agent unavailable | `ERROR: decomposer agent unavailable` |
 | Cyclic `depends_on` | `ERROR: circular dependency detected among tickets: <cycle members>`; literal `circular` MUST appear |
-| split-plan validation fails | `ERROR: split-plan validation failed — <reason>` — rollback W-4 dirs |
+| split-plan validation fails | `ERROR: split-plan validation failed — <reason>` — quarantine the partial parent directory per the W-4 rule (`mv` to `.simple-workflow/rollback/{parent-slug}-{ts}/`, never delete) |
+| W-4 write failure | `ERROR: create-ticket write failed — partial output quarantined at .simple-workflow/rollback/{parent-slug}-{ts}/ (<reason>)` — counter untouched; re-run with the same inputs is safe |
 | Researcher / planner failure | Report error, stop |
 | Ticket-evaluator failure | Output ticket with "Quality: NOT EVALUATED" |
 | 2 rounds FAIL | Present issues via `AskUserQuestion`. User-confirm to proceed; decline → stop + print ticket path. Non-interactive: stop. Do NOT hang. |

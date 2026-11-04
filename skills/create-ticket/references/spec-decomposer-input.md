@@ -23,7 +23,7 @@ Input form: findings_doc
 <optional Socratic Refinement answers, prefixed by `## Socratic Answers`>
 ```
 
-Body sections expected inside the findings document body (per `.simple-workflow/docs/fix_structure/spec-findings-fixture.md`):
+Body sections expected inside the findings document body (per `skills/create-ticket/references/findings-schema.md`):
 
 - `## Context` (required)
 - `## Investigation Summary` (required)
