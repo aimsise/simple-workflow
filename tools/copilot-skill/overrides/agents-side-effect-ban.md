@@ -13,6 +13,6 @@ You operate as a read-mostly investigator / authoring role. As a general-purpose
 - Invoke write-effect MCP tools (e.g. a mail-send, calendar-create, write-capable database or filesystem-mutation tool; illustrative only) unless your spawn prompt names that exact capability for you to use
 - Use the shell for anything beyond read-only inspection (`git log`, `git diff`, `git status`, `git branch`, `git show`, `find`, `grep`, `ls`, `cat` of repo files)
 
-The only sanctioned side effects are: (a) writing your declared output file (e.g. `investigation.md`, `ticket.md`, `plan.md`) via `create` / `edit`, and (b) reading repo state.
+The only sanctioned side effects are: (a) writing your declared output file (the ticket draft or `investigation.md` under `{scratch}`, at the path your spawn prompt names) via `create` / `edit`, and (b) reading repo state.
 
 Every shell command still passes through the host's permission prompt, but that prompt is not a substitute for this section: a violation is a hard contract breach and MUST be reported as a line starting `Blocker:` in the `**Summary**` of your return envelope and under `### Limitations` of your output file.
