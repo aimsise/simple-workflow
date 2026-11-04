@@ -53,3 +53,7 @@ mode: replace | before | after | append
 ## Delivery and destinations
 
 The generated skill is decoupled from this repository's own backlog layout: producing the tickets (Phases 1-4, the four agent prompts, the rubric and grading files) is unchanged, while the upstream write path is replaced whole by a `## Delivery` section (`overrides/skill-delivery.md`) and the destination adapters live in `references/destinations.md`, a file with no upstream source (`overrides/destinations.md`). The skill takes `destination=local:<dir>` (default `local:tickets`), `destination=mcp:<server>[/<tool>]` or `destination=api:<url>`. The denylist rejects the plugin name, its backlog paths, `{ticket-dir}` and the dropped investigation-reuse key, so an upstream edit that reintroduces them fails the build.
+
+## Self-contained vocabulary
+
+Every term in the generated tree must be resolvable from the tree alone. The denylist therefore also rejects plugin-internal jargon that nothing in the tree defines: the implementation-time eval panel and its lens names, the evidence-floor shorthands, the lettered failure-class codes, the plugin's downstream role names (the rubric defines one phrase instead, the **downstream implementer/verifier**), `load-bearing`, `plan.md`, a mid-sentence `Read` (the Claude Code tool name), the generator's own paths and the old `Stopped:` message. The rubric's kill switches are real on this host: a `constraint_<key>=off` request token turns a gate off for the whole run, and Argument Parsing rejects an unknown key.

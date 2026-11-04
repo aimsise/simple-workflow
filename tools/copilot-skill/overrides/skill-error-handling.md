@@ -4,7 +4,7 @@ mode: replace
 ---
 ## Error Handling
 
-Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the run writes only under `{scratch}`), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=` / `findings=` path as the user gave it, and prints an `api:` URL without its query string.
+Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the run writes only under `{scratch}`), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=` / `findings=` path exactly as the user typed it (Host notes), and prints an `api:` URL without its query string.
 
 | Trigger | Output |
 |---|---|
@@ -15,11 +15,13 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the r
 | `auth_env=` / `template=` / `id_path=` without `api:` | `ERROR: auth_env=, template= and id_path= apply only to an api: destination` |
 | `mcp_<name>=` without `mcp:` | `ERROR: mcp_<name>= applies only to an mcp: destination` |
 | Unknown `depth=` or `confirm=` value | `ERROR: depth= must be standard, thorough or exhaustive` / `ERROR: confirm= accepts only yes` |
+| Unknown `constraint_<key>=` key, or a value other than `off` | `ERROR: unknown constraint key <key>` / `ERROR: constraint_<key>= accepts only off` |
 | Destination preflight fails | The `ERROR:` line of the failing check in [references/destinations.md](references/destinations.md) (e.g. `ERROR: destination mcp:<server> exposes no tool that accepts a title and a body`), before Phase 1 |
 | A slug is not kebab-case | `ERROR: <field> must be kebab-case (lowercase letters, digits, hyphens)` |
 | `local:` counter non-numeric | `ERROR: {dir}/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.` |
 | `findings=<path>` not found by `view` | `ERROR: Findings file not found at <path>` |
 | Brief file not found by `view` | `ERROR: Brief file not found at <path>` |
+| Findings frontmatter without `title` | `ERROR: findings frontmatter is missing title` |
 | `findings_version` missing or != 1 | `ERROR: findings_version missing or unsupported (expected 1)` |
 | Findings zero `## Required Work Units` | `ERROR: findings file contains zero Required Work Units` |
 | A mandatory role's `task` spawn attempted and failed | Report the error and stop; nothing is delivered (for the decomposer: `ERROR: decomposer agent unavailable`) |
@@ -30,7 +32,7 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the r
 | Cyclic `depends_on` | `ERROR: circular dependency detected among tickets: <cycle members>`; literal `circular` MUST appear |
 | Planner `Status: failed` or `Status: partial` | Report the error and stop; nothing is delivered |
 | Ticket-evaluator `Status: ERROR` (rubric fail-fast) | Report the error and stop; nothing is delivered |
-| FAIL after max 2 rounds (initial + 1 revision) | Present issues via `ask_user`. Proceed → the ticket's verdict is `FAIL (user-accepted)`; decline → stop + print the draft's path under `{scratch}`. A denied, erroring or unavailable `ask_user` → stop. Do NOT hang. |
+| FAIL after max 2 rounds (initial + 1 revision) | Present issues via `ask_user`. Proceed → the ticket's verdict is `FAIL (user-accepted)`; decline → stop + print the draft's path under `{scratch}`. A denied, erroring or unavailable `ask_user` → `ERROR: cannot resolve FAIL gates non-interactively; re-run interactively (draft saved under {scratch})`, stop. Do NOT hang. |
 | Split partial failure | Any sub-ticket without a verdict → nothing delivered (atomic — Delivery starts only after all N have one) |
 | Remote confirmation not given | `ERROR: remote delivery needs an interactive confirmation; re-run with confirm=yes to skip it` — nothing created |
 | `local:` path already exists | `ERROR: create-ticket write refused — <path> already exists` — nothing written, counter untouched |

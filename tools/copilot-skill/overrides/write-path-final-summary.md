@@ -44,4 +44,4 @@ ERROR: <the ERROR: line>
 Scratch: <the {scratch} path>
 ```
 
-After a remote failure, `Created: none` becomes `Created before the failure: <id>, <id>`; after a `local:` write failure, the `ERROR:` line names the quarantine path. The `Scratch:` line appears once on any failure, so the user can find the drafts, evaluator reports and API responses.
+After a remote failure, `Created: none` becomes `Created before the failure: <id>, <id>`; after a `local:` write failure, the `ERROR:` line names the quarantine path. The `Scratch:` line appears once on any failure, so the user can find the drafts, evaluator reports and API responses; its `{scratch}` path may be absolute, and a `brief=` / `findings=` path in the `ERROR:` line is echoed exactly as the user typed it (SKILL.md Host notes).

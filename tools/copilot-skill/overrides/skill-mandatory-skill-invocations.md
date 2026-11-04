@@ -2,7 +2,7 @@ target: SKILL.md
 heading: ## Mandatory Skill Invocations
 mode: replace
 ---
-## Mandatory Skill Invocations
+## Mandatory role invocations
 
 `/create-ticket` MUST delegate to each of the four roles below. Each role MUST be run as a separate `task` subagent (`agent_type: general-purpose`) whose prompt is the full body of `references/agents/<name>.md` followed by the input described in `references/agent-spawn-prompts.md`. Direct model output bypasses the independent layers — a contract violation.
 

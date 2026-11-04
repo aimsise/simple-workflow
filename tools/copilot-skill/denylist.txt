@@ -65,3 +65,27 @@ mcp\.json
 Phase 1\.5
 ADVISORY-CONSULT
 \*\*P\?\*\*
+# Plugin-internal jargon nothing in the generated tree defines: the eval
+# panel and its lens, the evidence-floor shorthands, the failure-class
+# lettering, the upstream role names and the generator's own paths
+# ("downstream implementer/verifier" is the one defined role phrase)
+eval_panel
+L-UNIFORMITY
+[Ii]mpl-side
+\+1-independent
+EC-STATIC\+natural
+failure (mode|class) [A-Z]\b
+downstream AC evaluator
+downstream implementation step
+downstream verifier\b
+ac-evaluator
+main-thread
+load-bearing
+(^|[^-A-Za-z0-9_])plan\.md
+Mandatory Skill Invocations
+upstream brief
+build-copilot-skill
+Stopped:
+(^|[^/A-Za-z0-9_.-])tools/
+# A capitalised Read mid-sentence is the Claude Code tool name
+([a-z,] |\()Read\b
