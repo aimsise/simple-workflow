@@ -26,7 +26,7 @@ mode: append
 
 ## `local:<dir>`
 
-`<dir>` is a relative path inside the repository, resolved against the current working directory (the repository root when the skill runs in a repository).
+`<dir>` is a relative path inside the repository, resolved against the current working directory (which may be a sub-directory of the repository).
 
 **Preflight**:
 
@@ -49,7 +49,7 @@ Layout (created on demand; `{dir}` itself may not exist yet):
 1. **Counter read and validate.** Read `{dir}/.ticket-counter`; missing → `counter` = `1`. Non-numeric → `ERROR: {dir}/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.` `N` = the number of tickets.
 2. **Allocate.** For the i-th ticket in topological order (`i` = `0..N-1`): `number_i = counter + i`, zero-padded to 3 digits → `{NNN}`, so its `{id}` is `T-{NNN}`; `{slug_i}` = the title in kebab-case (lowercase ASCII, whitespace → `-`, strip every character outside `[a-z0-9-]`, drop leading hyphens, truncate at 40 characters), or `ticket` when that leaves an empty string (e.g. a title with no ASCII letter or digit); `{ticket_dir_i}` = `{dir}/{parent-slug}/{NNN}-{slug_i}/`. Fill each heading (`## T-{NNN}: {Title}`) and each `Dependencies` cell (the `T-{NNN}` of each dependency).
 3. **Never overwrite.** If any `{ticket_dir_i}` already exists, or N > 1 and `{dir}/{parent-slug}/split-plan.md` already exists, print `ERROR: create-ticket write refused — <path> already exists` and stop before writing anything (counter untouched).
-4. **Keep the quarantine out of commits.** When `git rev-parse --show-toplevel` succeeds and `{dir}` lies inside that repository, run `git check-ignore -q "{dir}/.rollback/x"`. Exit status 1 (not ignored) → append the line `{rel}/.rollback/` to the `.gitignore` at the repository root with the shell tool running `printf '%s\n' "{rel}/.rollback/" >> .gitignore` (double quotes, as for every user-derived value) from the repository root, where `{rel}` is `{dir}` relative to the repository root (append only; the redirect creates the file when it does not exist; never rewrite, reorder or remove existing lines). Outside a repository, skip this step. Whether the tickets and the counter are committed is the user's decision: this skill never adds them to `.gitignore` and never stages or commits anything.
+4. **Keep the quarantine out of commits.** When `git rev-parse --show-toplevel` succeeds and `{dir}` lies inside that repository, run `git check-ignore -q "{dir}/.rollback/x"`. Exit status 1 (not ignored) → append the line `{rel}/.rollback/` to the `.gitignore` at the repository root with the shell tool running `printf '%s\n' "{rel}/.rollback/" >> "<root>/.gitignore"` (double quotes, as for every user-derived value), where `<root>` is the directory `git rev-parse --show-toplevel` printed and `{rel}` is `{dir}` relative to it (append only; the redirect creates the file when it does not exist; never rewrite, reorder or remove existing lines). Outside a repository, skip this step. Whether the tickets and the counter are committed is the user's decision: this skill never adds them to `.gitignore` and never stages or commits anything.
 5. **Write.** (1) Note whether `{dir}/{parent-slug}/` exists, then run `mkdir -p "{dir}/{parent-slug}"`; (2) create each `{ticket_dir_i}` with `mkdir -p "{ticket_dir_i}"`; (3) write `{ticket_dir_i}/ticket.md` with the file-write tool; (4) N > 1 only: write `{dir}/{parent-slug}/split-plan.md` from the template in `references/write-path-templates.md` and validate it by the writer-side rules of `references/split-plan-schema.md` (a violation → `ERROR: split-plan validation failed — <reason>`, handled as a write failure).
 6. **Counter write.** Only after every file of step 5 is written: write `counter + N` to `{dir}/.ticket-counter`, once (with the file-write tool when the file is absent, otherwise with the file-edit tool replacing its whole content). If this write fails, the tickets stay in place: print `ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)` and stop.
 
@@ -76,7 +76,7 @@ Layout (created on demand; `{dir}` itself may not exist yet):
 4. Call the tool once. `{id}` is the identifier form that the tool's link / relation parameter accepts, when its schema has one (so later dependents can link to it); otherwise the result's primary identifier (its key, number or id). Also record the item's URL, without its query string, when the result carries one.
 5. An error result, or a result without an identifier → the remote-failure rule above, with `ERROR: destination mcp:<server>/<tool> create failed for <logical id> (<reason>)`; for an error result the reason is the first line of the tool's error message, at most 200 characters (never the full result), and for a missing identifier it is `no identifier in the result; the item may exist`.
 
-No split-plan file, no counter and no local write other than `{scratch}`. **Limitation**: without `parent=` (or an `mcp_<name>=` for the link parameter) each ticket is a standalone item; linking through a separate link tool after the create, and any change to the parent item itself, are out of scope.
+No split-plan file, no counter and no local write other than `{scratch}` and the `.gitignore` append of Argument Parsing. **Limitation**: without `parent=` (or an `mcp_<name>=` for the link parameter) each ticket is a standalone item; linking through a separate link tool after the create, and any change to the parent item itself, are out of scope.
 
 ## `api:<url>`
 
@@ -125,4 +125,4 @@ Wherever this skill prints the URL (error lines, the Final summary `Destination:
 5. Success is a zero `curl` exit status and an HTTP status of `2xx`. `{id}` = the output of `jq -r '<id_path> // empty' "{scratch}/response-{i}.json"`.
 6. A non-zero `curl` exit (a timeout included), a non-`2xx` status or an empty `{id}` → the remote-failure rule above, with `ERROR: destination api:<url without query string> create failed for <logical id> (<reason>)`, where the reason is `timed out after <n> s; the item may exist` for a `curl` timeout, the `curl` exit code for another `curl` failure, the HTTP status, or `no identifier at <id_path>; the item may exist`. Do not print the response body; it stays in `{scratch}/response-{i}.json` for the user to inspect.
 
-No split-plan file, no counter and no local write other than `{scratch}`.
+No split-plan file, no counter and no local write other than `{scratch}` and the `.gitignore` append of Argument Parsing.

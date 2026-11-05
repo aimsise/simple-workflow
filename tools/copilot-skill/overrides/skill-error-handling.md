@@ -4,7 +4,7 @@ mode: replace
 ---
 ## Error Handling
 
-Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the run writes only under `{scratch}`), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=` / `findings=` path exactly as the user typed it (Host notes), and prints an `api:` URL without its query string.
+Every `ERROR:` before Delivery is atomic: nothing reaches the destination (before Delivery the run writes only under `{scratch}`, plus the one-line `.gitignore` append of Argument Parsing), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=` / `findings=` path exactly as the user typed it (Host notes), and prints an `api:` URL without its query string.
 
 | Trigger | Output |
 |---|---|
