@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# build-copilot-skill.sh — generate a self-contained GitHub Copilot Agent
+# build-copilot-skill.sh — generate a self-contained, host-neutral Agent
 # Skill `create-ticket/` (SKILL.md + references/) from this plugin's sources.
 #
-# The output needs no plugin, no hooks and no custom agent files: drop it
-# into another repository's `.github/skills/` and use it with GitHub
-# Copilot CLI or VS Code. The output is never committed; correctness is
+# The output needs no plugin, no hooks and no custom agent files, and
+# names tools by role, never by a host's tool name: drop it into the skill
+# root the host reads (.github/skills/, .claude/skills/ or .agents/skills/)
+# and invoke it by name. The output is never committed; correctness is
 # enforced by the exit audit below and by tests/test-copilot-skill-build.sh.
 #
 # Usage:
@@ -36,7 +37,7 @@ export LC_ALL=C
 
 print_help() {
   cat <<'EOF'
-build-copilot-skill.sh — generate the standalone Copilot `create-ticket` skill
+build-copilot-skill.sh — generate the standalone, host-neutral `create-ticket` skill
 
 Usage:
   bash tools/build-copilot-skill.sh --out <dir> [--src <dir>] [--force]

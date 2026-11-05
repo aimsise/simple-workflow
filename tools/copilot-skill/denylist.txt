@@ -7,6 +7,12 @@ simple-workflow:
 CLAUDE_
 \$ARGUMENTS
 !`
+# Host names and host-bound vocabulary: the skill is host-neutral
+Copilot
+GitHub\.com
+cloud agent
+agent_type
+(this|a|the) surface\b
 # Claude Code tool and runtime vocabulary
 AskUserQuestion
 Agent tool

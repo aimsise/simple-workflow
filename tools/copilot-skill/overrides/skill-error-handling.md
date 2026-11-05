@@ -19,13 +19,13 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the r
 | Destination preflight fails | The `ERROR:` line of the failing check in [references/destinations.md](references/destinations.md) (e.g. `ERROR: destination mcp:<server> exposes no tool that accepts a title and a body`), before Phase 1 |
 | A slug is not kebab-case | `ERROR: <field> must be kebab-case (lowercase letters, digits, hyphens)` |
 | `local:` counter non-numeric | `ERROR: {dir}/.ticket-counter contains non-numeric value '<content>'. Fix or delete the file and retry.` |
-| `findings=<path>` not found by `view` | `ERROR: Findings file not found at <path>` |
-| Brief file not found by `view` | `ERROR: Brief file not found at <path>` |
+| `findings=<path>` not found by the file-read tool | `ERROR: Findings file not found at <path>` |
+| Brief file not found by the file-read tool | `ERROR: Brief file not found at <path>` |
 | Brief frontmatter without `slug` | `ERROR: brief frontmatter is missing slug` |
 | Findings frontmatter without `title` | `ERROR: findings frontmatter is missing title` |
 | `findings_version` missing or != 1 | `ERROR: findings_version missing or unsupported (expected 1)` |
 | Findings zero `## Required Work Units` | `ERROR: findings file contains zero Required Work Units` |
-| A mandatory role's `task` spawn attempted and failed | Report the error and stop; nothing is delivered (for the decomposer: `ERROR: decomposer agent unavailable`) |
+| A mandatory role's subagent spawn attempted and failed | Report the error and stop; nothing is delivered (for the decomposer: `ERROR: decomposer agent unavailable`) |
 | Researcher `Status: partial` | Not an error: continue, print `WARNING: researcher returned partial findings: <limitations>`, repeat it in the Final summary |
 | Researcher `Status: failed` | Report the error and stop; nothing is delivered |
 | Decomposer `Status: partial` | Not an error: continue, print `WARNING: decomposer dropped <n> work units beyond the 8-ticket cap: <titles>`, repeat it in the Final summary |
@@ -33,7 +33,7 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the r
 | Cyclic `depends_on` (reported by the decomposer, or found by Step F-6 / DL-1) | `ERROR: circular dependency detected among tickets: <cycle members>`; literal `circular` MUST appear |
 | Planner `Status: failed` or `Status: partial` | Report the error and stop; nothing is delivered |
 | Ticket-evaluator `Status: ERROR` (rubric fail-fast) | Report the error and stop; nothing is delivered |
-| FAIL after max 2 rounds (initial + 1 revision) | Present issues via `ask_user`. Proceed → the ticket's verdict is `FAIL (user-accepted)`; decline → `ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})`, stop. A denied, erroring or unavailable `ask_user` → `ERROR: cannot resolve FAIL gates non-interactively; re-run interactively (draft saved under {scratch})`, stop. Do NOT hang. |
+| FAIL after max 2 rounds (initial + 1 revision) | Present issues with the ask-user tool. Proceed → the ticket's verdict is `FAIL (user-accepted)`; decline → `ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})`, stop. A denied, erroring or unavailable ask-user tool → `ERROR: cannot resolve FAIL gates non-interactively; re-run interactively (draft saved under {scratch})`, stop. Do NOT hang. |
 | User declines to proceed at the exhausted-retry question | `ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})` — nothing delivered |
 | Split partial failure | Any sub-ticket without a verdict → nothing delivered (atomic — Delivery starts only after all N have one) |
 | Remote confirmation not given | `ERROR: remote delivery needs an interactive confirmation; re-run with confirm=yes to skip it` — nothing created |
