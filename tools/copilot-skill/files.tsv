@@ -2,6 +2,7 @@
 # Destinations under references/agents/ have their frontmatter stripped (the body is the task prompt).
 # Source "-": no plugin source; the file starts empty and an append override
 # (overrides/*.md, "heading: (end of file)") supplies its whole content.
+README.md	-
 SKILL.md	skills/create-ticket/SKILL.md
 references/ac-quality-criteria.md	skills/create-ticket/references/ac-quality-criteria.md
 references/ac-quality-grading.md	skills/create-ticket/references/ac-quality-grading.md

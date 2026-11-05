@@ -86,7 +86,8 @@ fi
 check "--force rebuilds a non-empty target" "$([ "$FORCE_RC" -eq 0 ] || cat "$TMP_ROOT/force.log")"
 
 # --- tree shape ---------------------------------------------------------------
-EXPECTED="SKILL.md
+EXPECTED="README.md
+SKILL.md
 references/ac-quality-criteria.md
 references/ac-quality-grading.md
 references/agent-spawn-prompts.md
@@ -106,7 +107,7 @@ references/ticket-template.md
 references/write-path-templates.md
 scripts/xlsx_to_text.py"
 ACTUAL="$(cd "$SKILL_DIR" && find . -type f | sed 's#^\./##' | sort)"
-check "tree holds exactly SKILL.md + the 17 shipped references + the xlsx converter" \
+check "tree holds exactly README.md + SKILL.md + the 17 shipped references + the xlsx converter" \
   "$(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
 
 NOT_SHIPPED=""
@@ -344,6 +345,11 @@ done
 check "Intake: SKILL.md, sources.md, the decomposer, its input spec, the spawn prompts and the summary carry the source= contract" "$MISSING"
 INTAKE_LN="$(grep -n '^## Intake$' "$SKILL_MD" | cut -d: -f1)"
 DISPATCH_LN="$(grep -n '^## Mode dispatch$' "$SKILL_MD" | cut -d: -f1)"
+MISSING=""
+for needle in '# create-ticket' '## Install' '## Usage' '/create-ticket' 'source=file:' 'destination=' 'SELF-EVALUATED' 'FAIL (user-accepted)' 'confirm=yes' 'scripts/xlsx_to_text.py' '## Limits'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+check "README.md documents install, usage, sources, destinations, verdicts, files and limits" "$MISSING"
 check "Intake precedes Mode dispatch in SKILL.md" \
   "$({ [ -n "$INTAKE_LN" ] && [ -n "$DISPATCH_LN" ] && [ "$INTAKE_LN" -lt "$DISPATCH_LN" ]; } || echo "intake=$INTAKE_LN dispatch=$DISPATCH_LN")"
 check "the evaluator spawn carries nothing from the dossier" \
