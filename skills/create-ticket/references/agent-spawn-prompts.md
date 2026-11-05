@@ -6,7 +6,7 @@ Verbose Phase 1 / 2 / 3 / 4 spawn-prompt construction details, the retry-with-fe
 
 The orchestrator MUST invoke the `simple-workflow:researcher` via the Agent tool. NEVER bypass via direct `Grep`/`Read`/`Glob` — independent findings are required for Phase 3. Fail the task immediately if the researcher cannot be invoked.
 
-**Return value cap**: per the Context Conservation Protocol in `agents/researcher.md`, the researcher's return value MUST stay under 500 tokens (status, executive summary, output path). The full investigation content lives at the canonical artifact path; the orchestrator reads it only when the planner needs it.
+**Return value cap**: per the Context Conservation Protocol in `agents/researcher.md`, the researcher's return value MUST stay under 500 tokens (status, executive summary, output path). The full investigation content lives at the canonical artifact path; the orchestrator reads it when it builds the decomposer spawn (Step B-5 / D-4, `## Investigation Summary`) and when a planner spawn needs it.
 
 Researcher scope:
 
