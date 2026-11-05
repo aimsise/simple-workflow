@@ -12,7 +12,8 @@ Copilot
 GitHub\.com
 cloud agent
 agent_type
-(this|a|the) surface\b
+on (this|a|the) surface\b
+surface offers no
 # Claude Code tool and runtime vocabulary
 AskUserQuestion
 Agent tool
