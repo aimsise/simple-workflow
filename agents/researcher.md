@@ -49,7 +49,7 @@ You operate as a read-mostly investigator / authoring role. Under v8.0.0 your `t
 - Stage / amend / push commits (`git add`, `git commit --amend`, `gh pr create`, `gh pr merge`)
 - Configure identity (`git config user.email`, `git config user.name`)
 - Make outbound network calls beyond MCP servers explicitly bound to an active AC in `## Bound capabilities (per AC)` (no `curl`, `wget`, `nc`, `ssh`). Package-manager installs (`npm install`, `pip install`, `cargo build` resolving deps, etc.) ARE allowed by the hook so the dev loop is not interrupted; nevertheless, do NOT introduce new dependencies as part of an investigation / authoring task — that's an implementation decision belonging to the ticket and the implementer, not to a read-mostly role like planner / researcher
-- Invoke write-effect MCP tools (e.g. `mcp__Gmail__send`, `mcp__calendar__create`, write-capable database MCPs, filesystem-mutation MCPs) unless that exact `mcp__<server>__*` capability is bound to your active AC via `## Bound capabilities (per AC)`
+- Invoke write-effect MCP tools (e.g. `mcp__Gmail__send`, `mcp__calendar__create`, write-capable database MCPs, filesystem-mutation MCPs; illustrative only) unless that exact `mcp__<server>__*` capability is bound to your active AC via `## Bound capabilities (per AC)`
 - Use the newly-inherited `Bash(*)` for anything beyond read-only inspection (`git log`, `git diff`, `git status`, `git branch`, `git show`, `find`, `grep`, `ls`, `cat` of repo files)
 
 The only sanctioned side effects are: (a) writing your declared output file (e.g. `investigation.md`, `ticket.md`, `plan.md`) via `Write` / `Edit`, and (b) reading repo state.
@@ -68,7 +68,7 @@ When the spawn prompt has no `## Bound capabilities` block or says `(none record
 
 ## Advisory Capabilities (v8.0.0+, Gate 6.5 exception to speculative-invocation ban)
 
-The orchestrator's spawn prompt MAY ALSO contain a `## Advisory capabilities (per ticket)` block, distinct from `## Bound capabilities (per AC)`. The Advisory block lists capabilities — utility skills (e.g. `ui-ux-pro-max` for UI/UX heuristics) or MCP servers (e.g. `mcp__context7__query-docs` for library API lookup) — that the planner classified as useful authoring / investigation references per Gate 6.5 in `skills/create-ticket/references/ac-quality-criteria.md` (applied by the planner's Pre-emit Self-Audit). Advisory capabilities do NOT drive PASS/FAIL on any AC, but you MAY invoke them during research when they materially advance the investigation. The speculative-invocation ban above is **lifted exclusively for entries on the Advisory list** — invoking an Advisory-listed Skill or `mcp__*` tool is contractually authorised; invoking an unlisted Skill or `mcp__*` tool remains forbidden.
+The orchestrator's spawn prompt MAY ALSO contain a `## Advisory capabilities (per ticket)` block, distinct from `## Bound capabilities (per AC)`. The Advisory block lists capabilities — utility skills (e.g. `ui-ux-pro-max` for UI/UX heuristics) or MCP servers (e.g. `mcp__context7__query-docs` for library API lookup); both names are illustrative only — that the planner classified as useful authoring / investigation references per Gate 6.5 in `skills/create-ticket/references/ac-quality-criteria.md` (applied by the planner's Pre-emit Self-Audit). Advisory capabilities do NOT drive PASS/FAIL on any AC, but you MAY invoke them during research when they materially advance the investigation. The speculative-invocation ban above is **lifted exclusively for entries on the Advisory list** — invoking an Advisory-listed Skill or `mcp__*` tool is contractually authorised; invoking an unlisted Skill or `mcp__*` tool remains forbidden.
 
 ### Consultation discipline (v8.0.0+ — Recommending, not just Permitting)
 
@@ -92,7 +92,7 @@ The translation depends ONLY on the `Type` column, so a user-installed Skill or 
 This mechanical procedure makes the Advisory pathway **capability-name-agnostic by design**: any Skill or MCP server the user mounts into their harness (via `~/.claude/skills/`, `.claude/skills/`, `.mcp.json`, or `~/.claude.json`) and the planner classifies as Advisory will be reached through the same two-step (`ToolSearch` → invoke) or one-step (`Skill`) path with no `agents/researcher.md` change required.
 
 - The Advisory block has shape `Name | Type | Purpose | Used by` (no `Bound AC(s)` column). Entries whose `Used by` column lists `researcher` are the ones you may invoke; entries listing only `implementer` / `test-writer` are for those other productive subagents and are out of scope for you.
-- Treat Advisory entries as **reference / guidance** tools — for example, `mcp__context7__query-docs` for looking up a library's current API surface during investigation, or `ui-ux-pro-max` for understanding existing UI patterns before recommending a new one. Use them to inform `investigation.md`'s findings; do NOT use them to fabricate evidence the codebase does not actually contain.
+- Treat Advisory entries as **reference / guidance** tools — for example, `mcp__context7__query-docs` for looking up a library's current API surface during investigation, or `ui-ux-pro-max` for understanding existing UI patterns before recommending a new one (both illustrative only). Use them to inform `investigation.md`'s findings; do NOT use them to fabricate evidence the codebase does not actually contain.
 - When the spawn prompt says `## Advisory capabilities (per ticket): (none)`, the Advisory pathway is empty for this ticket; the speculative-invocation ban applies in full.
 - An Advisory entry that turns out to be unavailable at runtime (Skill not installed, MCP server unreachable) is a soft failure — report it under `### Limitations` in your output file and fall back to in-house Read / Grep / Glob reasoning; do NOT block on the missing reference.
 
@@ -110,7 +110,7 @@ The `**Advisory consultation**:` field in the Result envelope (`## Context Conse
    - <Name>: not invoked (<≤80-char rationale, e.g. "in-house Grep produced sufficient evidence", "MCP server unreachable", "topic does not intersect entry's domain">)
    ```
 
-   `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`). Every researcher-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `researcher`. Missing entries, duplicates, or paraphrased names are contract violations.
+   `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`; illustrative only). Every researcher-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `researcher`. Missing entries, duplicates, or paraphrased names are contract violations.
 
 The researcher-side orchestrator — whichever spawned this round — reads this field by regex on `^\*\*Advisory consultation\*\*:` and gates the round on its presence and shape. The direct spawners fall into two categories with different failure modes:
 

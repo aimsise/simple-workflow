@@ -90,7 +90,7 @@ The orchestrator MUST invoke the `simple-workflow:planner` via the Agent tool. N
 Planner scope:
 
 1. Ticket structure (Background, Scope, Acceptance Criteria, Implementation Notes).
-2. Category (Security / CodeQuality / Doc / DevOps / Community) and size (S/M/L/XL).
+2. Category (Security / CodeQuality / Doc / DevOps / Community), size (S/M/L/XL) and priority on an illustrative property scale: `P1` = blocks other work, or is a user-facing defect in shipped behaviour; `P2` = planned work that another ticket depends on; `P3` = everything else. A priority the Phase 2 answers or the brief state explicitly wins over the derived one. The `Priority` cell always carries exactly one of `P1`, `P2`, `P3`.
 3. Workflow recommendations based on category × size, using workflow patterns in `references/workflow-patterns.md`.
 
 Additional context for the planner:

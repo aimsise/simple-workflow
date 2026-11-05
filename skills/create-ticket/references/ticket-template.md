@@ -7,7 +7,7 @@ Generate the ticket in the following format:
 
 | Field | Value |
 |-------|-------|
-| Priority | **P?** |
+| Priority | **P1 \| P2 \| P3** |
 | Category | [Category] |
 | Size | [S/M/L/XL] |
 | Dependencies | [Dependent tickets or --] |

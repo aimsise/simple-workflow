@@ -61,7 +61,7 @@ You operate as a read-mostly investigator / authoring role. Under v8.0.0 your `t
 - Stage / amend / push commits (`git add`, `git commit --amend`, `gh pr create`, `gh pr merge`)
 - Configure identity (`git config user.email`, `git config user.name`)
 - Make outbound network calls beyond MCP servers explicitly bound to an active AC in `## Bound capabilities (per AC)` (no `curl`, `wget`, `nc`, `ssh`). Package-manager installs (`npm install`, `pip install`, `cargo build` resolving deps, etc.) ARE allowed by the hook so the dev loop is not interrupted; nevertheless, do NOT introduce new dependencies as part of an investigation / authoring task — that's an implementation decision belonging to the ticket and the implementer, not to a read-mostly role like planner / researcher
-- Invoke write-effect MCP tools (e.g. `mcp__Gmail__send`, `mcp__calendar__create`, write-capable database MCPs, filesystem-mutation MCPs) unless that exact `mcp__<server>__*` capability is bound to your active AC via `## Bound capabilities (per AC)`
+- Invoke write-effect MCP tools (e.g. `mcp__Gmail__send`, `mcp__calendar__create`, write-capable database MCPs, filesystem-mutation MCPs; illustrative only) unless that exact `mcp__<server>__*` capability is bound to your active AC via `## Bound capabilities (per AC)`
 - Use the newly-inherited `Bash(*)` for anything beyond read-only inspection (`git log`, `git diff`, `git status`, `git branch`, `git show`, `find`, `grep`, `ls`, `cat` of repo files)
 
 The only sanctioned side effects are: (a) writing your declared output file (e.g. `investigation.md`, `ticket.md`, `plan.md`) via `Write` / `Edit`, and (b) reading repo state.

@@ -122,7 +122,7 @@ Construct an inline `scope_context` spawn prompt per `references/spec-decomposer
 
 - Header: `Input form: scope_context`
 - Header: `Parent slug: {parent-slug}` (i.e. `{brief_slug}`)
-- Body section `## Context`: the brief.md `## Vision` + `## Business Context` sections concatenated verbatim
+- Body section `## Context`: the brief.md `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints` sections concatenated verbatim
 - Body section `## Investigation Summary`: full content of `investigation.md` from B-3
 - Body section `## Socratic Answers` (only if B-4 collected at least one answer): one bullet per answer
 
