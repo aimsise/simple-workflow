@@ -14,6 +14,11 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the r
 | Unknown destination kind | `ERROR: unknown destination kind in destination=<spec without query> (expected local:, mcp: or api:)` (the spec without its query string, at most 80 characters) |
 | `auth_env=` / `template=` / `id_path=` without `api:` | `ERROR: auth_env=, template= and id_path= apply only to an api: destination` |
 | `mcp_<name>=` without `mcp:` | `ERROR: mcp_<name>= applies only to an mcp: destination` |
+| Unknown source kind, or a `source=` value outside its pattern | `ERROR: unknown source kind in source=<spec without query> (expected file:, dir:, mcp: or api:)` / `ERROR: source=<spec without query> contains characters this skill does not accept` |
+| `source_auth_env=` without an `api:` source | `ERROR: source_auth_env= applies only to an api: source` |
+| A source cannot be read (missing file or directory, unsupported kind, unreadable `.xlsx`, no Python 3, unavailable or non-read-only MCP tool, missing MCP parameter, HTTP status outside 200-299) | The `ERROR:` line of that kind in [references/sources.md](references/sources.md), before Phase 1; nothing delivered |
+| Sources exceed the intake limit, or more than 50 sources | `ERROR: sources exceed the intake limit (<total> characters > 150000; largest: ...); narrow the inputs` / `ERROR: more than 50 sources after directory expansion; narrow the inputs` |
+| A source was truncated, or a `dir:` skipped files | Not an error: continue, print the `WARNING:` line of [references/sources.md](references/sources.md), repeat it in the Final summary |
 | Unknown `depth=` or `confirm=` value | `ERROR: depth= must be standard, thorough or exhaustive` / `ERROR: confirm= accepts only yes` |
 | Unknown `constraint_<key>=` key, or a value other than `off` | `ERROR: unknown constraint key <key>` / `ERROR: constraint_<key>= accepts only off` |
 | Destination preflight fails | The `ERROR:` line of the failing check in [references/destinations.md](references/destinations.md) (e.g. `ERROR: destination mcp:<server> exposes no tool that accepts a title and a body`), before Phase 1 |
