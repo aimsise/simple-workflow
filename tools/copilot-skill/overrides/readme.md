@@ -68,7 +68,7 @@ A remote destination asks once for confirmation before the first create; `confir
 
 - `depth=standard|thorough|exhaustive`: raises the evidence depth the rubric demands (never lowers it; the default follows each ticket's size).
 - `constraint_<key>=off`: turns off one rubric gate for the run (`oracle_verification`, `independent_evidence`, `failure_class_coverage`, `peer_uniformity`).
-- Paths, sheet names and identifiers may use any script; a value with spaces is written in double quotes (`source="file:My Docs/a.xlsx"`) or stated in prose. Only `"`, backtick, `$`, backslash and control characters are refused. A token value ends at the next space, so in a language written without word spaces leave a space after it.
+- Paths, sheet names and identifiers may use any script; a path or sheet name with spaces is written in double quotes (`source="file:My Docs/a.xlsx"`) or stated in prose, while an identifier carries no whitespace. Only `"`, backtick, `$`, backslash and control characters are refused. A token value ends at the next space, so in a language written without word spaces leave a space after it.
 
 ### Prose instead of tokens
 
