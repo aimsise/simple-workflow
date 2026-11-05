@@ -4,14 +4,24 @@
 #
 # Schema reference: docs/state-schema.md
 #
-# Sourced by:
+# Sourced by (every hook that reads autopilot-state.yaml / phase-state.yaml
+# or anchors on the repo root; enumerate with `grep -l parse-state-file.sh hooks/*.sh`):
+#   - hooks/session-start.sh (SessionStart first-run setup + sentinel replay)
 #   - hooks/pre-bash-contract-guard.sh (PreToolUse:Bash guard, PX-02a)
+#   - hooks/pre-skill-contract-guard.sh (PreToolUse:Skill guard)
+#   - hooks/pre-askuserquestion-guard.sh (PreToolUse:AskUserQuestion guard)
 #   - hooks/pre-state-transition.sh (PreToolUse:Write/Edit guard, PX-04)
+#   - hooks/pre-next-scout-auto-compact.sh (PreToolUse:Skill auto-/compact, v7)
 #   - hooks/post-phase-checkpoint.sh (PostToolUse:Write/Edit observer, PX-05)
-#   - hooks/post-ship-auto-compact.sh (PostToolUse:Skill auto-/compact, v7)
+#   - hooks/post-ship-state-auto-compact.sh (PostToolUse:Write/Edit auto-/compact, v7)
+#   - hooks/autopilot-continue.sh (Stop loop driver)
+#   - hooks/impl-checkpoint-guard.sh (Stop / SubagentStop checkpoint guard)
+#   - hooks/scout-checkpoint-guard.sh (Stop / SubagentStop checkpoint guard)
+#   - hooks/session-stop-log.sh (Stop session log; `_psf_repo_root`)
 #   - hooks/create-ticket-metrics.sh (SubagentStop verdict log, P1-13;
 #     `_psf_repo_root` only, sourced best-effort)
-#   - tests/test-hooks-lib.sh (unit tests for these helpers)
+#   - tests/test-hooks-lib.sh, tests/test-state-parsers.sh, tests/test-per-phase-metrics.sh
+#     and tests/test-skill-contracts.sh (unit / contract tests for these helpers)
 #
 # Public contract (do not change without updating the consumers above):
 #

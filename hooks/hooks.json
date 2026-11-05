@@ -2,103 +2,103 @@
   "hooks": {
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-start.sh" }]
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-bash-safety.sh" },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-bash-contract-guard.sh" }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-bash-safety.sh" },
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-bash-contract-guard.sh" }
         ]
       },
       {
         "matcher": "Write",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-write-safety.sh" },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-state-transition.sh" }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-write-safety.sh" },
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-state-transition.sh" }
         ]
       },
       {
         "matcher": "Edit",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-edit-safety.sh" },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-state-transition.sh" }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-edit-safety.sh" },
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-state-transition.sh" }
         ]
       },
       {
         "matcher": "Skill",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-skill-contract-guard.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-skill-contract-guard.sh" }]
       },
       {
         "matcher": "Skill",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-next-scout-auto-compact.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-next-scout-auto-compact.sh" }]
       },
       {
         "matcher": "AskUserQuestion",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-askuserquestion-guard.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-askuserquestion-guard.sh" }]
       }
     ],
     "PreCompact": [
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-save.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pre-compact-save.sh" }]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Skill",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-skill-cleanup.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-skill-cleanup.sh" }]
       },
       {
         "matcher": "Write",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-phase-checkpoint.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-phase-checkpoint.sh" }]
       },
       {
         "matcher": "Write",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-ship-state-auto-compact.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-ship-state-auto-compact.sh" }]
       },
       {
         "matcher": "Edit",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-phase-checkpoint.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-phase-checkpoint.sh" }]
       },
       {
         "matcher": "Edit",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-ship-state-auto-compact.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-ship-state-auto-compact.sh" }]
       },
       {
         "matcher": "Write",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/accept-set-verify.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/accept-set-verify.sh" }]
       },
       {
         "matcher": "Edit",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/accept-set-verify.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/accept-set-verify.sh" }]
       }
     ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/impl-checkpoint-guard.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/impl-checkpoint-guard.sh" }]
       },
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scout-checkpoint-guard.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scout-checkpoint-guard.sh" }]
       },
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/autopilot-continue.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/autopilot-continue.sh" }]
       },
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-log.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-stop-log.sh" }]
       }
     ],
     "SubagentStop": [
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/impl-checkpoint-guard.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/impl-checkpoint-guard.sh" }]
       },
       {
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scout-checkpoint-guard.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scout-checkpoint-guard.sh" }]
       },
       {
         "matcher": "^(simple-workflow:)?ticket-evaluator$",
-        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/create-ticket-metrics.sh" }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/create-ticket-metrics.sh" }]
       }
     ]
   }
