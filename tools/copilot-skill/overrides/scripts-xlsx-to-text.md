@@ -9,12 +9,14 @@ Standard library only (zipfile + xml.etree), so it runs wherever python3
 runs; no third-party package is required. Run it as
 
     python3 -I xlsx_to_text.py WORKBOOK.xlsx [--max-rows N] [--max-cols N]
-                                           [--max-chars N]
+                                           [--max-chars N] [--sheet NAME ...]
 
-Output (stdout): one "## Sheet: NAME" section per worksheet, each a
+Output (stdout): one "## Sheet: NAME" section per worksheet (every
+worksheet, or only those named by --sheet, exact match; an unknown name
+exits 2 and lists the names the workbook has), each a
 Markdown table whose first column is the 1-based row number of the
-worksheet, so a cell is addressed as NAME!rROW (the locator form the
-create-ticket skill records as a source reference). Caps: --max-rows rows
+worksheet, so every cell keeps its worksheet address (sheet name and row)
+in the text that the skill reads and cites. Caps: --max-rows rows
 per sheet (default 2000), --max-cols columns per sheet (default 64),
 --max-chars characters of output in total (default 200000); a cap that is
 hit is reported as a line starting with "[truncated:" at the point it
@@ -278,6 +280,7 @@ def main():
     parser.add_argument("--max-rows", type=int, default=2000)
     parser.add_argument("--max-cols", type=int, default=64)
     parser.add_argument("--max-chars", type=int, default=200000)
+    parser.add_argument("--sheet", action="append", default=[], help="worksheet name to read (repeatable); default: every worksheet")
     limits = parser.parse_args()
     if limits.max_rows < 1 or limits.max_cols < 1 or limits.max_chars < 1:
         fail(2, "every --max-* value must be at least 1")
@@ -296,7 +299,14 @@ def main():
             if pr is not None and pr.get("date1904", "0") in ("1", "true"):
                 date1904 = True
         out = ["# Workbook: %s\n\n" % limits.workbook.replace("\\", "/").split("/")[-1]]
-        for name, member, hidden in sheets(zf):
+        chosen = sheets(zf)
+        if limits.sheet:
+            names = [name for name, _, _ in chosen]
+            missing = [want for want in limits.sheet if want not in names]
+            if missing:
+                fail(2, "sheet(s) not found: %s; the workbook has: %s" % (", ".join(missing), ", ".join(names)))
+            chosen = [entry for entry in chosen if entry[0] in limits.sheet]
+        for name, member, hidden in chosen:
             dump_sheet(zf, name, member, hidden, strings, dates, date1904, limits, out)
     text = "".join(out)
     if len(text) > limits.max_chars:

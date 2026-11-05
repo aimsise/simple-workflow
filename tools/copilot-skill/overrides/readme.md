@@ -12,7 +12,7 @@ This directory is generated; `SKILL.md` and everything under `references/` and `
 
 1. Copy this directory, keeping its name `create-ticket`, into the skill root your agent host reads: `.github/skills/`, `.claude/skills/` or `.agents/skills/` inside the project (project-wide), or the host's personal skill root under your home directory (every project).
 2. Nothing else is required: no package, no configuration file, no custom agent definition. Python 3 on the shell is needed only when an `.xlsx` source is passed.
-3. Invoke it by name, `/create-ticket`, followed by the input. The skill never starts on its own.
+3. Invoke it by name, `/create-ticket`, followed by the input: tokens, or plain prose in any language saying what to read and where to deliver (the skill prints a `Resolved:` line with its reading before it runs). The skill never starts on its own.
 
 ## What the host must offer
 
@@ -25,7 +25,7 @@ Every shell command goes through the host's own permission prompt; the skill dec
 ```text
 /create-ticket <ticket description> | brief=<path> | findings=<path>
                [source=<spec> ...]
-               [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url>]
+               [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url>] [parent=<id>]
                [confirm=yes] [depth=<tier>] [constraint_<key>=off]
 ```
 
@@ -45,7 +45,7 @@ Hand over your material as it is, repeatable, in any mode ([references/sources.m
 
 | Spec | Reads |
 |---|---|
-| `source=file:<path>` | `.md`, `.markdown`, `.txt`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, or an `.xlsx` workbook read as a workbook (every sheet, cells addressed by row) |
+| `source=file:<path>` | `.md`, `.markdown`, `.txt`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, or an `.xlsx` workbook read as a workbook (every sheet, or only `?sheet=<name>`; cells addressed by row) |
 | `source=dir:<path>` | every supported file directly inside the directory |
 | `source=mcp:<server>/<tool>?name=value` | one call of a read-only MCP tool of the session (a wiki page, an issue, a document; illustrative only) |
 | `source=api:<url>` | one HTTP `GET`; `source_auth_env=<VAR>` names the variable holding a bearer token, whose value is never printed |
@@ -54,13 +54,13 @@ Everything is normalized into a source dossier before any ticket is drafted. The
 
 ### Destinations (`destination=`)
 
-Default `local:tickets` ([references/destinations.md](references/destinations.md)):
+Default `local:.docs/tickets` ([references/destinations.md](references/destinations.md)):
 
 | Spec | Result |
 |---|---|
 | `local:<dir>` | `<dir>/<parent-slug>/<NNN>-<slug>/ticket.md` per ticket, a `split-plan.md` when there is more than one, numbered by `<dir>/.ticket-counter`; a failed write is quarantined under `<dir>/.rollback/`, never deleted |
-| `mcp:<server>[/<tool>]` | one item per ticket through the server's create tool; `mcp_<name>=<value>` fills its other required parameters |
-| `api:<url>` | one `POST` per ticket; `auth_env=<VAR>` for the bearer token, `template=<path>` for the request body, `id_path=<path>` for the identifier in the response |
+| `mcp:<server>[/<tool>]` | one item per ticket through the server's create tool; `mcp_<name>=<value>` fills its other parameters; `parent=<id>` links every item to an existing item (epic, parent task; illustrative only) through the tool's parent-link parameter |
+| `api:<url>` | one `POST` per ticket; `auth_env=<VAR>` for the bearer token, `template=<path>` for the request body (`{title}`, `{body}`, and `{parent}` for `parent=<id>`, which on `api:` always needs a `template=`), `id_path=<path>` for the identifier in the response |
 
 A remote destination asks once for confirmation before the first create; `confirm=yes` skips the question and is the only way to deliver remotely in a non-interactive run. Remote creates are not transactional: on a failure part-way the identifiers already created are printed and the run stops.
 
@@ -68,6 +68,11 @@ A remote destination asks once for confirmation before the first create; `confir
 
 - `depth=standard|thorough|exhaustive`: raises the evidence depth the rubric demands (never lowers it; the default follows each ticket's size).
 - `constraint_<key>=off`: turns off one rubric gate for the run (`oracle_verification`, `independent_evidence`, `failure_class_coverage`, `peer_uniformity`).
+- Paths, sheet names and identifiers may use any script; a value with spaces is written in double quotes (`source="file:My Docs/a.xlsx"`) or stated in prose. Only `"`, backtick, `$`, backslash and control characters are refused. A token value ends at the next space, so in a language written without word spaces leave a space after it.
+
+### Prose instead of tokens
+
+The tokens are the canonical form; a statement in prose that names material to read or a place to deliver is translated to them first, and the skill prints `Resolved: <tokens>` before it runs. An explicit token wins over prose, prose never sets `confirm=yes`, `depth=` or `constraint_<key>=off`, and a statement that fits two things or none is asked about (or stops the run when nobody can answer).
 
 ## What you get
 
@@ -90,4 +95,4 @@ Each ticket carries Background, Scope, Acceptance Criteria, Implementation Notes
 - The skill has not yet been exercised end to end on a live host; the contracts were verified by construction and by a build-time audit.
 - An MCP source tool is judged read-only from its description; a tool that misdescribes itself cannot be detected.
 - `dir:` reads one directory level; `.docx` and `.pdf` sources are not supported.
-- Grouping delivered tickets under a parent item on a remote platform is out of scope; each ticket is created as a standalone item.
+- `parent=` links new items through the create tool's own parent-link parameter (or the `{parent}` template placeholder); a platform that links only through a separate call after the create is not supported, and the parent item itself is never modified.
