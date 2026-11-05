@@ -1,6 +1,6 @@
 # Standalone skill generator inputs
 
-`tools/build-copilot-skill.sh` turns this plugin's ticket-creation workflow into a single, self-contained, host-neutral Agent Skill, `create-ticket/` (a `SKILL.md` plus `references/`). The generated skill needs no plugin, no hooks and no custom agent files, and it names tools by role (see `## Tool roles` below) rather than by any host's tool name: copy the directory into the skill root the host reads (`.github/skills/`, `.claude/skills/` or `.agents/skills/`) and invoke it by name. The generator keeps its historical name; its output was first shaped for GitHub Copilot CLI and has not been run live on any host yet.
+`tools/build-copilot-skill.sh` turns this plugin's ticket-creation workflow into a single, self-contained, host-neutral Agent Skill, `create-ticket/` (a `SKILL.md` plus `references/`). The generated skill needs no plugin, no hooks and no custom agent files (Python 3 only to read `.xlsx` sources), and it names tools by role (see `## Tool roles` below) rather than by any host's tool name: copy the directory into the skill root the host reads (`.github/skills/`, `.claude/skills/` or `.agents/skills/`) and invoke it by name. The generator keeps its historical name; its output was first shaped for GitHub Copilot CLI and has not been run live on any host yet.
 
 ```bash
 bash tools/build-copilot-skill.sh --out <dir>            # writes <dir>/create-ticket/
@@ -53,6 +53,10 @@ mode: replace | before | after | append
 ## Delivery and destinations
 
 The generated skill is decoupled from this repository's own backlog layout: producing the tickets (Phases 1-4, the four agent prompts, the rubric and grading files) is unchanged, while the upstream write path is replaced whole by a `## Delivery` section (`overrides/skill-delivery.md`) and the destination adapters live in `references/destinations.md`, a file with no upstream source (`overrides/destinations.md`). The skill takes `destination=local:<dir>` (default `local:tickets`), `destination=mcp:<server>[/<tool>]` or `destination=api:<url>`. The denylist rejects the plugin name, its backlog paths, `{ticket-dir}` and the dropped investigation-reuse key, so an upstream edit that reintroduces them fails the build.
+
+## Sources (intake)
+
+`source=<spec>` tokens (repeatable, any mode) let the user hand the skill its input material instead of a pre-written brief or findings file: `file:<path>` (Markdown, text, CSV, TSV, JSON, YAML, or an `.xlsx` workbook read as a workbook), `dir:<path>`, `mcp:<server>/<tool>[?name=value]` (one read-only call) and `api:<url>` (one `GET`, `source_auth_env=` for the token). The contract lives in `references/sources.md` (`overrides/sources.md`, a file with no upstream source), the sequence in SKILL.md `## Intake` (`overrides/skill-intake.md`), and the partition decision in the decomposer (`overrides/decomposer-source-dossier.md`, `overrides/spec-decomposer-source-dossier.md`): the decomposer judges whether one source enumerates the work units (then they map to tickets one-to-one) or whether every source is context, and reports `Partition basis`. The workbook converter `scripts/xlsx_to_text.py` (`overrides/scripts-xlsx-to-text.md`) uses only the Python 3 standard library; the test builds a fixture workbook with the same library and checks its output. The upstream `/create-ticket` has no `source=`; the feature exists only in the generated skill.
 
 ## Self-contained vocabulary
 

@@ -19,3 +19,5 @@ references/agents/planner.md	agents/planner.md
 references/agents/ticket-evaluator.md	agents/ticket-evaluator.md
 references/brief-template.md	skills/brief/references/brief-body-template.md
 references/destinations.md	-
+references/sources.md	-
+scripts/xlsx_to_text.py	-

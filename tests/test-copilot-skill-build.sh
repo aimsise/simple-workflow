@@ -99,12 +99,14 @@ references/destinations.md
 references/findings-schema.md
 references/interview-templates.md
 references/mode-dispatch-flows.md
+references/sources.md
 references/spec-decomposer-input.md
 references/split-plan-schema.md
 references/ticket-template.md
-references/write-path-templates.md"
+references/write-path-templates.md
+scripts/xlsx_to_text.py"
 ACTUAL="$(cd "$SKILL_DIR" && find . -type f | sed 's#^\./##' | sort)"
-check "tree holds exactly SKILL.md + the 16 shipped references" \
+check "tree holds exactly SKILL.md + the 17 shipped references + the xlsx converter" \
   "$(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
 
 NOT_SHIPPED=""
@@ -316,6 +318,99 @@ grep -qE -- '--globoff|curl [^`]*-g ' "$DEST_MD" || MISSING="$MISSING destinatio
 # shellcheck disable=SC2016  # literal braces
 grep -rqF -- 'eval-{logical-id}' "$SKILL_DIR" || MISSING="$MISSING tree:'eval-{logical-id}'"
 check "confirm=yes, curl --globoff and the evaluator report path are present" "$MISSING"
+
+# --- Intake (source=) -------------------------------------------------------------
+SOURCES_MD="$SKILL_DIR/references/sources.md"
+XLSX_PY="$SKILL_DIR/scripts/xlsx_to_text.py"
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks and braces
+for needle in '## Intake' 'source=<spec>' 'source_auth_env=' '{intent}' '## Source dossier' 'source_refs' 'Partition basis'; do
+  grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
+done
+for needle in '## `file:<path>`' '## `dir:<path>`' '## `mcp:<server>/<tool>' '## `api:<url>`' 'xlsx_to_text.py' 'python3 -I' 'S<n>:L<a>-L<b>' '60,000' '150,000' 'source_auth_env' '## Source excerpts' 'Sources:' '## Partition basis'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+for needle in '## Source dossier handling' 'source_refs' '**Partition basis**' '## Source dossier'; do
+  grep -qF -- "$needle" "$SKILL_DIR/references/agents/decomposer.md" || MISSING="$MISSING decomposer.md:'$needle'"
+done
+grep -qF -- '## `## Source dossier`' "$SKILL_DIR/references/spec-decomposer-input.md" || MISSING="$MISSING spec-decomposer-input.md:'## Source dossier'"
+for needle in '## Source excerpts' 'Sources:' 'source dossier' 'dossier.md'; do
+  grep -qF -- "$needle" "$SKILL_DIR/references/agent-spawn-prompts.md" || MISSING="$MISSING agent-spawn-prompts.md:'$needle'"
+done
+grep -qF -- 'Partition basis:' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Partition basis:'"
+for needle in '{intent}' '## Source dossier'; do
+  grep -qF -- "$needle" "$SKILL_DIR/references/mode-dispatch-flows.md" || MISSING="$MISSING mode-dispatch-flows.md:'$needle'"
+done
+check "Intake: SKILL.md, sources.md, the decomposer, its input spec, the spawn prompts and the summary carry the source= contract" "$MISSING"
+INTAKE_LN="$(grep -n '^## Intake$' "$SKILL_MD" | cut -d: -f1)"
+DISPATCH_LN="$(grep -n '^## Mode dispatch$' "$SKILL_MD" | cut -d: -f1)"
+check "Intake precedes Mode dispatch in SKILL.md" \
+  "$({ [ -n "$INTAKE_LN" ] && [ -n "$DISPATCH_LN" ] && [ "$INTAKE_LN" -lt "$DISPATCH_LN" ]; } || echo "intake=$INTAKE_LN dispatch=$DISPATCH_LN")"
+check "the evaluator spawn carries nothing from the dossier" \
+  "$(grep -n -i 'dossier' "$SKILL_DIR/references/agents/ticket-evaluator.md" | cut -c1-160 || true)"
+check "the xlsx converter is ASCII-only, backtick-free and starts with a python3 shebang" \
+  "$(head -n 1 "$XLSX_PY" | grep -qx '#!/usr/bin/env python3' || echo 'no shebang')$(grep -n '`' "$XLSX_PY" | head -n 3 || true)$(LC_ALL=C grep -n '[^ -~]' "$XLSX_PY" | head -n 3 || true)"
+if command -v python3 >/dev/null 2>&1; then
+  FIX_DIR="$TMP_ROOT/xlsx"
+  mkdir -p "$FIX_DIR"
+  cat >"$FIX_DIR/make_fixture.py" <<'PYFIX'
+import zipfile, sys
+out = sys.argv[1]
+ct = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'''
+rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'''
+wb = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Backlog" sheetId="1" r:id="rId1"/><sheet name="Notes" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>'''
+wbrels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'''
+sst = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4"><si><t>ID</t></si><si><t>Title</t></si><si><r><t>Add </t></r><r><rPr><b/></rPr><t>login | form</t></r></si><si><t>Due</t></si></sst>'''
+styles = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy/mm/dd"/></numFmts><cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/></cellXfs></styleSheet>'''
+s1 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>3</v></c><c r="D1" t="inlineStr"><is><t>Done</t></is></c></row>
+<row r="2"><c r="A2"><v>1</v></c><c r="B2" t="s"><v>2</v></c><c r="C2" s="1"><v>45000</v></c><c r="D2" t="b"><v>1</v></c></row>
+<row r="4"><c r="A4"><v>2.5</v></c><c r="B4" t="str"><f>CONCATENATE("a","b")</f><v>ab</v></c><c r="C4" s="2"><v>45000.5</v></c><c r="D4" t="e"><v>#N/A</v></c></row>
+<row r="5"><c r="A5"><v>3</v></c><c r="BM5"><v>99</v></c></row>
+</sheetData></worksheet>'''
+s2 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hidden note</t></is></c></row></sheetData></worksheet>'''
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("[Content_Types].xml", ct); z.writestr("_rels/.rels", rels); z.writestr("xl/workbook.xml", wb)
+    z.writestr("xl/_rels/workbook.xml.rels", wbrels); z.writestr("xl/sharedStrings.xml", sst); z.writestr("xl/styles.xml", styles)
+    z.writestr("xl/worksheets/sheet1.xml", s1); z.writestr("xl/worksheets/sheet2.xml", s2)
+print("fixture written", out)
+PYFIX
+  python3 -I "$FIX_DIR/make_fixture.py" "$FIX_DIR/fixture.xlsx" >/dev/null
+  set +e
+  XLSX_OUT="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" 2>"$FIX_DIR/err.txt")"; XLSX_RC=$?
+  set -e
+  MISSING=""
+  [ "$XLSX_RC" -eq 0 ] || MISSING="$MISSING rc=$XLSX_RC:$(head -n 1 "$FIX_DIR/err.txt")"
+  for needle in '## Sheet: Backlog' '| row | c1 | c2 | c3 | c4 |' '| 1 | ID | Title | Due | Done |' 'Add login \| form' '2023-03-15 | TRUE' '2023-03-15T12:00:00 | #N/A' '| 5 | 3 |  |  |  |' '[truncated: sheet Backlog has columns beyond c64' '## Sheet: Notes (hidden)' 'hidden note'; do
+    printf '%s\n' "$XLSX_OUT" | grep -qF -- "$needle" || MISSING="$MISSING '$needle'"
+  done
+  check "xlsx converter: shared / rich / inline strings, numbers, dates, booleans, errors, formulas, hidden sheets and the column cap" "$MISSING"
+  XLSX_OUT2="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-rows 2 --max-cols 3 2>/dev/null)"
+  MISSING=""
+  printf '%s\n' "$XLSX_OUT2" | grep -qF -- '[truncated: sheet Backlog has more than 2 rows; only the first 2 were read]' || MISSING="$MISSING 'row cap marker'"
+  printf '%s\n' "$XLSX_OUT2" | grep -qF -- '[truncated: sheet Backlog has columns beyond c3' || MISSING="$MISSING 'column cap marker'"
+  printf '%s\n' "$XLSX_OUT2" | grep -qF -- '| 4 |' && MISSING="$MISSING 'row 4 leaked past the cap'"
+  XLSX_OUT3="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 120 2>/dev/null)"
+  printf '%s\n' "$XLSX_OUT3" | grep -qF -- '[truncated: output exceeds 120 characters' || MISSING="$MISSING 'char cap marker'"
+  check "xlsx converter: every cap is marked, never silent" "$MISSING"
+  (cd "$FIX_DIR" && python3 -c "import zipfile; zipfile.ZipFile('nowb.zip', 'w').writestr('a.txt', 'x')")
+  set +e
+  python3 -I "$XLSX_PY" "$FIX_DIR/make_fixture.py" >/dev/null 2>&1; NOT_ZIP_RC=$?
+  python3 -I "$XLSX_PY" "$FIX_DIR/nowb.zip" >/dev/null 2>&1; NO_WB_RC=$?
+  set -e
+  check "xlsx converter: a non-zip file and a zip without a workbook exit 2" \
+    "$([ "$NOT_ZIP_RC" -eq 2 ] || echo "not-zip rc=$NOT_ZIP_RC")$([ "$NO_WB_RC" -eq 2 ] || echo " no-workbook rc=$NO_WB_RC")"
+else
+  fail "xlsx converter checks" "python3 is not on the PATH"
+fi
 
 # Kill switches are real request tokens: Argument Parsing defines them, the
 # rubric's Terminology entry resolves them, and spawns forward them.
