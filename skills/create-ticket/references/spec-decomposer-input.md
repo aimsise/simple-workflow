@@ -44,7 +44,7 @@ Parent slug: <kebab-case-slug>
 
 ## Context
 
-<bare-description text verbatim, OR brief.md `## Vision` + `## Business Context` sections>
+<bare-description text verbatim, OR brief.md `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints` sections>
 
 ## Investigation Summary
 

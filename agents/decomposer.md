@@ -31,7 +31,7 @@ Plus optional Socratic Refinement answers from the user (additional scope clarif
 ### Form B — `scope_context` (used by `/create-ticket` bare-description and brief modes)
 
 An inline-synthesized context block whose body contains:
-- `## Context` (caller-supplied — bare-description text verbatim, or brief.md `## Vision` + `## Business Context` sections)
+- `## Context` (caller-supplied — bare-description text verbatim, or the brief's `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints` sections, verbatim)
 - `## Investigation Summary` (researcher's `investigation.md` content)
 - `## Socratic Answers` (optional Phase 2 user responses)
 

@@ -96,7 +96,7 @@ Receive `## Result` (Status / Parent slug / Tickets (each ticket also carrying a
 
 ### Step B-5: Synthesize `scope_context` and invoke `decomposer` (Brief Mode)
 
-`MUST invoke the simple-workflow:decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (`{brief_slug}`); `## Context` = brief.md `## Vision` + `## Business Context` verbatim; `## Investigation Summary` = Phase 1 `investigation.md` (reused when fresh); `## Socratic Answers` (if any) = one bullet per answer.
+`MUST invoke the simple-workflow:decomposer via the Agent tool` with an inline `scope_context` spawn prompt per [references/spec-decomposer-input.md](references/spec-decomposer-input.md) Form B. Body: `Input form: scope_context`; `Parent slug: {parent-slug}` (`{brief_slug}`); `## Context` = brief.md `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints`, verbatim; `## Investigation Summary` = Phase 1 `investigation.md` (reused when fresh); `## Socratic Answers` (if any) = one bullet per answer.
 
 Same failures as D-4 — atomic.
 
@@ -130,7 +130,7 @@ Caps (load-bearing): max **3 questions/round**, **10 rounds**, **30 total**. Non
 
 `MUST invoke the simple-workflow:planner via the Agent tool`. `NEVER bypass` by drafting inline — planner output (Background / Scope / ACs / Implementation Notes + category/size/workflow) is the canonical draft. `Fail the task` if planner cannot be invoked. Planner return MUST stay under 500 tokens per the Context Conservation Protocol in `agents/planner.md`.
 
-Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Community); size (S/M/L/XL); workflow chain from [references/workflow-patterns.md](references/workflow-patterns.md). Context: Phase 2 answers, brief content (replaces Phase 2 in brief mode), or findings + decomposer skeleton.
+Scope: ticket structure; category (Security / CodeQuality / Doc / DevOps / Community); size (S/M/L/XL); priority (`P1` / `P2` / `P3`, on the property scale in [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md) Phase 3); workflow chain from [references/workflow-patterns.md](references/workflow-patterns.md). Context: Phase 2 answers, brief content (replaces Phase 2 in brief mode), or findings + decomposer skeleton.
 
 **Partition owned by decomposer (all modes)**; planner never re-partitions. See [references/spec-decomposer-input.md](references/spec-decomposer-input.md).
 

@@ -95,7 +95,7 @@ When the spawn prompt has no `## Bound capabilities` block or says `(none record
 
 ## Advisory Capabilities (v8.0.0+, Gate 6.5 exception to speculative-invocation ban)
 
-The orchestrator's spawn prompt MAY ALSO contain a `## Advisory capabilities (per ticket)` block, distinct from `## Bound capabilities (per AC)`. The Advisory block lists capabilities — utility skills (e.g. `ui-ux-pro-max` for UI/UX heuristics) or MCP servers (e.g. `mcp__context7__query-docs` for library API lookup) — that the planner classified as useful authoring references per Gate 6.5 in `skills/create-ticket/references/ac-quality-criteria.md` (applied by the planner's Pre-emit Self-Audit). Advisory capabilities do NOT drive PASS/FAIL on any AC, but you MAY invoke them during authoring when they materially advance the work. The speculative-invocation ban above is **lifted exclusively for entries on the Advisory list** — invoking an Advisory-listed Skill or `mcp__*` tool is contractually authorised; invoking an unlisted Skill or `mcp__*` tool remains forbidden.
+The orchestrator's spawn prompt MAY ALSO contain a `## Advisory capabilities (per ticket)` block, distinct from `## Bound capabilities (per AC)`. The Advisory block lists capabilities — utility skills (e.g. `ui-ux-pro-max` for UI/UX heuristics) or MCP servers (e.g. `mcp__context7__query-docs` for library API lookup); both names are illustrative only — that the planner classified as useful authoring references per Gate 6.5 in `skills/create-ticket/references/ac-quality-criteria.md` (applied by the planner's Pre-emit Self-Audit). Advisory capabilities do NOT drive PASS/FAIL on any AC, but you MAY invoke them during authoring when they materially advance the work. The speculative-invocation ban above is **lifted exclusively for entries on the Advisory list** — invoking an Advisory-listed Skill or `mcp__*` tool is contractually authorised; invoking an unlisted Skill or `mcp__*` tool remains forbidden.
 
 ### Consultation discipline (v8.0.0+ — Recommending, not just Permitting)
 
@@ -137,7 +137,7 @@ The `**Advisory consultation**:` field in the Result envelope (`## Context Conse
    - <Name>: not invoked (<≤80-char rationale, e.g. "plan supplied the focus-ring spec verbatim", "MCP server unreachable", "domain mismatch despite planner classification">)
    ```
 
-   `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`). Every implementer-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `implementer`. Missing entries, duplicates, or paraphrased names are contract violations.
+   `<Name>` is copied verbatim from the Advisory table's `Name` column (e.g. `ui-ux-pro-max`, `mcp__context7__query-docs`; illustrative only). Every implementer-applicable entry MUST appear in the list exactly once; the bullet count MUST equal the count of Advisory entries whose `Used by` includes `implementer`. Missing entries, duplicates, or paraphrased names are contract violations.
 
 The orchestrator (`/impl` Step 14b) reads this field by regex on `^\*\*Advisory consultation\*\*:` and gates the round on its presence and shape. Silent omission (field absent) makes the round FAIL.
 
