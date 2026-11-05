@@ -1,23 +1,16 @@
-# Tool-name vocabulary for the exit audit: "<allow|deny> <name>".
+# Tool-name denylist for the exit audit: "deny <name>".
 #
-# allow: the GitHub Copilot runtime tool names (verified against the Copilot
-#        hooks reference) that generated prose may name in backticks.
-# deny:  foreign (Claude Code) tool names; any backticked occurrence, alone or
-#        in a "Name(args)" form, in a generated file fails the build.
+# The generated skill names tools by ROLE (file-read tool, file-write tool,
+# file-edit tool, search tools, shell tool, URL-fetch tool, subagent tool,
+# ask-user tool; defined in SKILL.md "## Host notes", Tool roles), never by a
+# host's own tool name, so the skill runs on any agent host that offers those
+# roles. Any backticked occurrence of a listed name, alone or in a
+# "Name(args)" form, in a generated file fails the build.
 #
-# Never name a `skill` tool: no such Copilot tool is verified.
+# `grep` is deliberately absent: the rubric names it as a Unix command.
+# Never name a `skill` tool either: no host-neutral form of it exists.
 
-allow bash
-allow powershell
-allow view
-allow create
-allow edit
-allow grep
-allow glob
-allow web_fetch
-allow task
-allow ask_user
-
+# Claude Code tool names
 deny Read
 deny Write
 deny Edit
@@ -34,3 +27,14 @@ deny WebSearch
 deny AskUserQuestion
 deny NotebookEdit
 deny TodoWrite
+
+# GitHub Copilot CLI tool names (the vocabulary of the pre-v11.4 output)
+deny bash
+deny powershell
+deny view
+deny create
+deny edit
+deny glob
+deny web_fetch
+deny task
+deny ask_user

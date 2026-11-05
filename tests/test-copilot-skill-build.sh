@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Contract test for tools/build-copilot-skill.sh: the generated, standalone
-# GitHub Copilot skill `create-ticket/`.
+# Contract test for tools/build-copilot-skill.sh: the generated, standalone,
+# host-neutral skill `create-ticket/`.
 #
 # The generated tree is never committed, so this suite builds it into a temp
 # directory and re-checks it independently of the build's own exit audit:
@@ -59,7 +59,7 @@ manifest_lines() {
   grep -vE '^[[:space:]]*(#|$)' "$1" || true
 }
 
-echo "=== Copilot standalone create-ticket skill build ==="
+echo "=== Standalone host-neutral create-ticket skill build ==="
 echo ""
 
 # --- build ------------------------------------------------------------------
@@ -223,7 +223,7 @@ check "the mid-sentence Read pattern catches the tool name, not a sentence-initi
   "$(printf 'attempt to Read, open\n(Read both files\n' | { grep -cE '([a-z,] |\()Read\b' || true; } | grep -qx 2 || echo 'misses a tool-name form')$(printf 'Read the brief.\n1. Read the ticket.\n' | grep -E '([a-z,] |\()Read\b' || true)"
 
 DENY_TOOLS="$(manifest_lines "$MANIFEST_DIR/tool-vocabulary.txt" | awk '$1 == "deny" {printf "%s%s", sep, $2; sep = "|"}')"
-check "no backticked Claude Code tool name remains" \
+check "no backticked host tool name (Claude Code or GitHub Copilot) remains" \
   "$(cd "$SKILL_DIR" && grep -rnE -- "\`($DENY_TOOLS)(\\([^\`]*\\))?\`" . | cut -c1-160 || true)"
 # shellcheck disable=SC2016  # literal backticks
 check "no tool named \`skill\`" "$(cd "$SKILL_DIR" && grep -rn '`skill` tool' . || true)"
@@ -249,10 +249,36 @@ check "rubric word count within 5% of the source ($GEN_WC vs $SRC_WC)" \
 SKILL_MD="$SKILL_DIR/SKILL.md"
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks
-for needle in '## Host notes' '## Delivery' 'SELF-EVALUATED' '`task`' 'agent_type: general-purpose' '`ask_user`'; do
+for needle in '## Host notes' '## Delivery' 'SELF-EVALUATED' '**Tool roles**' 'the subagent tool' 'the ask-user tool' 'the file-read tool'; do
   grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING '$needle'"
 done
-check "SKILL.md carries Host notes, Delivery, SELF-EVALUATED, task, ask_user" "$MISSING"
+check "SKILL.md carries Host notes, Delivery, SELF-EVALUATED and the tool-role phrases" "$MISSING"
+
+# Host neutrality: no host name, no host-bound parameter or phrasing anywhere,
+# each entry kept in the denylist and re-run here with literal patterns.
+HOST_ERES='Copilot
+GitHub\.com
+cloud agent
+agent_type
+on (this|a|the) surface\b
+surface offers no'
+MISSING_DENY=""
+while IFS= read -r pat; do
+  manifest_lines "$MANIFEST_DIR/denylist.txt" | grep -qxF -- "$pat" || MISSING_DENY="$MISSING_DENY '$pat'"
+done <<<"$HOST_ERES"
+check "denylist.txt carries every host-neutrality entry" "$MISSING_DENY"
+HOST_HITS=""
+while IFS= read -r pat; do
+  h="$(cd "$SKILL_DIR" && grep -rnE -- "$pat" . || true)"
+  [ -z "$h" ] || HOST_HITS="$HOST_HITS
+[$pat] $(printf '%s\n' "$h" | head -n 3 | cut -c1-160)"
+done <<<"$HOST_ERES"
+check "no host name or host-bound phrasing in the tree" "${HOST_HITS#$'\n'}"
+COMPAT="$(printf '%s\n' "$FM" | sed -n 's/^compatibility:[[:space:]]*//p')"
+check "frontmatter compatibility names capabilities, not a host" \
+  "$([ -n "$COMPAT" ] || echo 'compatibility missing')$(printf '%s\n' "$COMPAT" | grep -oE 'Copilot|Claude|Cursor|Codex|Gemini|VS Code' || true)"
+check "the tool-vocabulary denylist covers both the Claude Code and the GitHub Copilot names" \
+  "$(for n in Read Write Edit Bash Grep Glob Agent AskUserQuestion view create edit bash task ask_user web_fetch glob powershell; do manifest_lines "$MANIFEST_DIR/tool-vocabulary.txt" | grep -qx "deny $n" || printf ' %s' "$n"; done)"
 
 DEST_MD="$SKILL_DIR/references/destinations.md"
 MISSING=""

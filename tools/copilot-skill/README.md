@@ -1,6 +1,6 @@
-# Copilot skill generator inputs
+# Standalone skill generator inputs
 
-`tools/build-copilot-skill.sh` turns this plugin's ticket-creation workflow into a single, self-contained GitHub Copilot Agent Skill, `create-ticket/` (a `SKILL.md` plus `references/`). The generated skill needs no plugin, no hooks and no custom agent files: copy the directory into another repository's `.github/skills/` and invoke it from GitHub Copilot CLI or VS Code.
+`tools/build-copilot-skill.sh` turns this plugin's ticket-creation workflow into a single, self-contained, host-neutral Agent Skill, `create-ticket/` (a `SKILL.md` plus `references/`). The generated skill needs no plugin, no hooks and no custom agent files, and it names tools by role (see `## Tool roles` below) rather than by any host's tool name: copy the directory into the skill root the host reads (`.github/skills/`, `.claude/skills/` or `.agents/skills/`) and invoke it by name. The generator keeps its historical name; its output was first shaped for GitHub Copilot CLI and has not been run live on any host yet.
 
 ```bash
 bash tools/build-copilot-skill.sh --out <dir>            # writes <dir>/create-ticket/
@@ -17,9 +17,9 @@ For every file in `files.tsv` it applies four layers, in this order:
 1. **Sections** (`drop-sections.txt`, `overrides/*.md`): drop or replace a section by its exact heading line, insert new content before a heading, or append content at the end of a file. A section runs to the next heading of the same or a higher level at the same fence depth, so a heading inside a fenced template never swallows the fence that closes it.
 2. **Paragraphs** (`drop-paragraphs.txt`): drop by anchor ERE. A hit on a list item drops that item, a hit on a table row or on a line inside a fenced block drops that line, and any other hit drops the whole paragraph.
 3. **Substitutions** (`substitutions.tsv`): `sed -E` rewrites applied in file order. Specific sentence rewrites come first, then paths, tool names and the pipeline role phrases.
-4. **Exit audit**: `denylist.txt` (any hit fails), the foreign tool names of `tool-vocabulary.txt`, a non-English (CJK) byte scan, link and `references/...` path resolution, balanced inline code spans, the frontmatter contract (`name`, `description` length, no `allowed-tools`), and rubric parity for `references/ac-quality-criteria.md` (same Gate headings, same Terminology entry count, word count within 5% of the source). The rubric files are zero-loss in intent: never delete a gate, an example or a rule; rename tokens, and restate a host-bound sentence (a role, a tool-access rule, a file or setting this host does not have) so it is true on the Copilot host.
+4. **Exit audit**: `denylist.txt` (any hit fails), the host tool names of `tool-vocabulary.txt` (Claude Code and GitHub Copilot names alike), a non-English (CJK) byte scan, link and `references/...` path resolution, balanced inline code spans, the frontmatter contract (`name`, `description` length, no `allowed-tools`), and rubric parity for `references/ac-quality-criteria.md` (same Gate headings, same Terminology entry count, word count within 5% of the source). The rubric files are zero-loss in intent: never delete a gate, an example or a rule; rename tokens, and restate a host-bound sentence (a role, a tool-access rule, a file or setting this host does not have) so it is true on any host.
 
-Agent files listed under `references/agents/` lose their frontmatter; the body is the prompt the generated skill hands to a `task` subagent.
+Agent files listed under `references/agents/` lose their frontmatter; the body is the prompt the generated skill hands to a general-purpose subagent through the host's subagent tool.
 
 ## Maintenance model
 
@@ -36,7 +36,7 @@ All manifests are plain text; `#` comment lines and blank lines are ignored. Pat
 | `drop-paragraphs.txt` | `<destination glob><TAB><anchor ERE>` |
 | `substitutions.tsv` | `<ERE><TAB><replacement>[<TAB><destination glob>]` (sed replacement syntax; default scope is every file) |
 | `denylist.txt` | `<ERE>` |
-| `tool-vocabulary.txt` | `allow <name>` or `deny <name>` |
+| `tool-vocabulary.txt` | `deny <name>` |
 
 An override file starts with three header lines and a `---` separator; everything after the separator is the content:
 
@@ -57,3 +57,7 @@ The generated skill is decoupled from this repository's own backlog layout: prod
 ## Self-contained vocabulary
 
 Every term in the generated tree must be resolvable from the tree alone. The denylist therefore also rejects plugin-internal jargon that nothing in the tree defines: the implementation-time eval panel and its lens names, the evidence-floor shorthands, the lettered failure-class codes, the plugin's downstream role names (the rubric defines one phrase instead, the **downstream implementer/verifier**), `load-bearing`, `plan.md`, a mid-sentence `Read` (the Claude Code tool name), the generator's own paths and the old `Stopped:` message. The rubric's kill switches are real on this host: a `constraint_<key>=off` request token turns a gate off for the whole run, and Argument Parsing rejects an unknown key.
+
+## Tool roles
+
+The generated text never names a host's tool. It names eight roles, defined once in `SKILL.md` `## Host notes` (**Tool roles**): the file-read tool, the file-write tool, the file-edit tool, the search tools, the shell tool, the URL-fetch tool, the subagent tool and the ask-user tool. The skill resolves each role to one concrete tool of the host before Phase 1; a host without a subagent tool takes the degraded branch (`SELF-EVALUATED`), a host without an ask-user tool takes the non-interactive fallbacks. The frontmatter `compatibility:` states the same requirements without naming a host, and the denylist rejects `Copilot`, `GitHub.com`, `cloud agent`, `agent_type` and the "on this surface" phrasing of the earlier Copilot-bound output, while `tool-vocabulary.txt` rejects every backticked Claude Code and GitHub Copilot tool name. When a new manifest line has to mention a tool, write the role phrase ("read it with the file-read tool", "via the subagent tool"), never a product's tool name. The vocabulary denylist matches the exact backticked token, so a future upstream example that legitimately backticks a common word such as `create`, `edit`, `view` or `task` fails the build with a "foreign tool name" finding: restate the example or re-anchor the row, as for any stale manifest line.
