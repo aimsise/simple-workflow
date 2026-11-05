@@ -102,7 +102,7 @@ Who receives what:
 |---|---|
 | researcher (Phase 1) | the index table inline, and the dossier path to read with the file-read tool; context about the work, never repository evidence |
 | Phase 2 interview | the dossier is scanned by the args-aware shrinkage rule: a question the dossier already answers is not asked |
-| decomposer | the whole dossier inline, under `## Source dossier` (Form A and Form B of `references/spec-decomposer-input.md`) |
+| decomposer | the whole dossier inline, under `## Source dossier` (Form A and Form B of `references/spec-decomposer-input.md`), plus the Form B header `Dossier role: candidate` (bare or derived description) or `Dossier role: context` (brief) |
 | planner (Phase 3) | only the excerpts named by its ticket's `source_refs`, under `## Source excerpts` (below) |
 | ticket-evaluator | nothing |
 
@@ -112,7 +112,7 @@ A locator names lines of a normalized file: `S<n>:L<a>-L<b>` (a line range, incl
 
 **Excerpt extraction** (orchestrator, before each planner spawn, initial and retry): for each locator of the ticket's `source_refs`, copy lines 1-6 of the source (its header block) once, then the named lines; when a named line is a row of a Markdown table, also copy that table's header row and separator row once. Put the result under `## Source excerpts` in the planner spawn prompt, each excerpt introduced by its locator and origin. Cap: 8,000 characters per ticket, cut at a line boundary with the line `[truncated: source excerpts exceed 8000 characters]`. The whole dossier is never inlined into a planner spawn.
 
-The planner ends the ticket's `### Background` with one line `Sources: <locator> (<origin>[, <where in it>]); ...` naming every excerpt it drew on (for a spreadsheet, the sheet and row numbers of the table rows; for a document, its heading), so an acceptance criterion that restates a requirement of a source can be traced to it. A ticket that used no excerpt writes no `Sources:` line.
+The planner ends the ticket's `### Background` with one line `Sources: <locator> (<origin>[, <where in it>]); ...` naming every excerpt it drew on (for a spreadsheet, the sheet and row numbers of the table rows; for a document, its heading), so an acceptance criterion that restates a requirement of a source can be traced to it. Every requirement drawn from a source is restated in the AC text itself (the value, the behaviour, the limit); an AC never points at a locator, because the ticket-evaluator sees no source. A ticket that used no excerpt writes no `Sources:` line.
 
 ## Partition basis
 

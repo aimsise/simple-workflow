@@ -330,7 +330,7 @@ done
 for needle in '## `file:<path>`' '## `dir:<path>`' '## `mcp:<server>/<tool>' '## `api:<url>`' 'xlsx_to_text.py' 'python3 -I' 'S<n>:L<a>-L<b>' '60,000' '150,000' 'source_auth_env' '## Source excerpts' 'Sources:' '## Partition basis'; do
   grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
 done
-for needle in '## Source dossier handling' 'source_refs' '**Partition basis**' '## Source dossier'; do
+for needle in '## Source dossier handling' 'source_refs' '**Partition basis**' '## Source dossier' 'Dossier role: candidate' 'Dossier role: context'; do
   grep -qF -- "$needle" "$SKILL_DIR/references/agents/decomposer.md" || MISSING="$MISSING decomposer.md:'$needle'"
 done
 grep -qF -- '## `## Source dossier`' "$SKILL_DIR/references/spec-decomposer-input.md" || MISSING="$MISSING spec-decomposer-input.md:'## Source dossier'"
@@ -338,7 +338,7 @@ for needle in '## Source excerpts' 'Sources:' 'source dossier' 'dossier.md'; do
   grep -qF -- "$needle" "$SKILL_DIR/references/agent-spawn-prompts.md" || MISSING="$MISSING agent-spawn-prompts.md:'$needle'"
 done
 grep -qF -- 'Partition basis:' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Partition basis:'"
-for needle in '{intent}' '## Source dossier'; do
+for needle in '{intent}' '## Source dossier' 'Dossier role: candidate' 'Dossier role: context'; do
   grep -qF -- "$needle" "$SKILL_DIR/references/mode-dispatch-flows.md" || MISSING="$MISSING mode-dispatch-flows.md:'$needle'"
 done
 check "Intake: SKILL.md, sources.md, the decomposer, its input spec, the spawn prompts and the summary carry the source= contract" "$MISSING"
@@ -365,7 +365,7 @@ wb = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 wbrels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'''
 sst = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4"><si><t>ID</t></si><si><t>Title</t></si><si><r><t>Add </t></r><r><rPr><b/></rPr><t>login | form</t></r></si><si><t>Due</t></si></sst>'''
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4"><si><t>ID</t></si><si><t>Title</t></si><si><r><t>Add </t></r><r><rPr><b/></rPr><t>login | form</t></r><rPh sb="0" eb="3"><t>PHONETIC</t></rPh></si><si><t>Due</t></si></sst>'''
 styles = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy/mm/dd"/></numFmts><cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/></cellXfs></styleSheet>'''
 s1 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -392,6 +392,7 @@ PYFIX
   for needle in '## Sheet: Backlog' '| row | c1 | c2 | c3 | c4 |' '| 1 | ID | Title | Due | Done |' 'Add login \| form' '2023-03-15 | TRUE' '2023-03-15T12:00:00 | #N/A' '| 5 | 3 |  |  |  |' '[truncated: sheet Backlog has columns beyond c64' '## Sheet: Notes (hidden)' 'hidden note'; do
     printf '%s\n' "$XLSX_OUT" | grep -qF -- "$needle" || MISSING="$MISSING '$needle'"
   done
+  printf '%s\n' "$XLSX_OUT" | grep -qF -- 'PHONETIC' && MISSING="$MISSING 'phonetic rPh run leaked into the cell text'"
   check "xlsx converter: shared / rich / inline strings, numbers, dates, booleans, errors, formulas, hidden sheets and the column cap" "$MISSING"
   XLSX_OUT2="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-rows 2 --max-cols 3 2>/dev/null)"
   MISSING=""

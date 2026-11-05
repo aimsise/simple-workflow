@@ -25,7 +25,9 @@ is a date format is printed as an ISO date or date-time from its serial
 value), booleans as TRUE / FALSE, cell errors as their text (#N/A, ...),
 formulas as their cached value. Merged ranges are not expanded: the value
 sits in the top-left cell and the other cells are blank. Hidden sheets are
-included and marked.
+included and marked. The date detection reads the cell's number format;
+a custom elapsed-time format such as mm:ss is only approximated and may
+print as a date-time near the epoch.
 
 Exit status: 0 success (possibly with truncation markers), 2 the file is
 not a readable .xlsx workbook, 3 the workbook exceeds the safety limits
@@ -66,10 +68,17 @@ def column_index(ref):
 
 
 def text_of(node):
-    """Concatenate every t element below node (rich text runs included)."""
+    """Concatenate the t elements below node (rich text runs included),
+    skipping rPh phonetic-guide runs, which are reading aids and not part
+    of the cell text."""
     parts = []
-    for t in node.iter("{%s}t" % NS_MAIN):
-        parts.append(t.text or "")
+    for child in node:
+        if child.tag == "{%s}rPh" % NS_MAIN:
+            continue
+        if child.tag == "{%s}t" % NS_MAIN:
+            parts.append(child.text or "")
+        else:
+            parts.append(text_of(child))
     return "".join(parts)
 
 
