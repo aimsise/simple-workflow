@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.3.0] — 2026-11-05
+
+**TL;DR.** The plugin-side follow-ups found while reviewing the generated GitHub Copilot skill now live in the plugin itself: the `/create-ticket` rubric labels its examples as illustrative, Gate 7 no longer FAILs a correct ticket for a boundary that cannot overflow, brief mode hands the decomposer every scoping section, the planner has a Priority scale, and `hooks.json` passes `claude plugin validate --strict` on the `${CLAUDE_PLUGIN_ROOT}` quoting check. The generated Copilot skill inherits these through the build (nine substitution rows retired) and changes only by the same items.
+
+### Changed
+
+- `/create-ticket` rubric: the Gate 4 carve-out examples, the Gate 6 observation-point list, the Gate 7 published-spec domain list and the Gate 9 R2 prototype-pollution clause are labelled "e.g., illustrative only" with the property they stand for; the write-effect MCP and Advisory capability examples in `agents/planner.md`, `agents/researcher.md`, `agents/implementer.md`, `agents/test-writer.md` and `skills/impl/SKILL.md` carry the same label. Grading is unchanged.
+- `/create-ticket` brief mode: the decomposer's `## Context` now forwards `## Vision`, `## Business Context`, `## Technical Requirements`, `## Scope` (In / Out of Scope, Edge Cases) and `## Constraints` verbatim; before, only the first two reached it, so Out of Scope and the constraints never shaped the split.
+- `/create-ticket` Priority: the ticket template's `P?` placeholder becomes `P1 | P2 | P3`, and the planner receives the property scale (P1 blocks other work or is a user-facing defect in shipped behaviour; P2 planned work another ticket depends on; P3 everything else); an explicit Phase 2 / brief priority wins. No downstream consumer reads the cell, so this is a drafting rule.
+- `tools/copilot-skill/substitutions.tsv`: nine rows retired and two re-anchored because the plugin sources now carry their text; the generated Copilot skill differs from v11.2.1 only by the Gate 7 n/a sentence, the Priority precedence sentence, the Scope parenthetical and one link form.
+
+### Fixed
+
+- `/create-ticket` Gate 7: the parse-accepted-then-overflows vector has a property-gated n/a path. It is owed wherever a post-parse step can go non-finite or out-of-range (a numeric conversion, magnitude arithmetic, an input-proportional size / count); a boundary with no such step records a one-line Caveat naming the boundary and is not FAILed for the missing vector, the rest of the adversarial coverage stays owed, and omitting both the vector and the Caveat stays a FAIL. `agents/ac-evaluator.md` honours the Caveat only when the code confirms no such step exists. Before, a correct ticket for a non-numeric boundary could FAIL Gate 7.
+- `hooks/hooks.json`: every command quotes the plugin root (`"${CLAUDE_PLUGIN_ROOT}"/hooks/<hook>.sh`), clearing the 25 `claude plugin validate --strict` warnings; a plugin root containing a space no longer splits the command. The command string still ends in `.sh`, so the contract tests matching `<hook>\.sh$` are unchanged, and a headless `claude -p --plugin-dir` run confirmed the SessionStart hook fires in the quoted form.
+- `hooks/lib/parse-state-file.sh`: the "Sourced by" header lists all thirteen sourcing hooks and the four test suites (it named five, one under a file name that no longer exists).
+
+### Verification
+
+- `tests/test-copilot-skill-build.sh` 45 / 45, `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, `tests/test-post-skill-cleanup.sh` 23 / 23, `tests/test-per-phase-metrics.sh` 38 / 38, `tests/test-hooks-lib.sh` 180 / 180, `tests/test-state-parsers.sh` 33 / 33; `tests/run-all.sh` all suites passed; ShellCheck clean; CI (ShellCheck, Tests) green on PR #110.
+- Copilot skill built from v11.2.1 and from this release: the generated trees differ only in the four items named under Changed / Fixed (plus `source-commit`).
+- `claude plugin validate .` passes; `--strict` reports no quoting warning (the root `CLAUDE.md` note remains by design).
+
 ## [11.2.1] — 2026-11-04
 
 **TL;DR.** The generated GitHub Copilot skill is now self-contained in vocabulary as well as in mechanics: a four-lens independent verification of v11.2.0 (standalone dry run, plugin vocabulary, cross-reference integrity, remote-adapter dry run) found no plugin name left but plugin-internal jargon that nothing in the generated tree defines, plus low-severity inconsistencies; all are fixed through the generator inputs and guarded by 20 new denylist entries, and the verification was re-run on the rebuilt tree. The plugin's own skills are unchanged. Non-breaking.
