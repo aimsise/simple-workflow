@@ -260,7 +260,8 @@ HOST_ERES='Copilot
 GitHub\.com
 cloud agent
 agent_type
-(this|a|the) surface\b'
+on (this|a|the) surface\b
+surface offers no'
 MISSING_DENY=""
 while IFS= read -r pat; do
   manifest_lines "$MANIFEST_DIR/denylist.txt" | grep -qxF -- "$pat" || MISSING_DENY="$MISSING_DENY '$pat'"
