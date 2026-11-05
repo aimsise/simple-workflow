@@ -350,6 +350,26 @@ for needle in '# create-ticket' '## Install' '## Usage' '/create-ticket' 'source
   grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
 done
 check "README.md documents install, usage, sources, destinations, verdicts, files and limits" "$MISSING"
+check "the default destination is local:.docs/tickets everywhere (no stale local:tickets)" \
+  "$(grep -rn 'local:tickets' "$SKILL_DIR" | cut -c1-160 || true)$(grep -qF 'Absent → `local:.docs/tickets`' "$SKILL_MD" || echo ' SKILL.md lacks the .docs/tickets default')$(grep -qF '.docs/tickets/{parent-slug}' "$SKILL_DIR/references/write-path-templates.md" || echo ' summary examples lack .docs/tickets')"
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks
+for needle in '**Prose resolution**' 'Resolved: <' '**Character rule**' 'parent=<id>' '[parent=<id>]'; do
+  grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
+done
+for needle in 'Link to a parent item' 'parent-link parameters' '{parent}' 'required or optional'; do
+  grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'"
+done
+for needle in '?sheet=<name>' '--sheet="<name>"' 'character rule'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+for needle in 'parent=<id>' '?sheet=<name>' 'Resolved:' 'local:.docs/tickets'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+grep -qF -- 'Parent: <id>' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Parent: <id>'"
+check "prose resolution, the character rule, parent= and ?sheet= are documented where they apply" "$MISSING"
+check "no ASCII-only path pattern remains for user paths" \
+  "$(grep -rn -F -e '^[A-Za-z0-9._~/-]+$' -e '^[A-Za-z0-9._/-]+$' "$SKILL_DIR" | cut -c1-160 || true)"
 check "Intake precedes Mode dispatch in SKILL.md" \
   "$({ [ -n "$INTAKE_LN" ] && [ -n "$DISPATCH_LN" ] && [ "$INTAKE_LN" -lt "$DISPATCH_LN" ]; } || echo "intake=$INTAKE_LN dispatch=$DISPATCH_LN")"
 check "the evaluator spawn carries nothing from the dossier" \
@@ -408,6 +428,16 @@ PYFIX
   XLSX_OUT3="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 120 2>/dev/null)"
   printf '%s\n' "$XLSX_OUT3" | grep -qF -- '[truncated: output exceeds 120 characters' || MISSING="$MISSING 'char cap marker'"
   check "xlsx converter: every cap is marked, never silent" "$MISSING"
+  XLSX_OUT4="$(python3 -I "$XLSX_PY" --sheet=Notes -- "$FIX_DIR/fixture.xlsx" 2>/dev/null)"
+  MISSING=""
+  printf '%s\n' "$XLSX_OUT4" | grep -qF -- '## Sheet: Notes (hidden)' || MISSING="$MISSING 'selected sheet missing'"
+  printf '%s\n' "$XLSX_OUT4" | grep -qF -- '## Sheet: Backlog' && MISSING="$MISSING 'unselected sheet leaked'"
+  set +e
+  SHEET_ERR="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --sheet Nope 2>&1 >/dev/null)"; SHEET_RC=$?
+  set -e
+  [ "$SHEET_RC" -eq 2 ] || MISSING="$MISSING 'unknown sheet rc=$SHEET_RC'"
+  printf '%s\n' "$SHEET_ERR" | grep -qF -- 'the workbook has: Backlog, Notes' || MISSING="$MISSING 'unknown sheet does not list the names'"
+  check "xlsx converter: --sheet selects one worksheet and an unknown name exits 2 listing the names" "$MISSING"
   (cd "$FIX_DIR" && python3 -c "import zipfile; zipfile.ZipFile('nowb.zip', 'w').writestr('a.txt', 'x')")
   set +e
   python3 -I "$XLSX_PY" "$FIX_DIR/make_fixture.py" >/dev/null 2>&1; NOT_ZIP_RC=$?

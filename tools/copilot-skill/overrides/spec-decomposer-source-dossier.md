@@ -4,7 +4,7 @@ mode: before
 ---
 ## `## Source dossier` (optional, both forms)
 
-When the request carried `source=` tokens (SKILL.md `## Intake`), the caller appends one more body section to either form, after `## Socratic Answers` (or after `## Investigation Summary` when no Socratic round ran), and in Form B one more header line after `Parent slug:`: `Dossier role: candidate` (bare or absent description: the dossier may hold the partition basis) or `Dossier role: context` (with a brief: the dossier is context only). Form A carries no such header.
+When the request carried `source=` tokens (SKILL.md `## Intake`), the caller appends one more body section as the LAST body section of either form (after `## Socratic Answers`, or after the last section the form has when no Socratic round ran), and in Form B one more header line after `Parent slug:`: `Dossier role: candidate` (bare or absent description: the dossier may hold the partition basis) or `Dossier role: context` (with a brief: the dossier is context only). Form A carries no such header.
 
 ```markdown
 ## Source dossier
