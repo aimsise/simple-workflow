@@ -297,6 +297,14 @@ check "Host notes cover the auth_env secret and non-transactional remote creates
   "$(printf '%s\n' "$HOST_NOTES" | grep -q 'auth_env' || echo 'no auth_env')$(printf '%s\n' "$HOST_NOTES" | grep -q 'not transactional' || echo ' no non-transactional note')"
 check "the run scratch directory comes from mktemp -d" \
   "$(grep -qF 'mktemp -d' "$SKILL_MD" || echo 'mktemp -d missing from SKILL.md')"
+check "the run scratch directory lives inside the working directory and is gitignored" \
+  "$(grep -qF 'mktemp -d .create-ticket-scratch/run.XXXXXX' "$SKILL_MD" || echo 'relative mktemp template missing')$(grep -qF 'git check-ignore -q .create-ticket-scratch/x' "$SKILL_MD" || echo ' check-ignore step missing')$(grep -qF 'cannot create the scratch directory .create-ticket-scratch/' "$SKILL_MD" || echo ' scratch ERROR line missing')$(grep -rqF 'it may be absolute' "$SKILL_DIR/references/agents" && echo ' agent bodies keep the absolute-scratch exception' || true)$(grep -qF 'mkdir -p .create-ticket-scratch &&' "$SKILL_MD" && echo ' scratch creation is a joined command' || true)$(grep -qF '>> "<root>/.gitignore"' "$SKILL_MD" || echo ' gitignore append does not target the repository root file')$(grep -cF 'Scratch: .create-ticket-scratch/run.k3Qz9a' "$SKILL_DIR/references/write-path-templates.md" | grep -qx 2 || echo ' success summaries lack the Scratch line')$(grep -rqE 'system temporary directory \(|may be absolute \(Host|TMPDIR' "$SKILL_DIR" && echo ' stale system-temp wording' || true)"
+check "the researcher and planner are banned from running the product and from delete commands" \
+  "$(for a in researcher planner; do grep -qF 'execution is not inspection' "$SKILL_DIR/references/agents/$a.md" || echo "no execution ban in $a.md"; grep -qF 'never run a delete command' "$SKILL_DIR/references/agents/$a.md" || echo "no delete ban in $a.md"; done)"
+check "Phase 4 spawns every ticket's evaluator in one message" \
+  "$(grep -qF 'spawn the initial evaluator of every ticket in one message' "$SKILL_MD" || echo 'concurrent evaluator rule missing')"
+check "README names the scratch directory and no longer claims the skill was never run" \
+  "$(grep -qF '.create-ticket-scratch/run.<id>/' "$SKILL_DIR/README.md" || echo 'scratch dir missing from README')$(grep -qF 'not yet been exercised' "$SKILL_DIR/README.md" && echo ' stale never-run claim' || true)"
 check "no ticket is ever delivered as NOT EVALUATED" \
   "$(grep -rn 'NOT EVALUATED' "$SKILL_DIR" | cut -c1-160 || true)"
 check "no MCP configuration file is read (mcp.json)" \
@@ -368,6 +376,18 @@ for needle in 'parent=<id>' '?sheet=<name>' 'Resolved:' 'local:.docs/tickets'; d
 done
 grep -qF -- 'Parent: <id>' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Parent: <id>'"
 check "prose resolution, the character rule, parent= and ?sheet= are documented where they apply" "$MISSING"
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks
+for needle in '## Writing a source' '**List split.**' '**Kind inference.**' '`mcp:` is never inferred' '### An MCP item named in prose' 'at most one lookup call is made per statement'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+for needle in 'comma-separated list of specs' '### An MCP item named in prose'; do
+  grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
+done
+for needle in '**Several sources**' '**Kind left out**' '**In prose**' 'source=a.md,docs/,https://example.com/spec' 'A space does not separate sources'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+check "comma-separated sources, kind inference (never mcp:) and the prose MCP lookup are documented in SKILL.md, sources.md and the README" "$MISSING"
 check "no ASCII-only path pattern remains for user paths" \
   "$(grep -rn -F -e '^[A-Za-z0-9._~/-]+$' -e '^[A-Za-z0-9._/-]+$' "$SKILL_DIR" | cut -c1-160 || true)"
 check "Intake precedes Mode dispatch in SKILL.md" \

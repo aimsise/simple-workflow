@@ -4,12 +4,13 @@ mode: replace
 ---
 ## Error Handling
 
-Every `ERROR:` before Delivery is atomic: nothing reaches the destination (the run writes only under `{scratch}`), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=` / `findings=` path exactly as the user typed it (Host notes), and prints an `api:` URL without its query string.
+Every `ERROR:` before Delivery is atomic: nothing reaches the destination (before Delivery the run writes only under `{scratch}`, plus the one-line `.gitignore` append of Argument Parsing), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=` / `findings=` path exactly as the user typed it (Host notes), and prints an `api:` URL without its query string.
 
 | Trigger | Output |
 |---|---|
 | Empty arguments | Print Usage line, stop (before any preflight) |
 | Both `brief=` and `findings=` | `ERROR: brief= and findings= are mutually exclusive. Pass exactly one.` |
+| Scratch directory cannot be created | `ERROR: create-ticket cannot create the scratch directory .create-ticket-scratch/ in the working directory (<reason>)` |
 | `brief=` / `findings=` path with other characters | `ERROR: <token>= path contains characters this skill does not accept` |
 | Unknown destination kind | `ERROR: unknown destination kind in destination=<spec without query> (expected local:, mcp: or api:)` (the spec without its query string, at most 80 characters) |
 | `auth_env=` / `template=` / `id_path=` without `api:` | `ERROR: auth_env=, template= and id_path= apply only to an api: destination` |

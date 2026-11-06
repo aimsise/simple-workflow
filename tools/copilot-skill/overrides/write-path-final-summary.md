@@ -12,6 +12,7 @@ End the run with this block as its last output. `Destination` is the destination
 ### Final summary
 
 Destination: local:.docs/tickets
+Scratch: .create-ticket-scratch/run.k3Qz9a
 Ticket: .docs/tickets/{parent-slug}/005-foo/ticket.md
 Category: CodeQuality | Size: M | ACs: 3 | Verdict: PASS
 ```
@@ -22,6 +23,7 @@ Category: CodeQuality | Size: M | ACs: 3 | Verdict: PASS
 ### Final summary
 
 Destination: local:.docs/tickets
+Scratch: .create-ticket-scratch/run.k3Qz9a
 
 | # | Ticket | Category | Size | ACs | Verdict |
 |---|--------|----------|------|-----|---------|
@@ -44,4 +46,4 @@ ERROR: <the ERROR: line>
 Scratch: <the {scratch} path>
 ```
 
-After a remote failure, `Created: none` becomes `Created before the failure: <id>, <id>`; after a `local:` write failure, the `ERROR:` line names the quarantine path. The `Scratch:` line appears once on any failure, so the user can find the drafts, evaluator reports and API responses; its `{scratch}` path may be absolute, and a `brief=` / `findings=` path in the `ERROR:` line is echoed exactly as the user typed it (SKILL.md Host notes).
+After a remote failure, `Created: none` becomes `Created before the failure: <id>, <id>`; after a `local:` write failure, the `ERROR:` line names the quarantine path. The `Scratch:` line appears once in every variant, success and failure: in a success block right before the ticket line or rows (after the `Destination:`, `Parent:`, `Sources:` and `Partition basis:` lines when those are present), in the failure block after the `ERROR:` line, so the user can find the drafts, evaluator reports and API responses of that run; it is omitted when the `ERROR:` was raised before the scratch directory was created (an argument, input-file, preflight or scratch-creation error); its `{scratch}` path is relative to the working directory, and a `brief=` / `findings=` path in the `ERROR:` line is echoed exactly as the user typed it (SKILL.md Host notes).

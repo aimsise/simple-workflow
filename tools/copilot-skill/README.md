@@ -62,6 +62,8 @@ Later additions on the same layer: the default destination is `local:.docs/ticke
 
 ## Skill README
 
+The run scratch directory (`{scratch}`, every transient file of a run) is created with `mktemp -d` under `.create-ticket-scratch/` inside the working directory and added to the repository's `.gitignore`, never under a system temporary directory: the first live run showed that a host may confine the file tools of the orchestrator and of every subagent to the working directory, so a scratch outside it cannot be written or cannot be read back. The same run showed the researcher running the product's test suite and a delete command on a directory of its own, so `overrides/agents-side-effect-ban.md` names execution of the product and delete commands explicitly, and Phase 4 now spawns every ticket's evaluator in one message.
+
 The generated directory ships its own `README.md` (`overrides/readme.md`, a file with no upstream source): install, host requirements, usage, the three modes, sources, destinations, the other options, the verdicts, the file map and the limits, written for the person who receives the directory and never sees this repository. It is subject to the same exit audit as every generated file (no host name, no upstream name, every relative link resolves), and the test checks its sections.
 
 ## Self-contained vocabulary

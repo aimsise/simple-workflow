@@ -11,14 +11,14 @@ This directory is generated; `SKILL.md` and everything under `references/` and `
 ## Install
 
 1. Copy this directory, keeping its name `create-ticket`, into the skill root your agent host reads: `.github/skills/`, `.claude/skills/` or `.agents/skills/` inside the project (project-wide), or the host's personal skill root under your home directory (every project).
-2. Nothing else is required: no package, no configuration file, no custom agent definition. Python 3 on the shell is needed only when an `.xlsx` source is passed.
+2. Nothing else is required: no package, no configuration file, no custom agent definition. Python 3 on the shell is needed only when an `.xlsx` source is passed. Each run keeps its investigation, source dossier, drafts and evaluator reports under `.create-ticket-scratch/run.<id>/` inside the working directory (added to `.gitignore` when that is a git repository) and deletes nothing.
 3. Invoke it by name, `/create-ticket`, followed by the input: tokens, or plain prose in any language saying what to read and where to deliver (the skill prints a `Resolved:` line with its reading before it runs). The skill never starts on its own.
 
 ## What the host must offer
 
 Any agent host that loads `SKILL.md` skills and provides a file-read, a file-write, a file-edit, text and file-pattern search, a POSIX shell and a subagent tool; an ask-user tool is used when present. The skill names those tools by role, never by a product's tool name, and resolves each role to the host's own tool before it starts (`SKILL.md`, Host notes, Tool roles). Without a subagent tool the skill still runs, inline, and marks every verdict `SELF-EVALUATED` so the loss of evaluator independence is visible; without an ask-user tool it runs non-interactively and records its assumptions in the tickets.
 
-Every shell command goes through the host's own permission prompt; the skill declares no pre-approved tool. Approve only the commands the steps name (`date`, `mktemp`, `ls`, `mkdir`, `mv`, `printf`, `git`, `curl`, `jq`, and `python3` for a workbook).
+Every shell command goes through the host's own permission prompt; the skill declares no pre-approved tool. Approve only the commands the steps name (`date`, `mktemp`, `mkdir`, `ls`, `mv`, `printf`, `git`, `command`, `curl`, `jq`, `python3` or its fallback `python` for a workbook, and the shell builtins `[`, `echo` and `case` of the variable probes).
 
 ## Usage
 
@@ -50,6 +50,12 @@ Hand over your material as it is, repeatable, in any mode ([references/sources.m
 | `source=mcp:<server>/<tool>?name=value` | one call of a read-only MCP tool of the session (a wiki page, an issue, a document; illustrative only) |
 | `source=api:<url>` | one HTTP `GET`; `source_auth_env=<VAR>` names the variable holding a bearer token, whose value is never printed |
 
+Writing several sources and leaving out the kind:
+
+- **Several sources**: repeat the token (`source=file:a.md source=file:b.xlsx`) or separate the specs with commas in one token (`source=a.md,docs/,https://example.com/spec`). A space does not separate sources: in `source=a.md b.md` only `a.md` is read and `b.md` is taken as part of the description. A file whose name contains a comma is still read whole when that name exists; a comma inside a URL or an MCP query stays part of it.
+- **Kind left out**: a value starting with `http://` or `https://` is read as `api:`, an existing directory as `dir:`, any other path as `file:`. `mcp:` is never guessed from a token, because whether a name is an MCP server depends on the session; write `mcp:` or say it in prose. A value whose prefix looks like a kind but is not one (`fiel:a.md`) stops the run instead of being read as a path. When the token was split or a kind was filled in, the `Resolved:` line shows the result.
+- **In prose**: "read a.md and the sheet Open items of b.xlsx" needs no kind at all. An item reachable through an MCP server may be named by its title or its link: the skill picks the server and its read tool, passes the link when the tool takes one, and otherwise makes one read-only search call and uses the item only when exactly one result matches; otherwise it asks, or stops in a non-interactive run. A URL in prose is fetched with a plain `GET` unless the statement says to read it through an MCP server.
+
 Everything is normalized into a source dossier before any ticket is drafted. The decomposer role decides whether one source (a backlog sheet, a numbered list; illustrative only) enumerates the work units, in which case they map to tickets one-to-one, or whether every source is context; the Final summary reports that decision as `Partition basis`, and every ticket's Background ends with a `Sources:` line naming the lines it drew on. Caps: 60,000 characters per source (truncation is marked), 150,000 in total, 50 sources. With `brief=` or `findings=` the sources are context only.
 
 ### Destinations (`destination=`)
@@ -76,7 +82,7 @@ The tokens are the canonical form; a statement in prose that names material to r
 
 ## What you get
 
-Each ticket carries Background, Scope, Acceptance Criteria, Implementation Notes and a Capabilities table ([references/ticket-template.md](references/ticket-template.md)), plus a `Quality` row with one of three verdicts: `PASS` (the evaluator accepted it, possibly after one revision), `SELF-EVALUATED` (no subagent tool on this host) or `FAIL (user-accepted)` (you chose to proceed after two failed rounds). Nothing is delivered until every ticket of the run has a verdict; every `ERROR:` before delivery leaves the destination untouched. The run ends with a `### Final summary` block listing each ticket, its path or identifier, category, size, acceptance-criteria count and verdict, and the scratch directory where drafts and evaluator reports were kept.
+Each ticket carries Background, Scope, Acceptance Criteria, Implementation Notes and a Capabilities table ([references/ticket-template.md](references/ticket-template.md)), plus a `Quality` row with one of three verdicts: `PASS` (the evaluator accepted it, possibly after one revision), `SELF-EVALUATED` (no subagent tool on this host) or `FAIL (user-accepted)` (you chose to proceed after two failed rounds). Nothing is delivered until every ticket of the run has a verdict; every `ERROR:` before delivery leaves the destination untouched. The run ends with a `### Final summary` block listing each ticket, its path or identifier, category, size, acceptance-criteria count and verdict, and, on its `Scratch:` line, the scratch directory where the drafts and evaluator reports of that run were kept.
 
 ## Files
 
@@ -92,7 +98,7 @@ Each ticket carries Background, Scope, Acceptance Criteria, Implementation Notes
 
 ## Limits
 
-- The skill has not yet been exercised end to end on a live host; the contracts were verified by construction and by a build-time audit.
+- The skill has been exercised end to end on one agent host (a non-interactive run over a workbook sheet and a Markdown file, default destination, every ticket graded PASS); on other hosts the contracts are verified by construction and by a build-time audit.
 - An MCP source tool is judged read-only from its description; a tool that misdescribes itself cannot be detected.
 - `dir:` reads one directory level; `.docx` and `.pdf` sources are not supported.
 - `parent=` links new items through the create tool's own parent-link parameter (or the `{parent}` template placeholder); a platform that links only through a separate call after the create is not supported, and the parent item itself is never modified.
