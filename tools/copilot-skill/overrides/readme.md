@@ -50,6 +50,12 @@ Hand over your material as it is, repeatable, in any mode ([references/sources.m
 | `source=mcp:<server>/<tool>?name=value` | one call of a read-only MCP tool of the session (a wiki page, an issue, a document; illustrative only) |
 | `source=api:<url>` | one HTTP `GET`; `source_auth_env=<VAR>` names the variable holding a bearer token, whose value is never printed |
 
+Writing several sources and leaving out the kind:
+
+- **Several sources**: repeat the token (`source=file:a.md source=file:b.xlsx`) or separate the specs with commas in one token (`source=a.md,docs/,https://example.com/spec`). A space does not separate sources: in `source=a.md b.md` only `a.md` is read and `b.md` is taken as part of the description. A file whose name contains a comma is still read whole when that name exists; a comma inside a URL or an MCP query stays part of it.
+- **Kind left out**: a value starting with `http://` or `https://` is read as `api:`, an existing directory as `dir:`, any other path as `file:`. `mcp:` is never guessed from a token, because whether a name is an MCP server depends on the session; write `mcp:` or say it in prose. A value whose prefix looks like a kind but is not one (`fiel:a.md`) stops the run instead of being read as a path. When the token was split or a kind was filled in, the `Resolved:` line shows the result.
+- **In prose**: "read a.md and the sheet Open items of b.xlsx" needs no kind at all. An item reachable through an MCP server may be named by its title or its link: the skill picks the server and its read tool, passes the link when the tool takes one, and otherwise makes one read-only search call and uses the item only when exactly one result matches; otherwise it asks, or stops in a non-interactive run. A URL in prose is fetched with a plain `GET` unless the statement says to read it through an MCP server.
+
 Everything is normalized into a source dossier before any ticket is drafted. The decomposer role decides whether one source (a backlog sheet, a numbered list; illustrative only) enumerates the work units, in which case they map to tickets one-to-one, or whether every source is context; the Final summary reports that decision as `Partition basis`, and every ticket's Background ends with a `Sources:` line naming the lines it drew on. Caps: 60,000 characters per source (truncation is marked), 150,000 in total, 50 sources. With `brief=` or `findings=` the sources are context only.
 
 ### Destinations (`destination=`)
