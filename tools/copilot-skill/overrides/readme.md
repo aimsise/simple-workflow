@@ -6,7 +6,7 @@ mode: append
 
 A self-contained agent skill that turns a request, a brief, an investigation record or any mix of your own material (documents, spreadsheets, a read-only MCP tool result, an HTTP document) into one or more implementation tickets, each drafted by a planner role, graded by an independent evaluator role against a fixed quality rubric, and delivered to a local directory, a ticket platform reached through an MCP server, or an HTTP API.
 
-This directory is generated; `SKILL.md` and everything under `references/` and `scripts/` are one unit. Do not edit the files by hand: the `metadata` block in the frontmatter of `SKILL.md` records the upstream version and commit the directory was generated from, and a newer generation replaces the whole directory.
+This directory is generated; `SKILL.md` and everything under `references/` and `scripts/` are one unit. Do not edit the files by hand, with one exception, `references/ticket-template.md` (see `### Adapting the ticket template`): the `metadata` block in the frontmatter of `SKILL.md` records the upstream version and commit the directory was generated from, and a newer generation replaces the whole directory.
 
 ## Install
 
@@ -83,6 +83,15 @@ The tokens are the canonical form; a statement in prose that names material to r
 ## What you get
 
 Each ticket carries Background, Scope, Acceptance Criteria, Implementation Notes and a Capabilities table ([references/ticket-template.md](references/ticket-template.md)), plus a `Quality` row with one of three verdicts: `PASS` (the evaluator accepted it, possibly after one revision), `SELF-EVALUATED` (no subagent tool on this host) or `FAIL (user-accepted)` (you chose to proceed after two failed rounds). Nothing is delivered until every ticket of the run has a verdict; every `ERROR:` before delivery leaves the destination untouched. The run ends with a `### Final summary` block listing each ticket, its path or identifier, category, size, acceptance-criteria count and verdict, and, on its `Scratch:` line, the scratch directory where the drafts and evaluator reports of that run were kept.
+
+### Adapting the ticket template
+
+A project may edit `references/ticket-template.md` in its own copy of this directory to shape its tickets; the planner role drafts from that file on every run. The quality gates live in the rubric (`references/ac-quality-criteria.md`, `references/ac-quality-grading.md`), not in the template, so they keep working as long as the parts they and the delivery step read are left intact:
+
+- **Keep**: the `## {id}: [Title]` heading; the field-table rows `Category`, `Size` and `Dependencies` (delivery adds the `Quality` row); the sections `### Background`, `### Scope`, `### Acceptance Criteria`, `### Implementation Notes`, `### Capabilities`, `### Advisory Capabilities`, `#### Capability Gaps`, `#### Capability Skip Rationale`, `#### Failure-Class Coverage (Gate 9)` and `#### Peer-Set Uniformity (Gate 10)`.
+- **Do not rename or translate** any of those headings, and do not change the columns of the Scope, Capabilities, Advisory Capabilities, Failure-Class Coverage or Peer-Set Uniformity tables: the evaluator, the delivery step and the Final summary find them by name. Keep the acceptance criteria a numbered list; the Final summary counts it.
+- **Free to change**: add sections or field rows (the planner fills them by their heading and guidance; no gate grades them), reword the guidance text inside a section, reorder sections, and drop the `Priority` row (no step reads it, although the drafting rules may still fill it).
+- **Updates**: a newer generation replaces this file too, so keep your edit (a copy or a diff) and apply it again after updating.
 
 ## Files
 
