@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.5.1] — 2026-11-06
+
+**TL;DR.** The generated standalone `create-ticket` README now lets a project adapt its ticket template by editing `references/ticket-template.md` directly, and lists what has to stay intact so the quality gates, the delivery step and the Final summary keep working. Documentation only; no behavior changes.
+
+### Changed
+
+- Generated skill README: `references/ticket-template.md` is exempted from the do-not-edit notice. A new `### Adapting the ticket template` section lists the headings, field rows and table columns to keep (never renamed or translated), what is free to change (added sections and rows, guidance text, order, the `Priority` row), and that an update replaces the file, so the edit has to be applied again.
+
+### Verification
+
+- `tests/test-copilot-skill-build.sh` 67 / 67 (1 new check: every heading the README names exists in the shipped template); `tests/test-skill-contracts.sh` 931 / 931; `tests/test-path-consistency.sh` 145 / 145.
+
 ## [11.5.0] — 2026-11-06
 
 **TL;DR.** The generated standalone `create-ticket` skill takes sources with less ceremony and carries the fixes from its first live run. One `source=` token may list several specs separated by commas, a spec may leave out its kind (`api:`, `dir:` or `file:` is inferred; `mcp:` never is), and a prose statement may name an MCP item by its title or link. The run scratch directory now lives inside the working directory, the researcher and planner are explicitly banned from running the product or deleting anything, and the Phase 4 evaluators run concurrently. The plugin's own skills, agents and hooks are unchanged apart from one stale sentence in a create-ticket reference.

@@ -388,6 +388,15 @@ for needle in '**Several sources**' '**Kind left out**' '**In prose**' 'source=a
   grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
 done
 check "comma-separated sources, kind inference (never mcp:) and the prose MCP lookup are documented in SKILL.md, sources.md and the README" "$MISSING"
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks
+for needle in '### Adapting the ticket template' 'with one exception, `references/ticket-template.md`' '**Do not rename or translate**' 'apply it again after updating'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+for heading in '## {id}: [Title]' '### Background' '### Scope' '### Acceptance Criteria' '### Implementation Notes' '### Capabilities' '### Advisory Capabilities' '#### Capability Gaps' '#### Capability Skip Rationale' '#### Failure-Class Coverage (Gate 9)' '#### Peer-Set Uniformity (Gate 10)'; do
+  grep -qF -- "$heading" "$SKILL_DIR/references/ticket-template.md" || MISSING="$MISSING ticket-template.md:'$heading'"
+done
+check "the README's template-editing rules name headings the shipped template actually has" "$MISSING"
 check "no ASCII-only path pattern remains for user paths" \
   "$(grep -rn -F -e '^[A-Za-z0-9._~/-]+$' -e '^[A-Za-z0-9._/-]+$' "$SKILL_DIR" | cut -c1-160 || true)"
 check "Intake precedes Mode dispatch in SKILL.md" \
