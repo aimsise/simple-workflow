@@ -376,6 +376,18 @@ for needle in 'parent=<id>' '?sheet=<name>' 'Resolved:' 'local:.docs/tickets'; d
 done
 grep -qF -- 'Parent: <id>' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Parent: <id>'"
 check "prose resolution, the character rule, parent= and ?sheet= are documented where they apply" "$MISSING"
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks
+for needle in '## Writing a source' '**List split.**' '**Kind inference.**' '`mcp:` is never inferred' '### An MCP item named in prose' 'at most one lookup call is made per statement'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+for needle in 'comma-separated list of specs' '### An MCP item named in prose'; do
+  grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
+done
+for needle in '**Several sources**' '**Kind left out**' '**In prose**' 'source=a.md,docs/,https://example.com/spec' 'A space does not separate sources'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+check "comma-separated sources, kind inference (never mcp:) and the prose MCP lookup are documented in SKILL.md, sources.md and the README" "$MISSING"
 check "no ASCII-only path pattern remains for user paths" \
   "$(grep -rn -F -e '^[A-Za-z0-9._~/-]+$' -e '^[A-Za-z0-9._/-]+$' "$SKILL_DIR" | cut -c1-160 || true)"
 check "Intake precedes Mode dispatch in SKILL.md" \
