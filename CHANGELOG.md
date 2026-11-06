@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.5.0] — 2026-11-06
+
+**TL;DR.** The generated standalone `create-ticket` skill takes sources with less ceremony and carries the fixes from its first live run. One `source=` token may list several specs separated by commas, a spec may leave out its kind (`api:`, `dir:` or `file:` is inferred; `mcp:` never is), and a prose statement may name an MCP item by its title or link. The run scratch directory now lives inside the working directory, the researcher and planner are explicitly banned from running the product or deleting anything, and the Phase 4 evaluators run concurrently. The plugin's own skills, agents and hooks are unchanged apart from one stale sentence in a create-ticket reference.
+
+### Added
+
+- Generated skill, comma-separated sources: `source=a.md,docs/,https://example.com/spec` reads three sources. A whole value that names an existing file stays whole, a comma inside a URL or an MCP query stays part of it, and a list item that names nothing stops the run with its own `ERROR:`. Whitespace still does not separate sources.
+- Generated skill, kind inference: a `source=` spec without a kind is `api:` when it starts with `http://` or `https://`, `dir:` when it names an existing directory, and `file:` otherwise. `mcp:` is never inferred. A scheme-like unknown prefix (`fiel:a.md`) still stops with the unknown-kind `ERROR:`. Split and inferred specs are echoed on the `Resolved:` line.
+- Generated skill, prose MCP item lookup: an item named in prose by its title or link is read through the server's read tool. The link is passed as is when the tool takes one. Otherwise one read-only search or listing call is made and only an exact single match is used; anything else is asked about, or stops a non-interactive run. The lookup result never enters the source dossier.
+- Generated skill README: documents the three forms above, including that a space does not separate sources.
+
+### Changed
+
+- Generated skill, run scratch directory: `{scratch}` is created with `mktemp -d` under `.create-ticket-scratch/` in the working directory, never under a system temporary directory, because a host may confine every file tool to the working directory. `.create-ticket-scratch/` is appended to the repository root's `.gitignore` (append only, skipped outside a repository). A creation failure stops with `ERROR: create-ticket cannot create the scratch directory .create-ticket-scratch/ in the working directory (<reason>)`, and the Final summary names the directory on a `Scratch:` line.
+- Generated skill, researcher and planner side-effect ban: running the product under investigation in any form, creating their own files or directories, and every delete command are named explicitly as violations.
+- Generated skill, Phase 4: the initial evaluator of every ticket, and every retry evaluator of a round, is spawned in one message so the evaluations run concurrently.
+- Generated skill README: Install names the scratch directory; Limits records the first live run.
+
+### Fixed
+
+- `skills/create-ticket/references/agent-spawn-prompts.md`: a stale sentence now says the orchestrator reads `investigation.md` when it builds the decomposer spawn (Step B-5 / D-4) and when a planner spawn needs it.
+
+### Verification
+
+- First live run of the generated skill on an agent host (headless, two `file:` sources including a workbook sheet, default destination): 3 tickets, 3/3 PASS in round 1, `Partition basis` and per-ticket `Sources:` lines as specified, no absolute home path in any output.
+- `tests/test-copilot-skill-build.sh` 66 / 66 (5 new checks); `tests/test-skill-contracts.sh` 931 / 931; `tests/test-path-consistency.sh` 145 / 145.
+
+**Migration (generated skill):** a run now creates `.create-ticket-scratch/run.<id>/` in the working directory and appends `.create-ticket-scratch/` to the repository's `.gitignore`; nothing is created under the system temporary directory any more. Delete the directory yourself when a run's drafts are no longer needed; the skill never deletes it. A `source=` value without a kind used to stop with the unknown-kind `ERROR:` and is now read as `api:`, `dir:` or `file:`. A value containing a comma that does not name an existing file is now split into several sources.
+
 ## [11.4.0] — 2026-11-05
 
 **TL;DR.** The generated standalone `create-ticket` skill is now host-neutral and takes its input as the user has it. It names tools by role instead of one host's tool names, so the same directory runs on any agent host that reads SKILL.md skills; it reads documents, `.xlsx` workbooks (as workbooks, one or every sheet), directories, read-only MCP tool results and HTTP documents through repeatable `source=` tokens, lets the decomposer judge which source enumerates the work units, links delivered tickets to an existing platform item with `parent=`, accepts the input and the output stated in prose in any language, delivers to `.docs/tickets` by default and ships its own `README.md`. Three rounds of an independent five-lens verification workflow over the generated tree drove the fixes. The plugin's own skills, agents and hooks are unchanged.
