@@ -8635,13 +8635,13 @@ assert_true \
 # assertion guards against a future shrinkage-style change that
 # silently drops or paraphrases one of the three load-bearing Caps
 # bullets in skills/brief/SKILL.md.
-ao4_caps=$(grep -cE 'At most \*\*10 rounds\*\*|At most \*\*3 questions per round\*\*|at most \*\*30 questions total\*\*' "$BRIEF_SKILL_AO" || true)
+ao4_caps=$(grep -cE 'At most \*\*30 rounds\*\*|\*\*One question per round\*\*|at most \*\*30 questions total\*\*' "$BRIEF_SKILL_AO" || true)
 ao4_result="false"
 if [ "$ao4_caps" -eq 3 ]; then
   ao4_result="true"
 fi
 assert_true \
-  "CT-AC-64 (P0-2A AC-4): skills/brief/SKILL.md retains exactly 3 Caps-phrase hits ('At most **10 rounds**' + 'At most **3 questions per round**' + 'at most **30 questions total**') — got $ao4_caps, expected 3" \
+  "CT-AC-64 (P0-2A AC-4): skills/brief/SKILL.md retains exactly 3 Caps-phrase hits ('At most **30 rounds**' + '**One question per round**' + 'at most **30 questions total**') — got $ao4_caps, expected 3" \
   "$ao4_result"
 
 # CT-AC-65 (P0-2A AC-5): the 'mode independence guard' literal remains

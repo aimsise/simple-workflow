@@ -122,7 +122,7 @@ After Phase 1 completes with a fresh researcher spawn and before Phase 2 (Socrat
 
 Brief with `interview_complete: true` skips Phase 2 (no `AskUserQuestion`, no stdin block; ticket file under `.simple-workflow/backlog/` within 10 s on closed stdin). Findings mirrors upstream brief's `interview_complete`. Bare always runs the capped interview unless non-interactive fallback fires.
 
-Caps (load-bearing): max **3 questions/round**, **10 rounds**, **30 total**. Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors. Do NOT hang.
+Caps (load-bearing): **1 question/round** (up to 3 only when independent), **30 rounds**, **30 total**. Non-interactive fallback: skip Phase 2 if `AskUserQuestion` errors. Do NOT hang.
 
 **args-aware shrinkage**: Phase 2 MUST suppress questions whose answers are already in `$ARGUMENTS` (bare) or brief body (brief mode, `interview_complete: false`). Full rule: [references/agent-spawn-prompts.md](references/agent-spawn-prompts.md) Phase 2.
 
