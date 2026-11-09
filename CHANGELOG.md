@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.6.0] — 2026-11-09
+
+**TL;DR.** The Socratic interview of `/brief` and `/create-ticket` Phase 2 (and of the generated standalone `create-ticket` skill) asks one question per round by default, so each answer can shape the next question; up to 3 questions share a round only when they are independent. The round cap rises from 10 to 30, the 30-question ceiling is unchanged.
+
+### Changed
+
+- `/brief` and `/create-ticket` Phase 2 interview: one question per round by default; a round carries up to 3 questions only when no answer could remove, reword or re-prioritise another question in the same call, and a round is never filled from a lower-priority category (the former "fill to 3" step is replaced by highest-priority-first). Round cap 10 → 30; the total ceiling stays at 30 questions; the convergence triggers are unchanged. The `/brief` context-budget tiers keep their total ceilings (30 / 15 / 6 / 1 questions) with round limits 30 / 15 / 6 / 1. The generated standalone skill and its README carry the same rule.
+
+### Verification
+
+- `tests/test-skill-contracts.sh` (CT-AC-64 pins the new Caps phrases), `tests/test-brief-lightening.sh`, `tests/test-copilot-skill-build.sh` 67 / 67 and `tests/test-path-consistency.sh` exit 0; the standalone skill rebuilds with a clean exit audit; CI green on PR #121. Not exercised live.
+
 ## [11.5.1] — 2026-11-06
 
 **TL;DR.** The generated standalone `create-ticket` README now lets a project adapt its ticket template by editing `references/ticket-template.md` directly, and lists what has to stay intact so the quality gates, the delivery step and the Final summary keep working. Documentation only; no behavior changes.

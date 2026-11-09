@@ -53,10 +53,10 @@ Before issuing any `AskUserQuestion` call in Phase 2, perform a one-shot scan of
 
 Construction rule for every `AskUserQuestion` call in Phase 2:
 
-1. A single call MUST carry at most 3 items (existing cap; unchanged).
+1. A single call carries ONE item by default and MUST NOT carry more than 3. A round carries **one question** unless every question in it is independent of the others: no answer to one of them could remove, reword or re-prioritise another in the same call. Up to **3 independent questions** may share a round; a question whose answer could change the next question is always asked alone. Never add an item only to fill a round.
 2. Items MUST be drawn only from the `needs-question` set. `args-resolved` candidates MUST NOT appear in any `AskUserQuestion` payload, including paraphrased or "to confirm" variants.
-3. If fewer than 3 `needs-question` items remain in the highest-priority category, fill the remaining slots from the next-highest-priority category that still has `needs-question` items. Do NOT pad with `args-resolved` items.
-4. If zero `needs-question` items remain across all seven categories, end Phase 2 (convergence). This is an additional convergence trigger on top of the existing ones (user says "sufficient", scope is clear, 10 rounds reached).
+3. Ask the `needs-question` item of the highest-priority category first; move to the next category only when the current one has no `needs-question` item left.
+4. If zero `needs-question` items remain across all seven categories, end Phase 2 (convergence). This is an additional convergence trigger on top of the existing ones (user says "sufficient", scope is clear, 30 rounds reached).
 5. The shrinkage decision MUST be applied on every round, not only on round 1 — newly arrived user answers can convert `needs-question` items to `args-resolved` mid-interview.
 
 Output a single line at the top of the round-1 console trace listing the `args-resolved` categories so the user can audit the suppression decision: `[args-aware shrinkage] args-resolved categories: <list>; needs-question categories: <list>`. The line is informational; do NOT block on it. The shrinkage decision MUST NOT widen the round / question caps stated above (it can only shorten the interview, never lengthen it).
@@ -65,19 +65,19 @@ Confidence rule: when classification is ambiguous (the input partially answers a
 
 
 **Interview caps** (load-bearing for contract):
-- At most **3 questions per round** (a single `AskUserQuestion` call carries at most 3 items).
-- At most **10 rounds** total across the interview.
+- **One question per round** by default (a single `AskUserQuestion` call carries one item; up to 3 items only when they are independent, see the construction rule above).
+- At most **30 rounds** total across the interview.
 - Therefore at most **30 questions total** before a ticket file appears under `.simple-workflow/backlog/`.
 
-These caps apply uniformly. Implementations MUST NOT exceed 3 items per `AskUserQuestion` call and MUST NOT issue more than 10 rounds.
+These caps apply uniformly. Implementations MUST NOT exceed 3 items per `AskUserQuestion` call, MUST NOT issue more than 30 rounds and MUST NOT ask more than 30 questions.
 
 Refine scope through targeted questions:
 
 1. Analyze the researcher's findings (or the findings / brief document in the respective modes).
 2. Identify unclear points across scope boundaries, priority, edge cases, constraints.
-3. Use `AskUserQuestion` for up to 3 targeted questions per round (single call; at most 10 rounds → at most 30 questions total). **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors (typical in `claude -p` / CI where stdin is not a TTY), skip Phase 2 and proceed to Phase 3 with researcher findings only. Note "Phase 2 skipped (non-interactive mode)" in the final summary. Do NOT hang.
+3. Use `AskUserQuestion` for one targeted question per round, or up to 3 independent ones (single call; at most 30 rounds and at most 30 questions total). **Non-interactive fallback**: If `AskUserQuestion` is unavailable / errors (typical in `claude -p` / CI where stdin is not a TTY), skip Phase 2 and proceed to Phase 3 with researcher findings only. Note "Phase 2 skipped (non-interactive mode)" in the final summary. Do NOT hang.
 4. Save the answers for the Phase 3 planner prompt.
-5. **Convergence**: stop the interview once the user indicates sufficiency, scope is clear, or 10 rounds have been reached.
+5. **Convergence**: stop the interview once the user indicates sufficiency, scope is clear, or 30 rounds or 30 questions have been reached.
 
 If investigation yields sufficient clarity (e.g., simple S-size with obvious scope), skip questioning and proceed to Phase 3.
 

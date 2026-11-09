@@ -27,13 +27,15 @@ Apply the following table to choose the Phase 2 limits **for this run only**:
 
 | `remaining_pct` | Phase 2 round limit | Phase 2 questions/round | Phase 2 total ceiling |
 |---|---|---|---|
-| ≥ 70% | 10 rounds | 3 questions | up to 30 questions (existing behaviour) |
-| 50-70% (i.e., 50% ≤ `remaining_pct` < 70%) | 5 rounds | 3 questions | up to 15 questions |
-| 30-50% (i.e., 30% ≤ `remaining_pct` < 50%) | 3 rounds | 2 questions | up to 6 questions |
+| ≥ 70% | 30 rounds | 1 question (up to 3 independent) | up to 30 questions (existing behaviour) |
+| 50-70% (i.e., 50% ≤ `remaining_pct` < 70%) | 15 rounds | 1 question (up to 3 independent) | up to 15 questions |
+| 30-50% (i.e., 30% ≤ `remaining_pct` < 50%) | 6 rounds | 1 question (up to 2 independent) | up to 6 questions |
 | < 30% | 1 round | 1 question | up to 1 question |
+
+The total ceiling is the binding limit of every tier: a round that carries several independent questions consumes that many questions from the ceiling, so the round limit is reached only when every round asked one question.
 
 ## Standalone fallback (state-file-absent)
 
-**Standalone fallback (state-file-absent)**: when `autopilot-state.yaml` does **not** exist on disk at the canonical paths above (i.e., `/brief` was invoked without an autopilot session — the typical "standalone" case), the dynamic shrinkage is **bypassed**: the existing **10 rounds × 3 questions = max 30 questions** ceiling applies as before. This guarantees that direct `/brief` invocations are not regressed by Plan 07. The bypass is also taken when the file exists but its `runtime_metrics:` list is empty (no entry to read).
+**Standalone fallback (state-file-absent)**: when `autopilot-state.yaml` does **not** exist on disk at the canonical paths above (i.e., `/brief` was invoked without an autopilot session — the typical "standalone" case), the dynamic shrinkage is **bypassed**: the existing **max 30 questions** ceiling (30 rounds × 1 question, up to 3 independent questions per round) applies as before. This guarantees that direct `/brief` invocations are not regressed by Plan 07. The bypass is also taken when the file exists but its `runtime_metrics:` list is empty (no entry to read).
 
 Once the tier is selected at Phase 2 start, the round counter and questions/round caps are fixed for the remainder of the interview. The "Caps (load-bearing for contract)" stated in SKILL.md remain the **upper bound** — the dynamic table never raises them, only lowers them inside an autopilot run.

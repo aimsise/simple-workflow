@@ -91,8 +91,8 @@ Conduct an iterative Q&A to gather comprehensive requirements.
 **mode independence guard (load-bearing — preserved during the `chain=` / `mode=` deprecation period; defensive prose now covers BOTH the new `chain` argument AND the legacy `mode` alias)**: Phase 2 Structured Interview (Socratic) **MUST** run regardless of the parsed `mode` value (`auto` or `manual`, including when `mode=` is omitted and defaults to `manual`). The same independence rule applies to the new canonical `chain` argument introduced in vX.Y.0 — Phase 2 MUST run regardless of the parsed `chain` value (`on` or `off`, including when `chain=` is omitted and defaults to `off` ≡ legacy `mode=manual`). The `mode` argument **MUST NOT** be interpreted as a signal to skip, shorten, or bypass Phase 2 — it has **no effect whatsoever** on Phase 2's execution. The same MUST-NOT applies to the new `chain` argument: it is independence-protected from Phase 2 alongside `mode`, and has no effect whatsoever on Phase 2's execution. Any non-interactive wording elsewhere in this skill (e.g. the Finalization Phase Step 2 chain-confirmation context gated on `mode=auto` ≡ `chain=on`) is scoped to that specific step and **MUST NOT** be generalized to Phase 2. The **ONLY** condition under which Phase 2 is skipped is the existing **"Non-interactive environment fallback"** below (triggered strictly by `AskUserQuestion` itself being unavailable or returning an error, e.g. `claude -p` / CI automation without a TTY) — **not** by the value of `mode` or `chain`. This guard is scheduled for removal in a future major (deferred from v9.0.0) alongside the `mode=` alias: `chain={on,off}` does not lexically suggest interview-policy, so the defensive prose becomes unnecessary once the alias is gone and Phase 2 independence can be left implicit.
 
 **Caps (load-bearing for contract)**:
-- At most **3 questions per round** (single `AskUserQuestion` call holds up to 3 items).
-- At most **10 rounds** total.
+- **One question per round** by default (a single `AskUserQuestion` call holds one item; up to 3 items only when they are independent, see the construction rule below).
+- At most **30 rounds** total.
 - Therefore at most **30 questions total** across the entire interview before `brief.md` is written.
 - Track a round counter starting at `0`. Increment **after** each user response is received (a round is counted only when the user actually responded — i.e., Phase 2 truly ran at least once).
 
@@ -105,10 +105,10 @@ Before issuing any `AskUserQuestion` call in Phase 2, perform a one-shot scan of
 
 Construction rule for every `AskUserQuestion` call in Phase 2:
 
-1. A single call MUST carry at most 3 items (existing cap; unchanged).
+1. A single call carries ONE item by default and MUST NOT carry more than 3. A round carries **one question** unless every question in it is independent of the others: no answer to one of them could remove, reword or re-prioritise another in the same call. Up to **3 independent questions** may share a round; a question whose answer could change the next question is always asked alone. Never add an item only to fill a round.
 2. Items MUST be drawn only from the `needs-question` set. `args-resolved` candidates MUST NOT appear in any `AskUserQuestion` payload, including paraphrased or "to confirm" variants.
-3. If fewer than 3 `needs-question` items remain in the highest-priority category, fill the remaining slots from the next-highest-priority category that still has `needs-question` items. Do NOT pad with `args-resolved` items.
-4. If zero `needs-question` items remain across all seven categories, end Phase 2 (convergence — record `interview_complete: true` and the actual round count). This is an additional convergence trigger on top of the existing five (user says "sufficient", all 7 categories covered, 10 rounds reached, etc.).
+3. Ask the `needs-question` item of the highest-priority category first; move to the next category only when the current one has no `needs-question` item left.
+4. If zero `needs-question` items remain across all seven categories, end Phase 2 (convergence — record `interview_complete: true` and the actual round count). This is an additional convergence trigger on top of the existing five (user says "sufficient", all 7 categories covered, 30 rounds reached, etc.).
 5. The shrinkage decision MUST be applied on every round, not only on round 1 — newly arrived user answers can convert `needs-question` items to `args-resolved` mid-interview.
 
 Output a single line at the top of the round-1 console trace listing the `args-resolved` categories so the user can audit the suppression decision: `[args-aware shrinkage] args-resolved categories: <list>; needs-question categories: <list>`. The line is informational; do NOT block on it. The shrinkage decision MUST NOT widen the round / question caps stated above (it can only shorten the interview, never lengthen it).
@@ -117,19 +117,19 @@ Confidence rule: when classification is ambiguous (the description partially ans
 
 #### Dynamic Phase 2 shrinkage (one-shot read of `runtime_metrics:`)
 
-At Phase 2 start, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` and tier-classify on `remaining_pct = 1 - ((input_tokens + cache_read_input_tokens) / context_window_size)`. The tier table maps the four bands (`≥ 70%`, `50-70%`, `30-50%`, `< 30%`) to round/question caps and the **standalone fallback (state-file-absent)** restores the 10 rounds × 3 questions ceiling. Full formula, table, and caveats: see [phase2-dynamic-shrinkage](references/phase2-dynamic-shrinkage.md).
+At Phase 2 start, perform a **single one-shot read** of `.simple-workflow/backlog/briefs/active/{slug}/autopilot-state.yaml` and tier-classify on `remaining_pct = 1 - ((input_tokens + cache_read_input_tokens) / context_window_size)`. The tier table maps the four bands (`≥ 70%`, `50-70%`, `30-50%`, `< 30%`) to round/question caps and the **standalone fallback (state-file-absent)** restores the 30 rounds × 1 question (max 30 questions) ceiling. Full formula, table, and caveats: see [phase2-dynamic-shrinkage](references/phase2-dynamic-shrinkage.md).
 
 Once the tier is selected at Phase 2 start, the round counter and questions/round caps are fixed for the remainder of the interview. The Caps stated above remain the **upper bound** — the dynamic table never raises them, only lowers them inside an autopilot run.
 
 **Non-interactive environment fallback**: If `AskUserQuestion` is unavailable or returns an error (typical in `claude -p` / CI automation where stdin is not a TTY), skip Phase 2 entirely and proceed directly to Phase 3 with the researcher's findings only. In this case, set `interview_complete: false` for the frontmatter (Phase 3) and do NOT count any rounds. Note "Phase 2 skipped (non-interactive mode)" in the final summary. Do NOT hang waiting for input.
 
-For each round (up to the active tier cap, at most 3 questions per round, at most 30 questions total):
+For each round (up to the active tier cap, one question per round unless independent, at most 3 items per call, at most 30 questions total):
 
 1. From the researcher's findings and prior answers, pick the most important unanswered questions from the interview templates (see Pre-computed Context).
-2. Select **up to 3** questions from the template categories most relevant and not yet answered. Adapt to the specific context; do not ask generic template questions verbatim. A single `AskUserQuestion` call MUST carry at most 3 items.
+2. Select the **one** most important question from the template categories most relevant and not yet answered, adding up to 2 more only when they are independent of it and of each other (construction rule above). Adapt to the specific context; do not ask generic template questions verbatim. A single `AskUserQuestion` call MUST carry at most 3 items.
 3. Use `AskUserQuestion` to ask the selected questions.
 4. After receiving answers, output a brief "Current understanding" summary (what is known, what categories still need information).
-5. **Convergence check** — stop if ANY: user responds "sufficient"/"enough"/similar; all 7 categories (`references/interview-templates.md`) covered; **10 rounds have been completed** (hard ceiling; with the 3/round cap, enforces the 30-questions ceiling); all `needs-question` items exhausted (see `#### args-aware shrinkage` above — zero `needs-question` items remaining across all seven categories triggers convergence even before the round cap).
+5. **Convergence check** — stop if ANY: user responds "sufficient"/"enough"/similar; all 7 categories (`references/interview-templates.md`) covered; **30 rounds have been completed** or **30 questions have been asked** (hard ceilings); all `needs-question` items exhausted (see `#### args-aware shrinkage` above — zero `needs-question` items remaining across all seven categories triggers convergence even before the round cap).
 6. Otherwise continue to next round while the counter is below the tier cap.
 
 At end of Phase 2, record `interview_complete = true` iff **at least one round produced a user response**; otherwise `interview_complete = false`.

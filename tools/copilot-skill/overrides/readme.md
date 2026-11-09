@@ -33,7 +33,7 @@ Three input modes, exactly one at a time:
 
 | Mode | Input | What happens |
 |---|---|---|
-| Bare description | free text after `/create-ticket` | a researcher role investigates the repository, a capped interview fills the gaps (at most 3 questions per round, 10 rounds), then the tickets are drafted and graded |
+| Bare description | free text after `/create-ticket` | a researcher role investigates the repository, a capped interview fills the gaps (one question per round, up to 3 when independent; at most 30 rounds and 30 questions), then the tickets are drafted and graded |
 | `brief=<path>` | a Markdown brief ([references/brief-template.md](references/brief-template.md)) | the brief's Vision, Business Context, Technical Requirements, Scope and Constraints drive the split; `interview_complete: true` in its frontmatter skips the interview |
 | `findings=<path>` | an investigation record ([references/findings-schema.md](references/findings-schema.md)) | its `## Required Work Units` become the tickets one-to-one; no investigation is repeated |
 

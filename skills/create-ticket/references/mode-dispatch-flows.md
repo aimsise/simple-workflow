@@ -42,7 +42,7 @@ Locate the `## Required Work Units` section. Enumerate child headings matching r
 
 ### Step F-4: Brief-backed short-circuit (Socratic skip)
 
-If the findings file was supplied alongside (or was derived from) a brief with frontmatter `interview_complete: true`, skip Phase 2 Socratic Refinement entirely (do NOT invoke `AskUserQuestion`). Otherwise run the capped Socratic Refinement (max 3 questions per round, max 10 rounds, max 30 questions total — see SKILL.md Phase 2) before invoking the decomposer.
+If the findings file was supplied alongside (or was derived from) a brief with frontmatter `interview_complete: true`, skip Phase 2 Socratic Refinement entirely (do NOT invoke `AskUserQuestion`). Otherwise run the capped Socratic Refinement (one question per round, up to 3 when independent; max 30 rounds, max 30 questions total — see SKILL.md Phase 2) before invoking the decomposer.
 
 ### Step F-5: Invoke `decomposer` agent
 
@@ -114,7 +114,7 @@ Run SKILL.md Phase 1. For brief mode, the researcher writes `investigation.md` t
 
 ### Step B-4: Phase 2 — Socratic Refinement
 
-If the brief's frontmatter contains `interview_complete: true`, **skip Phase 2 entirely**. Otherwise run the capped Socratic Refinement (max 3 questions per round, max 10 rounds, max 30 questions total). Non-interactive fallback: skip Phase 2 and proceed.
+If the brief's frontmatter contains `interview_complete: true`, **skip Phase 2 entirely**. Otherwise run the capped Socratic Refinement (one question per round, up to 3 when independent; max 30 rounds, max 30 questions total). Non-interactive fallback: skip Phase 2 and proceed.
 
 ### Step B-5: Synthesize `scope_context` and invoke `decomposer`
 
@@ -160,7 +160,7 @@ Run SKILL.md Phase 1. Researcher writes `investigation.md` to `.simple-workflow/
 
 ### Step D-3: Phase 2 — Socratic Refinement
 
-Run the capped Socratic Refinement (max 3 questions per round, max 10 rounds, max 30 questions total). Non-interactive fallback: skip Phase 2 and proceed with the researcher's findings only.
+Run the capped Socratic Refinement (one question per round, up to 3 when independent; max 30 rounds, max 30 questions total). Non-interactive fallback: skip Phase 2 and proceed with the researcher's findings only.
 
 ### Step D-4: Synthesize `scope_context` and invoke `decomposer`
 
