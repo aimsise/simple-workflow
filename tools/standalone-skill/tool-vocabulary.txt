@@ -2,7 +2,7 @@
 #
 # The generated skill names tools by ROLE (file-read tool, file-write tool,
 # file-edit tool, search tools, shell tool, URL-fetch tool, subagent tool,
-# ask-user tool; defined in SKILL.md "## Host notes", Tool roles), never by a
+# ask-user tool, browser tool; defined in SKILL.md "## Host notes", Tool roles), never by a
 # host's own tool name, so the skill runs on any agent host that offers those
 # roles. Any backticked occurrence of a listed name, alone or in a
 # "Name(args)" form, in a generated file fails the build.
