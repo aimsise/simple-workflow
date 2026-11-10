@@ -1,14 +1,14 @@
 # Standalone skill generator inputs
 
-`tools/build-copilot-skill.sh` turns this plugin's ticket-creation workflow into a single, self-contained, host-neutral Agent Skill, `create-ticket/` (a `SKILL.md` plus `references/`). The generated skill needs no plugin, no hooks and no custom agent files (Python 3 only to read `.xlsx` sources), and it names tools by role (see `## Tool roles` below) rather than by any host's tool name: copy the directory into the skill root the host reads (`.github/skills/`, `.claude/skills/` or `.agents/skills/`) and invoke it by name. The generator keeps its historical name; its output was first shaped for GitHub Copilot CLI and has not been run live on any host yet.
+`tools/build-standalone-skill.sh` turns this plugin's ticket-creation workflow into a single, self-contained, host-neutral Agent Skill, `create-ticket/` (a `SKILL.md` plus `references/`). The generated skill needs no plugin, no hooks and no custom agent files (Python 3 only to read `.xlsx` sources), and it names tools by role (see `## Tool roles` below) rather than by any host's tool name: copy the directory into the skill root the host reads (`.github/skills/`, `.claude/skills/` or `.agents/skills/`) and invoke it by name. The generator keeps its historical name; its output was first shaped for GitHub Copilot CLI and has not been run live on any host yet.
 
 ```bash
-bash tools/build-copilot-skill.sh --out <dir>            # writes <dir>/create-ticket/
-bash tools/build-copilot-skill.sh --out <dir> --force    # replaces a non-empty <dir>/create-ticket/
-bash tools/build-copilot-skill.sh --help
+bash tools/build-standalone-skill.sh --out <dir>            # writes <dir>/create-ticket/
+bash tools/build-standalone-skill.sh --out <dir> --force    # replaces a non-empty <dir>/create-ticket/
+bash tools/build-standalone-skill.sh --help
 ```
 
-The output is never committed (there is no golden copy). Its correctness is enforced by the build's own exit audit and by `tests/test-copilot-skill-build.sh`, which builds into a temporary directory and re-checks the result independently.
+The output is never committed (there is no golden copy). Its correctness is enforced by the build's own exit audit and by `tests/test-standalone-skill-build.sh`, which builds into a temporary directory and re-checks the result independently.
 
 ## What the generator does
 

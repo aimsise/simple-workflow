@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# build-copilot-skill.sh — generate a self-contained, host-neutral Agent
+# build-standalone-skill.sh — generate a self-contained, host-neutral Agent
 # Skill `create-ticket/` (SKILL.md + references/) from this plugin's sources.
 #
 # The output needs no plugin, no hooks and no custom agent files, and
 # names tools by role, never by a host's tool name: drop it into the skill
 # root the host reads (.github/skills/, .claude/skills/ or .agents/skills/)
 # and invoke it by name. The output is never committed; correctness is
-# enforced by the exit audit below and by tests/test-copilot-skill-build.sh.
+# enforced by the exit audit below and by tests/test-standalone-skill-build.sh.
 #
 # Usage:
-#   bash tools/build-copilot-skill.sh --out <dir> [--src <dir>] [--force]
-#   bash tools/build-copilot-skill.sh --help
+#   bash tools/build-standalone-skill.sh --out <dir> [--src <dir>] [--force]
+#   bash tools/build-standalone-skill.sh --help
 #
-# Inputs (tools/copilot-skill/, see its README.md):
+# Inputs (tools/standalone-skill/, see its README.md):
 #   files.tsv            shipped file map (destination <TAB> source, or "-"
 #                        for a file whose whole content is an append override)
 #   drop-sections.txt    sections removed by exact heading (scoped)
@@ -37,16 +37,16 @@ export LC_ALL=C
 
 print_help() {
   cat <<'EOF'
-build-copilot-skill.sh — generate the standalone, host-neutral `create-ticket` skill
+build-standalone-skill.sh — generate the standalone, host-neutral `create-ticket` skill
 
 Usage:
-  bash tools/build-copilot-skill.sh --out <dir> [--src <dir>] [--force]
-  bash tools/build-copilot-skill.sh --help
+  bash tools/build-standalone-skill.sh --out <dir> [--src <dir>] [--force]
+  bash tools/build-standalone-skill.sh --help
 
 Options:
   --out <dir>   Output directory. The skill is written to <dir>/create-ticket/.
   --src <dir>   Plugin source root to read (default: this repository's root).
-                Manifests are always read from tools/copilot-skill/ next to
+                Manifests are always read from tools/standalone-skill/ next to
                 this script. Its short git commit is stamped into the
                 frontmatter as metadata.source-commit ("unknown" outside git).
   --force       Replace a non-empty <dir>/create-ticket/ (refused otherwise).
@@ -60,11 +60,11 @@ EOF
 }
 
 err() {
-  printf '[build-copilot-skill] %s\n' "$*" >&2
+  printf '[build-standalone-skill] %s\n' "$*" >&2
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MANIFEST_DIR="$SCRIPT_DIR/copilot-skill"
+MANIFEST_DIR="$SCRIPT_DIR/standalone-skill"
 SRC_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR=""
 FORCE=0
@@ -109,7 +109,7 @@ if [ -d "$TARGET" ] && [ -n "$(ls -A "$TARGET")" ]; then
 fi
 mkdir -p "$TARGET"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/build-copilot-skill.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/build-standalone-skill.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 STALE="$WORK/stale.txt"
 : >"$STALE"
@@ -452,5 +452,5 @@ if [ -s "$FAIL" ]; then
   exit 1
 fi
 
-printf '[build-copilot-skill] wrote %s (%s files, source version %s, commit %s); exit audit clean\n' \
+printf '[build-standalone-skill] wrote %s (%s files, source version %s, commit %s); exit audit clean\n' \
   "$TARGET" "${#GEN_FILES[@]}" "$SOURCE_VERSION" "$SOURCE_COMMIT"

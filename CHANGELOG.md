@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.6.1] — 2026-11-10
+
+**TL;DR.** The generator of the standalone `create-ticket` skill is renamed from its historical `copilot` names to `standalone`, matching the host-neutral output it has produced since v11.4.0. Developer-facing paths only; the generated skill is byte-identical.
+
+### Changed
+
+- `tools/build-copilot-skill.sh` → `tools/build-standalone-skill.sh`, `tools/copilot-skill/` → `tools/standalone-skill/` (manifests, overrides, README), `tests/test-copilot-skill-build.sh` → `tests/test-standalone-skill-build.sh`. Invoke `bash tools/build-standalone-skill.sh --out <dir>`. The `Copilot` entries of `denylist.txt` and `tool-vocabulary.txt` stay: they keep that host's names out of the output.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 67 / 67, `tests/test-skill-contracts.sh` and `tests/test-path-consistency.sh` exit 0; the build output is unchanged.
+
 ## [11.6.0] — 2026-11-09
 
 **TL;DR.** The Socratic interview of `/brief` and `/create-ticket` Phase 2 (and of the generated standalone `create-ticket` skill) asks one question per round by default, so each answer can shape the next question; up to 3 questions share a round only when they are independent. The round cap rises from 10 to 30, the 30-question ceiling is unchanged.
