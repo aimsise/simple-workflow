@@ -513,8 +513,8 @@ def shape_text(shape):
                 parts.append(node.text or "")
             elif name == "br":
                 parts.append("\n")
-        paragraphs.append("".join(parts).strip())
-    if not any(paragraphs):
+        paragraphs.append("".join(parts).strip(" \t"))
+    if not any(para.strip() for para in paragraphs):
         return ""
     return "\n".join(paragraphs)
 

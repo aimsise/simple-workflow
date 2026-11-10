@@ -470,6 +470,7 @@ drawing = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr %
     + "<xdr:twoCellAnchor>" + frm("from", 2, 4) + frm("to", 5, 8) + sp(2, "TextBox 1", ["First paragraph", "Second paragraph"]) + "<xdr:clientData/></xdr:twoCellAnchor>"
     + '<xdr:oneCellAnchor>' + frm("from", 0, 11) + '<xdr:ext cx="1" cy="1"/><xdr:grpSp><xdr:nvGrpSpPr><xdr:cNvPr id="3" name="Group 2"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr><xdr:grpSpPr/>' + sp(4, "Callout 3", ["Grouped callout"]) + "</xdr:grpSp><xdr:clientData/></xdr:oneCellAnchor>"
     + "<xdr:oneCellAnchor>" + frm("from", 0, 13) + '<xdr:ext cx="1" cy="1"/>' + sp(8, "Lead 7", ["", "after an empty paragraph"]) + "<xdr:clientData/></xdr:oneCellAnchor>"
+    + "<xdr:oneCellAnchor>" + frm("from", 0, 15) + '<xdr:ext cx="1" cy="1"/><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="9" name="Break 8"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr/><xdr:txBody><a:bodyPr/><a:p><a:r><a:t>ends in a break</a:t></a:r><a:br/></a:p><a:p><a:r><a:t>next paragraph</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:oneCellAnchor>'
     + "<xdr:twoCellAnchor>" + frm("from", 6, 1) + frm("to", 8, 3) + '<xdr:cxnSp><xdr:nvCxnSpPr><xdr:cNvPr id="5" name="Connector 4"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr/></xdr:cxnSp><xdr:clientData/></xdr:twoCellAnchor>'
     + "<xdr:twoCellAnchor>" + frm("from", 9, 1) + frm("to", 14, 12) + '<xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id="6" name="Chart 5"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rId2"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>'
     + "<xdr:twoCellAnchor>" + frm("from", 1, 9) + frm("to", 4, 19) + '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="7" name="Picture 6"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill><xdr:spPr/></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>'
@@ -542,7 +543,8 @@ PYFIX
   # holds no strike element, and under a run whose strike val="0"), a hidden
   # row and column, a legacy notes part, a threaded comment on a cell whose
   # legacy note is the threaded placeholder (author from a well-formed persons
-  # part), a drawing (text box, a shape whose first paragraph is empty, group,
+  # part), a drawing (text box, a shape whose first paragraph is empty, a shape
+  # whose paragraph ends in a line break, group,
   # connector, chart, picture with its media member) and a sparse wide third
   # sheet with a 2x2 merge. The --broken variant drops
   # the drawing member, relates a drawing whose target leaves the package and
@@ -592,7 +594,7 @@ PYFIX
     "$(printf '%s\n' "$NOTES_PART" | sed -n 3p | grep -qxF -- '- c5 row 9 (E9), Pat Person: threaded body' || echo ' threaded note line')$([ "$(printf '%s\n' "$NOTES_PART" | grep -c .)" = 3 ] || echo ' ### Notes does not hold exactly 3 lines')$(printf '%s\n' "$XLSX_OUT" | grep -F '[Threaded comment]' || true)"
   SHAPES_PART="$(printf '%s\n' "$XLSX_OUT" | awk '/^### Shapes$/ {n = 1; next} n && /^$/ {exit} n')"
   check "xlsx converter: ### Shapes lists text boxes, grouped shapes and charts, never connectors" \
-    "$(has_all "$XLSX_OUT" '### Shapes' '- "TextBox 1" at c3 row 5 to c6 row 9: First paragraph<br>Second paragraph' '- "Callout 3" at c1 row 12: Grouped callout' '- chart "Chart 5" at c10 row 2 to c15 row 13: (chart; data not read)' '- "Lead 7" at c1 row 14: <br>after an empty paragraph')$(printf '%s\n' "$XLSX_OUT" | grep -F -e 'Connector 4' -e 'at c7 row 2 to c9 row 4' || true)$([ "$(printf '%s\n' "$SHAPES_PART" | grep -c .)" = 4 ] || echo ' ### Shapes does not hold exactly 4 lines')"
+    "$(has_all "$XLSX_OUT" '### Shapes' '- "TextBox 1" at c3 row 5 to c6 row 9: First paragraph<br>Second paragraph' '- "Callout 3" at c1 row 12: Grouped callout' '- chart "Chart 5" at c10 row 2 to c15 row 13: (chart; data not read)' '- "Lead 7" at c1 row 14: <br>after an empty paragraph' '- "Break 8" at c1 row 16: ends in a break<br><br>next paragraph')$(printf '%s\n' "$XLSX_OUT" | grep -F -e 'Connector 4' -e 'at c7 row 2 to c9 row 4' || true)$([ "$(printf '%s\n' "$SHAPES_PART" | grep -c .)" = 5 ] || echo ' ### Shapes does not hold exactly 5 lines')"
   check "xlsx converter: ### Images lists each picture with its media name and byte count, nothing extracted by default" \
     "$(has_all "$XLSX_OUT" '### Images' '- "Picture 6" at c2 row 10 to c5 row 20: image1.png (70 bytes)')$(printf '%s\n' "$XLSX_OUT" | grep -F 'extracted to' || true)"
   XLSX_MEDIA="$(python3 -I "$XLSX_PY" --extract-media "$FIX_DIR/media" -- "$FIX_DIR/fixture.xlsx" 2>&1)"
