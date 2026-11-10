@@ -23,6 +23,11 @@
 #     values, structure (line breaks, merges, strikethrough, hidden rows and
 #     columns), notes, shapes and images, honours --layout, --extract-media
 #     and every cap, and marks a missing part instead of failing
+#   - the optional sheet renderer, driven by stand-in renderer programs
+#     written here (a PDF writer per renderer shape, a failing one, a hanging
+#     one, one that writes no PDF), walks its chain, honours --timeout without
+#     leaving a process behind, writes nothing outside --out and reports one
+#     Rendered: line; render=, PDF and image sources are documented
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -88,6 +93,8 @@ else
   fail "--out on a non-empty target without --force exits non-zero" "rc=$REFUSE_RC $(cat "$TMP_ROOT/refuse.log")"
 fi
 check "--force rebuilds a non-empty target" "$([ "$FORCE_RC" -eq 0 ] || cat "$TMP_ROOT/force.log")"
+check "the build reports 21 files and a clean exit audit" \
+  "$(grep -qF '(21 files, ' "$BUILD_LOG" || echo 'file count is not 21')$(grep -qF 'exit audit clean' "$BUILD_LOG" || echo ' audit not clean')"
 
 # --- tree shape ---------------------------------------------------------------
 EXPECTED="README.md
@@ -109,9 +116,10 @@ references/spec-decomposer-input.md
 references/split-plan-schema.md
 references/ticket-template.md
 references/write-path-templates.md
+scripts/xlsx_render.py
 scripts/xlsx_to_text.py"
 ACTUAL="$(cd "$SKILL_DIR" && find . -type f | sed 's#^\./##' | sort)"
-check "tree holds exactly README.md + SKILL.md + the 17 shipped references + the xlsx converter" \
+check "tree holds exactly README.md + SKILL.md + the 17 shipped references + the xlsx converter and the sheet renderer (21 files)" \
   "$(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
 
 NOT_SHIPPED=""
@@ -417,6 +425,39 @@ for needle in 'structure-aware' '### Notes' '### Shapes' '### Images' '--extract
   grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
 done
 check "the structure-aware workbook reading (notes, shapes, images, layout, media directory) is documented in sources.md, SKILL.md and both READMEs" "$MISSING"
+MISSING=""
+ARGS_PART="$(awk '/^## Argument Parsing$/ {a = 1; next} a && /^## / {a = 0} a' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks
+for needle in '`render=auto|off|excel|soffice`' '[render=auto|off|excel|soffice]' 'ERROR: render= must be auto, off, excel or soffice' 'prose never sets `confirm=yes`, `depth=`, `render=`'; do
+  printf '%s\n' "$ARGS_PART" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+done
+printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- '[render=auto|off|excel|soffice]' || MISSING="$MISSING argument-hint:'render='"
+grep -qF -- 'xlsx_render.py' "$SKILL_MD" || MISSING="$MISSING SKILL.md:'xlsx_render.py'"
+# shellcheck disable=SC2016  # literal braces and backticks
+for needle in '**Sheet rendering (optional)**' 'xlsx_render.py' 'Rendered:' '--only-if-structured "{scratch}/sources/S<n>.md"' '--out "{scratch}/sources/S<n>-render"' 'WARNING: source S<n> (<origin>): no sheet render (<reasons>)' '[transcribed from <pdf|image> by the file-read tool; wording and layout may be incomplete]' "ERROR: source=file:<path>: this host's file-read tool cannot show a <pdf|image> file" '[truncated: source S<n> has <k> pages; pages beyond 40 were not read]' 'not an OCR result' '.xlsx .pdf .png .jpg .jpeg .gif .webp)'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+FILE_TABLE="$(awk '/^## `file:<path>`$/ {f = 1; next} f && /^## / {f = 0} f && /^\|/' "$SOURCES_MD")"
+# shellcheck disable=SC2016  # literal backticks
+printf '%s\n' "$FILE_TABLE" | grep -qE -- '^\| `\.pdf` \|' || MISSING="$MISSING sources-table:'.pdf'"
+# shellcheck disable=SC2016  # literal backticks
+printf '%s\n' "$FILE_TABLE" | grep -qE -- '^\| `\.png`, ' || MISSING="$MISSING sources-table:'.png'"
+# shellcheck disable=SC2016  # literal backticks
+for needle in '### Sheet rendering' '[render=auto|off|excel|soffice]' '`render=auto`' 'scripts/xlsx_render.py' 'Rendered:' '`.docx` sources are not supported' 'no OCR' 'not exercised by the test suite' 'the Windows shell interpreter (powershell.exe)'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+grep -qF -- '.docx` and `.pdf` sources are not supported' "$SKILL_DIR/README.md" && MISSING="$MISSING README.md:'stale .pdf limit'"
+# shellcheck disable=SC2016  # literal backticks
+for needle in 'scripts/xlsx_render.py' 'overrides/scripts-xlsx-render.md' 'render=auto|off|excel|soffice'; do
+  grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
+done
+grep -qxF -- $'scripts/xlsx_render.py\t-' "$MANIFEST_DIR/files.tsv" || MISSING="$MISSING files.tsv:'scripts/xlsx_render.py'"
+HOST_PART="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks
+for needle in 'xlsx_render.py' '`osascript`' 'the Windows shell interpreter (powershell.exe)' '`soffice`' 'approves what it launches' 'is optional'; do
+  printf '%s\n' "$HOST_PART" | grep -qF -- "$needle" || MISSING="$MISSING Host-notes:'$needle'"
+done
+check "render=, the sheet render chain, its Rendered: line and the PDF / image sources are documented in SKILL.md, sources.md and both READMEs" "$MISSING"
 check "Intake precedes Mode dispatch in SKILL.md" \
   "$({ [ -n "$INTAKE_LN" ] && [ -n "$DISPATCH_LN" ] && [ "$INTAKE_LN" -lt "$DISPATCH_LN" ]; } || echo "intake=$INTAKE_LN dispatch=$DISPATCH_LN")"
 check "the evaluator spawn carries nothing from the dossier" \
@@ -625,6 +666,128 @@ PYFIX
   set -e
   check "xlsx converter: a non-zip file and a zip without a workbook exit 2" \
     "$([ "$NOT_ZIP_RC" -eq 2 ] || echo "not-zip rc=$NOT_ZIP_RC")$([ "$NO_WB_RC" -eq 2 ] || echo " no-workbook rc=$NO_WB_RC")"
+  # --- sheet renderer, driven by stand-in renderer programs ------------------
+  # Contract of the stand-ins: the soffice stand-in finds --outdir and the
+  # workbook (its last argument) and writes <outdir>/<stem>.pdf; the
+  # interpreter stand-in of the excel renderer writes a PDF to its LAST
+  # argument (the renderer passes the generated automation script, the
+  # workbook and then the output path, on every platform).
+  RENDER_PY="$SKILL_DIR/scripts/xlsx_render.py"
+  check "the sheet renderer is ASCII-only, backtick-free and starts with a python3 shebang" \
+    "$(head -n 1 "$RENDER_PY" | grep -qx '#!/usr/bin/env python3' || echo 'no shebang')$(grep -n '`' "$RENDER_PY" | head -n 3 || true)$(LC_ALL=C grep -n '[^ -~]' "$RENDER_PY" | head -n 3 || true)"
+  cat >"$FIX_DIR/fake-soffice" <<'FAKE'
+#!/bin/sh
+outdir=""
+wb=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --outdir) outdir="$2"; shift 2 ;;
+    -*) shift ;;
+    *) wb="$1"; shift ;;
+  esac
+done
+base="${wb##*/}"
+printf '%%PDF-1.4\nfake soffice render\n' >"$outdir/${base%.*}.pdf"
+FAKE
+  cat >"$FIX_DIR/fake-excel" <<'FAKE'
+#!/bin/sh
+for last in "$@"; do :; done
+printf '%%PDF-1.4\nfake excel render\n' >"$last"
+FAKE
+  printf '#!/bin/sh\necho boom >&2\nexit 3\n' >"$FIX_DIR/fake-fail"
+  # The hanging stand-in records its own pid and its child's, so the test can
+  # prove the whole process group was killed.
+  cat >"$FIX_DIR/fake-hang" <<'FAKE'
+#!/bin/sh
+sleep 30 &
+echo "$$ $!" >"${HANG_PIDS:-/dev/null}"
+wait
+FAKE
+  cat >"$FIX_DIR/fake-nopdf" <<'FAKE'
+#!/bin/sh
+outdir=""
+prev=""
+last=""
+for a in "$@"; do
+  [ "$prev" = "--outdir" ] && outdir="$a"
+  prev="$a"
+  last="$a"
+done
+if [ -n "$outdir" ]; then
+  base="${last##*/}"
+  printf 'not a pdf\n' >"$outdir/${base%.*}.pdf"
+else
+  printf 'not a pdf\n' >"$last"
+fi
+FAKE
+  chmod +x "$FIX_DIR/fake-soffice" "$FIX_DIR/fake-excel" "$FIX_DIR/fake-fail" "$FIX_DIR/fake-hang" "$FIX_DIR/fake-nopdf"
+  RENDER_OUT="$TMP_ROOT/render-out"
+  FIX_BEFORE="$(cd "$FIX_DIR" && find . | sort)"
+  # render_run ARGS... — runs the renderer; sets R_OUT (stdout + stderr) and R_RC.
+  render_run() {
+    set +e
+    R_OUT="$(python3 -I "$RENDER_PY" "$@" 2>&1)"
+    R_RC=$?
+    set -e
+  }
+  render_run --chain soffice --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: --chain soffice with a stand-in writes <out>/fixture.pdf, creates the directory and prints the success line" \
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by soffice, [0-9]+ bytes, all sheets\)" || echo " line: $R_OUT")$(head -c 4 "$RENDER_OUT/fixture.pdf" 2>/dev/null | grep -qx '%PDF' || echo ' no %PDF file')"
+  render_run --chain excel --excel-cmd "$FIX_DIR/fake-excel" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: --chain excel with an interpreter stand-in renders by excel and a second run overwrites the PDF" \
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by excel, [0-9]+ bytes, all sheets\)" || echo " line: $R_OUT")$(grep -qF 'fake excel render' "$RENDER_OUT/fixture.pdf" || echo ' PDF not overwritten')"
+  render_run --chain excel --excel-cmd "$FIX_DIR/fake-excel" --sheet Backlog --sheet=Grid --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: --sheet names the first selected sheet and says the others were not rendered" \
+    "$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by excel, [0-9]+ bytes, sheet Backlog; other selected sheets not rendered\)" || echo "line: $R_OUT")"
+  render_run --chain auto --excel-cmd "$FIX_DIR/fake-fail" --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: auto falls through a failing excel to soffice and prints only the success line" \
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by soffice, [0-9]+ bytes, all sheets\)" || echo " line: $R_OUT")$([ "$(printf '%s\n' "$R_OUT" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(printf '%s\n' "$R_OUT" | grep -F -e 'excel:' -e 'boom' || true)"
+  render_run --chain auto --excel-cmd "$FIX_DIR/fake-fail" --soffice "$FIX_DIR/fake-fail" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: every renderer failing exits 0 with each exit status and the first line of its error output" \
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxF 'Rendered: no (excel: exit status 3: boom; soffice: exit status 3: boom)' || echo " line: $R_OUT")"
+  HANG_PIDS="$TMP_ROOT/hang.pids"
+  export HANG_PIDS
+  SECONDS=0
+  render_run --chain auto --excel-cmd "$FIX_DIR/fake-hang" --soffice "$FIX_DIR/fake-nopdf" --timeout 1 --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  HANG_SECS=$SECONDS
+  unset HANG_PIDS
+  STRAY=""
+  for pid in $(cat "$TMP_ROOT/hang.pids" 2>/dev/null || true); do
+    if kill -0 "$pid" 2>/dev/null; then STRAY="$STRAY $pid"; kill -9 "$pid" 2>/dev/null || true; fi
+  done
+  check "sheet renderer: a hanging renderer times out (its whole process group killed) and a non-PDF output is refused" \
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxF 'Rendered: no (excel: timed out after 1 s; soffice: no PDF produced)' || echo " line: $R_OUT")$([ "$HANG_SECS" -le 10 ] || echo " took ${HANG_SECS}s")$([ -s "$TMP_ROOT/hang.pids" ] || echo ' the hanging stand-in never ran')$([ -z "$STRAY" ] || echo " stray processes:$STRAY")"
+  PY3="$(command -v python3)"
+  EMPTY_BIN="$TMP_ROOT/empty-bin"
+  mkdir -p "$EMPTY_BIN"
+  set +e
+  NOSOFF_OUT="$(PATH="$EMPTY_BIN" "$PY3" -I "$RENDER_PY" --chain soffice --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx" 2>&1)"
+  set -e
+  if [ -e /Applications/LibreOffice.app/Contents/MacOS/soffice ] || [ -e /usr/bin/soffice ] || [ -e /usr/lib/libreoffice/program/soffice ] || [ -e /snap/bin/libreoffice ]; then
+    pass "sheet renderer: soffice absent from the PATH and the install locations is not installed (skipped: LibreOffice is installed on this host)"
+  else
+    check "sheet renderer: soffice absent from the PATH and the install locations is not installed" \
+      "$(printf '%s\n' "$NOSOFF_OUT" | grep -qxF 'Rendered: no (soffice: not installed)' || echo "line: $NOSOFF_OUT")"
+  fi
+  printf 'Source: S1\n\nno structure here\n' >"$TMP_ROOT/plain.md"
+  python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" >"$TMP_ROOT/structured.md" 2>/dev/null
+  render_run --only-if-structured "$TMP_ROOT/plain.md" --excel-cmd "$FIX_DIR/fake-excel" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  GATE_PLAIN="$R_OUT"
+  render_run --only-if-structured "$TMP_ROOT/structured.md" --excel-cmd "$FIX_DIR/fake-fail" --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  GATE_STRUCT="$R_OUT"
+  render_run --chain soffice --only-if-structured "$TMP_ROOT/plain.md" --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: --only-if-structured skips a converter output without shapes, images, cells layout or merges, unless a renderer is forced" \
+    "$(printf '%s\n' "$GATE_PLAIN" | grep -qxF 'Rendered: no (not structured)' || echo "plain: $GATE_PLAIN")$(printf '%s\n' "$GATE_STRUCT" | grep -q '(by soffice, ' || echo " structured: $GATE_STRUCT")$(printf '%s\n' "$R_OUT" | grep -q '(by soffice, ' || echo " forced: $R_OUT")"
+  render_run --out "$RENDER_OUT" -- "$FIX_DIR/no-such.xlsx"
+  MISSING_RC=$R_RC
+  MISSING_ERR=$R_OUT
+  render_run --chain bogus --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
+  BOGUS_RC=$R_RC
+  render_run --out "" -- "$FIX_DIR/fixture.xlsx"
+  check "sheet renderer: a missing workbook, a bad --chain and an empty --out exit 2 with one line" \
+    "$([ "$MISSING_RC" -eq 2 ] || echo "missing rc=$MISSING_RC")$([ "$(printf '%s\n' "$MISSING_ERR" | wc -l | tr -d ' ')" = 1 ] || echo ' missing: more than one line')$([ "$BOGUS_RC" -eq 2 ] || echo " bogus rc=$BOGUS_RC")$([ "$R_RC" -eq 2 ] || echo " empty-out rc=$R_RC")"
+  check "sheet renderer: nothing is written outside --out, and --out holds only the PDF" \
+    "$(diff <(printf '%s\n' "$FIX_BEFORE") <(cd "$FIX_DIR" && find . | sort) || true)$([ "$(cd "$RENDER_OUT" && find . -mindepth 1 | sort)" = './fixture.pdf' ] || echo " out holds: $(cd "$RENDER_OUT" && find . -mindepth 1 | tr '\n' ' ')")"
 else
   fail "xlsx converter checks" "python3 is not on the PATH"
 fi
