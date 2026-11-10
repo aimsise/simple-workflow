@@ -45,7 +45,7 @@ Hand over your material as it is, repeatable, in any mode ([references/sources.m
 
 | Spec | Reads |
 |---|---|
-| `source=file:<path>` | `.md`, `.markdown`, `.txt`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, or an `.xlsx` workbook read as a workbook (every sheet, or only `?sheet=<name>`; cells addressed by row) |
+| `source=file:<path>` | `.md`, `.markdown`, `.txt`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, or an `.xlsx` workbook read as a workbook (every sheet, or only `?sheet=<name>`; cells addressed by row; line breaks, merged cells, struck-through text and hidden rows and columns marked; notes, shapes and pictures listed under `### Notes`, `### Shapes` and `### Images`; a sheet laid out as a page printed one cell per line) |
 | `source=dir:<path>` | every supported file directly inside the directory |
 | `source=mcp:<server>/<tool>?name=value` | one call of a read-only MCP tool of the session (a wiki page, an issue, a document; illustrative only) |
 | `source=api:<url>` | one HTTP `GET`; `source_auth_env=<VAR>` names the variable holding a bearer token, whose value is never printed |
@@ -110,4 +110,5 @@ A project may edit `references/ticket-template.md` in its own copy of this direc
 - The skill has been exercised end to end on one agent host (a non-interactive run over a workbook sheet and a Markdown file, default destination, every ticket graded PASS); on other hosts the contracts are verified by construction and by a build-time audit.
 - An MCP source tool is judged read-only from its description; a tool that misdescribes itself cannot be detected.
 - `dir:` reads one directory level; `.docx` and `.pdf` sources are not supported.
+- A workbook is read for its cell values and its structure: line breaks, merged ranges, strikethrough, hidden rows and columns, notes and comments, text boxes, callouts and other shapes, and pictures, each saved under the run's `sources/S<n>-media/` directory when the converter can extract it (a picture it cannot extract is still listed, with the reason). The content of a picture is seen only when the host's file-read tool can show an image; otherwise the picture stays a listed gap, and no text is recognized from it. Charts are listed by name only (their data is not read), pivot tables and macros are not read, and no formatting other than strikethrough is kept.
 - `parent=` links new items through the create tool's own parent-link parameter (or the `{parent}` template placeholder); a platform that links only through a separate call after the create is not supported, and the parent item itself is never modified.

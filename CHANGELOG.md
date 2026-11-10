@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.7.0] — 2026-11-10
+
+**TL;DR.** The standalone `create-ticket` skill reads an `.xlsx` source structure-aware: a workbook used as a document (headings and paragraphs in merged cells, notes and callouts, pasted pictures, struck-through finished items, hidden rows) keeps that structure in the source dossier, and every part the converter cannot read is marked. The plugin's own skills, agents and hooks are unchanged.
+
+### Added
+
+- `scripts/xlsx_to_text.py` of the generated skill (still Python standard library only) prints in-cell line breaks as `<br>`, a `[merged c<a>-c<b> rows <x>-<y>]` marker on the top-left cell of a merged range, strikethrough as `~~text~~`, hidden rows and columns as `3 (hidden)` / `c2 (hidden)` (content still printed), and after each sheet's table the sections `### Notes` (legacy and threaded comments with their authors), `### Shapes` (text boxes, callouts, grouped shapes; connectors skipped; charts listed by name only) and `### Images` (name, anchor, media name, byte count). A missing or malformed part leaves a one-line `[unreadable: ...]` marker instead of failing the read.
+- Converter options `--extract-media DIR` (writes each picture to `DIR/<sheet-slug>-<media name>`, numeric suffix on a taken name) and `--layout table|cells|auto` (`auto`, the default, prints a sheet wider than 12 columns and less than 30 percent filled, or one with a merged range of at least 2 rows and 2 columns, as one line per non-empty cell under `## Sheet: <name> (layout: cells)`).
+- The skill's command line passes `--extract-media "{scratch}/sources/S<n>-media"`; `references/sources.md` documents the new output and its line variants, that the `extracted to` path is run-local and never copied into a ticket, and the excerpt rule for Notes / Shapes / Images and `cells` lines; the generated README states what is and is not read (a picture's content only when the host's file-read tool can show an image; charts, pivot tables and macros not read).
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 85 / 85 (67 before; the fixture workbook gains merged ranges, a newline cell, run and cell strikethrough, a hidden row and column, legacy and threaded comments, a drawing with a text box, a group, a connector, a chart and a picture, and a sparse third sheet), `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145; ShellCheck clean at `--severity=warning`.
+
 ## [11.6.1] — 2026-11-10
 
 **TL;DR.** The generator of the standalone `create-ticket` skill is renamed from its historical `copilot` names to `standalone`, matching the host-neutral output it has produced since v11.4.0. Developer-facing paths only; the generated skill is byte-identical.

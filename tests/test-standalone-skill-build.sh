@@ -19,6 +19,10 @@
 #   - the constraint_<key>=off kill-switch tokens are parsed, resolved in the
 #     rubric Terminology and forwarded; the planner gets the ticket template
 #     by path; the new ERROR: literals are present
+#   - the .xlsx converter, run on a fixture workbook built here, prints
+#     values, structure (line breaks, merges, strikethrough, hidden rows and
+#     columns), notes, shapes and images, honours --layout, --extract-media
+#     and every cap, and marks a missing part instead of failing
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -399,6 +403,20 @@ done
 check "the README's template-editing rules name headings the shipped template actually has" "$MISSING"
 check "no ASCII-only path pattern remains for user paths" \
   "$(grep -rn -F -e '^[A-Za-z0-9._~/-]+$' -e '^[A-Za-z0-9._/-]+$' "$SKILL_DIR" | cut -c1-160 || true)"
+MISSING=""
+# shellcheck disable=SC2016  # literal braces
+for needle in '### Notes' '### Shapes' '### Images' '--extract-media' '--layout' '{scratch}/sources/S<n>-media' '(layout: cells)' '[unreadable: ...]' 'can show an image'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+# shellcheck disable=SC2016  # literal braces
+grep -qF -- '{scratch}/sources/S<n>-media/' "$SKILL_MD" || MISSING="$MISSING SKILL.md:'{scratch}/sources/S<n>-media/'"
+for needle in '### Notes' '### Shapes' '### Images' 'S<n>-media' 'can show an image' 'pivot tables and macros are not read'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+for needle in 'structure-aware' '### Notes' '### Shapes' '### Images' '--extract-media' '--layout' 'S<n>-media'; do
+  grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
+done
+check "the structure-aware workbook reading (notes, shapes, images, layout, media directory) is documented in sources.md, SKILL.md and both READMEs" "$MISSING"
 check "Intake precedes Mode dispatch in SKILL.md" \
   "$({ [ -n "$INTAKE_LN" ] && [ -n "$DISPATCH_LN" ] && [ "$INTAKE_LN" -lt "$DISPATCH_LN" ]; } || echo "intake=$INTAKE_LN dispatch=$DISPATCH_LN")"
 check "the evaluator spawn carries nothing from the dossier" \
@@ -411,31 +429,101 @@ if command -v python3 >/dev/null 2>&1; then
   cat >"$FIX_DIR/make_fixture.py" <<'PYFIX'
 import zipfile, sys
 out = sys.argv[1]
+broken = len(sys.argv) > 2 and sys.argv[2] == "--broken"
+SML = "application/vnd.openxmlformats-officedocument.spreadsheetml."
 ct = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'''
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="''' + SML + '''sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="''' + SML + '''worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="''' + SML + '''worksheet+xml"/><Override PartName="/xl/worksheets/sheet3.xml" ContentType="''' + SML + '''worksheet+xml"/><Override PartName="/xl/worksheets/sheet4.xml" ContentType="''' + SML + '''worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="''' + SML + '''sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="''' + SML + '''styles+xml"/><Override PartName="/xl/comments1.xml" ContentType="''' + SML + '''comments+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/><Override PartName="/xl/threadedComments/threadedComment2.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/><Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/></Types>'''
 rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'''
 wb = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Backlog" sheetId="1" r:id="rId1"/><sheet name="Notes" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>'''
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Backlog" sheetId="1" r:id="rId1"/><sheet name="Notes" sheetId="2" state="hidden" r:id="rId2"/><sheet name="Grid" sheetId="3" r:id="rId5"/><sheet name="Wide" sheetId="4" r:id="rId7"/></sheets></workbook>'''
 wbrels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'''
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/><Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/><Relationship Id="rId6" Type="http://schemas.microsoft.com/office/2017/10/relationships/person" Target="persons/person.xml"/></Relationships>'''
 sst = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4"><si><t>ID</t></si><si><t>Title</t></si><si><r><t>Add </t></r><r><rPr><b/></rPr><t>login | form</t></r><rPh sb="0" eb="3"><t>PHONETIC</t></rPh></si><si><t>Due</t></si></sst>'''
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="6" uniqueCount="6"><si><t>ID</t></si><si><t>Title</t></si><si><r><t>Add </t></r><r><rPr><b/></rPr><t>login | form</t></r><rPh sb="0" eb="3"><t>PHONETIC</t></rPh></si><si><t>Due</t></si><si><r><t>keep </t></r><r><rPr><strike/></rPr><t>struck run</t></r><r><rPr><strike val="0"/></rPr><t> plain run</t></r></si><si><r><rPr><b/></rPr><t>bold</t></r><r><rPr><sz val="11"/></rPr><t> word</t></r></si></sst>'''
 styles = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy/mm/dd"/></numFmts><cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/></cellXfs></styleSheet>'''
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy/mm/dd"/></numFmts><fonts count="2"><font><sz val="11"/></font><font><strike/><sz val="11"/></font></fonts><cellXfs count="4"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/><xf numFmtId="0" fontId="1"/></cellXfs></styleSheet>'''
 s1 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
-<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>3</v></c><c r="D1" t="inlineStr"><is><t>Done</t></is></c></row>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><cols><col min="5" max="5" width="0" hidden="1"/></cols><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>3</v></c><c r="D1" t="inlineStr"><is><t>Done</t></is></c><c r="E1" t="inlineStr"><is><t>Owner</t></is></c></row>
 <row r="2"><c r="A2"><v>1</v></c><c r="B2" t="s"><v>2</v></c><c r="C2" s="1"><v>45000</v></c><c r="D2" t="b"><v>1</v></c></row>
 <row r="4"><c r="A4"><v>2.5</v></c><c r="B4" t="str"><f>CONCATENATE("a","b")</f><v>ab</v></c><c r="C4" s="2"><v>45000.5</v></c><c r="D4" t="e"><v>#N/A</v></c></row>
 <row r="5"><c r="A5"><v>3</v></c><c r="BM5"><v>99</v></c></row>
-</sheetData></worksheet>'''
+<row r="6"><c r="A6"><v>4</v></c><c r="B6" t="inlineStr"><is><t xml:space="preserve">first line
+second   line</t></is></c></row>
+<row r="7" hidden="1"><c r="A7"><v>5</v></c><c r="B7" t="inlineStr"><is><t>old version</t></is></c></row>
+<row r="8"><c r="A8"><v>6</v></c><c r="B8" t="s"><v>4</v></c><c r="C8" t="inlineStr" s="3"><is><t>whole cell struck</t></is></c><c r="D8" t="s" s="3"><v>5</v></c><c r="E8" t="s" s="3"><v>4</v></c></row>
+<row r="9"><c r="A9" t="inlineStr"><is><t>Section heading</t></is></c></row>
+</sheetData><mergeCells count="2"><mergeCell ref="A9:C9"/><mergeCell ref="E10:E11"/></mergeCells><drawing r:id="rId2"/></worksheet>'''
+s1rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/><Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment2.xml"/></Relationships>'''
+comments = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>Reviewer A</author></authors><commentList><comment ref="C4" authorId="0"><text><r><t xml:space="preserve">confirm the
+time zone</t></r></text></comment><comment ref="B2" authorId="0"><text><t>needs a spec</t></text></comment><comment ref="E9" authorId="0"><text><t>[Threaded comment] this note is shown as a threaded comment</t></text></comment></commentList></comments>'''
+XDR = 'xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+def frm(tag, col, row):
+    return "<xdr:%s><xdr:col>%d</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>%d</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:%s>" % (tag, col, row, tag)
+def sp(i, name, paras):
+    body = "".join("<a:p><a:r><a:t>%s</a:t></a:r></a:p>" % p for p in paras)
+    return '<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="%d" name="%s"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr/><xdr:txBody><a:bodyPr/>%s</xdr:txBody></xdr:sp>' % (i, name, body)
+drawing = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr %s>' % XDR
+    + "<xdr:twoCellAnchor>" + frm("from", 2, 4) + frm("to", 5, 8) + sp(2, "TextBox 1", ["First paragraph", "Second paragraph"]) + "<xdr:clientData/></xdr:twoCellAnchor>"
+    + '<xdr:oneCellAnchor>' + frm("from", 0, 11) + '<xdr:ext cx="1" cy="1"/><xdr:grpSp><xdr:nvGrpSpPr><xdr:cNvPr id="3" name="Group 2"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr><xdr:grpSpPr/>' + sp(4, "Callout 3", ["Grouped callout"]) + "</xdr:grpSp><xdr:clientData/></xdr:oneCellAnchor>"
+    + "<xdr:oneCellAnchor>" + frm("from", 0, 13) + '<xdr:ext cx="1" cy="1"/>' + sp(8, "Lead 7", ["", "after an empty paragraph"]) + "<xdr:clientData/></xdr:oneCellAnchor>"
+    + "<xdr:oneCellAnchor>" + frm("from", 0, 15) + '<xdr:ext cx="1" cy="1"/><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="9" name="Break 8"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr/><xdr:txBody><a:bodyPr/><a:p><a:r><a:t>ends in a break</a:t></a:r><a:br/></a:p><a:p><a:r><a:t>next paragraph</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:oneCellAnchor>'
+    + "<xdr:twoCellAnchor>" + frm("from", 6, 1) + frm("to", 8, 3) + '<xdr:cxnSp><xdr:nvCxnSpPr><xdr:cNvPr id="5" name="Connector 4"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr/></xdr:cxnSp><xdr:clientData/></xdr:twoCellAnchor>'
+    + "<xdr:twoCellAnchor>" + frm("from", 9, 1) + frm("to", 14, 12) + '<xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id="6" name="Chart 5"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rId2"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>'
+    + "<xdr:twoCellAnchor>" + frm("from", 1, 9) + frm("to", 4, 19) + '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="7" name="Picture 6"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill><xdr:spPr/></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>'
+    + "</xdr:wsDr>")
+drels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>'''
+chart = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart/></c:chartSpace>'''
+png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 62
 s2 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hidden note</t></is></c></row></sheetData></worksheet>'''
+s3 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>Title block</t></is></c><c r="O1" t="inlineStr"><is><t>far right</t></is></c></row>
+<row r="2"><c r="T2" t="inlineStr"><is><t>edge</t></is></c></row>
+<row r="3"><c r="A3" t="inlineStr"><is><t>footer</t></is></c><c r="T3"><v>7</v></c></row>
+</sheetData><mergeCells count="2"><mergeCell ref="A1:B2"/><mergeCell ref="BZ1:CA2"/></mergeCells></worksheet>'''
+# Wide: sparse and wide with no merged range, so only the sparse branch of auto applies.
+s4 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>wide start</t></is></c><c r="O1" t="inlineStr"><is><t>wide middle</t></is></c></row>
+<row r="2"><c r="T2" t="inlineStr"><is><t>wide edge</t></is></c></row>
+</sheetData></worksheet>'''
+# --broken: the drawing member is left out, the hidden sheet relates a drawing
+# whose target climbs out of the package and a threaded comment, the
+# declared persons part is malformed, Backlog declares a legacy drawing whose
+# id its relationship part lacks, and Grid declares a drawing with no
+# relationship part at all; every gap must leave a marker.
+s2rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../../../outside.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/></Relationships>'''
+threaded = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><threadedComment ref="A1" dT="2024-01-01T00:00:00.00" personId="{P1}" id="{T1}"><text>threaded text</text></threadedComment></ThreadedComments>'''
+threaded2 = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><threadedComment ref="E9" dT="2024-01-02T00:00:00.00" personId="{P2}" id="{T2}"><text>threaded body</text></threadedComment></ThreadedComments>'''
+persons = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><person displayName="Pat Person" id="{P2}" userId="pat" providerId="None"/></personList>'''
+if broken:
+    persons = "<personList><person"
+    s1 = s1.replace('<drawing r:id="rId2"/>', '<drawing r:id="rId2"/><legacyDrawing r:id="rId9"/>')
+    s3 = s3.replace("</mergeCells>", '</mergeCells><drawing xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId8"/>')
+    ct = ct.replace("</Types>", '<Override PartName="/xl/threadedComments/threadedComment1.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/></Types>')
+    ct = ct.replace('<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>', "")
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("[Content_Types].xml", ct); z.writestr("_rels/.rels", rels); z.writestr("xl/workbook.xml", wb)
     z.writestr("xl/_rels/workbook.xml.rels", wbrels); z.writestr("xl/sharedStrings.xml", sst); z.writestr("xl/styles.xml", styles)
-    z.writestr("xl/worksheets/sheet1.xml", s1); z.writestr("xl/worksheets/sheet2.xml", s2)
+    z.writestr("xl/worksheets/sheet1.xml", s1); z.writestr("xl/worksheets/sheet2.xml", s2); z.writestr("xl/worksheets/sheet3.xml", s3); z.writestr("xl/worksheets/sheet4.xml", s4)
+    z.writestr("xl/worksheets/_rels/sheet1.xml.rels", s1rels); z.writestr("xl/comments1.xml", comments)
+    z.writestr("xl/threadedComments/threadedComment2.xml", threaded2); z.writestr("xl/persons/person.xml", persons)
+    if broken:
+        z.writestr("xl/worksheets/_rels/sheet2.xml.rels", s2rels); z.writestr("xl/threadedComments/threadedComment1.xml", threaded)
+    else:
+        z.writestr("xl/drawings/drawing1.xml", drawing)
+    z.writestr("xl/drawings/_rels/drawing1.xml.rels", drels); z.writestr("xl/charts/chart1.xml", chart); z.writestr("xl/media/image1.png", png)
 print("fixture written", out)
 PYFIX
   python3 -I "$FIX_DIR/make_fixture.py" "$FIX_DIR/fixture.xlsx" >/dev/null
@@ -448,12 +536,26 @@ PYFIX
     printf '%s\n' "$XLSX_OUT" | grep -qF -- "$needle" || MISSING="$MISSING '$needle'"
   done
   printf '%s\n' "$XLSX_OUT" | grep -qF -- 'PHONETIC' && MISSING="$MISSING 'phonetic rPh run leaked into the cell text'"
+  # The fixture covers: shared / rich / inline strings with a phonetic run,
+  # numbers, dates, booleans, errors and formulas, a hidden sheet, the column
+  # cap, an in-cell line break, two merged ranges (one with an empty top-left
+  # cell), a struck run, a struck cell style (also under runs whose run font
+  # holds no strike element, and under a run whose strike val="0"), a hidden
+  # row and column, a legacy notes part, a threaded comment on a cell whose
+  # legacy note is the threaded placeholder (author from a well-formed persons
+  # part), a drawing (text box, a shape whose first paragraph is empty, a shape
+  # whose paragraph ends in a line break, group,
+  # connector, chart, picture with its media member) and a sparse wide third
+  # sheet with a 2x2 merge. The --broken variant drops
+  # the drawing member, relates a drawing whose target leaves the package and
+  # a threaded comment whose declared persons part is malformed.
   check "xlsx converter: shared / rich / inline strings, numbers, dates, booleans, errors, formulas, hidden sheets and the column cap" "$MISSING"
   XLSX_OUT2="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-rows 2 --max-cols 3 2>/dev/null)"
   MISSING=""
   printf '%s\n' "$XLSX_OUT2" | grep -qF -- '[truncated: sheet Backlog has more than 2 rows; only the first 2 were read]' || MISSING="$MISSING 'row cap marker'"
   printf '%s\n' "$XLSX_OUT2" | grep -qF -- '[truncated: sheet Backlog has columns beyond c3' || MISSING="$MISSING 'column cap marker'"
   printf '%s\n' "$XLSX_OUT2" | grep -qF -- '| 4 |' && MISSING="$MISSING 'row 4 leaked past the cap'"
+  printf '%s\n' "$XLSX_OUT" | grep -qF -- '[truncated: sheet Grid has columns beyond c64' || MISSING="$MISSING 'merged range beyond the column cap not marked'"
   XLSX_OUT3="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 120 2>/dev/null)"
   printf '%s\n' "$XLSX_OUT3" | grep -qF -- '[truncated: output exceeds 120 characters' || MISSING="$MISSING 'char cap marker'"
   check "xlsx converter: every cap is marked, never silent" "$MISSING"
@@ -467,7 +569,56 @@ PYFIX
   [ "$SHEET_RC" -eq 2 ] || MISSING="$MISSING 'unknown sheet rc=$SHEET_RC'"
   printf '%s\n' "$SHEET_ERR" | grep -qF -- 'the workbook has: Backlog, Notes' || MISSING="$MISSING 'unknown sheet does not list the names'"
   check "xlsx converter: --sheet selects one worksheet and an unknown name exits 2 listing the names" "$MISSING"
-  (cd "$FIX_DIR" && python3 -c "import zipfile; zipfile.ZipFile('nowb.zip', 'w').writestr('a.txt', 'x')")
+  # has_all OUT NEEDLE... — prints every NEEDLE missing from OUT (fixed strings).
+  has_all() {
+    local text="$1" n
+    shift
+    for n in "$@"; do printf '%s\n' "$text" | grep -qF -- "$n" || printf " '%s'" "$n"; done
+  }
+  check "xlsx converter: an in-cell line break prints as <br>, other whitespace collapses" \
+    "$(has_all "$XLSX_OUT" '| 6 | 4 | first line<br>second line |')"
+  check "xlsx converter: merged ranges mark their top-left cell, an empty one included" \
+    "$(has_all "$XLSX_OUT" '| 9 | [merged c1-c3] Section heading |  |' '|  | [merged rows 10-11] |')"
+  check "xlsx converter: a struck run and a struck cell style print as ~~text~~ (val=0 is not struck)" \
+    "$(has_all "$XLSX_OUT" '| 8 | 6 | keep ~~struck run~~ plain run | ~~whole cell struck~~ |')"
+  check "xlsx converter: a struck cell style strikes the whole value when its runs carry run fonts without a strike element" \
+    "$(has_all "$XLSX_OUT" '| ~~whole cell struck~~ | ~~bold word~~ |')"
+  check "xlsx converter: a struck cell style strikes the whole value once, a run with strike val=0 included" \
+    "$(has_all "$XLSX_OUT" '| ~~bold word~~ | ~~keep struck run plain run~~ |')"
+  check "xlsx converter: a hidden row and a hidden column are marked and still printed" \
+    "$(has_all "$XLSX_OUT" '| 7 (hidden) | 5 | old version |' '| row | c1 | c2 | c3 | c4 | c5 (hidden) |' '| Done | Owner |')"
+  NOTES_PART="$(printf '%s\n' "$XLSX_OUT" | awk '/^### Notes$/ {n = 1; next} n && /^$/ {exit} n')"
+  check "xlsx converter: ### Notes lists each note with its cell, author and text in row order" \
+    "$(has_all "$XLSX_OUT" '### Notes')$(printf '%s\n' "$NOTES_PART" | sed -n 1p | grep -qxF -- '- c2 row 2 (B2), Reviewer A: needs a spec' || echo ' first note line')$(printf '%s\n' "$NOTES_PART" | sed -n 2p | grep -qxF -- '- c3 row 4 (C4), Reviewer A: confirm the<br>time zone' || echo ' second note line')"
+  check "xlsx converter: a threaded comment replaces the legacy placeholder of its cell and takes its author from the persons part" \
+    "$(printf '%s\n' "$NOTES_PART" | sed -n 3p | grep -qxF -- '- c5 row 9 (E9), Pat Person: threaded body' || echo ' threaded note line')$([ "$(printf '%s\n' "$NOTES_PART" | grep -c .)" = 3 ] || echo ' ### Notes does not hold exactly 3 lines')$(printf '%s\n' "$XLSX_OUT" | grep -F '[Threaded comment]' || true)"
+  SHAPES_PART="$(printf '%s\n' "$XLSX_OUT" | awk '/^### Shapes$/ {n = 1; next} n && /^$/ {exit} n')"
+  check "xlsx converter: ### Shapes lists text boxes, grouped shapes and charts, never connectors" \
+    "$(has_all "$XLSX_OUT" '### Shapes' '- "TextBox 1" at c3 row 5 to c6 row 9: First paragraph<br>Second paragraph' '- "Callout 3" at c1 row 12: Grouped callout' '- chart "Chart 5" at c10 row 2 to c15 row 13: (chart; data not read)' '- "Lead 7" at c1 row 14: <br>after an empty paragraph' '- "Break 8" at c1 row 16: ends in a break<br><br>next paragraph')$(printf '%s\n' "$XLSX_OUT" | grep -F -e 'Connector 4' -e 'at c7 row 2 to c9 row 4' || true)$([ "$(printf '%s\n' "$SHAPES_PART" | grep -c .)" = 5 ] || echo ' ### Shapes does not hold exactly 5 lines')"
+  check "xlsx converter: ### Images lists each picture with its media name and byte count, nothing extracted by default" \
+    "$(has_all "$XLSX_OUT" '### Images' '- "Picture 6" at c2 row 10 to c5 row 20: image1.png (70 bytes)')$(printf '%s\n' "$XLSX_OUT" | grep -F 'extracted to' || true)"
+  XLSX_MEDIA="$(python3 -I "$XLSX_PY" --extract-media "$FIX_DIR/media" -- "$FIX_DIR/fixture.xlsx" 2>&1)"
+  check "xlsx converter: --extract-media writes the image as <sheet-slug>-<media name> and says so" \
+    "$(has_all "$XLSX_MEDIA" "image1.png (70 bytes), extracted to $FIX_DIR/media/Backlog-image1.png")$([ "$(wc -c <"$FIX_DIR/media/Backlog-image1.png" 2>/dev/null | tr -d ' ')" = 70 ] || echo ' media file missing or wrong size')$([ "$(find "$FIX_DIR/media" -type f | wc -l | tr -d ' ')" = 1 ] || echo ' unexpected files in the media dir')"
+  check "xlsx converter: auto picks the cells layout for the sparse wide sheet and keeps the table elsewhere" \
+    "$(has_all "$XLSX_OUT" '## Sheet: Grid (layout: cells)' '- r1 c1 [merged c1-c2 rows 1-2]: Title block' '- r1 c15: far right' '- r2 c20: edge')$(printf '%s\n' "$XLSX_OUT" | grep -qx '## Sheet: Backlog' || echo ' Backlog heading changed')"
+  check "xlsx converter: auto picks cells on either branch alone (a sparse wide sheet without a merge; a narrow sheet with a 2x2 merge)" \
+    "$(has_all "$XLSX_OUT" '## Sheet: Wide (layout: cells)' '- r2 c20: wide edge')$(has_all "$XLSX_OUT2" '## Sheet: Grid (layout: cells)' '- r1 c1 [merged c1-c2 rows 1-2]: Title block')$(printf '%s\n' "$XLSX_OUT2" | grep -qx '## Sheet: Wide' || echo ' narrow Wide not printed as a table')"
+  XLSX_TABLE="$(python3 -I "$XLSX_PY" --layout table --sheet Grid -- "$FIX_DIR/fixture.xlsx" 2>&1)"
+  XLSX_CELLS="$(python3 -I "$XLSX_PY" --layout cells --sheet Backlog -- "$FIX_DIR/fixture.xlsx" 2>&1)"
+  check "xlsx converter: --layout table and --layout cells force the layout" \
+    "$(printf '%s\n' "$XLSX_TABLE" | grep -qx '## Sheet: Grid' || echo ' Grid not forced to table')$(has_all "$XLSX_TABLE" '| 1 | [merged c1-c2 rows 1-2] Title block |')$(has_all "$XLSX_CELLS" '## Sheet: Backlog (layout: cells)' '- r1 c5 (hidden): Owner' '- r7 (hidden) c2: old version' '- r9 c1 [merged c1-c3]: Section heading' '- r10 c5 (hidden) [merged rows 10-11]:')$(printf '%s\n' "$XLSX_CELLS" | grep -F '| row |' || true)"
+  python3 -I "$FIX_DIR/make_fixture.py" "$FIX_DIR/broken.xlsx" --broken >/dev/null
+  set +e
+  XLSX_BROKEN="$(python3 -I "$XLSX_PY" "$FIX_DIR/broken.xlsx" 2>&1)"; BROKEN_RC=$?
+  set -e
+  check "xlsx converter: a drawing relationship to a missing member prints [unreadable: ...] and exits 0" \
+    "$([ "$BROKEN_RC" -eq 0 ] || echo "rc=$BROKEN_RC")$(has_all "$XLSX_BROKEN" '[unreadable: drawing: member xl/drawings/drawing1.xml is missing]' '| 1 | ID | Title | Due | Done |' '### Notes')"
+  check "xlsx converter: a relationship target outside the package and a malformed persons part print [unreadable: ...]" \
+    "$(has_all "$XLSX_BROKEN" '[unreadable: drawing: relationship rId1 target ../../../outside.xml is outside the package]' '[unreadable: persons: cannot parse xl/persons/person.xml]' '- c1 row 1 (A1): threaded text')$(has_all "$XLSX_OUT" '| 1 | hidden note |')$(printf '%s\n' "$XLSX_OUT" | grep -F 'unreadable' || true)"
+  check "xlsx converter: a drawing or legacy drawing the sheet declares without a matching relationship prints [unreadable: ...]" \
+    "$(has_all "$XLSX_BROKEN" '[unreadable: legacy drawing relationship rId9 not found; the notes of the sheet may be missing]' '[unreadable: drawing relationship rId8 not found]')$(printf '%s\n' "$XLSX_BROKEN" | grep -F 'relationship rId2 not found' || true)"
+  (cd "$FIX_DIR"&& python3 -c "import zipfile; zipfile.ZipFile('nowb.zip', 'w').writestr('a.txt', 'x')")
   set +e
   python3 -I "$XLSX_PY" "$FIX_DIR/make_fixture.py" >/dev/null 2>&1; NOT_ZIP_RC=$?
   python3 -I "$XLSX_PY" "$FIX_DIR/nowb.zip" >/dev/null 2>&1; NO_WB_RC=$?
