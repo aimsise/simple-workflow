@@ -91,7 +91,7 @@ load-bearing
 (^|[^-A-Za-z0-9_])plan\.md
 Mandatory Skill Invocations
 upstream brief
-build-copilot-skill
+build-standalone-skill
 Stopped:
 (^|[^/A-Za-z0-9_.-])tools/
 # The ticket draft has no ### Limitations heading

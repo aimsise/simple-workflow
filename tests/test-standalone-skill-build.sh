@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Contract test for tools/build-copilot-skill.sh: the generated, standalone,
+# Contract test for tools/build-standalone-skill.sh: the generated, standalone,
 # host-neutral skill `create-ticket/`.
 #
 # The generated tree is never committed, so this suite builds it into a temp
@@ -30,9 +30,9 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/test-helper.sh"
 export LC_ALL=C
 
-BUILD="$REPO_DIR/tools/build-copilot-skill.sh"
-MANIFEST_DIR="$REPO_DIR/tools/copilot-skill"
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-copilot-skill.XXXXXX")"
+BUILD="$REPO_DIR/tools/build-standalone-skill.sh"
+MANIFEST_DIR="$REPO_DIR/tools/standalone-skill"
+TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-standalone-skill.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 OUT="$TMP_ROOT/out"
 SKILL_DIR="$OUT/create-ticket"
@@ -203,7 +203,7 @@ load-bearing
 (^|[^-A-Za-z0-9_])plan\.md
 Mandatory Skill Invocations
 upstream brief
-build-copilot-skill
+build-standalone-skill
 Stopped:
 (^|[^/A-Za-z0-9_.-])tools/
 Limitations` of your output file
