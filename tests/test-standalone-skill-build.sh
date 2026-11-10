@@ -28,6 +28,10 @@
 #     one, one that writes no PDF), walks its chain, honours --timeout without
 #     leaving a process behind, writes nothing outside --out and reports one
 #     Rendered: line; render=, PDF and image sources are documented
+#   - a platform item URL named in prose is documented as derived api: input
+#     and output (Derived:/Derived from: lines, four new options), the
+#     Usage line stays consistent with the argument-hint, and the Delivery
+#     jq filter and the source_content_path= extraction run on fixtures
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -857,6 +861,99 @@ check "the ticket template carries no P? priority placeholder" \
 check "SKILL.md has no dynamic !\`...\` probe line" "$(grep -n '!`' "$SKILL_MD" || true)"
 check "every shipped agent prompt is frontmatter-free" \
   "$(for f in "$SKILL_DIR"/references/agents/*.md; do [ "$(head -n 1 "$f")" != "---" ] || echo "$f"; done)"
+
+# --- platform item URLs in prose (derived api: input and output) --------------
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks and braces
+for needle in '**Platform item URLs**' 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' '{scratch}/template-derived.json' 'Derived: input from' 'Derived: output from' 'Derived:' 'cannot derive the HTTP API' 'needs a token; re-run with' 'never invents an environment-variable name' 'percent-encoded' 'ERROR: auth_scheme= must be bearer or basic' 'ERROR: source_auth_scheme= must be bearer or basic' 'ERROR: content_type= applies only to an api: destination' 'ERROR: auth_scheme= applies only to an api: destination' 'ERROR: source_content_path= applies only to an api: source' 'ERROR: source_auth_scheme= applies only to an api: source'; do
+  printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+done
+HOST_SECTION="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+printf '%s\n' "$HOST_SECTION" | grep -qF -- 'spells out the tokens to pass' || MISSING="$MISSING SKILL.md-Host-notes:'spells out the tokens to pass'"
+INTAKE_SECTION="$(awk '/^## Intake$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+for needle in 'source_content_path=' 'Derived from:'; do
+  printf '%s\n' "$INTAKE_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Intake:'$needle'"
+done
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+for needle in '### A platform item named by URL in prose' 'source_content_path=' 'source_auth_scheme=basic' 'Derived from: <' 'has no content at <path>' 'cannot derive the HTTP API' "printf 'header = \"Authorization: Basic %s\"\\n' \"\$(printf '%s' \"\$VAR\" | base64 | tr -d '\\n')\" | curl" 'lines 1-7'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+check "the platform-item subsection directly follows the MCP-item subsection in sources.md" \
+  "$(awk '/^##+ / {if (prev == "### An MCP item named in prose") print; prev = $0}' "$SOURCES_MD" | grep -qxF '### A platform item named by URL in prose' || echo 'platform-item subsection is not right after the MCP-item subsection')"
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+for needle in 'content_type=<media type>' 'auth_scheme=bearer|basic' 'ERROR: destination api: unusable content_type <value>' '{scratch}/template-derived.json' 'needs no exception' 'derived from <item URL without query>' '(derived: destination=api:' 'select(contains("{parent}"))' 'Authorization: Basic %s' '-H "Content-Type: <content_type>"'; do
+  grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'"
+done
+# shellcheck disable=SC2016  # literal braces
+grep -qF -- 'select(. == "{parent}")' "$DEST_MD" && MISSING="$MISSING destinations.md:'stale whole-value {parent} test'"
+grep -qF -- 'only the `Bearer` scheme is supported' "$DEST_MD" && MISSING="$MISSING destinations.md:'stale Bearer-only claim'"
+grep -qF -- 'Derived from: <item URL without query>' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Derived from:'"
+grep -qF -- 'seven lines for a source derived from a platform item URL' "$SKILL_DIR/references/spec-decomposer-input.md" || MISSING="$MISSING spec-decomposer-input.md:'seven-line header'"
+for needle in 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' 'Derived:' 'never invented' 'inside a longer string'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+for needle in 'source_content_path=' 'Derived:' 'inside a longer template string'; do
+  grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
+done
+check "platform item URLs in prose: derived api: input and output, the four new options, Derived:/Derived from: lines and their ERROR: literals are documented where they apply" "$MISSING"
+
+# The argument-hint is left as it was (it already omits the per-kind api:
+# options); the Usage line adds the api: option groups. Every other part of
+# the two must stay identical.
+HINT_VALUE="$(printf '%s\n' "$FM" | sed -n 's/^argument-hint: "\(.*\)"$/\1/p')"
+# shellcheck disable=SC2016  # literal backticks
+USAGE_VALUE="$(printf '%s\n' "$ARGS_SECTION" | grep -oE 'print `Usage: /create-ticket [^`]*`' | sed -e 's|^print `Usage: /create-ticket ||' -e 's|`$||')"
+USAGE_STRIPPED="$USAGE_VALUE"
+MISSING=""
+for group in '[source_auth_env=<VAR>]' '[source_auth_scheme=bearer|basic]' '[source_content_path=<jq path>]' '[auth_env=<VAR>]' '[auth_scheme=bearer|basic]' '[template=<path>]' '[id_path=<path>]' '[content_type=<media type>]'; do
+  case "$USAGE_VALUE" in
+    *"$group "*) USAGE_STRIPPED="${USAGE_STRIPPED/"$group "/}" ;;
+    *) MISSING="$MISSING Usage:'$group'" ;;
+  esac
+done
+[ -n "$HINT_VALUE" ] || MISSING="$MISSING argument-hint:missing"
+[ "$USAGE_STRIPPED" = "$HINT_VALUE" ] || MISSING="$MISSING Usage-minus-api-options!=argument-hint:'$USAGE_STRIPPED'"
+check "the Usage line names the api: source and destination options and otherwise equals the argument-hint" "$MISSING"
+
+# Runnable: the Delivery step 3 filter, taken verbatim from the generated
+# destinations.md, substitutes {title}/{body} only as whole values and
+# {parent} inside a longer string, never inside a substituted body.
+JQ_DIR="$TMP_ROOT/jq-fixture"
+mkdir -p "$JQ_DIR"
+DELIVERY_FILTER="$(grep -F "'walk(if . == \"{title}\"" "$DEST_MD" | sed -n "s/^[[:space:]]*'\(walk(.*)\)' \\\\\$/\1/p")"
+if ! command -v jq >/dev/null 2>&1; then
+  fail "the Delivery step 3 jq filter substitutes {parent} inside a string and leaves a body's {parent} text alone" "jq not on PATH"
+  fail "source_content_path= extraction yields the field of a JSON body and nothing for an HTML body" "jq not on PATH"
+else
+  # shellcheck disable=SC2016  # literal braces
+  printf '%s\n' '{"fields":{"t":"{title}","d":"{body}"},"rel":[{"url":"https://example.invalid/items/{parent}"}]}' >"$JQ_DIR/template.json"
+  printf 'Fixture title\n' >"$JQ_DIR/title-0.txt"
+  # shellcheck disable=SC2016  # literal braces
+  printf '%s\n' '## Fixture title' '' 'The body names {parent} and {title} as plain text.' >"$JQ_DIR/body-0.md"
+  JQ_OUT=""
+  JQ_RC=0
+  JQ_OUT="$(jq -c --rawfile title "$JQ_DIR/title-0.txt" --rawfile body "$JQ_DIR/body-0.md" --arg parent "42" "$DELIVERY_FILTER" "$JQ_DIR/template.json" 2>&1)" || JQ_RC=$?
+  DETAIL=""
+  [ -n "$DELIVERY_FILTER" ] || DETAIL="filter not found in destinations.md"
+  [ "$JQ_RC" -eq 0 ] || DETAIL="$DETAIL jq rc=$JQ_RC: $JQ_OUT"
+  # shellcheck disable=SC2016  # literal braces
+  EXPECTED='{"fields":{"t":"Fixture title","d":"## Fixture title\n\nThe body names {parent} and {title} as plain text.\n"},"rel":[{"url":"https://example.invalid/items/42"}]}'
+  [ "$JQ_OUT" = "$EXPECTED" ] || DETAIL="$DETAIL got: $JQ_OUT"
+  check "the Delivery step 3 jq filter substitutes {parent} inside a string and leaves a body's {parent} text alone" "$DETAIL"
+
+  printf '%s\n' '{"id":7,"content":"# Page\nRequirement text"}' >"$JQ_DIR/S1.body"
+  printf '%s\n' '<!DOCTYPE html><html><body>Sign in</body></html>' >"$JQ_DIR/S2.body"
+  printf '%s\n' '{"id":8,"title":"no content field"}' >"$JQ_DIR/S3.body"
+  DETAIL=""
+  JSON_OUT="$(jq -r '.content // empty' "$JQ_DIR/S1.body" 2>/dev/null || true)"
+  [ "$JSON_OUT" = "$(printf '# Page\nRequirement text')" ] || DETAIL="JSON body gave: $JSON_OUT"
+  HTML_RC=0
+  HTML_OUT="$(jq -r '.content // empty' "$JQ_DIR/S2.body" 2>/dev/null)" || HTML_RC=$?
+  [ "$HTML_RC" -ne 0 ] || [ -z "$HTML_OUT" ] || DETAIL="$DETAIL HTML body gave rc=0 and: $HTML_OUT"
+  MISSING_OUT="$(jq -r '.content // empty' "$JQ_DIR/S3.body" 2>/dev/null || true)"
+  [ -z "$MISSING_OUT" ] || DETAIL="$DETAIL JSON body without the field gave: $MISSING_OUT"
+  check "source_content_path= extraction yields the field of a JSON body and nothing for an HTML body" "$DETAIL"
+fi
 
 # --- mutation: the audit is the exit gate ----------------------------------------
 MUT_SRC="$TMP_ROOT/mutated-src"

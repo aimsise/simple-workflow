@@ -12,7 +12,7 @@ When the request carried `source=` tokens (SKILL.md `## Intake`), the caller app
 <the full content of {scratch}/sources/dossier.md, verbatim: the index table, then every normalized source>
 ```
 
-The dossier is defined in `references/sources.md`: each source `S<n>` starts with a six-line header block (`Source: S<n>` is its line 1) and a locator `S<n>:L<a>-L<b>` / `S<n>:L<a>` / `S<n>` names lines of that source.
+The dossier is defined in `references/sources.md`: each source `S<n>` starts with a six-line header block (seven lines for a source derived from a platform item URL, which adds a `Derived from:` line; `Source: S<n>` is its line 1) and a locator `S<n>:L<a>-L<b>` / `S<n>:L<a>` / `S<n>` names lines of that source.
 
 What the section changes:
 
