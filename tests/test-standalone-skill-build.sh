@@ -375,7 +375,7 @@ check "Intake: SKILL.md, sources.md, the decomposer, its input spec, the spawn p
 INTAKE_LN="$(grep -n '^## Intake$' "$SKILL_MD" | cut -d: -f1)"
 DISPATCH_LN="$(grep -n '^## Mode dispatch$' "$SKILL_MD" | cut -d: -f1)"
 MISSING=""
-for needle in '# create-ticket' '## Install' '## Usage' '/create-ticket' 'source=file:' 'destination=' 'SELF-EVALUATED' 'FAIL (user-accepted)' 'confirm=yes' 'scripts/xlsx_to_text.py' '## Limits'; do
+for needle in '# create-ticket' '## Install' '## Usage' '/create-ticket' 'source=file:' 'destination=' 'SELF-EVALUATED' 'FAIL (user-accepted)' 'FAIL (unresolved)' 'confirm=yes' 'scripts/xlsx_to_text.py' '## Limits'; do
   grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
 done
 check "README.md documents install, usage, sources, destinations, verdicts, files and limits" "$MISSING"
@@ -833,8 +833,8 @@ while IFS='|' read -r rel needle; do
 done <<'NEEDLES'
 SKILL.md|ERROR: unknown constraint key <key>
 SKILL.md|ERROR: constraint_<key>= accepts only off
-SKILL.md|ERROR: cannot resolve FAIL gates non-interactively; re-run interactively (draft saved under {scratch})
-references/agent-spawn-prompts.md|ERROR: cannot resolve FAIL gates non-interactively; re-run interactively (draft saved under {scratch})
+SKILL.md|ERROR: cannot resolve FAIL gates non-interactively; re-run interactively, or with confirm=yes to deliver as FAIL (unresolved) (draft saved under {scratch})
+references/agent-spawn-prompts.md|ERROR: cannot resolve FAIL gates non-interactively; re-run interactively, or with confirm=yes to deliver as FAIL (unresolved) (draft saved under {scratch})
 SKILL.md|ERROR: findings frontmatter is missing title
 references/findings-schema.md|ERROR: findings frontmatter is missing title
 references/mode-dispatch-flows.md|ERROR: findings frontmatter is missing title
@@ -850,6 +850,16 @@ SKILL.md|ERROR: unknown destination kind in destination=<spec without query> (ex
 SKILL.md|ERROR: unknown source kind in source=<spec without query> (expected file:, dir:, mcp:, api:, browser: or cli:)
 NEEDLES
 check "the new ERROR: literals are present where they are raised" "$MISSING"
+MISSING=""
+for rel in SKILL.md references/destinations.md references/write-path-templates.md references/agent-spawn-prompts.md references/mode-dispatch-flows.md README.md; do
+  grep -qF -- 'FAIL (unresolved)' "$SKILL_DIR/$rel" || MISSING="$MISSING $rel"
+done
+check "the FAIL (unresolved) verdict of confirm=yes at the exhausted-retry question is documented everywhere verdicts are" "$MISSING"
+# shellcheck disable=SC2016  # literal braces
+check "no stale exhausted-retry ERROR literal (re-run interactively without the confirm=yes route)" \
+  "$(grep -rnF -- 're-run interactively (draft saved under {scratch})' "$SKILL_DIR" | cut -c1-160 || true)"
+check "no stale three-verdict wording (four verdicts exist)" \
+  "$(grep -rnE -- 'three verdicts|Exactly three' "$SKILL_DIR" | cut -c1-160 || true)"
 check "SKILL.md names its role section ## Mandatory role invocations" \
   "$(grep -qx '## Mandatory role invocations' "$SKILL_MD" || echo missing)"
 # shellcheck disable=SC2016  # literal backslashes and brackets
