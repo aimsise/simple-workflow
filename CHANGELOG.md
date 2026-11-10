@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.2] — 2026-11-11
+
+**TL;DR.** The generated standalone `create-ticket` skill now turns a web URL named in prose (the address a person sees in the browser's address bar) into a working read or create through whichever access channel fits the host: an MCP server of the session, the platform's signed-in command-line client, its HTTP API, a browser-automation tool of the session, or a plain `GET`. Derived values may be guessed (every guess is printed before it runs and verified by its outcome, a create by a read probe of the parent item first), a missing sign-in is asked for once or stops with an ERROR that spells out the re-run tokens, and sign-in pages behind a 2xx no longer become the source. The plugin's own skills, agents and hooks are unchanged.
+
+### Added
+
+- `cli:<command>` source and `cli:<command template>` destination (a signed-in command-line client on PATH; placeholders `{title_file}`, `{body_file}`, `{request_file}`, `{parent}`; the command is printed in full and runs behind the host's permission prompt) and `browser:<url>` source and destination (the page's text, or the platform's create form filled and submitted, through a ninth optional tool role, the browser tool). `source_content_path=` also applies to a `cli:` source; `auth_env=`, `template=`, `id_path=` and `parent=` also apply to a `cli:` destination.
+- Platform item URLs in prose: the web URL of an item (a wiki page, a work item; illustrative only) is resolved through the two `api:` adapters with the read endpoint, content field, create endpoint, body template and parent link derived and printed on `Resolved:` / `Derived:` lines before anything runs (`source_content_path=`, `source_auth_scheme=`, `content_type=`, `auth_scheme=` options; `{parent}` may sit inside a longer template string), and now through the other channels too, in a printed candidate order with `Tried:` lines per failed attempt and a `Probe:` line before any create.
+- Authentication at hand is found in order: a named token variable, a signed-in client (one read-only status command whose output line is never recorded), a signed-in browser, then conventional variable names checked only with the set/unset probe (the name used is always printed; a value is never read). A missing sign-in asks one question interactively (sign in with the client or the browser, or name a variable), or stops with `ERROR: ... needs a sign-in to <host>` naming every re-run token.
+
+### Changed
+
+- Prose resolution no longer refuses to guess: the confidence floor (`ERROR: cannot derive the HTTP API ...`) is replaced by the best-guess rule above, and an input statement that resolves two or three ways is read every way instead of asked about (an output statement still asks or stops). A plain `GET` whose body is a sign-in page counts as a failed attempt instead of becoming the source. **Migration**: a run that relied on the old stop passes explicit tokens as before; `confirm=yes` remains the only way to create remotely in a non-interactive run.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 106 / 106 (99 before: platform-URL derivation checks incl. two runnable `jq` tests, every new ERROR literal documented in its raising section, the Error Handling table and the reference file, the `cli:` / `browser:` sections placed after `api:`, the removed literals asserted absent, the Usage line tied to the argument hint); `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145; ShellCheck clean at `--severity=warning`; build exit audit clean (21 files). Untested on this host: a live derivation against a real platform (owed to the deploy host's first run).
+
 ## [11.8.1] — 2026-11-10
 
 **TL;DR.** Two corrections to the generated standalone `create-ticket` skill: its description no longer contradicts itself about when a host may start it (it is invoked only when the request names the skill; no phrase trigger), and the default local destination moves from `.docs/tickets` to `.local/tickets`. The plugin's own skills are unchanged.

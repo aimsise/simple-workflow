@@ -15,7 +15,7 @@
 #     backticked Claude Code tool names
 #   - the AC rubric keeps its Gate headings, Terminology and word count
 #   - SKILL.md carries the host notes, the Delivery section, the destination
-#     argument and the degraded branch; destinations.md defines all three kinds
+#     argument and the degraded branch; destinations.md defines all five kinds
 #   - the constraint_<key>=off kill-switch tokens are parsed, resolved in the
 #     rubric Terminology and forwarded; the planner gets the ticket template
 #     by path; the new ERROR: literals are present
@@ -28,6 +28,13 @@
 #     one, one that writes no PDF), walks its chain, honours --timeout without
 #     leaving a process behind, writes nothing outside --out and reports one
 #     Rendered: line; render=, PDF and image sources are documented
+#   - a platform item URL named in prose is documented as reached through
+#     an access channel (mcp:, cli:, api:, browser:, plain GET) chosen by a
+#     printed best guess (Derived:/Tried:/Probe: lines, the sign-in rule, the
+#     new cli: and browser: kinds and their ERROR: literals in the raising
+#     section, the Error Handling table and the reference file), the Usage
+#     line stays consistent with the argument-hint, and the Delivery jq
+#     filter and the source_content_path= extraction run on fixtures
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -301,11 +308,11 @@ DEST_MD="$SKILL_DIR/references/destinations.md"
 MISSING=""
 for f in "$SKILL_MD" "$DEST_MD"; do
   # shellcheck disable=SC2016  # literal backticks
-  for needle in 'destination=' '`local:' '`mcp:' '`api:'; do
+  for needle in 'destination=' '`local:' '`mcp:' '`api:' '`browser:' '`cli:'; do
     grep -qF -- "$needle" "$f" || MISSING="$MISSING ${f#"$SKILL_DIR"/}:'$needle'"
   done
 done
-check "SKILL.md and destinations.md name destination= and the local:/mcp:/api: kinds" "$MISSING"
+check "SKILL.md and destinations.md name destination= and the local:/mcp:/api:/browser:/cli: kinds" "$MISSING"
 HOST_NOTES="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
 check "Host notes cover the auth_env secret and non-transactional remote creates" \
   "$(printf '%s\n' "$HOST_NOTES" | grep -q 'auth_env' || echo 'no auth_env')$(printf '%s\n' "$HOST_NOTES" | grep -q 'not transactional' || echo ' no non-transactional note')"
@@ -839,7 +846,8 @@ SKILL.md|ERROR: unresolved FAIL gates; the user declined to proceed (draft saved
 references/agent-spawn-prompts.md|ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})
 SKILL.md|ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)
 references/destinations.md|ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)
-SKILL.md|ERROR: unknown destination kind in destination=<spec without query>
+SKILL.md|ERROR: unknown destination kind in destination=<spec without query> (expected local:, mcp:, api:, browser: or cli:)
+SKILL.md|ERROR: unknown source kind in source=<spec without query> (expected file:, dir:, mcp:, api:, browser: or cli:)
 NEEDLES
 check "the new ERROR: literals are present where they are raised" "$MISSING"
 check "SKILL.md names its role section ## Mandatory role invocations" \
@@ -857,6 +865,163 @@ check "the ticket template carries no P? priority placeholder" \
 check "SKILL.md has no dynamic !\`...\` probe line" "$(grep -n '!`' "$SKILL_MD" || true)"
 check "every shipped agent prompt is frontmatter-free" \
   "$(for f in "$SKILL_DIR"/references/agents/*.md; do [ "$(head -n 1 "$f")" != "---" ] || echo "$f"; done)"
+
+# --- platform item URLs in prose (access channels, best guess, sign-in) --------
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+for needle in '**Platform item URLs**' '**access channel**' '**Best guess**' '**Auth**' '**Sign-in rule**' 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' '{scratch}/template-derived.json' 'Derived: input from' 'Derived: output from' 'Derived:' 'Tried: input <item URL without query> via <channel>' 'Probe: output <item URL without query> via <channel>' '**read probe**' 'sign-in page even with a 2xx status' 'once a create has been attempted, nothing falls through' '**re-run tokens**' 'it never reads a value and never prints one' 'the name it uses is always printed on the `Resolved:` line' 'never written into the dossier, a ticket, the Final summary or a spawn prompt' '`source=cli:<command>`' '`source=browser:<item URL>`' '`destination=cli:<command template>`' '`destination=browser:<item URL>`' 'read every way instead of being asked about' 'percent-encoded' 'A `cli:` command (a source or a destination template, typed or derived) is exempt' 'ERROR: auth_scheme= must be bearer or basic' 'ERROR: source_auth_scheme= must be bearer or basic' 'ERROR: content_type= applies only to an api: destination' 'ERROR: auth_scheme= applies only to an api: destination' 'ERROR: source_auth_scheme= applies only to an api: source'; do
+  printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+done
+HOST_SECTION="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks and dollars
+for needle in 'spells out the tokens to pass' 'the **browser tool**' 'never required' 'no `browser:` channel is ever a candidate' 'with one carve-out: a `cli:` command, typed or derived, runs as given and is printed in full before it runs' '`$VAR` references are allowed' 'control characters and newlines are refused' 'may name an account'; do
+  printf '%s\n' "$HOST_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Host-notes:'$needle'"
+done
+# shellcheck disable=SC2016  # literal backticks
+printf '%s\n' "$HOST_SECTION" | grep -qF -- 'any other role except the URL-fetch tool → `ERROR: this host offers no <role>`' || MISSING="$MISSING SKILL.md-Host-notes:'browser tool exempt from the missing-role ERROR'"
+INTAKE_SECTION="$(awk '/^## Intake$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks
+for needle in 'source_content_path=' 'Derived from:' '`cli:` by one run of the command' '`browser:` by the browser tool' 'Tried:' 'a `cli:` command'"'"'s first word'; do
+  printf '%s\n' "$INTAKE_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Intake:'$needle'"
+done
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+for needle in '### A platform item named by URL in prose' '## `cli:<command>`' '## `browser:<url>`' 'source_content_path=' 'source_auth_scheme=basic' 'Derived from: <' 'has no content at <path>' '**A sign-in page is a failed read.**' 'Tried: input <item URL without query> via <channel>' 'Kind: file | dir | mcp | api | cli | browser' 'A value that begins with `cli:` is always one spec' 'never a transcription of a screenshot' "printf 'header = \"Authorization: Basic %s\"\\n' \"\$(printf '%s' \"\$VAR\" | base64 | tr -d '\\n')\" | curl" 'lines 1-7'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+check "the platform-item subsection directly follows the MCP-item subsection in sources.md" \
+  "$(awk '/^##+ / {if (prev == "### An MCP item named in prose") print; prev = $0}' "$SOURCES_MD" | grep -qxF '### A platform item named by URL in prose' || echo 'platform-item subsection is not right after the MCP-item subsection')"
+# shellcheck disable=SC2016  # literal backticks
+check "the cli: and browser: sections follow the api: section, in that order, in both reference files" \
+  "$(for f in "$SOURCES_MD" "$DEST_MD"; do seq_="$(grep -E '^## `(api|cli|browser):' "$f" | sed -E 's/^## `([a-z]+):.*/\1/' | tr '\n' ' ')"; [ "$seq_" = 'api cli browser ' ] || printf ' %s:%s' "${f##*/}" "$seq_"; done)"
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+for needle in 'content_type=<media type>' 'auth_scheme=bearer|basic' 'ERROR: destination api: unusable content_type <value>' '{scratch}/template-derived.json' 'needs no exception' 'derived from <item URL without query>: via api' '(derived: destination=api:' '(derived: destination="cli:' '(derived: destination=browser:' 'select(contains("{parent}"))' 'Authorization: Basic %s' '-H "Content-Type: <content_type>"' '## `cli:<command template>`' '## `browser:<url>`' '`{title_file}`' '`{body_file}`' '`{request_file}`' 'plain text substitution' 'Probe: output <item URL without query> via api:' 'jq empty' 'form-driven create is fragile' 'never fall through to another access channel once a create was attempted' 'no identifier in the output; the item may exist' 'no identifier on the page after submit; the item may exist' 'Never submit a form again for that ticket'; do
+  grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'"
+done
+# shellcheck disable=SC2016  # literal braces
+grep -qF -- 'select(. == "{parent}")' "$DEST_MD" && MISSING="$MISSING destinations.md:'stale whole-value {parent} test'"
+grep -qF -- 'only the `Bearer` scheme is supported' "$DEST_MD" && MISSING="$MISSING destinations.md:'stale Bearer-only claim'"
+grep -qF -- 'Derived from: <item URL without query>' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Derived from:'"
+grep -qF -- 'seven lines for a source derived from a platform item URL' "$SKILL_DIR/references/spec-decomposer-input.md" || MISSING="$MISSING spec-decomposer-input.md:'seven-line header'"
+# shellcheck disable=SC2016  # literal backticks
+for needle in 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' 'Derived:' 'Tried:' 'Probe:' 'never read or printed' 'inside a longer string' 'source="cli:<command>"' '`source=browser:<url>`' '`cli:<command>`' '`browser:<url>`' 'browser-automation tool' 'form-driven creates are fragile; the orchestrator prefers a client or an API when either exists' 'A typed `cli:` command is your own'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+for needle in 'source_content_path=' 'Derived:' 'inside a longer template string' 'Tried:' 'Probe:' 'nine roles' 'the browser tool (optional, never required)'; do
+  grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
+done
+# shellcheck disable=SC2016  # literal backticks
+printf '%s\n' "$DESC" | grep -qF -- 'a signed-in command-line' || MISSING="$MISSING description:'signed-in command-line client'"
+printf '%s\n' "$DESC" | grep -qF -- 'browser-automation tool of the session' || MISSING="$MISSING description:'browser-automation tool of the session'"
+# The confidence floor and the never-invent rule are replaced by the best
+# guess and the set/unset name probe; their literals must be gone everywhere.
+STALE_HITS="$(grep -rnF -e 'cannot derive the HTTP API' -e 'never invents an environment-variable name' -e '**Confidence floor**' -e 'needs a token; re-run with' -e 'needs a token`' "$SKILL_DIR" | cut -c1-160 || true)"
+[ -z "$STALE_HITS" ] || MISSING="$MISSING stale:$STALE_HITS"
+check "platform item URLs in prose: access channels, best guess with Tried:/Probe: lines, the sign-in rule, the cli: and browser: kinds and the derived api: options are documented where they apply" "$MISSING"
+
+# Every ERROR: literal the access-channel feature added appears identically in
+# the section of SKILL.md that raises it (a = Argument Parsing), in the Error
+# Handling table (e) and in the reference file that defines it (s = sources.md,
+# d = destinations.md).
+ERR_SECTION="$(awk '/^## Error Handling$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+MISSING=""
+while IFS='|' read -r where needle; do
+  case "$where" in *a*) printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Argument-Parsing:'$needle'" ;; esac
+  case "$where" in *e*) printf '%s\n' "$ERR_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Error-Handling:'$needle'" ;; esac
+  case "$where" in *s*) grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'" ;; esac
+  case "$where" in *d*) grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'" ;; esac
+done <<'CHANNEL_ERRORS'
+aes|ERROR: could not read <item URL without query> (tried: <channel>: <outcome>; ...); sign in to <host> with the platform's command-line client or the browser, or re-run with <re-run tokens>
+ae|ERROR: output <item URL without query>: the derived <channel> could not reach the parent item (<outcome>); nothing created; pass <re-run tokens>
+d|could not reach the parent item (<outcome>); nothing created; pass <re-run tokens>
+aes|needs a sign-in to <host>: sign in with the platform's command-line client or the browser, or re-run with <re-run tokens, with source_auth_env=<VAR> or auth_env=<VAR> to fill in>
+aes|ERROR: this host offers no browser tool; pass source=api:<url> or source=cli:<command>
+aed|ERROR: this host offers no browser tool; pass destination=api:<url> or destination=cli:<command>
+aes|ERROR: source cli: a credential in the command line; use $VAR
+aed|ERROR: destination cli: a credential in the command line; use $VAR
+aed|ERROR: destination cli: unusable command template (<rule>)
+ae|ERROR: parent= applies only to an mcp:, api:, browser: or cli: destination
+ae|ERROR: auth_env=, template= and id_path= apply only to an api: or cli: destination
+ae|ERROR: source_content_path= applies only to an api: or cli: source
+ae|(expected local:, mcp:, api:, browser: or cli:)
+ae|(expected file:, dir:, mcp:, api:, browser: or cli:)
+es|ERROR: source api:<url without query string> returned a sign-in page, not the content; sign in with the platform's command-line client or the browser, or re-run with source_auth_env=<VAR>
+es|ERROR: source cli: <first word> is not on PATH
+es|ERROR: source cli:<command> failed (exit <n>: <first line of the error output, at most 200 characters>)
+es|ERROR: source cli:<command> returned no content
+es|ERROR: source cli:<command> has no content at <path>
+es|ERROR: source browser:<url without query string> could not be read (<first line of the error, at most 200 characters>)
+es|ERROR: source browser:<url without query string> returned no content
+ed|ERROR: destination cli: <first word> is not on PATH
+ed|ERROR: destination cli: the probe <probe command> failed (exit <n>); nothing created
+ed|ERROR: destination cli: the command template names none of {title_file}, {body_file} or {request_file}
+ed|ERROR: destination cli: {request_file} needs jq 1.6 or later on PATH
+ed|ERROR: destination cli: parent= needs a {parent} placeholder in the command template or its template=
+ed|ERROR: destination cli: the command template uses {parent} but no parent= was given
+ed|ERROR: destination cli: environment variable <VAR> is not set
+ed|ERROR: destination browser:<url without query string>: no create form with a title and a body field (<outcome>)
+CHANNEL_ERRORS
+check "every ERROR: literal of the access channels appears identically where it is raised, in the Error Handling table and in its reference file" "$MISSING"
+
+# The argument-hint omits the per-kind api: and cli: options; the Usage line
+# adds those option groups. Every other part of the two must stay identical,
+# the five destination kinds included.
+HINT_VALUE="$(printf '%s\n' "$FM" | sed -n 's/^argument-hint: "\(.*\)"$/\1/p')"
+# shellcheck disable=SC2016  # literal backticks
+USAGE_VALUE="$(printf '%s\n' "$ARGS_SECTION" | grep -oE 'print `Usage: /create-ticket [^`]*`' | sed -e 's|^print `Usage: /create-ticket ||' -e 's|`$||')"
+USAGE_STRIPPED="$USAGE_VALUE"
+MISSING=""
+for group in '[source_auth_env=<VAR>]' '[source_auth_scheme=bearer|basic]' '[source_content_path=<jq path>]' '[auth_env=<VAR>]' '[auth_scheme=bearer|basic]' '[template=<path>]' '[id_path=<path>]' '[content_type=<media type>]'; do
+  case "$USAGE_VALUE" in
+    *"$group "*) USAGE_STRIPPED="${USAGE_STRIPPED/"$group "/}" ;;
+    *) MISSING="$MISSING Usage:'$group'" ;;
+  esac
+done
+[ -n "$HINT_VALUE" ] || MISSING="$MISSING argument-hint:missing"
+[ "$USAGE_STRIPPED" = "$HINT_VALUE" ] || MISSING="$MISSING Usage-minus-api-options!=argument-hint:'$USAGE_STRIPPED'"
+DEST_GROUP='[destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | browser:<url> | cli:<command>]'
+case "$HINT_VALUE" in *"$DEST_GROUP"*) ;; *) MISSING="$MISSING argument-hint:'$DEST_GROUP'" ;; esac
+case "$USAGE_VALUE" in *"$DEST_GROUP"*) ;; *) MISSING="$MISSING Usage:'$DEST_GROUP'" ;; esac
+check "the Usage line names the api: source and destination options, both name the five destination kinds, and the two are otherwise equal" "$MISSING"
+
+# Runnable: the Delivery step 3 filter, taken verbatim from the generated
+# destinations.md, substitutes {title}/{body} only as whole values and
+# {parent} inside a longer string, never inside a substituted body.
+JQ_DIR="$TMP_ROOT/jq-fixture"
+mkdir -p "$JQ_DIR"
+DELIVERY_FILTER="$(grep -F "'walk(if . == \"{title}\"" "$DEST_MD" | sed -n "s/^[[:space:]]*'\(walk(.*)\)' \\\\\$/\1/p")"
+if ! command -v jq >/dev/null 2>&1; then
+  fail "the Delivery step 3 jq filter substitutes {parent} inside a string and leaves a body's {parent} text alone" "jq not on PATH"
+  fail "source_content_path= extraction yields the field of a JSON body and nothing for an HTML body" "jq not on PATH"
+else
+  # shellcheck disable=SC2016  # literal braces
+  printf '%s\n' '{"fields":{"t":"{title}","d":"{body}"},"rel":[{"url":"https://example.invalid/items/{parent}"}]}' >"$JQ_DIR/template.json"
+  printf 'Fixture title\n' >"$JQ_DIR/title-0.txt"
+  # shellcheck disable=SC2016  # literal braces
+  printf '%s\n' '## Fixture title' '' 'The body names {parent} and {title} as plain text.' >"$JQ_DIR/body-0.md"
+  JQ_OUT=""
+  JQ_RC=0
+  JQ_OUT="$(jq -c --rawfile title "$JQ_DIR/title-0.txt" --rawfile body "$JQ_DIR/body-0.md" --arg parent "42" "$DELIVERY_FILTER" "$JQ_DIR/template.json" 2>&1)" || JQ_RC=$?
+  DETAIL=""
+  [ -n "$DELIVERY_FILTER" ] || DETAIL="filter not found in destinations.md"
+  [ "$JQ_RC" -eq 0 ] || DETAIL="$DETAIL jq rc=$JQ_RC: $JQ_OUT"
+  # shellcheck disable=SC2016  # literal braces
+  EXPECTED='{"fields":{"t":"Fixture title","d":"## Fixture title\n\nThe body names {parent} and {title} as plain text.\n"},"rel":[{"url":"https://example.invalid/items/42"}]}'
+  [ "$JQ_OUT" = "$EXPECTED" ] || DETAIL="$DETAIL got: $JQ_OUT"
+  check "the Delivery step 3 jq filter substitutes {parent} inside a string and leaves a body's {parent} text alone" "$DETAIL"
+
+  printf '%s\n' '{"id":7,"content":"# Page\nRequirement text"}' >"$JQ_DIR/S1.body"
+  printf '%s\n' '<!DOCTYPE html><html><body>Sign in</body></html>' >"$JQ_DIR/S2.body"
+  printf '%s\n' '{"id":8,"title":"no content field"}' >"$JQ_DIR/S3.body"
+  DETAIL=""
+  JSON_OUT="$(jq -r '.content // empty' "$JQ_DIR/S1.body" 2>/dev/null || true)"
+  [ "$JSON_OUT" = "$(printf '# Page\nRequirement text')" ] || DETAIL="JSON body gave: $JSON_OUT"
+  HTML_RC=0
+  HTML_OUT="$(jq -r '.content // empty' "$JQ_DIR/S2.body" 2>/dev/null)" || HTML_RC=$?
+  [ "$HTML_RC" -ne 0 ] || [ -z "$HTML_OUT" ] || DETAIL="$DETAIL HTML body gave rc=0 and: $HTML_OUT"
+  MISSING_OUT="$(jq -r '.content // empty' "$JQ_DIR/S3.body" 2>/dev/null || true)"
+  [ -z "$MISSING_OUT" ] || DETAIL="$DETAIL JSON body without the field gave: $MISSING_OUT"
+  check "source_content_path= extraction yields the field of a JSON body and nothing for an HTML body" "$DETAIL"
+fi
 
 # --- mutation: the audit is the exit gate ----------------------------------------
 MUT_SRC="$TMP_ROOT/mutated-src"
