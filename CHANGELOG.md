@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.1] — 2026-11-10
+
+**TL;DR.** Two corrections to the generated standalone `create-ticket` skill: its description no longer contradicts itself about when a host may start it (it is invoked only when the request names the skill; no phrase trigger), and the default local destination moves from `.docs/tickets` to `.local/tickets`. The plugin's own skills are unchanged.
+
+### Changed
+
+- Generated `SKILL.md` description: the former text opened with "Only invoke when called by name" and then listed a name-free trigger ("(2) user provides description ...") plus `Triggers on "create a ticket", "draft a ticket"`. It now states one rule: invoke only when the request names the skill (`/create-ticket` or the host's own by-name form) with its input as tokens or prose after the name; a request about tickets that does not name the skill is never a trigger. No host-specific frontmatter key is added (the generated skill stays on the Agent Skills contract); on a host that offers a mechanical switch, set it in the copied `SKILL.md`.
+- Default destination of the generated skill: absent `destination=` → `local:.local/tickets` (was `local:.docs/tickets`), stated in Argument Parsing, `references/destinations.md`, Delivery, the Final summary examples and both READMEs. **Migration**: a run that relied on the old default passes `destination=local:.docs/tickets`; existing files are not moved.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 99 / 99 (98 before; new check: the description carries the name-only rule and neither the phrase trigger nor the "(2) user" clause; the default-destination needle follows the new path, and the built skill contains no `.docs` mention).
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck clean at `--severity=warning`, build exit audit clean (21 files).
+
 ## [11.8.0] — 2026-11-10
 
 **TL;DR.** The standalone `create-ticket` skill can render an `.xlsx` source to PDF through a spreadsheet application or LibreOffice installed on the host (`render=auto|off|excel|soffice`, optional, never required, no window shown, the workbook never modified) so a role can look at a sheet used as a page, and it accepts `.pdf` and image files as sources, transcribed through the host's file-read tool (no OCR). The real renderer branches are written by construction: this release's test suite drives the render script with stand-in programs only, so a first run on a host with the application installed is owed. The plugin's own skills, agents and hooks are unchanged.

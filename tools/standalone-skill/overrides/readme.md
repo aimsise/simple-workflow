@@ -70,7 +70,7 @@ The render is optional and never required: unless `render=off`, the source's dos
 
 ### Destinations (`destination=`)
 
-Default `local:.docs/tickets` ([references/destinations.md](references/destinations.md)):
+Default `local:.local/tickets` ([references/destinations.md](references/destinations.md)):
 
 | Spec | Result |
 |---|---|

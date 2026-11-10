@@ -11,9 +11,9 @@ End the run with this block as its last output. `Destination` is the destination
 ```
 ### Final summary
 
-Destination: local:.docs/tickets
+Destination: local:.local/tickets
 Scratch: .create-ticket-scratch/run.k3Qz9a
-Ticket: .docs/tickets/{parent-slug}/005-foo/ticket.md
+Ticket: .local/tickets/{parent-slug}/005-foo/ticket.md
 Category: CodeQuality | Size: M | ACs: 3 | Verdict: PASS
 ```
 
@@ -22,16 +22,16 @@ Category: CodeQuality | Size: M | ACs: 3 | Verdict: PASS
 ```
 ### Final summary
 
-Destination: local:.docs/tickets
+Destination: local:.local/tickets
 Scratch: .create-ticket-scratch/run.k3Qz9a
 
 | # | Ticket | Category | Size | ACs | Verdict |
 |---|--------|----------|------|-----|---------|
-| 1 | .docs/tickets/{parent-slug}/005-foo/ticket.md | CodeQuality | M | 3 | PASS |
-| 2 | .docs/tickets/{parent-slug}/006-bar/ticket.md | CodeQuality | S | 2 | PASS |
+| 1 | .local/tickets/{parent-slug}/005-foo/ticket.md | CodeQuality | M | 3 | PASS |
+| 2 | .local/tickets/{parent-slug}/006-bar/ticket.md | CodeQuality | S | 2 | PASS |
 
 Dependency order: {parent-slug}-part-1 (T-005) → {parent-slug}-part-2 (T-006)
-Split plan: .docs/tickets/{parent-slug}/split-plan.md
+Split plan: .local/tickets/{parent-slug}/split-plan.md
 ```
 
 For an `mcp:` or `api:` destination the `Ticket` column holds identifiers, the dependency order names them, and there is no `Split plan:` line.

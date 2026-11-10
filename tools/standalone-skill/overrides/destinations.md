@@ -4,7 +4,7 @@ mode: append
 ---
 # Destinations
 
-`destination=<spec>` selects where Delivery (`SKILL.md` `## Delivery`) puts the tickets. Producing the tickets (Phases 1-4, the four roles, the rubric) is identical for every destination; only Delivery differs. Absent `destination=` → `local:.docs/tickets`.
+`destination=<spec>` selects where Delivery (`SKILL.md` `## Delivery`) puts the tickets. Producing the tickets (Phases 1-4, the four roles, the rubric) is identical for every destination; only Delivery differs. Absent `destination=` → `local:.local/tickets`.
 
 | Kind | Spec | What records the run |
 |---|---|---|
