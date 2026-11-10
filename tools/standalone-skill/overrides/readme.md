@@ -11,14 +11,14 @@ This directory is generated; `SKILL.md` and everything under `references/` and `
 ## Install
 
 1. Copy this directory, keeping its name `create-ticket`, into the skill root your agent host reads: `.github/skills/`, `.claude/skills/` or `.agents/skills/` inside the project (project-wide), or the host's personal skill root under your home directory (every project).
-2. Nothing else is required: no package, no configuration file, no custom agent definition. Python 3 on the shell is needed only when an `.xlsx` source is passed. Each run keeps its investigation, source dossier, drafts and evaluator reports under `.create-ticket-scratch/run.<id>/` inside the working directory (added to `.gitignore` when that is a git repository) and deletes nothing.
+2. Nothing else is required: no package, no configuration file, no custom agent definition. Python 3 on the shell is needed only when an `.xlsx` source is passed; a spreadsheet application or LibreOffice on the host is never required (it only enables the optional sheet render). Each run keeps its investigation, source dossier, drafts and evaluator reports under `.create-ticket-scratch/run.<id>/` inside the working directory (added to `.gitignore` when that is a git repository) and deletes nothing.
 3. Invoke it by name, `/create-ticket`, followed by the input: tokens, or plain prose in any language saying what to read and where to deliver (the skill prints a `Resolved:` line with its reading before it runs). The skill never starts on its own.
 
 ## What the host must offer
 
 Any agent host that loads `SKILL.md` skills and provides a file-read, a file-write, a file-edit, text and file-pattern search, a POSIX shell and a subagent tool; an ask-user tool is used when present. The skill names those tools by role, never by a product's tool name, and resolves each role to the host's own tool before it starts (`SKILL.md`, Host notes, Tool roles). Without a subagent tool the skill still runs, inline, and marks every verdict `SELF-EVALUATED` so the loss of evaluator independence is visible; without an ask-user tool it runs non-interactively and records its assumptions in the tickets.
 
-Every shell command goes through the host's own permission prompt; the skill declares no pre-approved tool. Approve only the commands the steps name (`date`, `mktemp`, `mkdir`, `ls`, `mv`, `printf`, `git`, `command`, `curl`, `jq`, `python3` or its fallback `python` for a workbook, and the shell builtins `[`, `echo` and `case` of the variable probes).
+Every shell command goes through the host's own permission prompt; the skill declares no pre-approved tool. Approve only the commands the steps name (`date`, `mktemp`, `mkdir`, `ls`, `mv`, `printf`, `git`, `command`, `curl`, `jq`, `python3` or its fallback `python` for a workbook, and the shell builtins `[`, `echo` and `case` of the variable probes). The optional sheet render runs as one `python3` command that launches `osascript`, the Windows shell interpreter (powershell.exe) or `soffice`; approving that command approves what it launches.
 
 ## Usage
 
@@ -26,7 +26,8 @@ Every shell command goes through the host's own permission prompt; the skill dec
 /create-ticket <ticket description> | brief=<path> | findings=<path>
                [source=<spec> ...]
                [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url>] [parent=<id>]
-               [confirm=yes] [depth=<tier>] [constraint_<key>=off]
+               [confirm=yes] [depth=<tier>] [render=auto|off|excel|soffice]
+               [constraint_<key>=off]
 ```
 
 Three input modes, exactly one at a time:
@@ -45,8 +46,8 @@ Hand over your material as it is, repeatable, in any mode ([references/sources.m
 
 | Spec | Reads |
 |---|---|
-| `source=file:<path>` | `.md`, `.markdown`, `.txt`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, or an `.xlsx` workbook read as a workbook (every sheet, or only `?sheet=<name>`; cells addressed by row; line breaks, merged cells, struck-through text and hidden rows and columns marked; notes, shapes and pictures listed under `### Notes`, `### Shapes` and `### Images`; a sheet laid out as a page printed one cell per line) |
-| `source=dir:<path>` | every supported file directly inside the directory |
+| `source=file:<path>` | `.md`, `.markdown`, `.txt`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, or an `.xlsx` workbook read as a workbook (every sheet, or only `?sheet=<name>`; cells addressed by row; line breaks, merged cells, struck-through text and hidden rows and columns marked; notes, shapes and pictures listed under `### Notes`, `### Shapes` and `### Images`; a sheet laid out as a page printed one cell per line; optionally also rendered to PDF, `### Sheet rendering`), a `.pdf` file or a `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp` image (transcribed by the orchestrator through the host's file-read tool, which must be able to show it; no OCR) |
+| `source=dir:<path>` | every supported file directly inside the directory, PDFs and images included |
 | `source=mcp:<server>/<tool>?name=value` | one call of a read-only MCP tool of the session (a wiki page, an issue, a document; illustrative only) |
 | `source=api:<url>` | one HTTP `GET`; `source_auth_env=<VAR>` names the variable holding a bearer token, whose value is never printed |
 
@@ -57,6 +58,15 @@ Writing several sources and leaving out the kind:
 - **In prose**: "read a.md and the sheet Open items of b.xlsx" needs no kind at all. An item reachable through an MCP server may be named by its title or its link: the skill picks the server and its read tool, passes the link when the tool takes one, and otherwise makes one read-only search call and uses the item only when exactly one result matches; otherwise it asks, or stops in a non-interactive run. A URL in prose is fetched with a plain `GET` unless the statement says to read it through an MCP server.
 
 Everything is normalized into a source dossier before any ticket is drafted. The decomposer role decides whether one source (a backlog sheet, a numbered list; illustrative only) enumerates the work units, in which case they map to tickets one-to-one, or whether every source is context; the Final summary reports that decision as `Partition basis`, and every ticket's Background ends with a `Sources:` line naming the lines it drew on. Caps: 60,000 characters per source (truncation is marked), 150,000 in total, 50 sources. With `brief=` or `findings=` the sources are context only.
+
+### Sheet rendering
+
+A workbook used as a page (callouts pointing at cells, pasted screenshots, merged headings; illustrative only) loses its visual arrangement in text, so `render=` adds an optional PDF render of it, which a role may open when the host's file-read tool can show a PDF:
+
+- `render=auto` (default): a workbook whose text shows shapes, pictures, merged cells or a page layout is rendered by the first renderer the host has: a spreadsheet application driven through its automation interface without a window and without saving (`osascript` on macOS, the Windows shell interpreter (powershell.exe) on Windows), then LibreOffice (`soffice`, headless); a workbook without such structure, or a host with neither renderer, gets no render.
+- `render=excel` or `render=soffice`: always render every workbook with that one renderer; `render=off`: never render.
+
+The render is optional and never required: unless `render=off`, the source's dossier text ends with a `Rendered:` line saying where the PDF is and which renderer made it, or why there is none; when a renderer was tried and none produced a PDF, the run continues with a `WARNING:` (a workbook `render=auto` skips for lack of structure, or any workbook under `render=off`, gets no warning). The workbook is never modified (the renderer gets a private copy, opened read-only), and the PDF stays in the run's scratch directory.
 
 ### Destinations (`destination=`)
 
@@ -104,11 +114,13 @@ A project may edit `references/ticket-template.md` in its own copy of this direc
 | `references/brief-template.md`, `references/findings-schema.md`, `references/ticket-template.md`, `references/split-plan-schema.md` | the input and output formats |
 | `references/agent-spawn-prompts.md`, `references/mode-dispatch-flows.md`, `references/spec-decomposer-input.md`, `references/write-path-templates.md`, `references/interview-templates.md` | the step-by-step contracts the orchestration follows |
 | `scripts/xlsx_to_text.py` | the workbook reader for `.xlsx` sources (Python 3 standard library only) |
+| `scripts/xlsx_render.py` | the optional sheet render of an `.xlsx` source to PDF through a spreadsheet application or LibreOffice on the host (Python 3 standard library only) |
 
 ## Limits
 
 - The skill has been exercised end to end on one agent host (a non-interactive run over a workbook sheet and a Markdown file, default destination, every ticket graded PASS); on other hosts the contracts are verified by construction and by a build-time audit.
 - An MCP source tool is judged read-only from its description; a tool that misdescribes itself cannot be detected.
-- `dir:` reads one directory level; `.docx` and `.pdf` sources are not supported.
+- `dir:` reads one directory level; `.docx` sources are not supported; a `.pdf` or image source is transcribed by the orchestrator through the host's file-read tool, which must be able to show it (no OCR).
+- The sheet render's real renderer branches (the Windows shell interpreter (powershell.exe) driving the spreadsheet application on Windows, `osascript` on macOS, and LibreOffice) are written by construction and not exercised by the test suite, which drives the render script with stand-in programs only.
 - A workbook is read for its cell values and its structure: line breaks, merged ranges, strikethrough, hidden rows and columns, notes and comments, text boxes, callouts and other shapes, and pictures, each saved under the run's `sources/S<n>-media/` directory when the converter can extract it (a picture it cannot extract is still listed, with the reason). The content of a picture is seen only when the host's file-read tool can show an image; otherwise the picture stays a listed gap, and no text is recognized from it. Charts are listed by name only (their data is not read), pivot tables and macros are not read, and no formatting other than strikethrough is kept.
 - `parent=` links new items through the create tool's own parent-link parameter (or the `{parent}` template placeholder); a platform that links only through a separate call after the create is not supported, and the parent item itself is never modified.

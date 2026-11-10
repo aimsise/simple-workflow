@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.0] — 2026-11-10
+
+**TL;DR.** The standalone `create-ticket` skill can render an `.xlsx` source to PDF through a spreadsheet application or LibreOffice installed on the host (`render=auto|off|excel|soffice`, optional, never required, no window shown, the workbook never modified) so a role can look at a sheet used as a page, and it accepts `.pdf` and image files as sources, transcribed through the host's file-read tool (no OCR). The real renderer branches are written by construction: this release's test suite drives the render script with stand-in programs only, so a first run on a host with the application installed is owed. The plugin's own skills, agents and hooks are unchanged.
+
+### Added
+
+- `scripts/xlsx_render.py` of the generated skill (Python standard library only): `--chain auto` tries the spreadsheet application through its automation interface (`osascript` on macOS, the Windows shell interpreter with the COM object on Windows; visibility off before anything opens, alerts off, read-only open of a private copy, export to PDF, close without saving, quit only when the script launched it), then `soffice --headless` with a private profile, else prints `Rendered: no (<renderer>: <reason>; ...)`; `--sheet`, `--only-if-structured`, `--timeout` (process-group kill and application cleanup), `--soffice` / `--excel-cmd` program overrides. One `Rendered:` line, exit 0 in every renderer outcome; nothing written outside `--out`.
+- `render=auto|off|excel|soffice` token: `auto` renders a workbook whose converter output shows shapes, pictures, merged cells or a page layout; the `Rendered:` line is appended to the source's dossier text and a failed render only warns.
+- `.pdf`, `.png`, `.jpg`, `.jpeg`, `.gif` and `.webp` `file:` sources (also inside `dir:`): the orchestrator transcribes what the host's file-read tool shows (`[transcribed from ...]` marker, `[page <k>]` markers, 40-page cap); a host whose file-read tool cannot show the file stops with an `ERROR:`.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 98 / 98 (85 before; fake renderer programs cover success per renderer, chain fallthrough, every-renderer-failed reasons, timeout with process-group kill, not-installed, exit 2 cases, overwrite and the no-write-outside-`--out` rule), `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145; ShellCheck clean at `--severity=warning`. Untested on this host: the macOS and Windows application branches and a real `soffice` conversion.
+
 ## [11.7.0] — 2026-11-10
 
 **TL;DR.** The standalone `create-ticket` skill reads an `.xlsx` source structure-aware: a workbook used as a document (headings and paragraphs in merged cells, notes and callouts, pasted pictures, struck-through finished items, hidden rows) keeps that structure in the source dossier, and every part the converter cannot read is marked. The plugin's own skills, agents and hooks are unchanged.

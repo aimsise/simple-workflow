@@ -21,10 +21,11 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (befor
 | `parent=` and the destination cannot link items (no or several parent-link parameters; `api:` template without `{parent}`) | The `ERROR:` line of that kind in [references/destinations.md](references/destinations.md), at preflight |
 | A prose statement of input or output resolves two ways or to nothing, and no ask-user tool answers | `ERROR: cannot resolve the request's input or output statement: <statement>` |
 | `?sheet=` on a non-workbook source, or an unknown option key | `ERROR: source=file:<path>: unknown option <key> (only sheet= on an .xlsx file)` |
-| A source cannot be read (missing file or directory, unsupported kind, unreadable `.xlsx`, no Python 3, unavailable or non-read-only MCP tool, missing MCP parameter, HTTP status outside 200-299) | The `ERROR:` line of that kind in [references/sources.md](references/sources.md), before Phase 1; nothing delivered |
+| A source cannot be read (missing file or directory, unsupported kind, unreadable `.xlsx`, no Python 3, a `.pdf` or image file this host's file-read tool cannot show, unavailable or non-read-only MCP tool, missing MCP parameter, HTTP status outside 200-299) | The `ERROR:` line of that kind in [references/sources.md](references/sources.md), before Phase 1; nothing delivered |
 | Sources exceed the intake limit, or more than 50 sources | `ERROR: sources exceed the intake limit (<total> characters > 150000; largest: ...); narrow the inputs` / `ERROR: more than 50 sources after directory expansion; narrow the inputs` |
-| A source was truncated, or a `dir:` skipped files | Not an error: continue, print the `WARNING:` line of [references/sources.md](references/sources.md), repeat it in the Final summary |
+| A source was truncated, a `dir:` skipped files, or a workbook got no sheet render | Not an error: continue, print the `WARNING:` line of [references/sources.md](references/sources.md), repeat it in the Final summary |
 | Unknown `depth=` or `confirm=` value | `ERROR: depth= must be standard, thorough or exhaustive` / `ERROR: confirm= accepts only yes` |
+| Unknown `render=` value | `ERROR: render= must be auto, off, excel or soffice` |
 | Unknown `constraint_<key>=` key, or a value other than `off` | `ERROR: unknown constraint key <key>` / `ERROR: constraint_<key>= accepts only off` |
 | Destination preflight fails | The `ERROR:` line of the failing check in [references/destinations.md](references/destinations.md) (e.g. `ERROR: destination mcp:<server> exposes no tool that accepts a title and a body`), before Phase 1 |
 | A slug is not kebab-case | `ERROR: <field> must be kebab-case (lowercase letters, digits, hyphens)` |
