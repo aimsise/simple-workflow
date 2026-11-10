@@ -137,6 +137,8 @@ check "frontmatter name equals the directory name (create-ticket)" \
 DESC="$(printf '%s\n' "$FM" | awk '/^description:/ {d = 1; next} d && /^[a-z-]+:/ {d = 0} d {sub(/^ +/, ""); s = s (s == "" ? "" : " ") $0} END {print s}')"
 check "description is non-empty and at most 1024 chars" \
   "$({ [ -n "$DESC" ] && [ "${#DESC}" -le 1024 ]; } || echo "length=${#DESC}")"
+check "description allows invocation by name only (no phrase trigger, no by-name contradiction)" \
+  "$(printf '%s\n' "$DESC" | grep -q 'Invoke only when the user names this skill' || echo 'name-only rule missing')$(printf '%s\n' "$DESC" | grep -E -o 'Triggers on|Only invoke when called by name|\(2\) user' || true)"
 check "frontmatter carries no allowed-tools key" "$(printf '%s\n' "$FM" | grep '^allowed-tools:' || true)"
 check "frontmatter metadata names the source version" \
   "$(printf '%s\n' "$FM" | grep -qE '^  source-version: "[0-9]+\.[0-9]+\.[0-9]+"$' || echo missing)"
