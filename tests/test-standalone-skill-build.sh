@@ -372,8 +372,8 @@ for needle in '# create-ticket' '## Install' '## Usage' '/create-ticket' 'source
   grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
 done
 check "README.md documents install, usage, sources, destinations, verdicts, files and limits" "$MISSING"
-check "the default destination is local:.docs/tickets everywhere (no stale local:tickets)" \
-  "$(grep -rn 'local:tickets' "$SKILL_DIR" | cut -c1-160 || true)$(grep -qF 'Absent → `local:.docs/tickets`' "$SKILL_MD" || echo ' SKILL.md lacks the .docs/tickets default')$(grep -qF '.docs/tickets/{parent-slug}' "$SKILL_DIR/references/write-path-templates.md" || echo ' summary examples lack .docs/tickets')"
+check "the default destination is local:.local/tickets everywhere (no stale local:tickets)" \
+  "$(grep -rn 'local:tickets' "$SKILL_DIR" | cut -c1-160 || true)$(grep -qF 'Absent → `local:.local/tickets`' "$SKILL_MD" || echo ' SKILL.md lacks the .local/tickets default')$(grep -qF '.local/tickets/{parent-slug}' "$SKILL_DIR/references/write-path-templates.md" || echo ' summary examples lack .local/tickets')"
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks
 for needle in '**Prose resolution**' 'Resolved: <' '**Character rule**' 'parent=<id>' '[parent=<id>]'; do
@@ -385,7 +385,7 @@ done
 for needle in '?sheet=<name>' '--sheet="<name>"' 'character rule'; do
   grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
 done
-for needle in 'parent=<id>' '?sheet=<name>' 'Resolved:' 'local:.docs/tickets'; do
+for needle in 'parent=<id>' '?sheet=<name>' 'Resolved:' 'local:.local/tickets'; do
   grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
 done
 grep -qF -- 'Parent: <id>' "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:'Parent: <id>'"
