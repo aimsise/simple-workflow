@@ -437,7 +437,7 @@ check "the structure-aware workbook reading (notes, shapes, images, layout, medi
 MISSING=""
 ARGS_PART="$(awk '/^## Argument Parsing$/ {a = 1; next} a && /^## / {a = 0} a' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks
-for needle in '`render=auto|off|excel|soffice`' '[render=auto|off|excel|soffice]' 'ERROR: render= must be auto, off, excel or soffice' 'prose never sets `confirm=yes`, `depth=`, `render=`'; do
+for needle in '`render=auto|off|excel|soffice`' '[render=auto|off|excel|soffice]' 'ERROR: render= must be auto, off, excel or soffice' 'prose never sets `confirm=`, `depth=`, `render=`'; do
   printf '%s\n' "$ARGS_PART" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
 done
 printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- '[render=auto|off|excel|soffice]' || MISSING="$MISSING argument-hint:'render='"
@@ -864,6 +864,22 @@ references/findings-schema.md|WARNING: <field> "<value>" is not kebab-case; usin
 SKILL.md|WARNING: <role> spawn failed (<reason>); retrying once
 references/sources.md|WARNING: follow-up read of <item URL without query> via <channel> failed (<outcome>); skipped
 SKILL.md|WARNING: follow-up read of <item URL without query> via <channel> failed (<outcome>); skipped
+SKILL.md|ERROR: more than 50 sources; narrow the inputs
+references/sources.md|ERROR: more than 50 sources; narrow the inputs
+README.md|ERROR: more than 50 sources; narrow the inputs
+SKILL.md|WARNING: source dir:<path> skipped <k> file(s) beyond the 50-source cap
+references/sources.md|WARNING: source dir:<path> skipped <k> file(s) beyond the 50-source cap
+README.md|WARNING: source dir:<path> skipped <k> file(s) beyond the 50-source cap
+SKILL.md|WARNING: follow-up reads of <item URL without query> stopped at the 50-source cap
+references/sources.md|WARNING: follow-up reads of <item URL without query> stopped at the 50-source cap
+README.md|WARNING: follow-up reads of <item URL without query> stopped at the 50-source cap
+SKILL.md|WARNING: source dir:<path> has <k> directories below 5 levels, which were not read
+references/sources.md|WARNING: source dir:<path> has <k> directories below 5 levels, which were not read
+README.md|WARNING: source dir:<path> has <k> directories below 5 levels, which were not read
+SKILL.md|NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead
+README.md|NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead
+references/destinations.md|NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead
+SKILL.md|ERROR: confirm= must be yes or no
 NEEDLES
 check "the new ERROR: literals are present where they are raised" "$MISSING"
 MISSING=""
@@ -992,12 +1008,12 @@ check "every ERROR: literal of the access channels appears identically where it 
 # Literals the audit removed must be gone everywhere (case-insensitive, so a
 # sentence-initial "Max 2 rounds" or "If any sub-ticket" is caught too).
 STALE=""
-for needle in 'sources exceed the intake limit' 'must be kebab-case' 'max 2 rounds' '8-ticket cap' 'which were not read' 'must be a relative path inside the repository' 'If ANY sub-ticket FAILs' 'a URL is `api:`' 'a bare URL stays `api:`' 'is read as `api:`' 'after two rounds' 'initial + 1 revision' '(decomposer: 1000' 'nothing is read or written before them' 'a required parameter `<name>`' 'an `mcp:` or `api:` destination' 'or no ask-user tool at all' 'and only here' 'No directories created' 'no directory writes' 'the API with a token variable the request names' 'the API with a named'; do
+for needle in 'sources exceed the intake limit' 'must be kebab-case' 'max 2 rounds' '8-ticket cap' 'subdirectories, which were not read' 'must be a relative path inside the repository' 'If ANY sub-ticket FAILs' 'a URL is `api:`' 'a bare URL stays `api:`' 'is read as `api:`' 'after two rounds' 'initial + 1 revision' '(decomposer: 1000' 'nothing is read or written before them' 'a required parameter `<name>`' 'an `mcp:` or `api:` destination' 'or no ask-user tool at all' 'and only here' 'No directories created' 'no directory writes' 'the API with a token variable the request names' 'the API with a named' 'more than 50 sources after directory expansion' 'confirm= accepts only yes' 'the only way to deliver' 'this host cannot ask'; do
   h="$(grep -rniF -- "$needle" "$SKILL_DIR" | cut -c1-160 || true)"
   [ -z "$h" ] || STALE="$STALE
 [$needle] $h"
 done
-check "no literal the audit removed remains (intake ERROR, kebab ERROR, fixed round and ticket caps, dir subdirectory WARNING, relative-only local:, atomic FAIL, URL-is-api inference, one-place ~ rule, destination-neutral stop, named-variable candidate slot)" "${STALE#$'\n'}"
+check "no literal the audit removed remains (intake ERROR, kebab ERROR, fixed round and ticket caps, dir subdirectory WARNING, relative-only local:, atomic FAIL, URL-is-api inference, one-place ~ rule, destination-neutral stop, named-variable candidate slot, expansion-counting source cap, yes-only confirm=, only-way confirm wording)" "${STALE#$'\n'}"
 
 # A typed mcp_<name>= next to a kind-less destination URL, and a token over
 # plain http: for a source, each have one literal, stated where it is raised,
@@ -1069,6 +1085,51 @@ DEST_GROUP='[destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | brows
 case "$HINT_VALUE" in *"$DEST_GROUP"*) ;; *) MISSING="$MISSING argument-hint:'$DEST_GROUP'" ;; esac
 case "$USAGE_VALUE" in *"$DEST_GROUP"*) ;; *) MISSING="$MISSING Usage:'$DEST_GROUP'" ;; esac
 check "the Usage line names the api: source and destination options, both name the five destination kinds, and the two are otherwise equal" "$MISSING"
+
+# Implied confirmation: a host with no ask-user tool runs as if confirm=yes
+# was passed, announces it once after the preflight and repeats it in the
+# Final summary; confirm=no turns it off.
+MISSING=""
+IMPLIED_NOTE='NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead'
+case "$HINT_VALUE" in *'[confirm=yes|no]'*) ;; *) MISSING="$MISSING argument-hint:'[confirm=yes|no]'" ;; esac
+case "$USAGE_VALUE" in *'[confirm=yes|no]'*) ;; *) MISSING="$MISSING Usage:'[confirm=yes|no]'" ;; esac
+grep -qF -- '[confirm=yes|no]' "$README_MD" || MISSING="$MISSING README.md:'[confirm=yes|no]'"
+HOST_SECTION="$(awk '/^## Host notes$/ {a = 1; next} a && /^## / {a = 0} a' "$SKILL_MD")"
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$IMPLIED_NOTE" || MISSING="$MISSING SKILL.md-Argument-Parsing:NOTE"
+printf '%s\n' "$HOST_SECTION" | grep -qF -- "$IMPLIED_NOTE" || MISSING="$MISSING SKILL.md-Host-notes:NOTE"
+[ "$(grep -cF -- "$IMPLIED_NOTE" "$SKILL_MD" || true)" -ge 3 ] || MISSING="$MISSING SKILL.md:NOTE (Argument Parsing, Error Handling, Host notes)"
+grep -qF -- "$IMPLIED_NOTE" "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:NOTE (Final summary)"
+for kind in mcp api cli browser; do
+  sect="$(awk -v k="$kind" 'index($0, "## `" k ":") == 1 {s = 1; print; next} s && /^## / {s = 0} s' "$DEST_MD")"
+  # shellcheck disable=SC2016  # literal backticks
+  printf '%s\n' "$sect" | grep -qF -- 'When the request carries `confirm=no` and this host has no ask-user tool' || MISSING="$MISSING destinations.md-$kind:'confirm=no preflight stop'"
+  # shellcheck disable=SC2016  # literal backticks
+  printf '%s\n' "$sect" | grep -qF -- 'Only `confirm=yes`, typed or implied, skips the question.' || MISSING="$MISSING destinations.md-$kind:'typed or implied skip'"
+done
+check "implied confirm=yes on a host with no ask-user tool: [confirm=yes|no], the NOTE line where it is printed and repeated, and the confirm=no preflight stop" "$MISSING"
+
+# A substitutions.tsv row that lost the TAB before its target glues the file
+# name onto the text: no generated line may end in a sentence end followed
+# directly by a generated file path.
+check "no generated line ends in a sentence end glued to a generated file path" \
+  "$(grep -rnE -- '[.)](references/[A-Za-z0-9_/-]+\.md|SKILL\.md|README\.md)$' "$SKILL_DIR" | cut -c1-200 || true)"
+
+# The build refuses such a row up front, naming its line number.
+GLUE_TOOLS="$TMP_ROOT/glue-tools"
+mkdir -p "$GLUE_TOOLS"
+cp -R "$REPO_DIR/tools/standalone-skill" "$GLUE_TOOLS/standalone-skill"
+cp "$BUILD" "$GLUE_TOOLS/build-standalone-skill.sh"
+printf 'Glue fixture sentence\\.\tA glued fixture sentence.references/sources.md\n' >>"$GLUE_TOOLS/standalone-skill/substitutions.tsv"
+GLUE_LINE="$(wc -l <"$GLUE_TOOLS/standalone-skill/substitutions.tsv" | tr -d ' ')"
+set +e
+bash "$GLUE_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/glue-out" >"$TMP_ROOT/glue.log" 2>&1
+GLUE_RC=$?
+set -e
+if [ "$GLUE_RC" -eq 2 ] && grep -qF "substitutions.tsv line $GLUE_LINE:" "$TMP_ROOT/glue.log"; then
+  pass "a two-field substitution row with a target glued to its replacement fails the build, naming the line"
+else
+  fail "a two-field substitution row with a target glued to its replacement fails the build, naming the line" "rc=$GLUE_RC $(head -n 3 "$TMP_ROOT/glue.log")"
+fi
 
 # Runnable: the Delivery step 3 filter, taken verbatim from the generated
 # destinations.md, substitutes {title}/{body} only as whole values and
