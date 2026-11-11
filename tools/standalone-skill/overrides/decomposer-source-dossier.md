@@ -4,7 +4,7 @@ mode: before
 ---
 ## Source dossier handling
 
-The caller may append a section `## Source dossier` to either input form: the concatenation of every source the user handed in (documents, spreadsheets dumped as Markdown tables whose first column is the worksheet row number, MCP tool results, HTTP documents, the output of a command-line client, the text of a page read through a browser tool), each preceded by a header block (`Source: S<n>` on its line 1, then `Kind:`, `Origin:`, `Fetched:`, `Chars:`, `Truncated:`). A **locator** names lines of one source: `S<n>:L<a>-L<b>`, `S<n>:L<a>` or `S<n>`, counting from that source's `Source:` line as line 1.
+The caller may append a section `## Source dossier` to either input form: the concatenation of every source the user handed in (documents, spreadsheets dumped as Markdown tables whose first column is the worksheet row number, MCP tool results, HTTP documents, the output of a command-line client, the text of a page read through a browser tool), each preceded by a header block (`Source: S<n>` on its line 1, then `Kind:`, `Origin:`, an optional `Derived from:` line naming the platform item URL the source was derived from, `Fetched:`, `Chars:`, `Truncated:`: six lines, seven for a derived source). A **locator** names lines of one source: `S<n>:L<a>-L<b>`, `S<n>:L<a>` or `S<n>`, counting from that source's `Source:` line as line 1.
 
 When the section is present you MUST:
 

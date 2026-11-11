@@ -443,7 +443,7 @@ done
 printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- '[render=auto|off|excel|soffice]' || MISSING="$MISSING argument-hint:'render='"
 grep -qF -- 'xlsx_render.py' "$SKILL_MD" || MISSING="$MISSING SKILL.md:'xlsx_render.py'"
 # shellcheck disable=SC2016  # literal braces and backticks
-for needle in '**Sheet rendering (optional)**' 'xlsx_render.py' 'Rendered:' '--only-if-structured "{scratch}/sources/S<n>.md"' '--out "{scratch}/sources/S<n>-render"' 'WARNING: source S<n> (<origin>): no sheet render (<reasons>)' '[transcribed from <pdf|image> by the file-read tool; wording and layout may be incomplete]' "ERROR: source=file:<path>: this host's file-read tool cannot show a <pdf|image> file" '[truncated: source S<n> has <k> pages; pages beyond 40 were not read]' 'not an OCR result' '.xlsx .pdf .png .jpg .jpeg .gif .webp and any other text file)'; do
+for needle in '**Sheet rendering (optional)**' 'xlsx_render.py' 'Rendered:' '--only-if-structured "{scratch}/sources/S<n>.md"' '--out "{scratch}/sources/S<n>-render"' 'WARNING: source S<n> (<origin>): no sheet render (<reasons>)' '[transcribed from <pdf|image> by the file-read tool; wording and layout may be incomplete]' "ERROR: source=file:<path>: this host's file-read tool cannot show a <pdf|image> file" '[truncated: source S<n> has <k> pages; pages beyond 40 were not read]' 'not an OCR result' 'unsupported file kind (supported: .md .markdown .txt .csv .tsv .json .yaml .yml .html .htm .xlsx .pdf .png .jpg .jpeg .gif .webp and any other text file)'; do
   grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
 done
 FILE_TABLE="$(awk '/^## `file:<path>`$/ {f = 1; next} f && /^## / {f = 0} f && /^\|/' "$SOURCES_MD")"
@@ -992,17 +992,30 @@ check "every ERROR: literal of the access channels appears identically where it 
 # Literals the audit removed must be gone everywhere (case-insensitive, so a
 # sentence-initial "Max 2 rounds" or "If any sub-ticket" is caught too).
 STALE=""
-for needle in 'sources exceed the intake limit' 'must be kebab-case' 'max 2 rounds' '8-ticket cap' 'which were not read' 'must be a relative path inside the repository' 'If ANY sub-ticket FAILs' 'a URL is `api:`' 'a bare URL stays `api:`' 'is read as `api:`' 'after two rounds' 'initial + 1 revision' '(decomposer: 1000' 'nothing is read or written before them' 'a required parameter `<name>`' 'an `mcp:` or `api:` destination' 'or no ask-user tool at all'; do
+for needle in 'sources exceed the intake limit' 'must be kebab-case' 'max 2 rounds' '8-ticket cap' 'which were not read' 'must be a relative path inside the repository' 'If ANY sub-ticket FAILs' 'a URL is `api:`' 'a bare URL stays `api:`' 'is read as `api:`' 'after two rounds' 'initial + 1 revision' '(decomposer: 1000' 'nothing is read or written before them' 'a required parameter `<name>`' 'an `mcp:` or `api:` destination' 'or no ask-user tool at all' 'and only here' 'No directories created' 'no directory writes' 'the API with a token variable the request names' 'the API with a named'; do
   h="$(grep -rniF -- "$needle" "$SKILL_DIR" | cut -c1-160 || true)"
   [ -z "$h" ] || STALE="$STALE
 [$needle] $h"
 done
-check "no literal the audit removed remains (intake ERROR, kebab ERROR, fixed round and ticket caps, dir subdirectory WARNING, relative-only local:, atomic FAIL, URL-is-api inference)" "${STALE#$'\n'}"
+check "no literal the audit removed remains (intake ERROR, kebab ERROR, fixed round and ticket caps, dir subdirectory WARNING, relative-only local:, atomic FAIL, URL-is-api inference, one-place ~ rule, destination-neutral stop, named-variable candidate slot)" "${STALE#$'\n'}"
+
+# A typed mcp_<name>= next to a kind-less destination URL, and a token over
+# plain http: for a source, each have one literal, stated where it is raised,
+# in the Error Handling table and in the reference file of that adapter.
+MISSING=""
+MCP_IGNORED='WARNING: mcp_<name>= ignored (the destination is reached via <channel>)'
+HTTP_TOKEN='ERROR: source api: a token is not sent over plain http; use https'
+grep -qF -- "$MCP_IGNORED" "$DEST_MD" || MISSING="$MISSING destinations.md:'$MCP_IGNORED'"
+[ "$(grep -cF -- "$MCP_IGNORED" "$SKILL_MD")" -ge 2 ] || MISSING="$MISSING SKILL.md:'$MCP_IGNORED' (Argument Parsing and Error Handling)"
+for f in "$SKILL_MD" "$SOURCES_MD"; do
+  grep -qF -- "$HTTP_TOKEN" "$f" || MISSING="$MISSING $(basename "$f"):'$HTTP_TOKEN'"
+done
+check "the mcp_<name>= ignored WARNING and the plain-http token ERROR appear where they are raised and in the Error Handling table" "$MISSING"
 
 MISSING=""
 README_MD="$SKILL_DIR/README.md"
 # shellcheck disable=SC2016  # literal backticks
-for needle in '`rounds=<N>`' '`max_tickets=<N>`' 'overflow-findings.md' 'ERROR: rounds= must be an integer from 1 to 5' 'ERROR: max_tickets= must be an integer from 1 to 30' '(max `rounds=` rounds (default 3: initial + 2 revisions))' 'ONE question' 'retrying once' '**Follow-up reads**' '(content <jq path>, token variable <VAR> (<scheme>))' '; run one platform per request' 'only the read-only sign-in probes of **Auth**' 'a parameter `<name>`, required or optional' 'is not an unknown kind'; do
+for needle in '`rounds=<N>`' '`max_tickets=<N>`' 'overflow-findings.md' 'ERROR: rounds= must be an integer from 1 to 5' 'ERROR: max_tickets= must be an integer from 1 to 30' '(max `rounds=` rounds (default 3: initial + 2 revisions))' 'ONE question' 'retrying once' '**Follow-up reads**' '(content <jq path>, token variable <VAR> (<scheme>))' '; run one platform per request' "only read-only calls (the resolution's own lookups and file checks, and the sign-in probes of **Auth**) run before the \`Resolved:\` line; nothing is written before it" 'a parameter `<name>`, required or optional' 'is not an unknown kind'; do
   grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
 done
 for needle in '[rounds=<N>]' '[max_tickets=<N>]'; do
