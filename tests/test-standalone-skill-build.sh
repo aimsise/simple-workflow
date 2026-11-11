@@ -1006,7 +1006,7 @@ MISSING=""
 MCP_IGNORED='WARNING: mcp_<name>= ignored (the destination is reached via <channel>)'
 HTTP_TOKEN='ERROR: source api: a token is not sent over plain http; use https'
 grep -qF -- "$MCP_IGNORED" "$DEST_MD" || MISSING="$MISSING destinations.md:'$MCP_IGNORED'"
-[ "$(grep -cF -- "$MCP_IGNORED" "$SKILL_MD")" -ge 2 ] || MISSING="$MISSING SKILL.md:'$MCP_IGNORED' (Argument Parsing and Error Handling)"
+[ "$(grep -cF -- "$MCP_IGNORED" "$SKILL_MD" || true)" -ge 2 ] || MISSING="$MISSING SKILL.md:'$MCP_IGNORED' (Argument Parsing and Error Handling)"
 for f in "$SKILL_MD" "$SOURCES_MD"; do
   grep -qF -- "$HTTP_TOKEN" "$f" || MISSING="$MISSING $(basename "$f"):'$HTTP_TOKEN'"
 done
