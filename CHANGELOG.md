@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.3] — 2026-11-11
+
+**TL;DR.** An audit of the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) removed the places where its files disagreed and relaxed the rules that stopped a run where continuing was safe. A host with no ask-user tool now runs as if `confirm=yes` had been passed, the evaluation rounds and the ticket cap are tokens with higher defaults, a URL typed without a kind is reached like a URL named in prose, and a ticket that still fails is delivered with a fourth verdict instead of stopping the run when the user (or the host) agreed to proceed. The plugin's own skills, agents and hooks are unchanged.
+
+### Added
+
+- `rounds=<N>` (1-5, default 3: the first grading and up to two revisions) and `max_tickets=<N>` (1-30, default 20) on the generated skill. Work units beyond the cap are written to `{scratch}/overflow-findings.md`, a findings document a later run takes with `findings=`.
+- `confirm=no`, and a fourth verdict `FAIL (unresolved)`: `confirm=yes` now also answers "proceed" for a ticket still graded FAIL after its last round, for every destination kind.
+- Sources: any text file (a file of an unlisted extension whose first 8,000 bytes hold no NUL byte), `.html` / `.htm`, an `http://` source URL, a `dir:` that descends five levels, and up to 20 follow-up reads of a platform item (child pages, further pages of a list).
+- `tools/build-standalone-skill.sh` refuses a two-field substitution row whose replacement ends in a generated file path glued to a sentence end (a lost TAB), naming the line.
+
+### Changed
+
+- **A host with no ask-user tool implies `confirm=yes`** when the request carries no `confirm=` token: the confirmation before the first remote create is skipped and a still-FAIL ticket is delivered as `FAIL (unresolved)`, after a `NOTE:` line that the Final summary repeats. **Migration**: pass `confirm=no` to keep the prior behaviour (a remote destination stops at the destination preflight, a still-FAIL ticket stops the run). An ask-user tool that exists but errors or is denied implies nothing, and every other question still stops.
+- Defaults: evaluation rounds 3 (was a fixed 2) and at most 20 tickets per run (was a fixed 8). **Migration**: `rounds=2 max_tickets=8` restores the prior limits.
+- A URL typed without a kind (`source=https://...`, `destination=https://...`) is resolved like a URL named in prose (access channels, `Derived:` / `Tried:` / `Probe:` lines); it was a verbatim `GET`, or an unknown destination kind. **Migration**: write `source=api:<url>` for the verbatim `GET`. A token variable the request names makes the API channel the only candidate.
+- Stops that became warnings or normalizations: an intake total above 150,000 characters is cut to a common size per source; files of a `dir:` and follow-up reads beyond 50 sources are skipped (only specs the request itself carries can exceed the cap); a non-kebab `slug_hint` or brief `slug` is normalized; a failed spawn of a mandatory role is retried once (never an explicit `Status: ERROR` / `failed`); `local:` and `template=` accept absolute and `~` paths; a backslash in a path value is read as `/`.
+- Split runs: the exhausted-retry escalation is per ticket and asked in one question; the run stops only when one escalation ended in a stop. A declined remote confirmation prints `ERROR: remote delivery declined; nothing created`; a bad `confirm=` value prints `ERROR: confirm= must be yes or no`.
+
+### Fixed
+
+- Statements of one rule that disagreed across the generated files: the split-run stop, the non-interactive wording of the three modes, the candidate order versus a named token variable, when the `Derived from:` header line is written, per-source derived values, the MCP item lookup for an input, `~` paths in shell commands, an expanded home path in `split-plan.md`, ticket numbering after an overflow, and the remote kinds named by the split-plan schema and the ticket template.
+- A substitution row that had lost its TAB appended a file name to a sentence of the generated `references/agent-spawn-prompts.md` and applied to every file.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 115 / 115 (106 before: every new and changed literal in its raising section, the Error Handling table and the reference file; removed literals asserted absent; the two new tokens tied between the Usage line, the argument hint and the README; a deliberately broken substitution row must fail the build).
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck (`--severity=warning`) clean, build exit audit clean (21 files).
+- The generated tree was read in full after the change, by an independent reviewer and then paragraph by paragraph for every later commit. Untested: a live run on a real host.
+
 ## [11.8.2] — 2026-11-11
 
 **TL;DR.** The generated standalone `create-ticket` skill now turns a web URL named in prose (the address a person sees in the browser's address bar) into a working read or create through whichever access channel fits the host: an MCP server of the session, the platform's signed-in command-line client, its HTTP API, a browser-automation tool of the session, or a plain `GET`. Derived values may be guessed (every guess is printed before it runs and verified by its outcome, a create by a read probe of the parent item first), a missing sign-in is asked for once or stops with an ERROR that spells out the re-run tokens, and sign-in pages behind a 2xx no longer become the source. The plugin's own skills, agents and hooks are unchanged.
