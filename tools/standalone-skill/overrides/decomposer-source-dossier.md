@@ -13,4 +13,4 @@ When the section is present you MUST:
 3. **Treat a truncation as a gap.** A `[truncated: ...]` line or `Truncated: yes` means the source continues beyond what you see: say so in `**Rationale**` when the cut part could hold more items, and never guess at what was cut.
 4. **Ground in the dossier as in any context.** The dossier extends the grounding rule of `## Hard constraints`: a work unit present (or directly entailed) in `## Source dossier` is grounded; a work unit the dossier does not support is not.
 
-Place `**Partition basis**:` right after `**Rationale**:` in your `## Result`. The 1000-token cap still applies: locators and ids only, never dossier text.
+Place `**Partition basis**:` right after `**Rationale**:` in your `## Result`. The `400 + 120 x N`-token cap of `## Ticket cap and overflow` still applies: locators and ids only, never dossier text.

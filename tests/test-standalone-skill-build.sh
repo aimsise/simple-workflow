@@ -399,7 +399,7 @@ grep -qF -- 'Parent: <id>' "$SKILL_DIR/references/write-path-templates.md" || MI
 check "prose resolution, the character rule, parent= and ?sheet= are documented where they apply" "$MISSING"
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks
-for needle in '## Writing a source' '**List split.**' '**Kind inference.**' '`mcp:` is never inferred' '### An MCP item named in prose' 'at most one lookup call is made per statement'; do
+for needle in '## Writing a source' '**List split.**' '**Kind inference.**' '`mcp:` is never inferred' '### An MCP item named in prose' 'at most one lookup call is made per candidate server'; do
   grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
 done
 for needle in 'comma-separated list of specs' '### An MCP item named in prose'; do
@@ -443,7 +443,7 @@ done
 printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- '[render=auto|off|excel|soffice]' || MISSING="$MISSING argument-hint:'render='"
 grep -qF -- 'xlsx_render.py' "$SKILL_MD" || MISSING="$MISSING SKILL.md:'xlsx_render.py'"
 # shellcheck disable=SC2016  # literal braces and backticks
-for needle in '**Sheet rendering (optional)**' 'xlsx_render.py' 'Rendered:' '--only-if-structured "{scratch}/sources/S<n>.md"' '--out "{scratch}/sources/S<n>-render"' 'WARNING: source S<n> (<origin>): no sheet render (<reasons>)' '[transcribed from <pdf|image> by the file-read tool; wording and layout may be incomplete]' "ERROR: source=file:<path>: this host's file-read tool cannot show a <pdf|image> file" '[truncated: source S<n> has <k> pages; pages beyond 40 were not read]' 'not an OCR result' '.xlsx .pdf .png .jpg .jpeg .gif .webp)'; do
+for needle in '**Sheet rendering (optional)**' 'xlsx_render.py' 'Rendered:' '--only-if-structured "{scratch}/sources/S<n>.md"' '--out "{scratch}/sources/S<n>-render"' 'WARNING: source S<n> (<origin>): no sheet render (<reasons>)' '[transcribed from <pdf|image> by the file-read tool; wording and layout may be incomplete]' "ERROR: source=file:<path>: this host's file-read tool cannot show a <pdf|image> file" '[truncated: source S<n> has <k> pages; pages beyond 40 were not read]' 'not an OCR result' '.xlsx .pdf .png .jpg .jpeg .gif .webp and any other text file)'; do
   grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
 done
 FILE_TABLE="$(awk '/^## `file:<path>`$/ {f = 1; next} f && /^## / {f = 0} f && /^\|/' "$SOURCES_MD")"
@@ -848,6 +848,22 @@ SKILL.md|ERROR: create-ticket counter write failed — set {dir}/.ticket-counter
 references/destinations.md|ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)
 SKILL.md|ERROR: unknown destination kind in destination=<spec without query> (expected local:, mcp:, api:, browser: or cli:)
 SKILL.md|ERROR: unknown source kind in source=<spec without query> (expected file:, dir:, mcp:, api:, browser: or cli:)
+SKILL.md|ERROR: rounds= must be an integer from 1 to 5
+SKILL.md|ERROR: max_tickets= must be an integer from 1 to 30
+SKILL.md|ERROR: remote delivery declined; nothing created
+SKILL.md|ERROR: destination local: <dir> is not a usable directory path (no .. segment, .git, leading -, quote, backtick, dollar or control character)
+references/destinations.md|ERROR: destination local: <dir> is not a usable directory path (no .. segment, .git, leading -, quote, backtick, dollar or control character)
+SKILL.md|ERROR: template= <path> is not a usable file path (no .. segment, .git, leading -, quote, backtick, dollar or control character)
+references/destinations.md|ERROR: template= <path> is not a usable file path (no .. segment, .git, leading -, quote, backtick, dollar or control character)
+SKILL.md|ERROR: source api:<url without query string> returned a sign-in page, not the content; re-run with source_auth_env=<VAR>, or pass the URL without the api: kind so a signed-in client or browser can be tried
+SKILL.md|WARNING: decomposer dropped <n> work units beyond the <N>-ticket cap: <titles>; re-run with findings=<{scratch} path>/overflow-findings.md to create them
+references/mode-dispatch-flows.md|WARNING: decomposer dropped <n> work units beyond the <N>-ticket cap: <titles>; re-run with findings=<{scratch} path>/overflow-findings.md to create them
+SKILL.md|WARNING: <field> "<value>" is not kebab-case; using <normalized>
+references/mode-dispatch-flows.md|WARNING: <field> "<value>" is not kebab-case; using <normalized>
+references/findings-schema.md|WARNING: <field> "<value>" is not kebab-case; using <normalized>
+SKILL.md|WARNING: <role> spawn failed (<reason>); retrying once
+references/sources.md|WARNING: follow-up read of <item URL without query> via <channel> failed (<outcome>); skipped
+SKILL.md|WARNING: follow-up read of <item URL without query> via <channel> failed (<outcome>); skipped
 NEEDLES
 check "the new ERROR: literals are present where they are raised" "$MISSING"
 MISSING=""
@@ -954,7 +970,7 @@ ae|ERROR: auth_env=, template= and id_path= apply only to an api: or cli: destin
 ae|ERROR: source_content_path= applies only to an api: or cli: source
 ae|(expected local:, mcp:, api:, browser: or cli:)
 ae|(expected file:, dir:, mcp:, api:, browser: or cli:)
-es|ERROR: source api:<url without query string> returned a sign-in page, not the content; sign in with the platform's command-line client or the browser, or re-run with source_auth_env=<VAR>
+es|ERROR: source api:<url without query string> returned a sign-in page, not the content; re-run with source_auth_env=<VAR>, or pass the URL without the api: kind so a signed-in client or browser can be tried
 es|ERROR: source cli: <first word> is not on PATH
 es|ERROR: source cli:<command> failed (exit <n>: <first line of the error output, at most 200 characters>)
 es|ERROR: source cli:<command> returned no content
@@ -971,6 +987,54 @@ ed|ERROR: destination cli: environment variable <VAR> is not set
 ed|ERROR: destination browser:<url without query string>: no create form with a title and a body field (<outcome>)
 CHANNEL_ERRORS
 check "every ERROR: literal of the access channels appears identically where it is raised, in the Error Handling table and in its reference file" "$MISSING"
+
+# --- audit fixes: split FAIL, rounds=, max_tickets=, kind-less URLs, B1 preflight --
+# Literals the audit removed must be gone everywhere (case-insensitive, so a
+# sentence-initial "Max 2 rounds" or "If any sub-ticket" is caught too).
+STALE=""
+for needle in 'sources exceed the intake limit' 'must be kebab-case' 'max 2 rounds' '8-ticket cap' 'which were not read' 'must be a relative path inside the repository' 'If ANY sub-ticket FAILs' 'a URL is `api:`' 'a bare URL stays `api:`' 'is read as `api:`' 'after two rounds' 'initial + 1 revision' '(decomposer: 1000' 'nothing is read or written before them' 'a required parameter `<name>`' 'an `mcp:` or `api:` destination' 'or no ask-user tool at all'; do
+  h="$(grep -rniF -- "$needle" "$SKILL_DIR" | cut -c1-160 || true)"
+  [ -z "$h" ] || STALE="$STALE
+[$needle] $h"
+done
+check "no literal the audit removed remains (intake ERROR, kebab ERROR, fixed round and ticket caps, dir subdirectory WARNING, relative-only local:, atomic FAIL, URL-is-api inference)" "${STALE#$'\n'}"
+
+MISSING=""
+README_MD="$SKILL_DIR/README.md"
+# shellcheck disable=SC2016  # literal backticks
+for needle in '`rounds=<N>`' '`max_tickets=<N>`' 'overflow-findings.md' 'ERROR: rounds= must be an integer from 1 to 5' 'ERROR: max_tickets= must be an integer from 1 to 30' '(max `rounds=` rounds (default 3: initial + 2 revisions))' 'ONE question' 'retrying once' '**Follow-up reads**' '(content <jq path>, token variable <VAR> (<scheme>))' '; run one platform per request' 'only the read-only sign-in probes of **Auth**' 'a parameter `<name>`, required or optional' 'is not an unknown kind'; do
+  grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
+done
+for needle in '[rounds=<N>]' '[max_tickets=<N>]'; do
+  printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- "$needle" || MISSING="$MISSING argument-hint:'$needle'"
+  printf '%s\n' "$ARGS_SECTION" | grep -F 'print `Usage: /create-ticket' | grep -qF -- "$needle" || MISSING="$MISSING Usage:'$needle'"
+  grep -qF -- "$needle" "$README_MD" || MISSING="$MISSING README.md:'$needle'"
+done
+for needle in 'rounds=<N>' 'max_tickets=<N>' 'overflow-findings.md' 'remote delivery declined; nothing created' 'descends at most 5 directory levels'; do
+  grep -qF -- "$needle" "$README_MD" || MISSING="$MISSING README.md:'$needle'"
+done
+for f in references/agent-spawn-prompts.md references/spec-decomposer-input.md references/agents/decomposer.md; do
+  grep -qF -- 'Max tickets:' "$SKILL_DIR/$f" || MISSING="$MISSING $f:'Max tickets:'"
+done
+# shellcheck disable=SC2016  # literal backticks
+for needle in '`400 + 120 x N`' '**Overflow**:'; do
+  grep -qF -- "$needle" "$SKILL_DIR/references/agents/decomposer.md" || MISSING="$MISSING decomposer.md:'$needle'"
+done
+grep -qF -- 'r{n}.md' "$SKILL_DIR/references/agent-spawn-prompts.md" || MISSING="$MISSING agent-spawn-prompts.md:'r{n}.md'"
+# shellcheck disable=SC2016  # literal backticks
+for needle in '**Text probe**' "od -An -c | grep -q '\\\\0'" '`.html`, `.htm`' 'at most 5 levels' '**Follow-up reads.**' 'sum of min(chars, C)' 'two or three exact matches are each read'; do
+  grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
+done
+# The B1 confirmation check is the last preflight step of each remote kind,
+# and a "no" at the confirmation prints the declined literal in each adapter.
+for kind in mcp api cli browser; do
+  sect="$(awk -v k="$kind" 'index($0, "## `" k ":") == 1 {s = 1; print; next} s && /^## / {s = 0} s' "$DEST_MD")"
+  # shellcheck disable=SC2016  # literal backticks
+  for needle in '**Confirmation possible.**' 'ERROR: remote delivery needs an interactive confirmation; re-run with confirm=yes to skip it' 'ERROR: remote delivery declined; nothing created'; do
+    printf '%s\n' "$sect" | grep -qF -- "$needle" || MISSING="$MISSING destinations.md-$kind:'$needle'"
+  done
+done
+check "rounds=, max_tickets= (Max tickets: line, overflow file), the B1 preflight confirmation check, the declined literal, follow-up reads, per-source derived values and the text probe are documented where they apply" "$MISSING"
 
 # The argument-hint omits the per-kind api: and cli: options; the Usage line
 # adds those option groups. Every other part of the two must stay identical,
