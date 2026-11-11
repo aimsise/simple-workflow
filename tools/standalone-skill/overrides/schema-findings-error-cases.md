@@ -4,7 +4,7 @@ mode: replace
 ---
 ## Error cases
 
-| Input | Behaviour (stop, no directories created, `.ticket-counter` untouched) |
+| Input | Behaviour (stop, nothing reaches the destination, `.ticket-counter` untouched) |
 |---|---|
 | File does not exist at `<path>` | `ERROR: Findings file not found at <path>` (Step F-1; the literal path argument is substituted) |
 | Frontmatter without `title` | `ERROR: findings frontmatter is missing title` (Step F-2) |

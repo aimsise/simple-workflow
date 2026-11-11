@@ -6,7 +6,7 @@ mode: before
 
 A brief is the input of `brief=<path>` mode: a hand-written Markdown file (any name, e.g. `brief.md`) with YAML frontmatter followed by the body below. This skill reads exactly these frontmatter keys and no others:
 
-- `slug` (required): kebab-case; becomes `{brief_slug}`, which is also the `{parent-slug}` of the run (Steps B-2 and DL-2; a `local:` destination nests the tickets under it).
+- `slug` (required): kebab-case; becomes `{brief_slug}`, recorded as written in each ticket's `Brief Slug` row (Step DL-2), and is also the `{parent-slug}` of the run (Step B-2; a `local:` destination nests the tickets under it). A `slug` that is not kebab-case is normalized for `{parent-slug}` by the kebab-case rule of Step D-1, with a `WARNING:`; a missing `slug` stops the run.
 - `interview_complete` (`true` | `false`): `true` skips Phase 2 (Socratic Refinement); `false` or absent runs the capped Socratic interview.
 
 ```yaml

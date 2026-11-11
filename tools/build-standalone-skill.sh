@@ -55,7 +55,8 @@ Options:
 Exit status:
   0  skill generated and the exit audit is clean
   1  exit audit failed or a manifest entry is stale (details on stderr)
-  2  usage error, missing source file, or refused overwrite
+  2  usage error, missing source file, malformed manifest row (a
+     substitution target glued to its replacement), or refused overwrite
 EOF
 }
 
@@ -126,6 +127,23 @@ scope_match() {
   # shellcheck disable=SC2053
   [[ $1 == $2 ]]
 }
+
+# Glued-target guard: a two-field row whose replacement ends in a generated
+# file path (SKILL.md, README.md or references/<path>.md) directly preceded
+# by sentence punctuation lost the TAB before its target file. Such a row
+# would apply to every file and glue the file name onto the output text, so
+# it fails the build. A replacement that is itself a path (\1SKILL.md) is
+# preceded by a backreference or a space and passes.
+GLUED_RE='[].)!?:;,*`'"'\""'](SKILL\.md|README\.md|references/[A-Za-z0-9_./-]+\.md)$'
+GLUED="$(RE="$GLUED_RE" awk -F'\t' '
+  /^[[:space:]]*(#|$)/ { next }
+  NF == 2 && match($2, ENVIRON["RE"]) {
+    printf "substitutions.tsv line %d: the replacement ends in \"%s\" glued to the text before it; a TAB is missing before the target file\n", NR, substr($2, RSTART + 1)
+  }' "$MANIFEST_DIR/substitutions.tsv")"
+if [ -n "$GLUED" ]; then
+  printf '%s\n' "$GLUED" | while IFS= read -r g; do err "$g"; done
+  exit 2
+fi
 
 # --- Layer 0: copy sources ------------------------------------------------
 
