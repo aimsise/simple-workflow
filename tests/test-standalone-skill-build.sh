@@ -618,6 +618,13 @@ PYFIX
   printf '%s\n' "$XLSX_OUT" | grep -qF -- '[truncated: sheet Grid has columns beyond c64' || MISSING="$MISSING 'merged range beyond the column cap not marked'"
   XLSX_OUT3="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 120 2>/dev/null)"
   printf '%s\n' "$XLSX_OUT3" | grep -qF -- '[truncated: output exceeds 120 characters' || MISSING="$MISSING 'char cap marker'"
+  # The cap is a total: the marker line counts toward it (the command
+  # substitution drops the one trailing newline, hence the + 1), and a cap
+  # shorter than the marker prints the marker alone.
+  XLSX_OUT3_LEN="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 120 2>/dev/null | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8")))')"
+  [ "$XLSX_OUT3_LEN" -le 120 ] || MISSING="$MISSING 'char cap exceeded by its marker ($XLSX_OUT3_LEN > 120)'"
+  XLSX_OUT3B="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 10 2>/dev/null)"
+  [ "$XLSX_OUT3B" = "$(printf '\n[truncated: output exceeds 10 characters; the rest of the workbook was not emitted]')" ] || MISSING="$MISSING 'a cap below the marker does not print the marker alone'"
   check "xlsx converter: every cap is marked, never silent" "$MISSING"
   XLSX_OUT4="$(python3 -I "$XLSX_PY" --sheet=Notes -- "$FIX_DIR/fixture.xlsx" 2>/dev/null)"
   MISSING=""
@@ -683,6 +690,22 @@ PYFIX
   python3 -I "$XLSX_PY" "$FIX_DIR/make_fixture.py" >/dev/null 2>&1; NOT_ZIP_RC=$?
   python3 -I "$XLSX_PY" "$FIX_DIR/nowb.zip" >/dev/null 2>&1; NO_WB_RC=$?
   set -e
+  # A workbook whose xl/workbook.xml member is damaged (its compressed bytes
+  # overwritten in place, so the CRC check or the inflate fails).
+  (cd "$FIX_DIR" && python3 -c "
+import zipfile
+data = bytearray(open('fixture.xlsx', 'rb').read())
+info = zipfile.ZipFile('fixture.xlsx').getinfo('xl/workbook.xml')
+start = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+for i in range(start, start + min(info.compress_size, 24)):
+    data[i] ^= 0xFF
+open('damaged.xlsx', 'wb').write(bytes(data))
+")
+  set +e
+  DAMAGED_ERR="$(python3 -I "$XLSX_PY" "$FIX_DIR/damaged.xlsx" 2>&1 >/dev/null)"; DAMAGED_RC=$?
+  set -e
+  check "xlsx converter: a damaged member exits 2 with one line, not a traceback" \
+    "$([ "$DAMAGED_RC" -eq 2 ] || echo "rc=$DAMAGED_RC")$([ "$(printf '%s\n' "$DAMAGED_ERR" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(printf '%s\n' "$DAMAGED_ERR" | grep -q '^xlsx_to_text: cannot \(read\|parse\) xl/workbook.xml' || echo " line: $DAMAGED_ERR")"
   check "xlsx converter: a non-zip file and a zip without a workbook exit 2" \
     "$([ "$NOT_ZIP_RC" -eq 2 ] || echo "not-zip rc=$NOT_ZIP_RC")$([ "$NO_WB_RC" -eq 2 ] || echo " no-workbook rc=$NO_WB_RC")"
   # --- sheet renderer, driven by stand-in renderer programs ------------------
@@ -849,7 +872,13 @@ SKILL.md|ERROR: findings frontmatter is missing title
 references/findings-schema.md|ERROR: findings frontmatter is missing title
 references/mode-dispatch-flows.md|ERROR: findings frontmatter is missing title
 references/destinations.md|ERROR: mcp_<name>= must be <type>
-references/destinations.md|contains a character the curl config cannot carry
+references/destinations.md|contains a character the curl config cannot carry (", \ or a control character such as a line break)
+references/destinations.md|case "${VAR:-}" in *\"*|*\\*|*[[:cntrl:]]*) echo bad;; *) echo ok;; esac
+references/sources.md|case "${VAR:-}" in *\"*|*\\*|*[[:cntrl:]]*) echo bad;; *) echo ok;; esac
+SKILL.md|ERROR: create-ticket write refused — ticket number {NNN} is already used by <path>; fix {dir}/.ticket-counter, or re-run when the other run has finished
+references/destinations.md|ERROR: create-ticket write refused — ticket number {NNN} is already used by <path>; fix {dir}/.ticket-counter, or re-run when the other run has finished
+SKILL.md|ERROR: create-ticket counter changed during delivery — {dir}/.ticket-counter was <counter> and is now <value>; another run delivered to {dir}; check {dir} for a ticket number used twice and set the counter above the highest one
+references/destinations.md|ERROR: create-ticket counter changed during delivery — {dir}/.ticket-counter was <counter> and is now <value>; another run delivered to {dir}; check {dir} for a ticket number used twice and set the counter above the highest one
 SKILL.md|ERROR: brief frontmatter is missing slug
 references/mode-dispatch-flows.md|ERROR: brief frontmatter is missing slug
 SKILL.md|ERROR: unresolved FAIL gates; the user declined to proceed (draft saved under {scratch})
