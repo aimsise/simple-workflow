@@ -17,7 +17,7 @@ description: >-
   the input and the output may also be stated in prose after the name. A request about tickets that
   does not name this skill is never a trigger.
 compatibility: Any agent host that loads SKILL.md skills and offers file read, file write, file edit, text and file-pattern search, a POSIX shell and a subagent tool (Python 3 on that shell only for .xlsx sources; without a subagent tool the skill runs degraded, every verdict SELF-EVALUATED; without an ask-user tool it runs non-interactively, as if confirm=yes was passed unless confirm=no is given; a browser-automation tool is used when present and never required). Host notes map each tool role to the host's own tool.
-argument-hint: "<ticket description> | brief=<path> | findings=<path> [source=<spec> ...] [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | browser:<url> | cli:<command>] [parent=<id>] [confirm=yes|no] [depth=<tier>] [rounds=<N>] [max_tickets=<N>] [render=auto|off|excel|soffice] [constraint_<key>=off]"
+argument-hint: "<ticket description> | brief=<path> | findings=<path> [source=<spec> ...] [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | browser:<url> | cli:<command>] [parent=<id>] [confirm=yes|no] [depth=<tier>] [rounds=<N>] [max_tickets=<N>] [keep_scratch=yes|no] [render=auto|off|excel|soffice] [constraint_<key>=off]"
 metadata:
   source: generated skill; do not edit by hand
   source-version: "@SOURCE_VERSION@"

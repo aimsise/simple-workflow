@@ -4,13 +4,13 @@ mode: replace
 ---
 ## Error Handling
 
-Every `ERROR:` before Delivery is atomic: nothing reaches the destination (before Delivery the run writes only under `{scratch}`, plus the one-line `.gitignore` append of Argument Parsing), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=`, `findings=`, `destination=local:` or `template=` path exactly as the user typed it (with backslashes read as `/`; Host notes, **`~` paths**), and prints an `api:` URL without its query string.
+Every `ERROR:` before Delivery is atomic: nothing reaches the destination (before Delivery the run writes only under `{scratch}`, plus the `**/.local/*` `.gitignore` check and append of Argument Parsing), the `local:` counter is unchanged, and the run stops. A failure during Delivery follows Step DL-4. An error line echoes a `brief=`, `findings=`, `destination=local:` or `template=` path exactly as the user typed it (with backslashes read as `/`; Host notes, **`~` paths**), and prints an `api:` URL without its query string.
 
 | Trigger | Output |
 |---|---|
 | Empty arguments | Print Usage line, stop (before any preflight) |
 | Both `brief=` and `findings=` | `ERROR: brief= and findings= are mutually exclusive. Pass exactly one.` |
-| Scratch directory cannot be created | `ERROR: create-ticket cannot create the scratch directory .create-ticket-scratch/ in the working directory (<reason>)` |
+| Scratch directory cannot be created | `ERROR: create-ticket cannot create the scratch directory .local/create-ticket-scratch/ in the working directory (<reason>)` |
 | `brief=` / `findings=` path with other characters | `ERROR: <token>= path contains characters this skill does not accept` |
 | Unknown destination kind (not an `http://` or `https://` URL either) | `ERROR: unknown destination kind in destination=<spec without query> (expected local:, mcp:, api:, browser: or cli:)` (the spec without its query string, at most 80 characters) |
 | `auth_env=` / `template=` / `id_path=` without `api:` or `cli:` | `ERROR: auth_env=, template= and id_path= apply only to an api: or cli: destination` |
@@ -35,6 +35,7 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (befor
 | A source was truncated (at 60,000 characters, or to its share of the 150,000-character intake total), a `dir:` skipped files (unsupported kind or name, or beyond the 50-source cap), a `dir:` has directories below 5 levels, a follow-up read failed or follow-up reads stopped at the 50-source cap, or a workbook got no sheet render | Not an error: continue, print the `WARNING:` line of [references/sources.md](references/sources.md), repeat it in the Final summary |
 | Unknown `depth=` or `confirm=` value | `ERROR: depth= must be standard, thorough or exhaustive` / `ERROR: confirm= must be yes or no` |
 | No ask-user tool on this host and no `confirm=` token | Not an error: `confirm=yes` is implied; print `NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead` once right after the destination preflight, repeat it in the Final summary, continue |
+| Unknown `keep_scratch=` value | `ERROR: keep_scratch= must be yes or no` |
 | Unknown `render=` value | `ERROR: render= must be auto, off, excel or soffice` |
 | A `rounds=` value other than an integer from 1 to 5, or a `max_tickets=` value other than an integer from 1 to 30 | `ERROR: rounds= must be an integer from 1 to 5` / `ERROR: max_tickets= must be an integer from 1 to 30` |
 | Unknown `constraint_<key>=` key, or a value other than `off` | `ERROR: unknown constraint key <key>` / `ERROR: constraint_<key>= accepts only off` |
@@ -65,3 +66,4 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (befor
 | `local:` write failure | `ERROR: create-ticket write failed — partial output quarantined at {dir}/.rollback/{parent-slug}-{ts}/ (<reason>)` — counter untouched; re-run with the same inputs is safe |
 | `local:` counter write fails after the tickets are written | `ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)` — the tickets stay in place; stop |
 | `mcp:` / `api:` / `browser:` / `cli:` create failure | The identifiers created so far, then `ERROR: destination <spec> create failed for <logical id> (<reason>)` (for `cli:` the spec is `cli:<first word>`, for `browser:` the URL without its query string) — nothing deleted or modified, no other channel tried, stop |
+| `rm -r "{scratch}"` fails at the scratch removal of Step DL-5 | Not an error: print `WARNING: could not remove the scratch directory <{scratch}> (<reason>)`, repeat it in the Final summary (whose `Scratch:` line then reads `Scratch: <{scratch} path> (kept: removal failed)`); the run still succeeds. A non-zero exit of `rmdir .local/create-ticket-scratch` or `rmdir .local` is expected and ignored silently |

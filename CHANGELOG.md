@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.4] — 2026-11-12
+
+**TL;DR.** The generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) keeps its working files under `.local/`, removes them after a clean run, and states that a run delivers to exactly one destination. A live run on a host that created the tickets remotely and also saved a local copy prompted the last rule. The plugin's own skills, agents and hooks are unchanged.
+
+### Added
+
+- `keep_scratch=yes|no` (default `no`) on the generated skill; a bad value prints `ERROR: keep_scratch= must be yes or no`.
+- A **One destination** rule at the head of Delivery: a remote destination writes no ticket, split plan, counter or local copy, never creates `.local/tickets`, and an output statement that cannot be resolved or reached stops with its `ERROR:` line instead of falling back to the default.
+
+### Changed
+
+- **The run scratch directory is removed as the last step of a clean run** (`rm -r` on the directory `mktemp` created, then `rmdir` on its two parents, which removes a parent only when it is empty). It is kept after an `ERROR:`, when a ticket was delivered with a `FAIL` verdict, and when overflow findings were written; the Final summary `Scratch:` line reads `removed` or names the path and the reason. **Migration**: pass `keep_scratch=yes` to keep it after every run, as before. The host asks for permission to run `rm` and `rmdir`; declining leaves the directory and prints a `WARNING:`.
+- The scratch directory is `.local/create-ticket-scratch/run.<id>/` (was `.create-ticket-scratch/run.<id>/`), and in a git repository the skill appends the line `**/.local/*` to the root `.gitignore` only when that exact line is missing (was a line for the scratch directory alone). The default destination `.local/tickets` is therefore ignored by git too. **Migration**: pass a `destination=local:<dir>` outside `.local/` (or remove the line) to commit tickets; a `.create-ticket-scratch/` directory and its `.gitignore` line left by an earlier version are not touched and may be deleted by hand.
+- The `Resolved:` line is mandatory output before Phase 1 when the request holds a prose statement or a URL without a kind, a derived body template is written only to `{scratch}/template-derived.json`, and the `### Final summary` block is printed in its stated format, never replaced by a free-form recap.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 122 / 122 (115 before: the new scratch path with the old literal asserted absent, the `.gitignore` check and append commands, `keep_scratch=` and its error line, the three removal commands, both forms of the `Scratch:` line, the One destination rule in three files, and the equal command lists).
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck (`--severity=warning`) clean.
+- The changed passages of the generated tree were read after the change. Untested: a live run on a real host, so whether a host that wrote a local copy before now follows the One destination rule is not confirmed.
+
 ## [11.8.3] — 2026-11-11
 
 **TL;DR.** An audit of the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) removed the places where its files disagreed and relaxed the rules that stopped a run where continuing was safe. A host with no ask-user tool now runs as if `confirm=yes` had been passed, the evaluation rounds and the ticket cap are tokens with higher defaults, a URL typed without a kind is reached like a URL named in prose, and a ticket that still fails is delivered with a fourth verdict instead of stopping the run when the user (or the host) agreed to proceed. The plugin's own skills, agents and hooks are unchanged.

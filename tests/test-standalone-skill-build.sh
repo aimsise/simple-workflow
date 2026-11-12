@@ -318,14 +318,24 @@ check "Host notes cover the auth_env secret and non-transactional remote creates
   "$(printf '%s\n' "$HOST_NOTES" | grep -q 'auth_env' || echo 'no auth_env')$(printf '%s\n' "$HOST_NOTES" | grep -q 'not transactional' || echo ' no non-transactional note')"
 check "the run scratch directory comes from mktemp -d" \
   "$(grep -qF 'mktemp -d' "$SKILL_MD" || echo 'mktemp -d missing from SKILL.md')"
-check "the run scratch directory lives inside the working directory and is gitignored" \
-  "$(grep -qF 'mktemp -d .create-ticket-scratch/run.XXXXXX' "$SKILL_MD" || echo 'relative mktemp template missing')$(grep -qF 'git check-ignore -q .create-ticket-scratch/x' "$SKILL_MD" || echo ' check-ignore step missing')$(grep -qF 'cannot create the scratch directory .create-ticket-scratch/' "$SKILL_MD" || echo ' scratch ERROR line missing')$(grep -rqF 'it may be absolute' "$SKILL_DIR/references/agents" && echo ' agent bodies keep the absolute-scratch exception' || true)$(grep -qF 'mkdir -p .create-ticket-scratch &&' "$SKILL_MD" && echo ' scratch creation is a joined command' || true)$(grep -qF '>> "<root>/.gitignore"' "$SKILL_MD" || echo ' gitignore append does not target the repository root file')$(grep -cF 'Scratch: .create-ticket-scratch/run.k3Qz9a' "$SKILL_DIR/references/write-path-templates.md" | grep -qx 2 || echo ' success summaries lack the Scratch line')$(grep -rqE 'system temporary directory \(|may be absolute \(Host|TMPDIR' "$SKILL_DIR" && echo ' stale system-temp wording' || true)"
+# shellcheck disable=SC2016  # literal backticks
+check "the run scratch directory lives under .local/ inside the working directory and is gitignored" \
+  "$(grep -qF 'mktemp -d .local/create-ticket-scratch/run.XXXXXX' "$SKILL_MD" || echo 'relative mktemp template missing')$(grep -qF '`mkdir -p .local/create-ticket-scratch`' "$SKILL_MD" || echo ' mkdir command missing')$(grep -qF 'ERROR: create-ticket cannot create the scratch directory .local/create-ticket-scratch/ in the working directory (<reason>)' "$SKILL_MD" || echo ' scratch ERROR line missing')$(grep -rqF 'it may be absolute' "$SKILL_DIR/references/agents" && echo ' agent bodies keep the absolute-scratch exception' || true)$(grep -qF 'mkdir -p .local/create-ticket-scratch &&' "$SKILL_MD" && echo ' scratch creation is a joined command' || true)$(grep -qF '>> "<root>/.gitignore"' "$SKILL_MD" || echo ' gitignore append does not target the repository root file')$(grep -qF 'git check-ignore -q .create-ticket-scratch' "$SKILL_MD" && echo ' stale check-ignore scratch step' || true)$(grep -rqE 'system temporary directory \(|may be absolute \(Host|TMPDIR' "$SKILL_DIR" && echo ' stale system-temp wording' || true)"
+# The old scratch literal must be gone per occurrence, not per line (one
+# Argument Parsing line holds several occurrences).
+check "no .create-ticket-scratch literal outside the .local/ form remains in the generated tree" \
+  "$(grep -rn 'create-ticket-scratch' "$SKILL_DIR" | sed 's#\.local/create-ticket-scratch##g' | grep 'create-ticket-scratch' | cut -c1-160 || true)"
+MISSING=""
+for f in SKILL.md README.md references/destinations.md references/agent-spawn-prompts.md references/mode-dispatch-flows.md references/agents/researcher.md references/agents/planner.md references/agents/decomposer.md references/agents/ticket-evaluator.md; do
+  grep -qF '.local/create-ticket-scratch' "$SKILL_DIR/$f" || MISSING="$MISSING $f"
+done
+check "the .local/create-ticket-scratch path is named in SKILL.md, the README, the references and every agent body" "$MISSING"
 check "the researcher and planner are banned from running the product and from delete commands" \
   "$(for a in researcher planner; do grep -qF 'execution is not inspection' "$SKILL_DIR/references/agents/$a.md" || echo "no execution ban in $a.md"; grep -qF 'never run a delete command' "$SKILL_DIR/references/agents/$a.md" || echo "no delete ban in $a.md"; done)"
 check "Phase 4 spawns every ticket's evaluator in one message" \
   "$(grep -qF 'spawn the initial evaluator of every ticket in one message' "$SKILL_MD" || echo 'concurrent evaluator rule missing')"
 check "README names the scratch directory and no longer claims the skill was never run" \
-  "$(grep -qF '.create-ticket-scratch/run.<id>/' "$SKILL_DIR/README.md" || echo 'scratch dir missing from README')$(grep -qF 'not yet been exercised' "$SKILL_DIR/README.md" && echo ' stale never-run claim' || true)"
+  "$(grep -qF '.local/create-ticket-scratch/run.<id>/' "$SKILL_DIR/README.md" || echo 'scratch dir missing from README')$(grep -qF 'not yet been exercised' "$SKILL_DIR/README.md" && echo ' stale never-run claim' || true)"
 check "no ticket is ever delivered as NOT EVALUATED" \
   "$(grep -rn 'NOT EVALUATED' "$SKILL_DIR" | cut -c1-160 || true)"
 check "no MCP configuration file is read (mcp.json)" \
@@ -380,7 +390,7 @@ for needle in '# create-ticket' '## Install' '## Usage' '/create-ticket' 'source
 done
 check "README.md documents install, usage, sources, destinations, verdicts, files and limits" "$MISSING"
 check "the default destination is local:.local/tickets everywhere (no stale local:tickets)" \
-  "$(grep -rn 'local:tickets' "$SKILL_DIR" | cut -c1-160 || true)$(grep -qF 'Absent → `local:.local/tickets`' "$SKILL_MD" || echo ' SKILL.md lacks the .local/tickets default')$(grep -qF '.local/tickets/{parent-slug}' "$SKILL_DIR/references/write-path-templates.md" || echo ' summary examples lack .local/tickets')"
+  "$(grep -rn 'local:tickets' "$SKILL_DIR" | cut -c1-160 || true)$(grep -qF 'Absent, and no output statement in the request → `local:.local/tickets`' "$SKILL_MD" || echo ' SKILL.md lacks the .local/tickets default')$(grep -qF '.local/tickets/{parent-slug}' "$SKILL_DIR/references/write-path-templates.md" || echo ' summary examples lack .local/tickets')"
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks
 for needle in '**Prose resolution**' 'Resolved: <' '**Character rule**' 'parent=<id>' '[parent=<id>]'; do
@@ -880,6 +890,11 @@ SKILL.md|NOTE: this host has no ask-user tool; running as if confirm=yes was pas
 README.md|NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead
 references/destinations.md|NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead
 SKILL.md|ERROR: confirm= must be yes or no
+SKILL.md|ERROR: keep_scratch= must be yes or no
+SKILL.md|grep -qxF '**/.local/*' "<root>/.gitignore"
+SKILL.md|printf '%s\n' '**/.local/*' >> "<root>/.gitignore"
+SKILL.md|WARNING: could not remove the scratch directory <{scratch}> (<reason>)
+references/write-path-templates.md|WARNING: could not remove the scratch directory <{scratch}> (<reason>)
 NEEDLES
 check "the new ERROR: literals are present where they are raised" "$MISSING"
 MISSING=""
@@ -1107,6 +1122,77 @@ for kind in mcp api cli browser; do
   printf '%s\n' "$sect" | grep -qF -- 'Only `confirm=yes`, typed or implied, skips the question.' || MISSING="$MISSING destinations.md-$kind:'typed or implied skip'"
 done
 check "implied confirm=yes on a host with no ask-user tool: [confirm=yes|no], the NOTE line where it is printed and repeated, and the confirm=no preflight stop" "$MISSING"
+
+# Scratch removal (keep_scratch=), the **/.local/* gitignore line and the
+# one-destination rule: every site states the same rule.
+MISSING=""
+WP_MD="$SKILL_DIR/references/write-path-templates.md"
+DELIVERY_SECTION="$(awk '/^## Delivery$/ {d = 1; next} d && /^## / {d = 0} d' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks and braces
+for needle in '`rm -r "{scratch}"`' '`rmdir .local/create-ticket-scratch`' '`rmdir .local`' 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' 'Scratch: removed' 'Scratch: <{scratch} path> (kept: <reason>)' '`keep_scratch=yes`, `error`, `a ticket was delivered with a FAIL verdict` and `overflow findings`' 'is expected and ignored silently' 'the only delete commands of this skill'; do
+  printf '%s\n' "$DELIVERY_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Delivery:'$needle'"
+done
+[ "$(grep -cF -- 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' "$SKILL_MD" || true)" -ge 2 ] || MISSING="$MISSING SKILL.md:WARNING (Delivery and Error Handling)"
+# shellcheck disable=SC2016  # literal backticks
+for needle in '- `keep_scratch=yes|no`:' 'ERROR: keep_scratch= must be yes or no'; do
+  printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+done
+# shellcheck disable=SC2016  # literal backticks
+grep -qF -- '| Unknown `keep_scratch=` value | `ERROR: keep_scratch= must be yes or no` |' "$SKILL_MD" || MISSING="$MISSING SKILL.md-Error-Handling:keep_scratch row"
+printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- '[keep_scratch=yes|no]' || MISSING="$MISSING argument-hint:'[keep_scratch=yes|no]'"
+printf '%s\n' "$ARGS_SECTION" | grep -F 'print `Usage: /create-ticket' | grep -qF -- '[keep_scratch=yes|no]' || MISSING="$MISSING Usage:'[keep_scratch=yes|no]'"
+for needle in '[keep_scratch=yes|no]' 'ERROR: keep_scratch= must be yes or no' 'Scratch: removed' '(kept: <reason>)' '**/.local/*'; do
+  grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
+done
+# shellcheck disable=SC2016  # literal braces
+for needle in 'Scratch: removed' 'Scratch: .local/create-ticket-scratch/run.k3Qz9a (kept: keep_scratch=yes)' 'Scratch: <the {scratch} path> (kept: error)' 'Scratch: <{scratch} path> (kept: <reason>)'; do
+  grep -qF -- "$needle" "$WP_MD" || MISSING="$MISSING write-path-templates.md:'$needle'"
+done
+# shellcheck disable=SC2016  # literal backticks
+ONE_DEST='**One destination.** A run delivers to exactly one destination. When the destination is not `local:`, no `ticket.md`, `split-plan.md` or counter file is written anywhere, and the default `.local/tickets` directory is never created.'
+[ "$(printf '%s\n' "$DELIVERY_SECTION" | awk 'NF {print; exit}' | grep -cF -- "$ONE_DEST" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md-Delivery:'One destination' is not the first paragraph"
+RULES_SECTION="$(awk '/^## Rules for every destination$/ {r = 1; next} r && /^## / {r = 0} r' "$DEST_MD")"
+[ "$(printf '%s\n' "$RULES_SECTION" | awk 'NF {print; exit}' | grep -cF -- "- $ONE_DEST" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:'One destination' is not the first rule"
+# shellcheck disable=SC2016  # literal backticks
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- 'Absent, and no output statement in the request → `local:.local/tickets`' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Absent, and no output statement'"
+# shellcheck disable=SC2016  # literal backticks and braces
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- 'the `Resolved:` line is mandatory output and Phase 1 must not start before it is printed; a derived destination'"'"'s body template is written only to `{scratch}/template-derived.json` (no other file name)' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Resolved: mandatory'"
+# shellcheck disable=SC2016  # literal backticks
+grep -qF -- 'the only line this skill adds to `.gitignore` for them is the `**/.local/*` line' "$DEST_MD" || MISSING="$MISSING destinations.md:'**/.local/*' tickets sentence"
+check "keep_scratch=, the scratch removal commands and its WARNING, the Scratch: removed / (kept: ...) forms, the **/.local/* line and the One destination rule are stated at every site" "$MISSING"
+# A live run delivered remotely AND saved a local copy: the One destination
+# rule forbids a local copy for a destination other than local:, in the first
+# paragraph of SKILL.md Delivery and in the first rule of destinations.md.
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks and braces
+NO_COPY='For a destination other than `local:`, no copy of any ticket is saved to a local file (not under `.local/tickets`, not anywhere else outside `{scratch}`), not even as a backup or for reference.'
+[ "$(printf '%s\n' "$DELIVERY_SECTION" | awk 'NF {print; exit}' | grep -cF -- "$NO_COPY" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md-Delivery:first paragraph"
+[ "$(printf '%s\n' "$RULES_SECTION" | awk 'NF {print; exit}' | grep -cF -- "$NO_COPY" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:first rule"
+grep -qF -- 'saves no copy of any ticket to a local file' "$SKILL_DIR/README.md" || MISSING="$MISSING README.md"
+check "the One destination rule forbids any local copy of a ticket for a destination other than local:" "$MISSING"
+# The same run ended with a free-form recap instead of the summary block.
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks
+RECAP_RULE='with its literal heading and its `Destination:` and `Scratch:` lines (each in the variants that carry it), and is never replaced by a free-form recap.'
+printf '%s\n' "$DELIVERY_SECTION" | grep -qF -- "$RECAP_RULE" || MISSING="$MISSING SKILL.md-Delivery"
+FINAL_FMT="$(awk '/^## Final summary format/ {f = 1; next} f && /^## / {f = 0} f' "$WP_MD")"
+printf '%s\n' "$FINAL_FMT" | grep -qF -- "$RECAP_RULE" || MISSING="$MISSING write-path-templates.md:Final-summary-format"
+grep -qF -- 'is never replaced by a free-form recap' "$SKILL_DIR/README.md" || MISSING="$MISSING README.md"
+check "the Final summary block keeps its stated format, heading, Destination: and Scratch: lines and is never replaced by a free-form recap" "$MISSING"
+# shellcheck disable=SC2016  # literal backticks
+check "no stale no-delete, never-gitignored or one-line .gitignore append claim remains" \
+  "$(grep -rnE -- 'uses no delete command|deletes nothing|is not removed at the end|never adds them to `\.gitignore`|No delete command is used|one-line `\.gitignore` append' "$SKILL_DIR" | cut -c1-160 || true)"
+# The command lists of Host notes (**Shell commands**) and the README ("Approve
+# only") hold the same commands, rm, rmdir and grep included.
+MISSING=""
+SHELL_BULLET="$(printf '%s\n' "$HOST_NOTES" | grep -F -- '- **Shell commands**:' || true)"
+APPROVE_PARA="$(grep -F -- 'Approve only the commands the steps name' "$SKILL_DIR/README.md" || true)"
+# shellcheck disable=SC2016  # literal backticks
+for cmd in '`date`' '`mktemp`' '`mkdir`' '`ls`' '`mv`' '`printf`' '`git`' '`command`' '`curl`' '`jq`' '`base64`' '`tr`' '`dd`' '`od`' '`grep`' '`rm`' '`rmdir`' '`python3`' '`python`' '`[`' '`echo`' '`case`'; do
+  printf '%s\n' "$SHELL_BULLET" | grep -qF -- "$cmd" || MISSING="$MISSING Host-notes:$cmd"
+  printf '%s\n' "$APPROVE_PARA" | grep -qF -- "$cmd" || MISSING="$MISSING README:$cmd"
+done
+check "the Host notes and README command lists agree and hold rm, rmdir and grep" "$MISSING"
 
 # A substitutions.tsv row that lost the TAB before its target glues the file
 # name onto the text: no generated line may end in a sentence end followed
