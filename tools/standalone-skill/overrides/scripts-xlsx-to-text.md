@@ -22,7 +22,11 @@ in the text that the skill reads and cites. Caps: --max-rows rows
 per sheet (default 2000), --max-cols columns per sheet (default 64),
 --max-chars characters of output in total (default 200000); a cap that is
 hit is reported as a line starting with "[truncated:" at the point it
-applies, never silently. Everything below counts toward --max-chars.
+applies, never silently. Everything below counts toward --max-chars, and so
+does its own "[truncated:" line: the text is cut so that the text and that
+line together stay within the cap (a cap shorter than the line prints the
+line alone, whole). A worksheet that starts after the cap is reached is not
+read at all.
 
 Cell values: shared and inline strings, numbers (a cell whose number format
 is a date format is printed as an ISO date or date-time from its serial
@@ -258,6 +262,10 @@ def read_xml(zf, name):
         data = zf.read(name)
     except KeyError:
         return None
+    except Exception as exc:
+        # A damaged member (bad CRC, broken or unsupported compression,
+        # encryption) is an unreadable workbook, not a crash.
+        fail(2, "cannot read %s: %s" % (name, str(exc) or type(exc).__name__))
     try:
         return ET.fromstring(data)
     except ET.ParseError as exc:
@@ -949,11 +957,19 @@ def main():
                 fail(2, "sheet(s) not found: %s; the workbook has: %s" % (", ".join(missing), ", ".join(names)))
             chosen = [entry for entry in chosen if entry[0] in limits.sheet]
         ctx = Context(zf, limits, strings, dates, strikes, date1904)
+        emitted = len(out[0])
         for name, member, hidden in chosen:
+            # Past the cap nothing more would be printed, so the remaining
+            # worksheets are neither parsed nor held in memory.
+            if emitted > limits.max_chars:
+                break
+            before = len(out)
             dump_sheet(ctx, name, member, hidden, out)
+            emitted += sum(len(piece) for piece in out[before:])
     text = "".join(out)
     if len(text) > limits.max_chars:
-        text = text[: limits.max_chars] + "\n[truncated: output exceeds %d characters; the rest of the workbook was not emitted]\n" % limits.max_chars
+        notice = "\n[truncated: output exceeds %d characters; the rest of the workbook was not emitted]\n" % limits.max_chars
+        text = text[: max(limits.max_chars - len(notice), 0)] + notice
     sys.stdout.write(text)
 
 
