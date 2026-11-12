@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.5] — 2026-11-12
+
+**TL;DR.** Six findings of an external code review of the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) are fixed: two runs that deliver to the same local directory at once are detected, a token that holds a control character is refused, and the workbook converter handles a damaged file and its output cap correctly. The plugin's own skills, agents and hooks are unchanged.
+
+### Changed
+
+- `scripts/xlsx_to_text.py`: `--max-chars` now bounds the whole output, its `[truncated:` line included (the output was up to about 90 characters over the cap before); a cap shorter than that line prints the line alone. A worksheet that starts after the cap is reached is no longer parsed.
+
+### Fixed
+
+- `local:` delivery no longer hands out a ticket number twice without notice when two runs deliver to the same directory at the same time. No lock is taken; the write is refused with `ERROR: create-ticket write refused — ticket number {NNN} is already used by <path>; ...` when a number is already used under another parent, and a counter that changed between its read and its write stops the run with `ERROR: create-ticket counter changed during delivery — ...`, the tickets left in place.
+- The token check of the `api:` destination and the `api:` source also refuses a control character (a line break, or the carriage return left by a file with CRLF line ends), which would have broken the `curl` config line or started a config line of its own. Only `"` and `\` were refused before.
+- `scripts/xlsx_to_text.py` exits 2 with one line (`cannot read <member>: ...`) for a workbook with a damaged member, as its documented exit status says, instead of a Python traceback and exit 1.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 123 / 123 (122 before: a damaged workbook member exits 2 with one line; the existing checks also gained the total length under `--max-chars 120`, the notice alone under `--max-chars 10`, the widened `case` pattern in both files and the two new `ERROR:` lines in `SKILL.md` and `references/destinations.md`).
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck (`--severity=warning`) clean on the changed test; the widened `case` pattern was run under `sh` against values holding a line break, a carriage return, a tab, `"` and `\`.
+- Untested: the two concurrent-run checks are instructions the skill follows and were not exercised with two live runs, and no test covers the stop between worksheets once the cap is reached. Not changed: a `local:` directory that is a symbolic link is still followed, because `local:<dir>` may be any directory the user names.
+
 ## [11.8.4] — 2026-11-12
 
 **TL;DR.** The generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) keeps its working files under `.local/`, removes them after a clean run, and states that a run delivers to exactly one destination. A live run on a host that created the tickets remotely and also saved a local copy prompted the last rule. The plugin's own skills, agents and hooks are unchanged.
