@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.6] — 2026-11-13
+
+**TL;DR.** The workbook converter of the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) no longer builds text beyond `--max-chars`: a small workbook whose cells all refer to one long string made it hold gigabytes before the final cut. Two findings of an external code review prompted the change. The plugin's own skills, agents and hooks are unchanged.
+
+### Changed
+
+- `scripts/xlsx_to_text.py`: when the output so far is exactly `--max-chars` long and a worksheet remains, that worksheet is not read, as documented, and the `[truncated:` line is still printed. A damaged member in that unread worksheet therefore no longer exits 2 (the run exits 0 with the truncated output), and its pictures are not written by `--extract-media`. Output within the cap, and every other cut, is byte-identical to v11.8.5.
+
+### Fixed
+
+- `scripts/xlsx_to_text.py` stops generating a worksheet's cells, notes, shapes and images once `--max-chars` is reached, so memory is bounded by the parsed workbook parts plus the cap. Before, the whole worksheet was built first: one 1 MB shared string referenced by 128,000 cells (a 530 KB file, inside every safety limit) asked for tens of gigabytes.
+- `scripts/xlsx_to_text.py` parses a notes part, a drawing part or a worksheet member once however many relationships or sheet entries refer to it, and escapes a long value held by many cells once, so run time no longer grows with references times part size. Each reference is still printed.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 130 / 130 (123 before: traced peak memory under `--max-chars 5000` for long shared, rich-text, note, threaded-comment and picture-name fixtures; the exact-boundary stop with a malformed next worksheet; picture extraction under a cap; parse and escape counts on duplicate references; note order and merge markers on replayed parts; the fixture's full output pinned as text; a sweep of the documented cut over about 530 cap values for 4 option sets).
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck (`--severity=warning`) clean on the changed test.
+- Differential runs against the v11.8.5 script: 150 generated workbooks, about 173,000 option and cap combinations, identical stdout, stderr and exit status apart from the exact-boundary change above. Measured on macOS at `--max-chars 60000`: the 128,000-cell workbook converts in 0.2 s at 99 MB peak; a 20 KB string in 19,200 cells takes 99 MB (803 MB before) with identical output.
+- Untested: peak memory is asserted with `tracemalloc`, not process size, and no test runs the largest workbook the safety limits allow.
+
 ## [11.8.5] — 2026-11-12
 
 **TL;DR.** Six findings of an external code review of the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) are fixed: two runs that deliver to the same local directory at once are detected, a token that holds a control character is refused, and the workbook converter handles a damaged file and its output cap correctly. The plugin's own skills, agents and hooks are unchanged.

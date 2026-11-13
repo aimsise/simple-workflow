@@ -22,7 +22,16 @@
 #   - the .xlsx converter, run on a fixture workbook built here, prints
 #     values, structure (line breaks, merges, strikethrough, hidden rows and
 #     columns), notes, shapes and images, honours --layout, --extract-media
-#     and every cap, and marks a missing part instead of failing
+#     and every cap, and marks a missing part instead of failing; the
+#     character cap also bounds the text generated (traced peak memory on
+#     workbooks built here whose cells, notes, comments or pictures share one
+#     long string), a worksheet that starts at the cap is not parsed, a part
+#     that many relationships or worksheet entries point at is printed once
+#     per reference without being parsed once per reference, a long value
+#     that many cells hold is not escaped once per cell, the full output of
+#     the fixture workbook equals the text pinned here, and at every
+#     --max-chars the output is that text, whole or cut at the documented
+#     place
 #   - the optional sheet renderer, driven by stand-in renderer programs
 #     written here (a PDF writer per renderer shape, a failing one, a hanging
 #     one, one that writes no PDF), walks its chain, honours --timeout without
@@ -708,6 +717,376 @@ open('damaged.xlsx', 'wb').write(bytes(data))
     "$([ "$DAMAGED_RC" -eq 2 ] || echo "rc=$DAMAGED_RC")$([ "$(printf '%s\n' "$DAMAGED_ERR" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(printf '%s\n' "$DAMAGED_ERR" | grep -q '^xlsx_to_text: cannot \(read\|parse\) xl/workbook.xml' || echo " line: $DAMAGED_ERR")"
   check "xlsx converter: a non-zip file and a zip without a workbook exit 2" \
     "$([ "$NOT_ZIP_RC" -eq 2 ] || echo "not-zip rc=$NOT_ZIP_RC")$([ "$NO_WB_RC" -eq 2 ] || echo " no-workbook rc=$NO_WB_RC")"
+  # --- the character cap bounds the work, not only the printed text ----------
+  # make_cap.py writes small workbooks whose output is large: "plain" and
+  # "rich" fill 40 x 50 cells with one 100,000-character shared string (a
+  # single run; two runs, whose text is joined per reference), "notes" gives
+  # 2000 cell notes one 100,000-character author, "threaded" gives 2000
+  # threaded comments one person with a 100,000-character display name,
+  # "pictures" shows one media member with a 60,000-character name 2000
+  # times, and "boundary" holds a good first sheet and a second sheet whose
+  # member is not well-formed XML. The remaining kinds point many references
+  # at one part: "blank" fills 40 x 50 cells with one shared string of
+  # 100,000 spaces (escaped, it is empty), "dupnotes" has 600 comments
+  # relationships on one part whose single note is 100,000 characters long,
+  # "dupdraw" has 600 drawing relationships on one drawing with one shape,
+  # "dupsheets" has 300 worksheet entries on one worksheet member, and
+  # "replay" relates the comments parts A, B, a threaded part, then A again
+  # (the notes of one cell must come in relationship order, A's twice) and
+  # holds merged cells whose shared value is longer than 1024 characters and
+  # used on four rows: one starting with a line break, one with plain text,
+  # one with the literal characters <br>.
+  CAP_DIR="$TMP_ROOT/xlsx-cap"
+  mkdir -p "$CAP_DIR"
+  cat >"$CAP_DIR/make_cap.py" <<'PYCAP'
+import sys, zipfile
+kind, out = sys.argv[1], sys.argv[2]
+MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PKG = "http://schemas.openxmlformats.org/package/2006/relationships"
+TC = "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"
+MS = "http://schemas.microsoft.com/office/2017/10/relationships"
+XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+DML = "http://schemas.openxmlformats.org/drawingml/2006/main"
+BIG = "a" * 100000
+def col(n):
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+def sheet(rows, cols):
+    body = "".join('<row r="%d">%s</row>' % (r, "".join('<c r="%s%d" t="s"><v>0</v></c>' % (col(c), r) for c in range(1, cols + 1))) for r in range(1, rows + 1))
+    return '<worksheet xmlns="%s"><sheetData>%s</sheetData></worksheet>' % (MAIN, body)
+def rels(kind_uri, target, count=1):
+    return '<Relationships xmlns="%s">%s</Relationships>' % (PKG, "".join('<Relationship Id="rId%d" Type="%s" Target="%s"/>' % (i, kind_uri, target) for i in range(1, count + 1)))
+names = ["Data"]
+sheet_members = None
+parts = {}
+if kind in ("threaded", "pictures", "dupnotes", "dupdraw", "dupsheets"):
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s"><si><t>x</t></si></sst>' % MAIN
+    parts["xl/worksheets/sheet1.xml"] = sheet(1, 1)
+if kind == "plain":
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s"><si><t>%s</t></si></sst>' % (MAIN, BIG)
+    parts["xl/worksheets/sheet1.xml"] = sheet(40, 50)
+elif kind == "rich":
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s"><si><r><t>%s</t></r><r><t>%s</t></r></si></sst>' % (MAIN, BIG[:50000], BIG[:50000])
+    parts["xl/worksheets/sheet1.xml"] = sheet(40, 50)
+elif kind == "notes":
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s"><si><t>x</t></si></sst>' % MAIN
+    parts["xl/worksheets/sheet1.xml"] = sheet(1, 1)
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = '<Relationships xmlns="%s"><Relationship Id="rId1" Type="%s/comments" Target="../comments1.xml"/></Relationships>' % (PKG, REL)
+    parts["xl/comments1.xml"] = '<comments xmlns="%s"><authors><author>%s</author></authors><commentList>%s</commentList></comments>' % (MAIN, BIG, "".join('<comment ref="A%d" authorId="0"><text><t>n</t></text></comment>' % r for r in range(1, 2001)))
+elif kind == "threaded":
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = rels(MS + "/threadedComment", "../threadedComments/threadedComment1.xml")
+    parts["xl/threadedComments/threadedComment1.xml"] = '<ThreadedComments xmlns="%s">%s</ThreadedComments>' % (TC, "".join('<threadedComment ref="A%d" personId="{P}" id="{T%d}"><text>n</text></threadedComment>' % (r, r) for r in range(1, 2001)))
+    parts["xl/persons/person.xml"] = '<personList xmlns="%s"><person displayName="%s" id="{P}"/></personList>' % (TC, BIG)
+elif kind == "pictures":
+    media = "a" * 60000 + ".png"
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = rels(REL + "/drawing", "../drawings/drawing1.xml")
+    parts["xl/drawings/drawing1.xml"] = '<xdr:wsDr xmlns:xdr="%s" xmlns:a="%s" xmlns:r="%s">%s</xdr:wsDr>' % (XDR, DML, REL, "".join('<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>%d</xdr:row></xdr:from><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="%d" name="P"/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic></xdr:oneCellAnchor>' % (r, r) for r in range(2000)))
+    parts["xl/drawings/_rels/drawing1.xml.rels"] = rels(REL + "/image", "../media/" + media)
+    parts["xl/media/" + media] = "png"
+elif kind == "blank":
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s"><si><t xml:space="preserve">%s</t></si></sst>' % (MAIN, " " * 100000)
+    parts["xl/worksheets/sheet1.xml"] = sheet(40, 50)
+elif kind == "dupnotes":
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = rels(REL + "/comments", "../comments1.xml", 600)
+    parts["xl/comments1.xml"] = '<comments xmlns="%s"><authors><author>Ann</author></authors><commentList><comment ref="A1" authorId="0"><text><t xml:space="preserve">a%sb</t></text></comment></commentList></comments>' % (MAIN, " " * 100000)
+elif kind == "dupdraw":
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = rels(REL + "/drawing", "../drawings/drawing1.xml", 600)
+    parts["xl/drawings/drawing1.xml"] = '<xdr:wsDr xmlns:xdr="%s" xmlns:a="%s"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="1" name="Box"/></xdr:nvSpPr><xdr:txBody><a:p><a:r><a:t>shape text</a:t></a:r></a:p></xdr:txBody></xdr:sp></xdr:oneCellAnchor></xdr:wsDr>' % (XDR, DML)
+elif kind == "dupsheets":
+    names = ["S%d" % i for i in range(1, 301)]
+    sheet_members = [1] * 300
+elif kind == "replay":
+    long_values = ["\n" + "w" * 1100, "y" * 1100, "&lt;br&gt;" + "x" * 1100]
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s">%s</sst>' % (MAIN, "".join('<si><t xml:space="preserve">%s</t></si>' % v for v in long_values))
+    body = "".join('<row r="%d">%s</row>' % (r, "".join('<c r="%s%d" t="s"><v>%d</v></c>' % (letter, r, i) for i, letter in enumerate("ACE"))) for r in range(1, 5))
+    merges = "".join('<mergeCell ref="%s%d:%s%d"/>' % (a, r, b, r) for r in range(1, 5) for a, b in ("AB", "CD", "EF"))
+    parts["xl/worksheets/sheet1.xml"] = '<worksheet xmlns="%s"><sheetData>%s</sheetData><mergeCells>%s</mergeCells></worksheet>' % (MAIN, body, merges)
+    note = '<comment ref="%s" authorId="0"><text><t>%s</t></text></comment>'
+    parts["xl/commentsA.xml"] = '<comments xmlns="%s"><authors><author>Ann</author></authors><commentList>%s</commentList></comments>' % (MAIN, note % ("B2", "A first") + note % ("A1", "A on A1") + note % ("B2", "A second"))
+    parts["xl/commentsB.xml"] = '<comments xmlns="%s"><authors><author>Bob</author></authors><commentList>%s</commentList></comments>' % (MAIN, note % ("B2", "B on B2") + note % ("C3", "B under the thread"))
+    parts["xl/threadedComments/threadedComment1.xml"] = '<ThreadedComments xmlns="%s"><threadedComment ref="C3" personId="{P}" id="{T}"><text>thread on C3</text></threadedComment></ThreadedComments>' % TC
+    parts["xl/persons/person.xml"] = '<personList xmlns="%s"><person displayName="Pat" id="{P}"/></personList>' % TC
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = '<Relationships xmlns="%s">%s</Relationships>' % (PKG, "".join('<Relationship Id="rId%d" Type="%s" Target="../%s"/>' % (i, t, g) for i, (t, g) in enumerate([(REL + "/comments", "commentsA.xml"), (REL + "/comments", "commentsB.xml"), (MS + "/threadedComment", "threadedComments/threadedComment1.xml"), (REL + "/comments", "commentsA.xml")], 1)))
+elif kind == "boundary":
+    names = ["First", "Second"]
+    parts["xl/sharedStrings.xml"] = '<sst xmlns="%s"><si><t>first sheet value</t></si></sst>' % MAIN
+    parts["xl/worksheets/sheet1.xml"] = sheet(3, 2)
+    parts["xl/worksheets/sheet2.xml"] = "<worksheet><sheetData"
+else:
+    sys.exit("unknown kind " + kind)
+parts["xl/workbook.xml"] = '<workbook xmlns="%s" xmlns:r="%s"><sheets>%s</sheets></workbook>' % (MAIN, REL, "".join('<sheet name="%s" sheetId="%d" r:id="rId%d"/>' % (n, i, i) for i, n in enumerate(names, 1)))
+if sheet_members is None:
+    sheet_members = list(range(1, len(names) + 1))
+parts["xl/_rels/workbook.xml.rels"] = '<Relationships xmlns="%s">%s</Relationships>' % (PKG, "".join('<Relationship Id="rId%d" Type="%s/worksheet" Target="worksheets/sheet%d.xml"/>' % (i, REL, m) for i, m in enumerate(sheet_members, 1)))
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for name in sorted(parts):
+        z.writestr(name, parts[name])
+PYCAP
+  # run_capped.py SCRIPT ARGS... runs the converter in-process under
+  # tracemalloc and prints "<exit status> <peak traced bytes> <characters
+  # printed> <1 when the output ends with the truncation notice, else 0>
+  # <XML documents parsed> <characters passed to escape()> <the last character
+  # printed before the notice, - when nothing was>". The traced peak counts
+  # the Python objects the converter allocates, and the two work counters
+  # count calls, so none of them depends on the platform's process accounting
+  # or on the speed of the machine.
+  cat >"$CAP_DIR/run_capped.py" <<'PYRUN'
+import io, runpy, sys, tracemalloc
+import xml.etree.ElementTree as ET
+script = sys.argv[1]
+sys.argv = sys.argv[1:]
+work = {"parses": 0, "escaped": 0}
+parse = ET.fromstring
+def counted(data):
+    work["parses"] += 1
+    return parse(data)
+ET.fromstring = counted
+def profile(frame, event, arg):
+    if event == "call" and frame.f_code.co_name == "escape":
+        work["escaped"] += len(frame.f_locals.get("value", ""))
+captured = io.StringIO()
+real = sys.stdout
+sys.stdout = captured
+status = 0
+tracemalloc.start()
+sys.setprofile(profile)
+try:
+    runpy.run_path(script, run_name="__main__")
+except SystemExit as exc:
+    status = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+sys.setprofile(None)
+peak = tracemalloc.get_traced_memory()[1]
+tracemalloc.stop()
+sys.stdout = real
+text = captured.getvalue()
+notice = "the rest of the workbook was not emitted]\n"
+cut = text[: text.rfind("\n[truncated: output exceeds")] if text.endswith(notice) else text
+print(status, peak, len(text), 1 if text.endswith(notice) else 0, work["parses"], work["escaped"], cut[-1:].strip() or "-")
+PYRUN
+  # A workbook of 2000 references to one 100,000-character string would print
+  # 200,000,000 characters; with --max-chars 5000 the converter must stay
+  # within 32 MiB of traced memory (it needs about 6 MiB; building the whole
+  # text first needs more than 190 MiB). The output is cut inside the long
+  # string, so it is exactly 5000 characters long and the last character
+  # before the notice is one of that string: a converter that drops the
+  # piece crossing the cap instead of cutting it prints far less.
+  CAP_PEAK_LIMIT=$((32 * 1024 * 1024))
+  MISSING=""
+  for kind in plain rich notes threaded pictures; do
+    python3 -I "$CAP_DIR/make_cap.py" "$kind" "$CAP_DIR/$kind.xlsx"
+    for layout in table cells; do
+      CAP_RES="$(python3 -I "$CAP_DIR/run_capped.py" "$XLSX_PY" --max-chars 5000 --layout "$layout" -- "$CAP_DIR/$kind.xlsx" 2>&1 | tail -n 1)"
+      read -r _ CAP_PEAK CAP_LEN _ _ _ CAP_LAST <<<"$CAP_RES" || true
+      if printf '%s\n' "$CAP_RES" | grep -qE '^0 [0-9]+ [0-9]+ 1 [0-9]+ [0-9]+ [^ ]+$'; then
+        [ "$CAP_PEAK" -le "$CAP_PEAK_LIMIT" ] || MISSING="$MISSING $kind/$layout: peak $CAP_PEAK bytes exceeds $CAP_PEAK_LIMIT"
+        [ "$CAP_LEN" -eq 5000 ] || MISSING="$MISSING $kind/$layout: $CAP_LEN characters printed under a cap of 5000, expected exactly 5000"
+        [ "$CAP_LAST" = a ] || MISSING="$MISSING $kind/$layout: the output is not cut inside the long string (last character before the notice: $CAP_LAST)"
+      else
+        MISSING="$MISSING $kind/$layout: unexpected result '$CAP_RES' (expected: exit status 0, peak bytes, characters, 1 for the notice, parses, escaped characters, last character)"
+      fi
+    done
+  done
+  check "xlsx converter: cells, notes, threaded comments or pictures that share one long string are not turned into text past --max-chars (traced peak memory stays under 32 MiB, the output is cut inside the string)" "$MISSING"
+  # Many references to one part: the part is printed once per reference (as
+  # it always was) but parsed at most twice, and a long value held by many
+  # cells is escaped at most twice per worksheet. Without that, the 600
+  # relationships cost 600 parses (and, for the notes, 600 copies of the
+  # note), the 300 worksheet entries 300 parses, and the 2000 blank cells
+  # 200,000,000 escaped characters for a few thousand characters of output.
+  MISSING=""
+  cap_work() {
+    local kind="$1" max_parses="$2" max_escaped="$3" needle="$4" want="$5" res peak parses escaped got
+    shift 5
+    python3 -I "$CAP_DIR/make_cap.py" "$kind" "$CAP_DIR/$kind.xlsx"
+    res="$(python3 -I "$CAP_DIR/run_capped.py" "$XLSX_PY" "$@" -- "$CAP_DIR/$kind.xlsx" 2>&1 | tail -n 1)"
+    read -r _ peak _ _ parses escaped _ <<<"$res" || true
+    if printf '%s\n' "$res" | grep -qE '^0 [0-9]+ [0-9]+ [01] [0-9]+ [0-9]+ [^ ]+$'; then
+      [ "$peak" -le "$CAP_PEAK_LIMIT" ] || MISSING="$MISSING $kind $*: peak $peak bytes exceeds $CAP_PEAK_LIMIT"
+      [ "$parses" -le "$max_parses" ] || MISSING="$MISSING $kind $*: $parses XML documents parsed, expected at most $max_parses"
+      [ "$escaped" -le "$max_escaped" ] || MISSING="$MISSING $kind $*: $escaped characters escaped, expected at most $max_escaped"
+    else
+      MISSING="$MISSING $kind $*: unexpected result '$res'"
+    fi
+    if [ -n "$needle" ]; then
+      got="$(python3 -I "$XLSX_PY" "$@" -- "$CAP_DIR/$kind.xlsx" 2>/dev/null | grep -cF -- "$needle" || true)"
+      [ "$got" = "$want" ] || MISSING="$MISSING $kind $*: '$needle' printed $got times, expected $want (once per reference)"
+    fi
+  }
+  cap_work blank 12 1000000 '' 0 --max-chars 5000 --layout table
+  cap_work blank 12 1000000 '' 0 --max-chars 5000 --layout cells
+  cap_work dupnotes 12 1000000 '- c1 row 1 (A1), Ann: a b' 600
+  cap_work dupnotes 12 1000000 '- c1 row 1 (A1), Ann: a b' 12 --max-chars 500
+  cap_work dupdraw 12 1000000 '- "Box" at c1 row 1: shape text' 600
+  cap_work dupsheets 12 1000000 '## Sheet: S' 300
+  check "xlsx converter: a part that many relationships or worksheet entries point at is printed once per reference but not parsed once per reference, and a long value held by many cells is not escaped once per cell" "$MISSING"
+  # What the reuse must not change: the notes of a part related twice come
+  # twice, each cell's notes in relationship order (A, B, A again; the legacy
+  # note under a threaded comment is left out), and a merge marker is followed
+  # by a space only when the first line of its cell's value is not blank,
+  # also for a long value whose escaped text is reused.
+  python3 -I "$CAP_DIR/make_cap.py" replay "$CAP_DIR/replay.xlsx"
+  python3 -I "$XLSX_PY" --layout table -- "$CAP_DIR/replay.xlsx" >"$CAP_DIR/replay.out" 2>/dev/null || true
+  cat >"$CAP_DIR/replay-notes.expected" <<'NOTES'
+### Notes
+- c1 row 1 (A1), Ann: A on A1
+- c1 row 1 (A1), Ann: A on A1
+- c2 row 2 (B2), Ann: A first
+- c2 row 2 (B2), Ann: A second
+- c2 row 2 (B2), Bob: B on B2
+- c2 row 2 (B2), Ann: A first
+- c2 row 2 (B2), Ann: A second
+- c3 row 3 (C3), Pat: thread on C3
+NOTES
+  MISSING=""
+  [ "$(awk '/^### Notes$/ {n = 1} n && /^$/ {n = 0} n' "$CAP_DIR/replay.out")" = "$(cat "$CAP_DIR/replay-notes.expected")" ] || MISSING="$MISSING the Notes section is not the pinned one"
+  for needle in '[merged c1-c2]<br>www' '[merged c3-c4] yyy' '[merged c5-c6] <br>xxx'; do
+    [ "$(grep -cF -- "$needle" "$CAP_DIR/replay.out" || true)" = 4 ] || MISSING="$MISSING '$needle' is not on each of the 4 rows"
+  done
+  grep -qF -- '[merged c1-c2] ' "$CAP_DIR/replay.out" && MISSING="$MISSING a marker before a value that starts with a line break is followed by a space"
+  check "xlsx converter: notes of parts related several times keep their order, and a merge marker joins a long reused value as it joins any other" "$MISSING"
+  # The boundary: with the cap equal to the text printed up to the end of the
+  # first sheet, the second sheet is not parsed (its member is malformed, so
+  # parsing it exits 2, as the run one character above the cap shows), and the
+  # skipped sheet is still reported.
+  python3 -I "$CAP_DIR/make_cap.py" boundary "$CAP_DIR/boundary.xlsx"
+  CAP_L="$(python3 -I "$XLSX_PY" --sheet=First -- "$CAP_DIR/boundary.xlsx" 2>/dev/null | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8")))')"
+  set +e
+  CAP_EXACT="$(python3 -I "$XLSX_PY" --max-chars "$CAP_L" -- "$CAP_DIR/boundary.xlsx" 2>"$CAP_DIR/exact.err")"; CAP_EXACT_RC=$?
+  python3 -I "$XLSX_PY" --max-chars "$((CAP_L + 1))" -- "$CAP_DIR/boundary.xlsx" >/dev/null 2>"$CAP_DIR/above.err"; CAP_ABOVE_RC=$?
+  set -e
+  CAP_EXACT_LEN="$(python3 -I "$XLSX_PY" --max-chars "$CAP_L" -- "$CAP_DIR/boundary.xlsx" 2>/dev/null | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8")))' || true)"
+  check "xlsx converter: a worksheet that starts exactly at --max-chars is not parsed, and skipping it is reported" \
+    "$([ "$CAP_EXACT_RC" -eq 0 ] || echo "rc=$CAP_EXACT_RC")$([ ! -s "$CAP_DIR/exact.err" ] || echo " stderr: $(head -n 1 "$CAP_DIR/exact.err")")$(printf '%s\n' "$CAP_EXACT" | tail -n 1 | grep -qxF -- "[truncated: output exceeds $CAP_L characters; the rest of the workbook was not emitted]" || echo ' no truncation notice on the last line')$(printf '%s\n' "$CAP_EXACT" | grep -qF -- '## Sheet: First' || echo ' first sheet heading missing')$([ "${CAP_EXACT_LEN:-0}" -le "$CAP_L" ] || echo " $CAP_EXACT_LEN characters printed under a cap of $CAP_L")$([ "$CAP_ABOVE_RC" -eq 2 ] || echo " one character above the cap: rc=$CAP_ABOVE_RC, expected 2")$(grep -q '^xlsx_to_text: cannot parse xl/worksheets/sheet2.xml' "$CAP_DIR/above.err" || echo ' one character above the cap: the second sheet was not parsed')"
+  # A sheet that was read keeps its pictures: they are written even when the
+  # cap cuts the output before the sheet's ### Images section.
+  python3 -I "$XLSX_PY" --max-chars 120 --extract-media "$CAP_DIR/media" -- "$FIX_DIR/fixture.xlsx" >"$CAP_DIR/media.out" 2>/dev/null || true
+  check "xlsx converter: --extract-media still writes the pictures of a sheet whose output is cut by --max-chars" \
+    "$([ "$(wc -c <"$CAP_DIR/media/Backlog-image1.png" 2>/dev/null | tr -d ' ')" = 70 ] || echo 'media file missing or wrong size')$(grep -qF -- '### Images' "$CAP_DIR/media.out" && echo ' the Images section was printed, so the cap did not cut before it' || true)"
+  # The full output of the fixture workbook, pinned: the text below is what
+  # the converter printed before --max-chars bounded the text it generates,
+  # so a change to it is a change of the converter's output and has to be
+  # made here on purpose.
+  cat >"$CAP_DIR/full.expected" <<'FULLTEXT'
+# Workbook: fixture.xlsx
+
+## Sheet: Backlog
+
+| row | c1 | c2 | c3 | c4 | c5 (hidden) |
+|---|---|---|---|---|---|
+| 1 | ID | Title | Due | Done | Owner |
+| 2 | 1 | Add login \| form | 2023-03-15 | TRUE |  |
+| 4 | 2.5 | ab | 2023-03-15T12:00:00 | #N/A |  |
+| 5 | 3 |  |  |  |  |
+| 6 | 4 | first line<br>second line |  |  |  |
+| 7 (hidden) | 5 | old version |  |  |  |
+| 8 | 6 | keep ~~struck run~~ plain run | ~~whole cell struck~~ | ~~bold word~~ | ~~keep struck run plain run~~ |
+| 9 | [merged c1-c3] Section heading |  |  |  |  |
+| 10 |  |  |  |  | [merged rows 10-11] |
+
+[truncated: sheet Backlog has columns beyond c64; they were not read]
+
+### Notes
+- c2 row 2 (B2), Reviewer A: needs a spec
+- c3 row 4 (C4), Reviewer A: confirm the<br>time zone
+- c5 row 9 (E9), Pat Person: threaded body
+
+### Shapes
+- "TextBox 1" at c3 row 5 to c6 row 9: First paragraph<br>Second paragraph
+- "Callout 3" at c1 row 12: Grouped callout
+- "Lead 7" at c1 row 14: <br>after an empty paragraph
+- "Break 8" at c1 row 16: ends in a break<br><br>next paragraph
+- chart "Chart 5" at c10 row 2 to c15 row 13: (chart; data not read)
+
+### Images
+- "Picture 6" at c2 row 10 to c5 row 20: image1.png (70 bytes)
+
+## Sheet: Notes (hidden)
+
+| row | c1 |
+|---|---|
+| 1 | hidden note |
+
+## Sheet: Grid (layout: cells)
+
+- r1 c1 [merged c1-c2 rows 1-2]: Title block
+- r1 c15: far right
+- r2 c20: edge
+- r3 c1: footer
+- r3 c20: 7
+
+[truncated: sheet Grid has columns beyond c64; they were not read]
+
+## Sheet: Wide (layout: cells)
+
+- r1 c1: wide start
+- r1 c15: wide middle
+- r2 c20: wide edge
+
+FULLTEXT
+  python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" >"$CAP_DIR/full.out" 2>/dev/null || true
+  check "xlsx converter: the full output of the fixture workbook is the pinned text, byte for byte" \
+    "$(cmp "$CAP_DIR/full.expected" "$CAP_DIR/full.out" 2>&1 | head -n 1 || true)"
+  # cap_sweep.py SCRIPT WORKBOOK [ARGS...] runs the converter in-process at a
+  # spread of --max-chars values (every third value from 1 to the full length
+  # plus 2, the lengths around the notice's own, the output length at the
+  # start of every worksheet section and one below and above it, and the full
+  # length and its neighbours) and prints one line per value whose output is
+  # not the documented one: the uncapped output, whole, when it fits the cap
+  # (no notice, also on an exact fit); otherwise the uncapped output cut to
+  # the cap minus the notice's length, followed by the notice. Exit status and
+  # stderr must be those of the uncapped run.
+  cat >"$CAP_DIR/cap_sweep.py" <<'PYSWEEP'
+import contextlib, io, sys
+script, book, extra = sys.argv[1], sys.argv[2], sys.argv[3:]
+with open(script) as handle:
+    code = compile(handle.read(), script, "exec")
+def run(args):
+    out, err = io.StringIO(), io.StringIO()
+    saved = sys.argv
+    sys.argv = [script] + args
+    status = 0
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            exec(code, {"__name__": "__main__"})
+    except SystemExit as exc:
+        status = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+    finally:
+        sys.argv = saved
+    return status, out.getvalue(), err.getvalue()
+status, full, err = run(extra + ["--", book])
+if status != 0 or not full:
+    sys.exit("uncapped run: exit status %d, %d characters" % (status, len(full)))
+n = len(full)
+notice_of = lambda cap: "\n[truncated: output exceeds %d characters; the rest of the workbook was not emitted]\n" % cap
+caps = set(range(1, n + 3, 3)) | set(range(n - 2, n + 3)) | set(range(len(notice_of(100)) - 3, len(notice_of(100)) + 4))
+start = full.find("## Sheet: ")
+while start != -1:
+    caps |= {start - 1, start, start + 1}
+    start = full.find("## Sheet: ", start + 1)
+bad = 0
+for cap in sorted(c for c in caps if c >= 1):
+    want = full if n <= cap else full[: max(cap - len(notice_of(cap)), 0)] + notice_of(cap)
+    got = run(extra + ["--max-chars", str(cap), "--", book])
+    if got != (status, want, err):
+        bad += 1
+        if bad <= 3:
+            what = "exit status %d" % got[0] if got[0] != status else ("stderr differs" if got[2] != err else "stdout is %d characters, expected %d%s" % (len(got[1]), len(want), "" if len(got[1]) != len(want) else " with other content"))
+            print("--max-chars %d: %s" % (cap, what))
+if bad > 3:
+    print("... and %d more" % (bad - 3))
+print("checked %d caps, %d wrong" % (len(caps), bad))
+PYSWEEP
+  MISSING=""
+  for sweep_args in "" "--layout table" "--layout cells" "--max-rows 2 --max-cols 3"; do
+    # shellcheck disable=SC2086  # the option set is split into words on purpose
+    SWEEP_RES="$(python3 -I "$CAP_DIR/cap_sweep.py" "$XLSX_PY" "$FIX_DIR/fixture.xlsx" $sweep_args 2>&1 | tail -n 4)"
+    printf '%s\n' "$SWEEP_RES" | tail -n 1 | grep -qE '^checked [0-9]+ caps, 0 wrong$' || MISSING="$MISSING [${sweep_args:-default}] $(printf '%s' "$SWEEP_RES" | tr '\n' ';')"
+  done
+  check "xlsx converter: at every --max-chars the output is the uncapped output, whole when it fits (no notice on an exact fit), else cut to the cap minus the notice and followed by the notice" "$MISSING"
   # --- sheet renderer, driven by stand-in renderer programs ------------------
   # Contract of the stand-ins: the soffice stand-in finds --outdir and the
   # workbook (its last argument) and writes <outdir>/<stem>.pdf; the
