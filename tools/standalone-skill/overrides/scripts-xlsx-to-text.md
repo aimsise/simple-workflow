@@ -25,8 +25,19 @@ hit is reported as a line starting with "[truncated:" at the point it
 applies, never silently. Everything below counts toward --max-chars, and so
 does its own "[truncated:" line: the text is cut so that the text and that
 line together stay within the cap (a cap shorter than the line prints the
-line alone, whole). A worksheet that starts after the cap is reached is not
-read at all.
+line alone, whole). A worksheet that starts once the cap is reached (the
+output so far is at least --max-chars characters long) is not read at all,
+and inside a worksheet no output is built past the cap: the cells, note
+lines, shape lines and image lines beyond it are not put together (the text
+of a note or a shape is escaped when its part is read, once), so the memory
+used follows the size of the workbook parts and of the cap, not the number
+of cells, notes or pictures times the length of a string they share. With
+--extract-media the
+pictures of a worksheet that was read are still written when their lines
+fall beyond the cap. A part that several relationships of one worksheet, or
+several worksheet entries of the workbook, point at is printed once per
+reference but parsed at most twice, and a long cell text that several cells
+hold is escaped at most twice per worksheet.
 
 Cell values: shared and inline strings, numbers (a cell whose number format
 is a date format is printed as an ISO date or date-time from its serial
@@ -110,6 +121,7 @@ parsed.
 """
 import argparse
 import datetime
+import heapq
 import os
 import posixpath
 import re
@@ -129,6 +141,7 @@ DATE_FORMAT_RE = re.compile(r"[dmyhs]", re.IGNORECASE)
 CELL_REF_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?([0-9]+)$")
 SLUG_RE = re.compile(r"[^A-Za-z0-9._-]")
 UNKNOWN_POS = 10 ** 9
+LONG_CELL = 1024
 
 
 def fail(code, message):
@@ -423,7 +436,10 @@ def serial_to_text(value, date1904):
     return moment.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def cell_value(cell, strings, is_date, cell_strike, date1904):
+def cell_value(cell, strings, is_date, cell_strike, date1904, rendered=None):
+    """Text of one cell. rendered, when given, memoizes the text of a shared
+    string per (index, struck), so every cell that references the string
+    holds the same object instead of a copy of its own."""
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         return render_runs(runs_of(cell), cell_strike)
@@ -433,9 +449,17 @@ def cell_value(cell, strings, is_date, cell_strike, date1904):
     raw = v.text
     if kind == "s":
         try:
-            return render_runs(strings[int(raw)], cell_strike)
+            index = int(raw)
+            runs = strings[index]
         except (ValueError, IndexError):
             value = raw
+        else:
+            if rendered is None:
+                return render_runs(runs, cell_strike)
+            key = (index, cell_strike)
+            if key not in rendered:
+                rendered[key] = render_runs(runs, cell_strike)
+            return rendered[key]
     elif kind == "b":
         value = "TRUE" if raw.strip() == "1" else "FALSE"
     elif kind in ("str", "e"):
@@ -536,6 +560,35 @@ def slug(text):
     return SLUG_RE.sub("_", text)
 
 
+class Output(object):
+    """The text to print, kept only up to cap characters. A piece that does
+    not fit is cut to the room left and sets over; later pieces are dropped,
+    so the text held never exceeds the cap, whatever is appended."""
+
+    def __init__(self, cap):
+        self.cap = cap
+        self.pieces = []
+        self.size = 0
+        self.over = False
+
+    def room(self):
+        """Characters that still fit; -1 once a piece was cut or dropped."""
+        return -1 if self.over else self.cap - self.size
+
+    def append(self, piece):
+        if self.over or not piece:
+            return
+        room = self.cap - self.size
+        if len(piece) > room:
+            if room > 0:
+                self.pieces.append(piece[:room])
+            self.size = self.cap
+            self.over = True
+        else:
+            self.pieces.append(piece)
+            self.size += len(piece)
+
+
 class Context(object):
     """Workbook-wide state shared by every sheet."""
 
@@ -546,10 +599,27 @@ class Context(object):
         self.dates = dates
         self.strikes = strikes
         self.date1904 = date1904
+        self.rendered = {}
+        self.requested = set()
+        self.kept = {}
         self.persons = None
         self.person_errors = []
         self.extracted = {}
         self.taken = {}
+
+    def once(self, key, build):
+        """build() for the part named by key. The result is kept from the
+        second request on, so a part that many relationships or worksheet
+        entries point at is parsed at most twice, and a part requested once
+        (every part of an ordinary workbook) is not held after its use."""
+        if key in self.kept:
+            return self.kept[key]
+        value = build()
+        if key in self.requested:
+            self.kept[key] = value
+        else:
+            self.requested.add(key)
+        return value
 
     def person_names(self):
         """{person id: display name}; problems reading a persons part go to
@@ -612,80 +682,214 @@ class Context(object):
         return self.extracted[key]
 
 
-def sheet_notes(ctx, rels):
-    """(lines, unreadable reasons) of the sheet's notes and comments."""
-    zf = ctx.zf
-    legacy = []
-    threaded = []
+def note_part(ctx, member, threaded):
+    """(notes, None) of a comments part (threaded: of a threaded comments
+    part), or (None, reason) for a missing or malformed part. A note is
+    ((row, column, index in the part), head, author suffix, text, address
+    key), sorted; the text is escaped here, once, and the suffix of one
+    author is one object, however many notes carry it."""
+    root, reason = soft_xml(ctx.zf, member)
+    if root is None:
+        return None, reason
+    found = []
+    if threaded:
+        persons = ctx.person_names()
+        suffixes = {}
+        for note in root.iter():
+            if local(note.tag) != "threadedComment":
+                continue
+            person = note.get("personId", "")
+            if person not in suffixes:
+                author = persons.get(person, "")
+                suffixes[person] = ", " + escape(author) if author.strip() else ""
+            body = child(note, "text")
+            found.append((note.get("ref", ""), suffixes[person], (body.text or "") if body is not None else ""))
+    else:
+        authors = [text_of(a) or (a.text or "") for a in root.iter() if local(a.tag) == "author"]
+        suffixes = [", " + escape(author) if author.strip() else "" for author in authors]
+        for note in root.iter():
+            if local(note.tag) != "comment":
+                continue
+            suffix = ""
+            try:
+                idx = int(note.get("authorId", ""))
+            except ValueError:
+                idx = -1
+            if 0 <= idx < len(suffixes):
+                suffix = suffixes[idx]
+            body = child(note, "text")
+            found.append((note.get("ref", ""), suffix, text_of(body) if body is not None else ""))
+    notes = []
+    for index, (ref, suffix, text) in enumerate(found):
+        pos = cell_ref(ref)
+        if pos is None:
+            key = (UNKNOWN_POS, UNKNOWN_POS, index)
+            head = "- %s" % (escape(ref) or "(no address)")
+        else:
+            key = (pos[1], pos[0], index)
+            head = "- c%d row %d (%s)" % (pos[0], pos[1], ref.strip())
+        notes.append((key, head, suffix, escape(text) or "(no text)", ref.strip().upper()))
+    notes.sort(key=lambda note: note[0])
+    return notes, None
+
+
+def note_stream(notes, starts):
+    """The notes of one part once per relationship that points at it, in
+    row, column, sequence order. starts holds, per relationship, the sequence
+    number of the part's first note; the notes of one cell come relationship
+    by relationship, which is their sequence order."""
+    i = 0
+    while i < len(notes):
+        j = i
+        while j < len(notes) and notes[j][0][:2] == notes[i][0][:2]:
+            j += 1
+        for start in starts:
+            for (row, col, index), head, suffix, text, _ in notes[i:j]:
+                yield (row, col, start + index), head, suffix, text
+        i = j
+
+
+def sheet_notes(ctx, rels, room):
+    """(lines, unreadable reasons) of the sheet's notes and comments. room is
+    the number of output characters that still fit: the lines stop after the
+    one that crosses it, since nothing later can be printed. Each part is
+    parsed once, whatever the number of relationships that point at it, and
+    its notes are merged in order without a copy per relationship."""
     errors = []
+    parts = {}
+    starts = {}
+    merged = False
     seq = 0
     for _, kind, member, problem in rels:
         if kind.endswith("/comments"):
-            if member is None:
-                if problem is not None:
-                    errors.append("notes: " + problem)
-                continue
-            root, reason = soft_xml(zf, member)
-            if root is None:
-                errors.append("notes: " + reason)
-                continue
-            authors = [text_of(a) or (a.text or "") for a in root.iter() if local(a.tag) == "author"]
-            for note in root.iter():
-                if local(note.tag) != "comment":
-                    continue
-                seq += 1
-                author = ""
-                try:
-                    idx = int(note.get("authorId", ""))
-                except ValueError:
-                    idx = -1
-                if 0 <= idx < len(authors):
-                    author = authors[idx]
-                body = child(note, "text")
-                legacy.append((note.get("ref", ""), author, text_of(body) if body is not None else "", seq))
+            threaded = False
+            label = "notes: "
         elif kind.endswith("/threadedComment"):
-            if member is None:
-                if problem is not None:
-                    errors.append("threaded comments: " + problem)
-                continue
-            root, reason = soft_xml(zf, member)
-            if root is None:
-                errors.append("threaded comments: " + reason)
-                continue
-            persons = ctx.person_names()
+            threaded = True
+            label = "threaded comments: "
+        else:
+            continue
+        if member is None:
+            if problem is not None:
+                errors.append(label + problem)
+            continue
+        key = (threaded, member)
+        if key not in parts:
+            parts[key] = ctx.once(("notes", threaded, member), lambda: note_part(ctx, member, threaded))
+        notes, reason = parts[key]
+        if notes is None:
+            errors.append(label + reason)
+            continue
+        if threaded and not merged:
+            merged = True
             for issue in ctx.person_errors:
                 if issue not in errors:
                     errors.append(issue)
-            for note in root.iter():
-                if local(note.tag) != "threadedComment":
-                    continue
-                seq += 1
-                body = child(note, "text")
-                threaded.append((note.get("ref", ""), persons.get(note.get("personId", ""), ""), (body.text or "") if body is not None else "", seq))
-    threaded_refs = set(ref.strip().upper() for ref, _, _, _ in threaded)
-    entries = [e for e in legacy if e[0].strip().upper() not in threaded_refs] + threaded
-    keyed = []
-    for ref, author, text, order in entries:
-        pos = cell_ref(ref)
-        if pos is None:
-            keyed.append(((UNKNOWN_POS, UNKNOWN_POS, order), "- %s" % (escape(ref) or "(no address)"), author, text))
-        else:
-            keyed.append(((pos[1], pos[0], order), "- c%d row %d (%s)" % (pos[0], pos[1], ref.strip()), author, text))
-    keyed.sort(key=lambda e: e[0])
+        starts.setdefault(key, []).append(seq)
+        seq += len(notes)
+    threaded_refs = set()
+    for key in starts:
+        if key[0]:
+            threaded_refs.update(note[4] for note in parts[key][0])
+    streams = []
+    for key in starts:
+        notes = parts[key][0]
+        if threaded_refs and not key[0]:
+            notes = [note for note in notes if note[4] not in threaded_refs]
+        streams.append(note_stream(notes, starts[key]))
     lines = []
-    for _, head, author, text in keyed:
-        if author.strip():
-            head += ", " + escape(author)
-        lines.append("%s: %s" % (head, escape(text) or "(no text)"))
+    used = 0
+    for _, head, suffix, text in heapq.merge(*streams):
+        if used > room:
+            break
+        lines.append("%s%s: %s" % (head, suffix, text))
+        used += len(lines[-1]) + 1
     return lines, errors
 
 
-def sheet_drawings(ctx, sheet_name, rels):
-    """(shape lines, image lines, unreadable reasons) of the sheet's drawings."""
-    zf = ctx.zf
+def drawing_part(zf, member):
+    """(items, unreadable reasons) of one drawing part, in document order. An
+    item is ("shapes", line), or ("images", head, tail, media) for a picture:
+    tail is one object for every picture of one relationship id, and media is
+    the member --extract-media writes (None when there is none). The lines of
+    the pictures are joined by the caller, so pictures that share one long
+    media name do not hold a copy of it each."""
+    root, reason = soft_xml(zf, member)
+    if root is None:
+        return [], ["drawing: " + reason]
+    errors = []
+    drels, reason = rels_of(zf, member)
+    if reason is not None:
+        errors.append("drawing relationships: " + reason)
+    targets = {}
+    for rid, _, target, problem in drels:
+        targets.setdefault(rid, (target, problem))
+    tails = {}
+    items = []
+
+    def tail_of(rid):
+        if rid not in targets:
+            return "[unreadable: image relationship %s not found]" % (escape(rid) or "(none)"), None
+        media, problem = targets[rid]
+        if media is None:
+            if problem is not None:
+                return "[unreadable: image %s]" % problem, None
+            return "(linked image; not read)", None
+        try:
+            size = zf.getinfo(media).file_size
+        except KeyError:
+            return "[unreadable: media member %s is missing]" % escape(media), None
+        return "%s (%d bytes)" % (escape(posixpath.basename(media)), size), media
+
+    def walk(node, where):
+        name = local(node.tag)
+        if name == "sp":
+            text = escape(shape_text(node))
+            items.append(("shapes", '- "%s" %s: %s' % (name_of(node, ("nvSpPr", "cNvPr")), where, text or "(no text)")))
+        elif name == "grpSp":
+            for inner in content_children(node):
+                walk(inner, where)
+        elif name == "graphicFrame":
+            label = name_of(node, ("nvGraphicFramePr", "cNvPr"))
+            data = path(node, "graphic", "graphicData")
+            uri = data.get("uri", "") if data is not None else ""
+            if uri.rstrip("/").endswith("/chart"):
+                items.append(("shapes", '- chart "%s" %s: (chart; data not read)' % (label, where)))
+            else:
+                items.append(("shapes", '- graphic frame "%s" %s: (graphic frame; content not read)' % (label, where)))
+        elif name == "pic":
+            rid = ""
+            for item in node.iter():
+                if local(item.tag) == "blip":
+                    rid = item.get("{%s}embed" % NS_REL) or item.get("{%s}link" % NS_REL) or ""
+                    break
+            if rid not in tails:
+                tails[rid] = tail_of(rid)
+            items.append(("images", '- "%s" %s: ' % (name_of(node, ("nvPicPr", "cNvPr")), where)) + tails[rid])
+
+    for anchor in content_children(root):
+        if local(anchor.tag) not in ("twoCellAnchor", "oneCellAnchor", "absoluteAnchor"):
+            continue
+        where = anchor_text(anchor)
+        for item in content_children(anchor):
+            walk(item, where)
+    return items, errors
+
+
+def sheet_drawings(ctx, sheet_name, rels, room):
+    """(shape lines, image lines, unreadable reasons) of the sheet's drawings.
+    room is the number of output characters that still fit: each list stops
+    after the line that crosses it, since nothing later can be printed. A
+    picture whose line is not kept is still written with --extract-media.
+    Each drawing part is parsed once, whatever the number of relationships
+    that point at it."""
     shapes = []
     images = []
     errors = []
+    parts = {}
+    extract = ctx.limits.extract_media
+    used_shapes = 0
+    used_images = 0
     for _, kind, member, problem in rels:
         if not kind.endswith("/drawing"):
             continue
@@ -693,66 +897,23 @@ def sheet_drawings(ctx, sheet_name, rels):
             if problem is not None:
                 errors.append("drawing: " + problem)
             continue
-        root, reason = soft_xml(zf, member)
-        if root is None:
-            errors.append("drawing: " + reason)
+        if member not in parts:
+            parts[member] = ctx.once(("drawing", member), lambda: drawing_part(ctx.zf, member))
+        items, problems = parts[member]
+        errors.extend(problems)
+        if used_shapes > room and used_images > room and not extract:
             continue
-        drels, reason = rels_of(zf, member)
-        if reason is not None:
-            errors.append("drawing relationships: " + reason)
-        targets = {}
-        for rid, _, target, problem in drels:
-            targets.setdefault(rid, (target, problem))
-
-        def picture(node, where):
-            label = name_of(node, ("nvPicPr", "cNvPr"))
-            rid = ""
-            for item in node.iter():
-                if local(item.tag) == "blip":
-                    rid = item.get("{%s}embed" % NS_REL) or item.get("{%s}link" % NS_REL) or ""
-                    break
-            head = '- "%s" %s: ' % (label, where)
-            if rid not in targets:
-                return head + "[unreadable: image relationship %s not found]" % (escape(rid) or "(none)")
-            media, problem = targets[rid]
-            if media is None:
-                if problem is not None:
-                    return head + "[unreadable: image %s]" % problem
-                return head + "(linked image; not read)"
-            try:
-                size = zf.getinfo(media).file_size
-            except KeyError:
-                return head + "[unreadable: media member %s is missing]" % escape(media)
-            line = head + "%s (%d bytes)" % (escape(posixpath.basename(media)), size)
-            if ctx.limits.extract_media:
-                line += ctx.extract(sheet_name, media)
-            return line
-
-        def walk(node, where):
-            name = local(node.tag)
-            if name == "sp":
-                text = escape(shape_text(node))
-                shapes.append('- "%s" %s: %s' % (name_of(node, ("nvSpPr", "cNvPr")), where, text or "(no text)"))
-            elif name == "grpSp":
-                for inner in content_children(node):
-                    walk(inner, where)
-            elif name == "graphicFrame":
-                label = name_of(node, ("nvGraphicFramePr", "cNvPr"))
-                data = path(node, "graphic", "graphicData")
-                uri = data.get("uri", "") if data is not None else ""
-                if uri.rstrip("/").endswith("/chart"):
-                    shapes.append('- chart "%s" %s: (chart; data not read)' % (label, where))
-                else:
-                    shapes.append('- graphic frame "%s" %s: (graphic frame; content not read)' % (label, where))
-            elif name == "pic":
-                images.append(picture(node, where))
-
-        for anchor in content_children(root):
-            if local(anchor.tag) not in ("twoCellAnchor", "oneCellAnchor", "absoluteAnchor"):
-                continue
-            where = anchor_text(anchor)
-            for item in content_children(anchor):
-                walk(item, where)
+        for item in items:
+            if item[0] == "shapes":
+                if used_shapes <= room:
+                    shapes.append(item[1])
+                    used_shapes += len(item[1]) + 1
+            else:
+                _, head, tail, media = item
+                suffix = ctx.extract(sheet_name, media) if extract and media is not None else ""
+                if used_images <= room:
+                    images.append(head + tail + suffix)
+                    used_images += len(images[-1]) + 1
     return shapes, images, errors
 
 
@@ -760,15 +921,33 @@ def is_on(value):
     return (value or "0").strip().lower() in ("1", "true")
 
 
-def dump_sheet(ctx, name, member, hidden, out):
-    zf = ctx.zf
+class Sheet(object):
+    """What one worksheet member holds, apart from the name and the hidden
+    state of the worksheet entry that points at it."""
+
+    def __init__(self):
+        self.rows = []
+        self.hidden_rows = set()
+        self.hidden_cols = set()
+        self.markers = {}
+        self.marked = {}
+        self.width = 0
+        self.block_merge = False
+        self.truncated_rows = False
+        self.wide = False
+        self.declared = []
+
+
+def read_sheet(ctx, member):
+    """The Sheet of a worksheet member, or None when the member is missing.
+    Every row is parsed, because the layout and the table width depend on all
+    of them; the parsed XML is not kept."""
     limits = ctx.limits
-    root = read_xml(zf, member)
+    root = read_xml(ctx.zf, member)
     if root is None:
-        out.append("## Sheet: %s\n\n[unreadable: member %s is missing]\n" % (name, member))
-        return
-    rows = []
-    hidden_rows = set()
+        return None
+    sheet = Sheet()
+    rows = sheet.rows
     max_col = 0
     rows_seen = 0
     last_row = 0
@@ -782,7 +961,7 @@ def dump_sheet(ctx, name, member, hidden, out):
             r = len(rows) + 1
         last_row = max(last_row, r)
         if is_on(row.get("hidden")):
-            hidden_rows.add(r)
+            sheet.hidden_rows.add(r)
         cells = {}
         for cell in row.findall("{%s}c" % NS_MAIN):
             ref = cell.get("r", "")
@@ -798,17 +977,16 @@ def dump_sheet(ctx, name, member, hidden, out):
                     is_struck = int(style) in ctx.strikes
                 except ValueError:
                     pass
-            value = cell_value(cell, ctx.strings, is_date, is_struck, ctx.date1904)
+            value = cell_value(cell, ctx.strings, is_date, is_struck, ctx.date1904, ctx.rendered)
             if value != "":
                 cells[c] = value
                 max_col = max(max_col, c)
         if cells:
             rows.append((r, cells))
-    truncated_rows = rows_seen > limits.max_rows
+    sheet.truncated_rows = rows_seen > limits.max_rows
 
     # Merged ranges: a marker on each top-left cell inside the caps.
-    markers = {}
-    block_merge = False
+    markers = sheet.markers
     merge_beyond = False
     merges = root.find("{%s}mergeCells" % NS_MAIN)
     if merges is not None:
@@ -826,11 +1004,11 @@ def dump_sheet(ctx, name, member, hidden, out):
                 continue
             if (c1, r1) == (c2, r2) or (r1, c1) in markers:
                 continue
-            if truncated_rows and r1 > last_row:
+            if sheet.truncated_rows and r1 > last_row:
                 continue
             markers[(r1, c1)] = merge_marker(c1, r1, c2, r2)
             if r2 > r1 and c2 > c1:
-                block_merge = True
+                sheet.block_merge = True
     if markers:
         present = set(r for r, _ in rows)
         for (r1, c1) in sorted(markers):
@@ -839,11 +1017,10 @@ def dump_sheet(ctx, name, member, hidden, out):
                 present.add(r1)
             max_col = max(max_col, c1)
         rows.sort(key=lambda entry: entry[0])
-    marked = {}
     for (r1, c1) in markers:
-        marked.setdefault(r1, set()).add(c1)
+        sheet.marked.setdefault(r1, set()).add(c1)
+    sheet.width = max_col
 
-    hidden_cols = set()
     cols = root.find("{%s}cols" % NS_MAIN)
     if cols is not None:
         for col in cols.findall("{%s}col" % NS_MAIN):
@@ -854,45 +1031,100 @@ def dump_sheet(ctx, name, member, hidden, out):
             except ValueError:
                 continue
             for c in range(max(lo, 1), min(hi, limits.max_cols) + 1):
-                hidden_cols.add(c)
+                sheet.hidden_cols.add(c)
 
-    width = max_col
+    if rows:
+        sheet.wide = merge_beyond or any(column_index(cell.get("r", "")) > limits.max_cols for row in root.iter("{%s}row" % NS_MAIN) for cell in row.findall("{%s}c" % NS_MAIN))
+    for tag, label in (("drawing", "drawing relationship %s not found"), ("legacyDrawing", "legacy drawing relationship %s not found; the notes of the sheet may be missing")):
+        for element in root.findall("{%s}%s" % (NS_MAIN, tag)):
+            sheet.declared.append((label, element.get("{%s}id" % NS_REL) or ""))
+    return sheet
+
+
+def cell_text(value, marker, seen, memo):
+    """escape() of a cell value, behind its merge marker when it has one
+    (table layout). A long value that several cells hold is escaped once from
+    its second cell on: seen holds the long values met once, memo the escaped
+    text of those met again, with whether the value's first line is blank
+    (the marker is then not followed by a space, as when the marker and the
+    value are escaped together)."""
+    if len(value) < LONG_CELL:
+        if marker:
+            value = marker + (" " + value if value else "")
+        return escape(value)
+    if value in memo:
+        text, blank = memo[value]
+    else:
+        text = escape(value)
+        blank = not value.replace("\r", "\n").split("\n", 1)[0].split()
+        if value in seen:
+            memo[value] = (text, blank)
+        else:
+            seen.add(value)
+    if marker:
+        return marker + ("" if blank else " ") + text
+    return text
+
+
+def dump_sheet(ctx, name, member, hidden, out):
+    """Append the section of one worksheet to out (an Output). Text is
+    generated cell by cell and stops once out is over the cap."""
+    zf = ctx.zf
+    limits = ctx.limits
+    sheet = ctx.once(("sheet", member), lambda: read_sheet(ctx, member))
+    if sheet is None:
+        out.append("## Sheet: %s\n\n[unreadable: member %s is missing]\n" % (name, member))
+        return
+    rows = sheet.rows
+    markers = sheet.markers
+    marked = sheet.marked
+    hidden_rows = sheet.hidden_rows
+    hidden_cols = sheet.hidden_cols
+    width = sheet.width
     layout = limits.layout
     if layout == "auto":
         filled = sum(len(set(cells) | marked.get(r, set())) for r, cells in rows)
         sparse = width > 12 and filled * 10 < 3 * len(rows) * width
-        layout = "cells" if (sparse or block_merge) else "table"
+        layout = "cells" if (sparse or sheet.block_merge) else "table"
+    seen = set()
+    memo = {}
 
     out.append("## Sheet: %s%s%s\n\n" % (name, " (hidden)" if hidden else "", " (layout: cells)" if layout == "cells" else ""))
     if not rows:
         out.append("(empty sheet)\n")
     elif layout == "cells":
         for r, cells in rows:
+            if out.over:
+                break
             for c in sorted(set(cells) | marked.get(r, set())):
+                if out.over:
+                    break
                 line = "- r%d%s c%d%s" % (r, " (hidden)" if r in hidden_rows else "", c, " (hidden)" if c in hidden_cols else "")
                 if (r, c) in markers:
                     line += " " + markers[(r, c)]
-                text = escape(cells.get(c, ""))
+                text = cell_text(cells.get(c, ""), None, seen, memo)
                 out.append(line + ":" + (" " + text if text else "") + "\n")
     else:
         out.append("| row | " + " | ".join("c%d%s" % (c, " (hidden)" if c in hidden_cols else "") for c in range(1, width + 1)) + " |\n")
         out.append("|---|" + "---|" * width + "\n")
         for r, cells in rows:
-            shown = []
+            if out.over:
+                break
+            # One piece per cell: a row of long values is cut at the cap
+            # before the rest of the row is turned into text.
+            out.append("| %d%s | " % (r, " (hidden)" if r in hidden_rows else ""))
             for c in range(1, width + 1):
-                value = cells.get(c, "")
-                if (r, c) in markers:
-                    value = markers[(r, c)] + (" " + value if value else "")
-                shown.append(escape(value))
-            out.append("| %d%s | " % (r, " (hidden)" if r in hidden_rows else "") + " | ".join(shown) + " |\n")
-    if rows:
-        if truncated_rows:
+                if out.over:
+                    break
+                out.append((" | " if c > 1 else "") + cell_text(cells.get(c, ""), markers.get((r, c)), seen, memo))
+            out.append(" |\n")
+    if rows and not out.over:
+        if sheet.truncated_rows:
             out.append("\n[truncated: sheet %s has more than %d rows; only the first %d were read]\n" % (name, limits.max_rows, limits.max_rows))
-        wide = merge_beyond or any(column_index(cell.get("r", "")) > limits.max_cols for row in root.iter("{%s}row" % NS_MAIN) for cell in row.findall("{%s}c" % NS_MAIN))
-        if wide:
+        if sheet.wide:
             out.append("\n[truncated: sheet %s has columns beyond c%d; they were not read]\n" % (name, limits.max_cols))
 
-    rels, reason = rels_of(zf, member)
+    rels, reason = ctx.once(("rels", member), lambda: rels_of(zf, member))
     if reason is not None:
         out.append("\n[unreadable: sheet relationships: %s]\n" % reason)
     else:
@@ -900,17 +1132,20 @@ def dump_sheet(ctx, name, member, hidden, out):
         # its relationship part; a missing part or id would drop the sheet's
         # shapes, images or notes without a trace.
         known = set(rid for rid, _, _, _ in rels)
-        for tag, label in (("drawing", "drawing relationship %s not found"), ("legacyDrawing", "legacy drawing relationship %s not found; the notes of the sheet may be missing")):
-            for element in root.findall("{%s}%s" % (NS_MAIN, tag)):
-                rid = element.get("{%s}id" % NS_REL) or ""
-                if rid not in known:
-                    out.append("\n[unreadable: %s]\n" % (label % (escape(rid) or "(no id)")))
-    notes, note_errors = sheet_notes(ctx, rels)
-    shapes, images, drawing_errors = sheet_drawings(ctx, name, rels)
+        for label, rid in sheet.declared:
+            if rid not in known:
+                out.append("\n[unreadable: %s]\n" % (label % (escape(rid) or "(no id)")))
+    notes, note_errors = [], []
+    if not out.over:
+        notes, note_errors = sheet_notes(ctx, rels, out.room())
     for problem in note_errors:
         out.append("\n[unreadable: %s]\n" % problem)
     if notes:
         out.append("\n### Notes\n" + "".join(line + "\n" for line in notes))
+    shapes, images, drawing_errors = [], [], []
+    if not out.over or limits.extract_media:
+        # Past the cap the drawings are walked only to write their pictures.
+        shapes, images, drawing_errors = sheet_drawings(ctx, name, rels, out.room())
     for problem in drawing_errors:
         out.append("\n[unreadable: %s]\n" % problem)
     if shapes:
@@ -948,7 +1183,8 @@ def main():
             pr = wb.find("{%s}workbookPr" % NS_MAIN)
             if pr is not None and pr.get("date1904", "0") in ("1", "true"):
                 date1904 = True
-        out = ["# Workbook: %s\n\n" % limits.workbook.replace("\\", "/").split("/")[-1]]
+        out = Output(limits.max_chars)
+        out.append("# Workbook: %s\n\n" % limits.workbook.replace("\\", "/").split("/")[-1])
         chosen = sheets(zf)
         if limits.sheet:
             names = [name for name, _, _ in chosen]
@@ -957,17 +1193,17 @@ def main():
                 fail(2, "sheet(s) not found: %s; the workbook has: %s" % (", ".join(missing), ", ".join(names)))
             chosen = [entry for entry in chosen if entry[0] in limits.sheet]
         ctx = Context(zf, limits, strings, dates, strikes, date1904)
-        emitted = len(out[0])
         for name, member, hidden in chosen:
-            # Past the cap nothing more would be printed, so the remaining
-            # worksheets are neither parsed nor held in memory.
-            if emitted > limits.max_chars:
+            # Once the cap is reached nothing more would be printed, so the
+            # remaining worksheets are neither parsed nor held in memory. A
+            # worksheet always prints at least its heading, so skipping one
+            # means the output was cut: that is reported like any other cut.
+            if out.size >= limits.max_chars:
+                out.over = True
                 break
-            before = len(out)
             dump_sheet(ctx, name, member, hidden, out)
-            emitted += sum(len(piece) for piece in out[before:])
-    text = "".join(out)
-    if len(text) > limits.max_chars:
+    text = "".join(out.pieces)
+    if out.over:
         notice = "\n[truncated: output exceeds %d characters; the rest of the workbook was not emitted]\n" % limits.max_chars
         text = text[: max(limits.max_chars - len(notice), 0)] + notice
     sys.stdout.write(text)
