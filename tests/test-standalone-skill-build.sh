@@ -1713,4 +1713,17 @@ else
   fail "mutation: an injected plugin backlog path fails the build" "rc=$MUT2_RC $(head -n 8 "$TMP_ROOT/mutated-2.log")"
 fi
 
+# Review wording (v11.8.7): the curl examples carry the content type as a
+# placeholder, the intake caps say what they bound, and the read-only rule
+# names the one input it cannot verify.
+# shellcheck disable=SC2016  # literal backticks
+check "review wording: content type placeholder in both curl forms, cap excess stated, typed cli: command named unverified" \
+  "$({ [ "$(grep -cF -- '-H "Content-Type: <content_type>"' "$DEST_MD" || true)" = 2 ] || printf ' destinations.md:placeholder-count';
+       grep -qF -- '-H "Content-Type: application/json"' "$DEST_MD" && printf ' destinations.md:literal-content-type';
+       grep -qF -- 'or `application/json` when none is given' "$DEST_MD" || printf ' destinations.md:default';
+       grep -qF -- 'are counted by `Chars:` but by neither limit' "$SOURCES_MD" || printf ' sources.md:cap-excess';
+       grep -qF -- 'is run as given and is not checked for what it does' "$SOURCES_MD" || printf ' sources.md:read-only-exception';
+       grep -qF -- 'is not checked for what it does' "$SKILL_DIR/README.md" || printf ' README.md:limit';
+       grep -qF -- 'the one input the skill does not check' "$SKILL_DIR/SKILL.md" || printf ' SKILL.md:host-notes'; } || true)"
+
 print_summary

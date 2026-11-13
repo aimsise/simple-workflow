@@ -127,17 +127,17 @@ Wherever this skill prints the URL (error lines, the Final summary `Destination:
    ```bash
    printf 'header = "Authorization: Bearer %s"\n' "$VAR" | curl -sS -g --max-time 120 --connect-timeout 15 -K - \
      -X POST "<url>" \
-     -H "Content-Type: application/json" \
+     -H "Content-Type: <content_type>" \
      --data-binary @"{scratch}/request-{i}.json" \
      -o "{scratch}/response-{i}.json" -w '%{http_code}'
    ```
 
-   `-H "Content-Type: <content_type>"` carries the `content_type=` value instead when one is given. With `auth_scheme=basic`, the prefix encodes the value inside the pipeline:
+   `<content_type>` is the `content_type=` value, or `application/json` when none is given, in this command and in the `auth_scheme=basic` form below alike. With `auth_scheme=basic`, the prefix encodes the value inside the pipeline:
 
    ```bash
    printf 'header = "Authorization: Basic %s"\n' "$(printf '%s' "$VAR" | base64 | tr -d '\n')" | curl -sS -g --max-time 120 --connect-timeout 15 -K - \
      -X POST "<url>" \
-     -H "Content-Type: application/json" \
+     -H "Content-Type: <content_type>" \
      --data-binary @"{scratch}/request-{i}.json" \
      -o "{scratch}/response-{i}.json" -w '%{http_code}'
    ```
