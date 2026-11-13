@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.8.7] — 2026-11-13
+
+**TL;DR.** Three wording gaps an external code review found in the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) are closed; no behaviour is added or removed. The plugin's own skills, agents and hooks are unchanged.
+
+### Changed
+
+- `references/destinations.md`: both `curl` forms of the `api:` destination (bearer and `auth_scheme=basic`) now write the header as `Content-Type: <content_type>`, defined as the `content_type=` value or `application/json`. The `basic` example showed the literal default after the sentence that named the override, so it could be copied without it.
+- `references/sources.md`: the 60,000 and 150,000-character intake caps say what they bound: the text kept from a source. The `[truncated: ...]` line and a workbook's `Rendered:` line are added after the cut, so `Chars:` may exceed a cap by one such line per truncated source, and the total is not cut a second time.
+- The read-only rule for sources names its one exception: a `cli:` command the user typed runs as given and is not checked for what it does (`references/sources.md`, SKILL.md Host notes and Argument Parsing, README). The rule read as unconditional before; a typed command was never checked.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 131 / 131 (130 before: one check for the three wordings in the built skill).
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck (`--severity=warning`) clean on the changed test.
+- Untested: these are instructions the skill follows; no live run exercised them.
+
 ## [11.8.6] — 2026-11-13
 
 **TL;DR.** The workbook converter of the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) no longer builds text beyond `--max-chars`: a small workbook whose cells all refer to one long string made it hold gigabytes before the final cut. Two findings of an external code review prompted the change. The plugin's own skills, agents and hooks are unchanged.
