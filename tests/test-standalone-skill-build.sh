@@ -1727,6 +1727,7 @@ references/destinations.md|made only of ASCII letters, digits, spaces, `-`, `.`,
 references/destinations.md|With a typed `body_format=`, the derived request declares the field markup only for `markdown` or `markdown-escaped`
 references/destinations.md|with `html` it declares nothing, and the `Derived:` line then has no `, field markup declared in the request`
 references/destinations.md|Through the `browser:` channel the value is chosen, as part of the same guess, for what the form's body field does with the text filled into it
+references/destinations.md|for a typed `browser:` destination that belief is about the form's body field and follows the `browser:` channel rule below
 references/agents/planner.md|that file holds only the ticket draft (the **Draft file** instruction of your spawn prompt)
 references/destinations.md|(an HTTP status of `4xx`, a command error, or an error result of the create tool)
 references/destinations.md|(an error result on a derived destination whose request declares the field markup adds the suffix of **Content-field markup**)
@@ -1765,17 +1766,23 @@ references/destinations.md|`; partial output quarantined at {dir}/.rollback/{par
 references/destinations.md|(after a refusal of the **Heading check**, its own line instead)
 references/destinations.md|together with the character that follows it, one replacement per distinct following character other than a digit
 references/destinations.md|with the extended regular expression `<kept id>([^0-9]|$)` (the whole id: an occurrence followed by a further digit is another id)
+references/destinations.md|an occurrence that ends the file with no line end together with the character before it, as one replacement of that occurrence alone
+references/destinations.md|the same search with `<logical id of a created ticket>([^0-9]|$)` finds no logical id of an already-created ticket, followed by a non-digit or by the end of a line, left in `{scratch}/body-{i}.md`
 references/destinations.md|finds each kept id that begins with the id of an already-created ticket (the only kept ids a replacement can reach) on as many lines of `{scratch}/body-{i}.md` as of `{scratch}/final-{i}.md`, the first heading line of each left out (the adapter rewrites it)
 references/destinations.md|a read that (b) calls for is never skipped while a read-only tool or the page is at hand
 references/destinations.md|exit status 127 in a POSIX shell, also means no Python 3: the no-Python form of that step runs, with its `NOTE:`, never the failure branch of a conversion or check
 references/destinations.md|(other than the no-Python status above) is replaced by the same shell command, without the `NOTE:`
 references/destinations.md|except the no-Python status of **Content-field markup**, which runs the heading lookup below instead
 references/destinations.md|a ticket not yet created, the one being built included, keeps its logical id (a **kept id**)
-references/destinations.md|When the check of (a) reports `no content field` or `incomplete`, ONE read of the new item
+references/destinations.md|When the check of (a) reports, or counts as, `no content field` or `incomplete`, ONE read of the new item
 references/destinations.md|whose output is never checked as stored text
 references/destinations.md|`; start of the ticket only`
+references/destinations.md|fewer than 20% of its words are found, or no 12 of them stand in a row (half of those found, when fewer than 24 are found), a letter of a script written without word spaces counting as half a word
 references/destinations.md|counts as `incomplete`, at (a) and at (b) alike
 references/destinations.md|A `no content field` of (a) never stops the run
+references/destinations.md|Without Python 3 (the heading lookup of step 2), an `incomplete` of (a) stops the run only when the read of (b) confirms it with an `incomplete` of its own
+references/destinations.md|with no read possible, a read that failed, or a read in which no title is found, the outcome is `no content field`, with the `could not be read back` `NOTE:` below
+SKILL.md|without Python 3, also an `incomplete` of the create response that no read confirmed
 references/agent-spawn-prompts.md|an empty list is a search that did not read the file, never a draft without headings
 references/write-path-templates.md|`Body: <body_format>; stored text: complete, headings only (<k> of <N>)`
 SKILL.md|before any create, and for `local:` before `split-plan.md` and the counter are written
@@ -1844,7 +1851,7 @@ check "every new body-fidelity ERROR:, WARNING: and NOTE: literal appears where 
 # Old wording that re-typed the ticket, the old scheme list and the old
 # removal command must be gone from the whole tree.
 check "no stale re-type, scheme, removal or heading-check wording remains (file-write of a ticket, bearer|basic without basic-token, rm -r, a heading check before any write)" \
-  "$(grep -rnF -e 'with the file-write tool, write the title to' -e 'write `{ticket_dir_i}/ticket.md` with the file-write tool' -e 'starting from its last evaluated draft:' -e 'must be bearer or basic' -e 'rm -r "' -e 'a failed `rm -r`' -e 'a body shape, a parent link' -e '--rawfile body "{scratch}/body-{i}.md"' -e '?<query omitted>' -e 'every printed line and re-run token drops them' -e 'the retry planner of the round before' -e 'before any write or create' -e 'Before a write or create' -e 'nothing written or created for that ticket' -e '(headings only)` included' -e 'the read is never skipped while' -e 'finds each kept id on as many lines' "$SKILL_DIR" | cut -c1-160 || true)$(grep -rnE -- 'bearer\|basic([^|]|$)' "$SKILL_DIR" | cut -c1-160 || true)$(grep -nE -- 'rm -r "|`rm -r`' "$MANIFEST_DIR/README.md" | cut -c1-160 || true)"
+  "$(grep -rnF -e 'with the file-write tool, write the title to' -e 'write `{ticket_dir_i}/ticket.md` with the file-write tool' -e 'starting from its last evaluated draft:' -e 'must be bearer or basic' -e 'rm -r "' -e 'a failed `rm -r`' -e 'a body shape, a parent link' -e '--rawfile body "{scratch}/body-{i}.md"' -e '?<query omitted>' -e 'every printed line and re-run token drops them' -e 'the retry planner of the round before' -e 'before any write or create' -e 'Before a write or create' -e 'nothing written or created for that ticket' -e '(headings only)` included' -e 'the read is never skipped while' -e 'finds each kept id on as many lines' -e 'When the check of (a) reports `no content field` or `incomplete`' -e '(an occurrence at the end of a line together with its line end)' "$SKILL_DIR" | cut -c1-160 || true)$(grep -rnE -- 'bearer\|basic([^|]|$)' "$SKILL_DIR" | cut -c1-160 || true)$(grep -nE -- 'rm -r "|`rm -r`' "$MANIFEST_DIR/README.md" | cut -c1-160 || true)"
 
 TB_PY="$SKILL_DIR/scripts/ticket_body.py"
 check "the ticket body script is ASCII-only, backtick-free and starts with a python3 shebang" \
@@ -2144,6 +2151,38 @@ w("rf-nodef.txt", rf.replace("[AC-9]: the importer rejects a batch above the con
 h2 = "## fixture-part-16: Second heading\n\n### Background\n\n" + bg + "\n\n## Follow-up Work\n\n" + ac % 7 + "\n"
 w("h2.md", h2)
 w("h2-lost.md", h2.replace("## Follow-up Work\n\n", ""))
+# The first sentence of the Background lost from a store of HTML, the title
+# line sharing its letters: the views of the HTML hold as many sent words
+# with and without the tag names, and the one without them is aligned, so
+# the lost sentence is one span (600 filler words keep the missing share
+# under 3 percent).
+TJ = "\u6ce8\u6587CSV\u30a8\u30af\u30b9\u30dd\u30fc\u30c8\u306e\u30b7\u30ea\u30a2\u30e9\u30a4\u30b6\u3092\u8ffd\u52a0\u3059\u308b"
+S1 = "\u6ce8\u6587\u4e00\u89a7\u753b\u9762\u304b\u3089\u6ce8\u6587\u30c7\u30fc\u30bf\u3092 CSV \u3067\u53d6\u308a\u51fa\u3057\u305f\u3044\u3068\u3044\u3046\u8981\u671b\u304c\u3042\u308b\u3002"
+S2 = ("\u73fe\u72b6\u306f " + BT + "src/orders/list.ts" + BT + " \u304c JSON \u3092\u8fd4\u3059\u3060\u3051\u3067\u3001"
+      "\u8868\u8a08\u7b97\u30bd\u30d5\u30c8\u306b\u53d6\u308a\u8fbc\u3080\u624b\u6bb5\u304c\u306a\u3044\u3002")
+def lead(s1):
+    return ("## fixture-part-17: " + TJ + "\n\n| Field | Value |\n|-------|-------|\n| Priority | **P1** |\n| Category | Feature |\n| Size | M |\n"
+            "| Dependencies | -- |\n\n### Background\n\n" + s1 + S2 + "\n\n### Scope\n\n- Add the serializer in " + BT + "src/orders/csv.ts" + BT
+            + " and export it from the module index.\n\n### Implementation Notes\n\n" + " ".join(zq(k) for k in range(600)) + "\n")
+w("lead.md", lead(S1))
+w("lead-lost.html", tb.to_html(lead("")))
+# Letters of an unspaced script drawn from one set of 200: a stored text
+# holding other text of that set (the letters in another order, no run of
+# them in a row) holds none of the body, both when it holds a fifth of the
+# words and more and when it holds every word as often as the ticket; the
+# body itself with 30 letters lost holds its runs and is incomplete. Such a
+# text that also holds the first words of the ticket in a row holds its start.
+P = [chr(0x4E00 + k) for k in range(200)]
+def letters(step, start, count):
+    return "".join(P[(start + step * k) % 200] + ("\u3002" if k % 40 == 39 else "") for k in range(count))
+jn = "## fixture-part-18: Unspaced other text\n\n### Background\n\n" + letters(7, 0, 300) + "\n\n### Acceptance Criteria\n\n" + letters(7, 100, 300) + "\n"
+w("jn.md", jn)
+w("jn-other.txt", "Unspaced other text\n" + letters(13, 5, 400) + "\n")
+w("jn-every.txt", "Unspaced other text\nBackground\nAcceptance Criteria\n" + letters(13, 5, 800) + "\n")
+w("jn-start.txt", "Unspaced other text\nBackground\n" + letters(7, 0, 300)[:15] + "\n" + letters(13, 5, 400) + "\n")
+w("jn-lost.md", jn.replace(letters(7, 0, 300)[100:131], ""))
+# A store followed by many comment openers that one marker at its end closes.
+w("openers.txt", t + "<!-- x\n" * 100000 + "-->")
 PYTB
   python3 -I "$TBD/make.py" "$TBD" "$TB_PY"
   # has_tb OUT NEEDLE... — prints every NEEDLE missing from OUT (fixed strings).
@@ -2312,7 +2351,7 @@ THRESHOLDS
   LIST_HTML="$(cat "$TBD/list-out.html")"
   LIST_LOST="$(tb_check "$TBD/list.md" "$TBD/list-lost.md")"
   check "ticket_body.py: a comment opener inside a list item or table row is text, so the items and rows after it are converted; <!--> hides nothing; a block comment holding list and table lines is dropped; a store without the items is incomplete" \
-    "$(printf '%s\n' "$LIST_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo "line='$LIST_OUT'")$(has_tb "$LIST_HTML" '<li>The scanner reports an opening &lt;!-- marker that is never closed.</li>' '<li>The importer rejects a batch above the configured limit with a bounded error and exit status 2.</li>' '<li>An empty batch is accepted and the exit status is 0.</li>' '<tr><td>src/import.py</td><td>add the limit check and the bounded error</td></tr>' '<td>allow draft --&gt; review only</td>' '<p>Use  as the shortest comment, then alpha bravo charlie.<br>' 'Second line foxtrot golf --&gt; hotel india.</p>' '<p>After the block comment.</p>')$(printf '%s\n' "$LIST_HTML" | grep -n 'hidden' || true)$(printf '%s\n' "$LIST_LOST" | grep -qE '^Body check: incomplete \(missing 35 of 94 words in 2 spans' || echo " lossy: $LIST_LOST")"
+    "$(printf '%s\n' "$LIST_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo "line='$LIST_OUT'")$(has_tb "$LIST_HTML" '<li>The scanner reports an opening &lt;!-- marker that is never closed.</li>' '<li>The importer rejects a batch above the configured limit with a bounded error and exit status 2.</li>' '<li>An empty batch is accepted and the exit status is 0.</li>' '<tr><td>src/import.py</td>' '<td>add the limit check and the bounded error</td></tr>' '<td>allow draft --&gt; review only</td>' '<p>Use  as the shortest comment, then alpha bravo charlie.<br>' 'Second line foxtrot golf --&gt; hotel india.</p>' '<p>After the block comment.</p>')$(printf '%s\n' "$LIST_HTML" | grep -n 'hidden' || true)$(printf '%s\n' "$LIST_LOST" | grep -qE '^Body check: incomplete \(missing 35 of 94 words in 2 spans' || echo " lossy: $LIST_LOST")"
   # A link target a page text never shows is at most a minor difference;
   # line-break tags are markup, not text.
   python3 -I "$TB_PY" convert --to html --in "$TBD/lt.md" --out "$TBD/lt.html" >/dev/null
@@ -2354,6 +2393,60 @@ UNSPACED
   RF_LINE="$(tb_check "$TBD/rf.md" "$TBD/rf-nodef.txt")"
   check "ticket_body.py check: a page text without a reference link's label and definition is a minor difference, while a lost line of the same shape that is no definition is incomplete" \
     "$(printf '%s\n' "$RF_PAGE" | grep -qxF 'Body check: minor differences (missing 23 of 123 words in 2 spans; first under "Background": "imp lim spec ref")' || echo "page text: $RF_PAGE")$(printf '%s\n' "$RF_LINE" | grep -qE '^Body check: incomplete \(missing 16 of 123 words in 1 spans; headings missing: none;' || echo " no definition: $RF_LINE")"
+  # The alignment view: of the views that hold nearly as many sent words as
+  # the best one, the shortest (the HTML without its tag names).
+  LEAD="$(tb_check "$TBD/lead.md" "$TBD/lead-lost.html")"
+  check "ticket_body.py check: a first sentence lost from a store of HTML whose views hold as many sent words with and without the tag names is one span of the view without them (incomplete)" \
+    "$(printf '%s\n' "$LEAD" | grep -qE '^Body check: incomplete \(missing 24 of 688 words in 1 spans; headings missing: none; longest span under "Background": ' || echo "got: $LEAD")"
+  # No run of the body in a row: no content field, whatever share is found.
+  MISSING=""
+  while IFS='|' read -r f want; do
+    got="$(tb_check "$TBD/jn.md" "$TBD/$f")"
+    printf '%s\n' "$got" | grep -qE -- "$want" || MISSING="$MISSING $f:'$got'"
+  done <<'NORUN'
+jn-other.txt|^Body check: no content field \([0-9]+ of 603 words found\)$
+jn-every.txt|^Body check: no content field \(603 of 603 words found\)$
+jn-start.txt|^Body check: no content field \(416 of 603 words found; start of the ticket only\)$
+jn-lost.md|^Body check: incomplete \(missing 30 of 603 words in 1 spans; headings missing: none; longest span under "Background"
+NORUN
+  check "ticket_body.py check: a stored text that holds the letters of an unspaced-script ticket only out of order (no run of 12 words' weight in a row) is no content field, with a fifth of the words found or all of them (start of the ticket only when it also holds the first 12 words in a row), while the body with 30 letters lost is incomplete" "$MISSING"
+  # A page text that joins the text nodes of the converted HTML without a
+  # separator: the line feed between table cells keeps them apart.
+  cat >"$TBD/pagetext.py" <<'PYPAGE'
+import sys
+from html.parser import HTMLParser
+BLOCK = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "table", "thead", "tbody", "tr", "pre"}
+class P(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out = []
+    def handle_starttag(self, tag, attrs):
+        if tag == "br" or tag in BLOCK:
+            self.out.append("\n")
+    def handle_endtag(self, tag):
+        if tag in BLOCK:
+            self.out.append("\n")
+    def handle_data(self, data):
+        self.out.append(data)
+p = P()
+p.feed(open(sys.argv[1], encoding="utf-8").read())
+p.close()
+open(sys.argv[2], "w", encoding="utf-8").write("".join(p.out))
+PYPAGE
+  python3 -I "$TBD/pagetext.py" "$TBD/ticket.html" "$TBD/s-joined.txt"
+  JOINED="$(tb_check "$TBD/ticket.md" "$TBD/s-joined.txt")"
+  check "ticket_body.py convert --to html: a line feed between table cells keeps them apart in a page text that joins text nodes without a separator (complete)" \
+    "$([ "$JOINED" = 'Body check: complete' ] || echo "got: $JOINED")$(grep -q '^<td>' "$TBD/ticket.html" || echo ' no cell starts a line')$(grep -q '^<th>' "$TBD/ticket.html" || echo ' no header cell starts a line')"
+  # Many comment openers closed by one marker at the end: linear time.
+  OPENERS="$(python3 -I -c 'import subprocess, sys, time
+start = time.time()
+try:
+    out = subprocess.run([sys.executable, "-I", sys.argv[1], "check", "--sent", sys.argv[2], "--stored", sys.argv[3]], stdout=subprocess.PIPE, timeout=20).stdout.decode("utf-8", "replace").strip()
+except subprocess.TimeoutExpired:
+    out = "timed out"
+print("%s|%.1f s" % (out, time.time() - start))' "$TB_PY" "$TBD/ticket.md" "$TBD/openers.txt")"
+  check "ticket_body.py check: a store followed by 100000 comment openers that one closing marker at its end closes is checked within 20 seconds (complete)" \
+    "$(printf '%s\n' "$OPENERS" | grep -qE '^Body check: complete\|' || echo "got: $OPENERS")"
   # Every conversion under a non-UTF-8 locale writes the same UTF-8 file.
   LC_CONV=""
   for to in html markdown-escaped pre; do

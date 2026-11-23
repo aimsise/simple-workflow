@@ -106,9 +106,12 @@ definition line and the label of a reference link, outside code, which a
 renderer moves into an attribute or drops and a page text never shows, are
 counted, but a missing word of them neither lengthens a span nor counts
 toward the 3 percent below. Thresholds: fewer than 20 percent of the words
-found is no content field; a missing heading, a missing span of 12 or more
-words, or more than 3 percent of the words missing is incomplete; any other
-missing word is a minor difference.
+found, or no view that holds 12 words of the sent text in a row (half the
+weight of the words found, when that is less; letters of a script written
+without spaces weighing half a word; not decided when the texts are too
+large to align), is no content field; a missing heading, a missing span of
+12 or more words, or more than 3 percent of the words missing is
+incomplete; any other missing word is a minor difference.
 
 Files are read as UTF-8 (a byte order mark is dropped; a UTF-16 file with its
 byte order mark is read too) and written as UTF-8 with LF line ends. Exit
@@ -146,6 +149,8 @@ COPIES_MIN_WORDS = 5            # words the ticket holds once that a copy count 
 COPIES_QUANTILE = 0.02          # the stored count that 98 percent of those words reach is the number of copies
 UNSPACED_WEIGHT = 0.5           # a letter of a script written without word spaces, counted as a word of its own,
                                 # weighs half a word in the span length and the missing share
+VIEW_TOLERANCE = 0.98           # views holding this share of the best view's sent words: the shortest is aligned
+RUN_PROBES = 64                 # places a run of START_WORDS weight is looked up at when no alignment ran
 
 BT = chr(96)                    # the backtick, written so the source holds none
 EXIT_USAGE = 2
@@ -560,8 +565,10 @@ def render_paragraph(lines, tight):
     return inner if tight else "<p>" + inner + "</p>"
 
 def render_table(rows):
+    # A line feed between cells keeps them apart in a text read of the HTML
+    # that joins text nodes without a separator.
     head, _ = split_row(rows[0])
-    out = ["<table>", "<thead>", "<tr>" + "".join("<th>" + render_inline(c) + "</th>" for c in head) + "</tr>", "</thead>"]
+    out = ["<table>", "<thead>", "<tr>" + "\n".join("<th>" + render_inline(c) + "</th>" for c in head) + "</tr>", "</thead>"]
     body = rows[2:]
     if body:
         out.append("<tbody>")
@@ -569,7 +576,7 @@ def render_table(rows):
             cells, _ = split_row(row)
             while len(cells) < len(head):
                 cells.append("")
-            out.append("<tr>" + "".join("<td>" + render_inline(c) + "</td>" for c in cells) + "</tr>")
+            out.append("<tr>" + "\n".join("<td>" + render_inline(c) + "</td>" for c in cells) + "</tr>")
         out.append("</tbody>")
     out.append("</table>")
     return "\n".join(out)
@@ -1032,11 +1039,16 @@ def without_comments(text):
     heading line does not hide the title)."""
     out = []
     pos = 0
+    end = -1
     while True:
         j = text.find("<!--", pos)
         if j < 0:
             break
-        end = text.find("-->", j + 2)
+        # The closing marker found for an earlier opener is also the first
+        # one after this opener while the opener lies before it, so the text
+        # is searched again only past it (many unclosed openers stay linear).
+        if end < j + 2:
+            end = text.find("-->", j + 2)
         if end < 0:
             break
         nl = text.find("\n", j, end)
@@ -1137,7 +1149,8 @@ def mark_missing(sent_words, stored_count, view_lists):
     that walk would), then, in a few rounds, the occurrences that an alignment
     of the sent words with the closer view leaves unmatched or that sit next
     to other missing words. Returns (flagged, unaligned, whether the
-    alignment ran)."""
+    alignment ran, the weight of the longest run of sent words the alignment
+    found in a row, or None when it did not run)."""
     n = len(sent_words)
     positions = {}
     for k, w in enumerate(sent_words):
@@ -1149,20 +1162,29 @@ def mark_missing(sent_words, stored_count, view_lists):
     flagged = [False] * n
     unaligned = [False] * n
     if not need:
-        return flagged, unaligned, False
+        return flagged, unaligned, False, None
 
     def overlap(view):
         c = count(view)
         return sum(min(len(occ), c.get(w, 0)) for w, occ in positions.items())
-    best = max(view_lists, key=overlap)
+    # Among the views that hold nearly as many sent words as the best one,
+    # the shortest: a view that still holds tag names as words splits a lost
+    # passage into short spans.
+    overlaps = [overlap(v) for v in view_lists]
+    top = max(overlaps)
+    best = min((v for v, o in zip(view_lists, overlaps) if o >= VIEW_TOLERANCE * top), key=len)
     best_count = count(best)
     aligned = sum(best_count.get(w, 0) for w in sent_words) <= ALIGN_LIMIT
+    run = None
     if aligned:
+        run = 0.0
         matcher = difflib.SequenceMatcher(None, sent_words, best, autojunk=False)
         for tag, i1, i2, _, _ in matcher.get_opcodes():
             if tag != "equal":
                 for k in range(i1, i2):
                     unaligned[k] = True
+            else:
+                run = max(run, sum(word_weight(w) for w in sent_words[i1:i2]))
     for w, d in need.items():
         for k in positions[w][-d:]:
             flagged[k] = True
@@ -1183,7 +1205,7 @@ def mark_missing(sent_words, stored_count, view_lists):
                     changed = True
         if not changed:
             break
-    return flagged, unaligned, aligned
+    return flagged, unaligned, aligned, run
 
 def missing_spans(missing, unaligned):
     """(first, last) word index of every span: a run of missing words, grown
@@ -1238,6 +1260,27 @@ def holds_start(words, soft, view_words):
                 return True
     return False
 
+def holds_run(sent_words, wts, view_words, need):
+    """Whether one view holds a run of the sent words of at least the weight
+    need in a row, looked up at up to RUN_PROBES places spread over the sent
+    text (for a stored text that holds every sent word, where no alignment
+    ran: a text that holds the body holds such a run almost everywhere)."""
+    n = len(sent_words)
+    if need <= 0:
+        return True
+    for start in range(0, n, max(1, n // RUN_PROBES)):
+        end = start
+        weight = 0.0
+        while end < n and weight < need:
+            weight += wts[end]
+            end += 1
+        if weight < need:
+            break
+        needle = "\x00" + "\x00".join(sent_words[start:end]) + "\x00"
+        if any(needle in hay for hay in view_words):
+            return True
+    return False
+
 def check_texts(sent_text, stored_text):
     """(kind, line) with kind one of complete, minor, incomplete, nocontent."""
     words, soft, labels, required, decoded, angles = sent_model(sent_text)
@@ -1254,11 +1297,24 @@ def check_texts(sent_text, stored_text):
     copies = body_copies(sent_count, remaining)
     if copies > 1:
         remaining = dict((w, -(-k // copies)) for w, k in remaining.items())
-    missing, unaligned, aligned = mark_missing([w for w, _, _, _ in words], remaining, view_lists)
+    sent_words = [w for w, _, _, _ in words]
+    missing, unaligned, aligned, run = mark_missing(sent_words, remaining, view_lists)
     lost = sum(1 for x in missing if x)
     found = total - lost
     view_words = ["\x00" + "\x00".join(v) + "\x00" for v in view_lists]
-    if total and found < NO_CONTENT_FOUND_RATIO * total:
+    wts = [word_weight(w) for w in sent_words]
+    nocontent = bool(total) and found < NO_CONTENT_FOUND_RATIO * total
+    if total and not nocontent:
+        # A text that holds the body holds a run of it in a row (START_WORDS,
+        # or half the weight found when that is less); words found one by one
+        # (letters of an unrelated text in an unspaced script) are not the
+        # body. Not decided when the alignment was skipped for size.
+        need_run = min(float(START_WORDS), sum(wt for wt, gone in zip(wts, missing) if not gone) / 2)
+        if run is not None:
+            nocontent = run < need_run
+        elif not lost:
+            nocontent = not holds_run(sent_words, wts, view_words, need_run)
+    if nocontent:
         line = "Body check: no content field (%d of %d words found" % (found, total)
         if holds_start(words, soft, view_words):
             line += "; start of the ticket only"
@@ -1293,7 +1349,6 @@ def check_texts(sent_text, stored_text):
     if not lost and not absent and not gone:
         return "complete", "Body check: complete"
     spans = missing_spans(missing, unaligned)
-    wts = [word_weight(w) for w, _, _, _ in words]
 
     def weight(sp):
         # A link target (soft) neither lengthens a span nor counts toward the
