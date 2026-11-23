@@ -109,8 +109,8 @@ else
   fail "--out on a non-empty target without --force exits non-zero" "rc=$REFUSE_RC $(cat "$TMP_ROOT/refuse.log")"
 fi
 check "--force rebuilds a non-empty target" "$([ "$FORCE_RC" -eq 0 ] || cat "$TMP_ROOT/force.log")"
-check "the build reports 21 files and a clean exit audit" \
-  "$(grep -qF '(21 files, ' "$BUILD_LOG" || echo 'file count is not 21')$(grep -qF 'exit audit clean' "$BUILD_LOG" || echo ' audit not clean')"
+check "the build reports 22 files and a clean exit audit" \
+  "$(grep -qF '(22 files, ' "$BUILD_LOG" || echo 'file count is not 22')$(grep -qF 'exit audit clean' "$BUILD_LOG" || echo ' audit not clean')"
 
 # --- tree shape ---------------------------------------------------------------
 EXPECTED="README.md
@@ -132,10 +132,11 @@ references/spec-decomposer-input.md
 references/split-plan-schema.md
 references/ticket-template.md
 references/write-path-templates.md
+scripts/ticket_body.py
 scripts/xlsx_render.py
 scripts/xlsx_to_text.py"
 ACTUAL="$(cd "$SKILL_DIR" && find . -type f | sed 's#^\./##' | sort)"
-check "tree holds exactly README.md + SKILL.md + the 17 shipped references + the xlsx converter and the sheet renderer (21 files)" \
+check "tree holds exactly README.md + SKILL.md + the 17 shipped references + the xlsx converter, the sheet renderer and the ticket body script (22 files)" \
   "$(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
 
 NOT_SHIPPED=""
@@ -1334,7 +1335,7 @@ check "every shipped agent prompt is frontmatter-free" \
 # --- platform item URLs in prose (access channels, best guess, sign-in) --------
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks, braces and dollars
-for needle in '**Platform item URLs**' '**access channel**' '**Best guess**' '**Auth**' '**Sign-in rule**' 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' '{scratch}/template-derived.json' 'Derived: input from' 'Derived: output from' 'Derived:' 'Tried: input <item URL without query> via <channel>' 'Probe: output <item URL without query> via <channel>' '**read probe**' 'sign-in page even with a 2xx status' 'once a create has been attempted, nothing falls through' '**re-run tokens**' 'it never reads a value and never prints one' 'the name it uses is always printed on the `Resolved:` line' 'never written into the dossier, a ticket, the Final summary or a spawn prompt' '`source=cli:<command>`' '`source=browser:<item URL>`' '`destination=cli:<command template>`' '`destination=browser:<item URL>`' 'read every way instead of being asked about' 'percent-encoded' 'A `cli:` command (a source or a destination template, typed or derived) is exempt' 'ERROR: auth_scheme= must be bearer or basic' 'ERROR: source_auth_scheme= must be bearer or basic' 'ERROR: content_type= applies only to an api: destination' 'ERROR: auth_scheme= applies only to an api: destination' 'ERROR: source_auth_scheme= applies only to an api: source'; do
+for needle in '**Platform item URLs**' '**access channel**' '**Best guess**' '**Auth**' '**Sign-in rule**' 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' '{scratch}/template-derived.json' 'Derived: input from' 'Derived: output from' 'Derived:' 'Tried: input <item URL without query> via <channel>' 'Probe: output <item URL without query> via <channel>' '**read probe**' 'sign-in page even with a 2xx status' 'once a create has been attempted, nothing falls through' '**re-run tokens**' 'it never reads a value and never prints one' 'the name it uses is always printed on the `Resolved:` line' 'never written into the dossier, a ticket, the Final summary or a spawn prompt' '`source=cli:<command>`' '`source=browser:<item URL>`' '`destination=cli:<command template>`' '`destination=browser:<item URL>`' 'read every way instead of being asked about' 'percent-encoded' 'A `cli:` command (a source or a destination template, typed or derived) is exempt' 'ERROR: auth_scheme= must be bearer, basic or basic-token' 'ERROR: source_auth_scheme= must be bearer, basic or basic-token' 'ERROR: content_type= applies only to an api: destination' 'ERROR: auth_scheme= applies only to an api: destination' 'ERROR: source_auth_scheme= applies only to an api: source'; do
   printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
 done
 HOST_SECTION="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
@@ -1488,15 +1489,15 @@ for kind in mcp api cli browser; do
 done
 check "rounds=, max_tickets= (Max tickets: line, overflow file), the B1 preflight confirmation check, the declined literal, follow-up reads, per-source derived values and the text probe are documented where they apply" "$MISSING"
 
-# The argument-hint omits the per-kind api: and cli: options; the Usage line
-# adds those option groups. Every other part of the two must stay identical,
+# The argument-hint omits the per-kind options of the api: and cli: kinds
+# and the remote kinds' body_format=; the Usage line adds those option groups. Every other part of the two must stay identical,
 # the five destination kinds included.
 HINT_VALUE="$(printf '%s\n' "$FM" | sed -n 's/^argument-hint: "\(.*\)"$/\1/p')"
 # shellcheck disable=SC2016  # literal backticks
 USAGE_VALUE="$(printf '%s\n' "$ARGS_SECTION" | grep -oE 'print `Usage: /create-ticket [^`]*`' | sed -e 's|^print `Usage: /create-ticket ||' -e 's|`$||')"
 USAGE_STRIPPED="$USAGE_VALUE"
 MISSING=""
-for group in '[source_auth_env=<VAR>]' '[source_auth_scheme=bearer|basic]' '[source_content_path=<jq path>]' '[auth_env=<VAR>]' '[auth_scheme=bearer|basic]' '[template=<path>]' '[id_path=<path>]' '[content_type=<media type>]'; do
+for group in '[source_auth_env=<VAR>]' '[source_auth_scheme=bearer|basic|basic-token]' '[source_content_path=<jq path>]' '[auth_env=<VAR>]' '[auth_scheme=bearer|basic|basic-token]' '[template=<path>]' '[id_path=<path>]' '[content_type=<media type>]' '[body_format=markdown|markdown-escaped|html]'; do
   case "$USAGE_VALUE" in
     *"$group "*) USAGE_STRIPPED="${USAGE_STRIPPED/"$group "/}" ;;
     *) MISSING="$MISSING Usage:'$group'" ;;
@@ -1507,7 +1508,7 @@ done
 DEST_GROUP='[destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | browser:<url> | cli:<command>]'
 case "$HINT_VALUE" in *"$DEST_GROUP"*) ;; *) MISSING="$MISSING argument-hint:'$DEST_GROUP'" ;; esac
 case "$USAGE_VALUE" in *"$DEST_GROUP"*) ;; *) MISSING="$MISSING Usage:'$DEST_GROUP'" ;; esac
-check "the Usage line names the api: source and destination options, both name the five destination kinds, and the two are otherwise equal" "$MISSING"
+check "the Usage line names the api: source and destination options and body_format=, both name the five destination kinds, and the two are otherwise equal" "$MISSING"
 
 # Implied confirmation: a host with no ask-user tool runs as if confirm=yes
 # was passed, announces it once after the preflight and repeats it in the
@@ -1537,7 +1538,7 @@ MISSING=""
 WP_MD="$SKILL_DIR/references/write-path-templates.md"
 DELIVERY_SECTION="$(awk '/^## Delivery$/ {d = 1; next} d && /^## / {d = 0} d' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks and braces
-for needle in '`rm -r "{scratch}"`' '`rmdir .local/create-ticket-scratch`' '`rmdir .local`' 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' 'Scratch: removed' 'Scratch: <{scratch} path> (kept: <reason>)' '`keep_scratch=yes`, `error`, `a ticket was delivered with a FAIL verdict` and `overflow findings`' 'is expected and ignored silently' 'the only delete commands of this skill'; do
+for needle in '`rm -rf "{scratch}"`' '`[ -d "{scratch}" ]`' '`rmdir .local/create-ticket-scratch`' '`rmdir .local`' 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' 'Scratch: removed' 'Scratch: <{scratch} path> (kept: <reason>)' '`keep_scratch=yes`, `error`, `a ticket was delivered with a FAIL verdict` and `overflow findings`' 'is expected and ignored silently' 'the only delete commands of this skill'; do
   printf '%s\n' "$DELIVERY_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Delivery:'$needle'"
 done
 [ "$(grep -cF -- 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' "$SKILL_MD" || true)" -ge 2 ] || MISSING="$MISSING SKILL.md:WARNING (Delivery and Error Handling)"
@@ -1596,11 +1597,11 @@ MISSING=""
 SHELL_BULLET="$(printf '%s\n' "$HOST_NOTES" | grep -F -- '- **Shell commands**:' || true)"
 APPROVE_PARA="$(grep -F -- 'Approve only the commands the steps name' "$SKILL_DIR/README.md" || true)"
 # shellcheck disable=SC2016  # literal backticks
-for cmd in '`date`' '`mktemp`' '`mkdir`' '`ls`' '`mv`' '`printf`' '`git`' '`command`' '`curl`' '`jq`' '`base64`' '`tr`' '`dd`' '`od`' '`grep`' '`rm`' '`rmdir`' '`python3`' '`python`' '`[`' '`echo`' '`case`'; do
+for cmd in '`date`' '`mktemp`' '`mkdir`' '`ls`' '`mv`' '`cp`' '`sed`' '`printf`' '`git`' '`command`' '`curl`' '`jq`' '`base64`' '`tr`' '`dd`' '`od`' '`grep`' '`rm`' '`rmdir`' '`python3`' '`python`' '`[`' '`echo`' '`case`'; do
   printf '%s\n' "$SHELL_BULLET" | grep -qF -- "$cmd" || MISSING="$MISSING Host-notes:$cmd"
   printf '%s\n' "$APPROVE_PARA" | grep -qF -- "$cmd" || MISSING="$MISSING README:$cmd"
 done
-check "the Host notes and README command lists agree and hold rm, rmdir and grep" "$MISSING"
+check "the Host notes and README command lists agree and hold rm, rmdir, grep, cp and sed" "$MISSING"
 
 # A substitutions.tsv row that lost the TAB before its target glues the file
 # name onto the text: no generated line may end in a sentence end followed
@@ -1650,6 +1651,12 @@ else
   EXPECTED='{"fields":{"t":"Fixture title","d":"## Fixture title\n\nThe body names {parent} and {title} as plain text.\n"},"rel":[{"url":"https://example.invalid/items/42"}]}'
   [ "$JQ_OUT" = "$EXPECTED" ] || DETAIL="$DETAIL got: $JQ_OUT"
   check "the Delivery step 3 jq filter substitutes {parent} inside a string and leaves a body's {parent} text alone" "$DETAIL"
+  # A host's file-write tool may write the one-line title file with CRLF.
+  printf 'Fixture title\r\n' >"$JQ_DIR/title-1.txt"
+  JQ_CRLF_RC=0
+  JQ_CRLF="$(jq -r --rawfile title "$JQ_DIR/title-1.txt" --rawfile body "$JQ_DIR/body-0.md" --arg parent "42" "$DELIVERY_FILTER" "$JQ_DIR/template.json" 2>&1 | jq -r '.fields.t')" || JQ_CRLF_RC=$?
+  check "the Delivery step 3 jq filter drops a trailing CR and LF from the title file" \
+    "$([ "$JQ_CRLF_RC" -eq 0 ] && [ "$JQ_CRLF" = 'Fixture title' ] || printf 'rc=%s title=%q' "$JQ_CRLF_RC" "$JQ_CRLF")"
 
   printf '%s\n' '{"id":7,"content":"# Page\nRequirement text"}' >"$JQ_DIR/S1.body"
   printf '%s\n' '<!DOCTYPE html><html><body>Sign in</body></html>' >"$JQ_DIR/S2.body"
@@ -1663,6 +1670,712 @@ else
   MISSING_OUT="$(jq -r '.content // empty' "$JQ_DIR/S3.body" 2>/dev/null || true)"
   [ -z "$MISSING_OUT" ] || DETAIL="$DETAIL JSON body without the field gave: $MISSING_OUT"
   check "source_content_path= extraction yields the field of a JSON body and nothing for an HTML body" "$DETAIL"
+fi
+
+# --- body fidelity: whole text, content-field markup, stored-text check ---------
+# The delivered text is the whole last evaluated draft, moved by cp and
+# file-edit replacements, converted for the content field by a program, and
+# read back after every remote create. Each rule is stated once in
+# destinations.md `## Rules for every destination` and pointed to elsewhere.
+MISSING=""
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+for rule in '- **Whole text, never re-typed.**' '- **Logical ids.**' '- **Heading check.**' '- **Content-field markup.**' '- **Stored text check.**'; do
+  [ "$(printf '%s\n' "$RULES_SECTION" | grep -cF -- "$rule" || true)" -eq 1 ] || MISSING="$MISSING destinations.md-Rules:'$rule'"
+  [ "$(grep -cF -- "${rule#- }" "$DEST_MD" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:'${rule#- }' stated more than once"
+done
+while IFS='|' read -r rel needle; do
+  grep -qF -- "$needle" "$SKILL_DIR/$rel" || MISSING="$MISSING $rel:'$needle'"
+done <<'NEEDLES'
+SKILL.md|`cp "<draft file>" "{scratch}/final-{i}.md"`
+SKILL.md|its 0-based position in the topological order of Step DL-1, `i` = `0..N-1`
+SKILL.md|**Graded draft**
+SKILL.md|**last evaluated draft**
+SKILL.md|never a path taken from a subagent's return text
+SKILL.md|(**Whole text, never re-typed**, [references/destinations.md](references/destinations.md) `## Rules for every destination`)
+SKILL.md|`rm -rf "{scratch}"`
+SKILL.md|`[ -d "{scratch}" ]`
+SKILL.md|the **Stored text check** reads back what the platform stored
+references/destinations.md|`cp "{scratch}/final-{i}.md" "{ticket_dir_i}/ticket.md"`
+references/destinations.md|`cp "{scratch}/final-{i}.md" "{scratch}/body-{i}.md"`
+references/destinations.md|runs from the highest part number down to the lowest and replaces whole ids only
+references/destinations.md|read with the file-read tool immediately before the call and passed whole and unchanged
+references/destinations.md|read with the file-read tool immediately before the fill and passed whole and unchanged
+references/destinations.md|The ticket text never goes on the command line
+references/destinations.md|never through command substitution, never with the text written inline
+references/destinations.md|the word "description" in a request (which names the destination's long-form field), never shorten the delivered text
+references/destinations.md|it cannot see text a platform hides only when it renders the field
+references/destinations.md|`sed -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "{scratch}/body-{i}.md" > "{scratch}/send-{i}.md"`
+references/destinations.md|`{ printf '<pre>'; sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "{scratch}/body-{i}.md"; printf '</pre>\n'; } > "{scratch}/send-{i}.html"`
+references/destinations.md|`python3 -I "{skill_root}/scripts/ticket_body.py" convert --to html --in "{scratch}/body-{i}.md" --out "{scratch}/send-{i}.html"`
+references/destinations.md|`python3 -I "{skill_root}/scripts/ticket_body.py" check --sent "{scratch}/body-{i}.md" --stored "<file>"`
+references/destinations.md|`Converted: html (<n> characters)`
+references/destinations.md|`Converted: preformatted fallback (<detail>)`
+references/destinations.md|`Body check: complete`
+references/destinations.md|`Body check: minor differences (<detail>)`
+references/destinations.md|`Body check: incomplete (<detail>)`
+references/destinations.md|`Body check: no content field (<detail>)`
+references/destinations.md|`complete (headings only)`
+references/destinations.md|`{scratch}/stored-{i}.json`
+references/destinations.md|as `body <format>` on the `Derived: output from` line (followed by `, field markup declared in the request`
+references/destinations.md|`<url without query>?[query-omitted]`
+references/destinations.md|so a copied token is refused by the URL check (which refuses `[` and `]`)
+references/destinations.md|and the identifier of a created item that a **Stored text check** read puts into one
+references/destinations.md|only when it matches `^[A-Za-z0-9][A-Za-z0-9._~:/#@%+=,-]*$`
+references/destinations.md|and a `cli:` read writes it double-quoted, like `{parent}`; otherwise no read is made, and the item counts as not read back
+references/destinations.md|each title searched as a fixed string, never as a pattern
+references/destinations.md|made only of ASCII letters, digits, spaces, `-`, `.`, `,` and `:`
+references/destinations.md|With a typed `body_format=`, the derived request declares the field markup only for `markdown` or `markdown-escaped`
+references/destinations.md|with `html` it declares nothing, and the `Derived:` line then has no `, field markup declared in the request`
+references/destinations.md|Through the `browser:` channel the value is chosen, as part of the same guess, for what the form's body field does with the text filled into it
+references/agents/planner.md|that file holds only the ticket draft (the **Draft file** instruction of your spawn prompt)
+references/destinations.md|(an HTTP status of `4xx`, a command error, or an error result of the create tool)
+references/destinations.md|(an error result on a derived destination whose request declares the field markup adds the suffix of **Content-field markup**)
+references/destinations.md|a second copy of the body in the same response, such as a field returned raw and rendered, counted once
+SKILL.md|while every printed line drops them and a re-run token marks them omitted (`references/destinations.md` **Printed URLs**)
+SKILL.md|the retry planner spawned in that round, step b of the retry-with-feedback loop
+SKILL.md|are both read from that file with the file-read tool right before each spawn, never from memory of an earlier phase
+SKILL.md|outside the degraded branch, the orchestrator never writes, moves or repairs a draft itself
+SKILL.md|or (planner) returns `Status: partial` or leaves no draft file that passes the check of Phase 4 **Graded draft** is run again ONCE
+SKILL.md|edited in place (**Whole text, never re-typed**, [references/destinations.md](references/destinations.md))
+references/agent-spawn-prompts.md|**Draft file** (every planner spawn: this Phase 3 spawn and step b of the Phase 4 retry-with-feedback loop)
+references/agent-spawn-prompts.md|"Your output file holds the ticket and nothing else: its first line is the ticket's `## <logical id>: <Title>` heading
+references/agent-spawn-prompts.md|the text is not wrapped in a code fence, and notes, analysis, file contents and your return envelope never go into it
+references/agent-spawn-prompts.md|the previous round's draft, read from its file as SKILL.md Phase 4 **Graded draft** says and inlined verbatim into the spawn prompt); the **Draft file** instruction of Phase 3;
+references/destinations.md|($title | rtrimstr("\n") | rtrimstr("\r"))
+references/destinations.md|--rawfile body "<sent body>"
+references/destinations.md|`auth_scheme=bearer|basic|basic-token`
+references/destinations.md|"$(printf ':%s' "$VAR" | base64 | tr -d '\n')"
+references/sources.md|"$(printf ':%s' "$VAR" | base64 | tr -d '\n')"
+references/sources.md|`source_auth_scheme=bearer|basic|basic-token`
+references/agent-spawn-prompts.md|**Section check** (after the retry planner of step b returns, before step c)
+references/write-path-templates.md|`Body: <body_format>; stored text: complete (<k> of <N>)`
+references/write-path-templates.md|`, <m> with minor differences` and `, <u> not read back`
+references/write-path-templates.md|Body: html; stored text: complete (2 of 2)
+references/write-path-templates.md|`Destination:`, `Derived from:`, `Parent:`, `Body:`, `Sources:` and `Partition basis:`
+README.md|`body_format=markdown|markdown-escaped|html`
+README.md|`auth_scheme=bearer|basic|basic-token`
+README.md|`source_auth_scheme=bearer|basic|basic-token`
+README.md|`scripts/ticket_body.py`
+README.md|a `Body:` line for a remote destination
+README.md|it is never typed out again, summarized or converted by the agent
+README.md|`rm -rf` on that one directory
+references/destinations.md|each searched by its own path
+references/destinations.md|an empty list never counts as equal
+references/destinations.md|`; partial output quarantined at {dir}/.rollback/{parent-slug}-{ts}/`
+references/destinations.md|(after a refusal of the **Heading check**, its own line instead)
+references/destinations.md|together with the character that follows it, one replacement per distinct following character other than a digit
+references/destinations.md|with the extended regular expression `<kept id>([^0-9]|$)` (the whole id: an occurrence followed by a further digit is another id)
+references/destinations.md|finds each kept id that begins with the id of an already-created ticket (the only kept ids a replacement can reach) on as many lines of `{scratch}/body-{i}.md` as of `{scratch}/final-{i}.md`, the first heading line of each left out (the adapter rewrites it)
+references/destinations.md|a read that (b) calls for is never skipped while a read-only tool or the page is at hand
+references/destinations.md|exit status 127 in a POSIX shell, also means no Python 3: the no-Python form of that step runs, with its `NOTE:`, never the failure branch of a conversion or check
+references/destinations.md|(other than the no-Python status above) is replaced by the same shell command, without the `NOTE:`
+references/destinations.md|except the no-Python status of **Content-field markup**, which runs the heading lookup below instead
+references/destinations.md|a ticket not yet created, the one being built included, keeps its logical id (a **kept id**)
+references/destinations.md|When the check of (a) reports `no content field` or `incomplete`, ONE read of the new item
+references/destinations.md|whose output is never checked as stored text
+references/destinations.md|`; start of the ticket only`
+references/destinations.md|counts as `incomplete`, at (a) and at (b) alike
+references/destinations.md|A `no content field` of (a) never stops the run
+references/agent-spawn-prompts.md|an empty list is a search that did not read the file, never a draft without headings
+references/write-path-templates.md|`Body: <body_format>; stored text: complete, headings only (<k> of <N>)`
+SKILL.md|before any create, and for `local:` before `split-plan.md` and the counter are written
+README.md|Before a ticket is created remotely or kept locally
+NEEDLES
+# shellcheck disable=SC2016  # literal backticks and braces
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- 'body <format>[, field markup declared in the request]' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Derived: output from ... body <format>'"
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`body_format=markdown|markdown-escaped|html`' || MISSING="$MISSING SKILL.md-Argument-Parsing:'body_format= option'"
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`content_type=...`, `auth_env=...`, `auth_scheme=...`, `body_format=...`' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Resolved: body_format='"
+printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`references/destinations.md` **Printed URLs**' || MISSING="$MISSING SKILL.md-Argument-Parsing:'query kept, Printed URLs'"
+for kind in mcp api cli browser; do
+  sect="$(awk -v k="$kind" 'index($0, "## `" k ":") == 1 {s = 1; print; next} s && /^## / {s = 0} s' "$DEST_MD")"
+  printf '%s\n' "$sect" | grep -F -- '(derived: destination=' | grep -qF -- 'body_format=...)' || MISSING="$MISSING destinations.md-$kind:'(derived: ... body_format=...)'"
+  printf '%s\n' "$sect" | grep -qF -- 'body_format=<format>)?' || MISSING="$MISSING destinations.md-$kind:'question body_format=<format>'"
+  printf '%s\n' "$sect" | grep -qF -- '**Stored text check**' || MISSING="$MISSING destinations.md-$kind:'Stored text check step'"
+done
+grep -qxF -- $'scripts/ticket_body.py\t-' "$MANIFEST_DIR/files.tsv" || MISSING="$MISSING files.tsv:'scripts/ticket_body.py'"
+for needle in 'scripts/ticket_body.py' 'overrides/scripts-ticket-body.md' 'body_format=markdown|markdown-escaped|html' 'basic-token' '**Whole text, never re-typed**' '**Stored text check**' 'rm -rf "{scratch}"'; do
+  grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
+done
+check "body fidelity: DL-2 copies the graded draft, every adapter copies the final text, the five delivery rules are stated once in destinations.md and named at every site" "$MISSING"
+
+# Step DL-3 names the Whole-text rule; the Draft file paragraph closes the
+# Phase 3 planner section (before the decomposer partition section).
+DL3_SECTION="$(awk '/^### Step DL-3/ {s = 1; next} s && /^### / {s = 0} s' "$SKILL_DIR/SKILL.md")"
+DF_LN="$(grep -n '^\*\*Draft file\*\*' "$SKILL_DIR/references/agent-spawn-prompts.md" | cut -d: -f1)"
+PART_LN="$(grep -n '^### Partition is owned by the decomposer' "$SKILL_DIR/references/agent-spawn-prompts.md" | cut -d: -f1)"
+P4_LN="$(grep -n '^## Phase 4' "$SKILL_DIR/references/agent-spawn-prompts.md" | cut -d: -f1)"
+check "Step DL-3 points to Whole text, never re-typed, and the Draft file rule sits in Phase 3 of the spawn prompts" \
+  "$(printf '%s\n' "$DL3_SECTION" | grep -qF -- '**Whole text, never re-typed**' || echo 'DL-3 pointer missing')$({ [ -n "$DF_LN" ] && [ -n "$PART_LN" ] && [ -n "$P4_LN" ] && [ "$DF_LN" -lt "$PART_LN" ] && [ "$PART_LN" -lt "$P4_LN" ]; } || echo " draft-file=$DF_LN partition=$PART_LN phase4=$P4_LN")"
+
+# The Section check sits between the retry planner (step b) and the retry
+# evaluator (step c) of the retry loop.
+SPAWN_MD="$SKILL_DIR/references/agent-spawn-prompts.md"
+B_LN="$(grep -n '^b\. Re-spawn the \*\*planner\*\*' "$SPAWN_MD" | cut -d: -f1)"
+SC_LN="$(grep -n '^\*\*Section check\*\*' "$SPAWN_MD" | cut -d: -f1)"
+C_LN="$(grep -n '^c\. Re-spawn the \*\*ticket-evaluator\*\*' "$SPAWN_MD" | cut -d: -f1)"
+check "the Section check follows the retry planner and precedes the retry evaluator" \
+  "$({ [ -n "$B_LN" ] && [ -n "$SC_LN" ] && [ -n "$C_LN" ] && [ "$B_LN" -lt "$SC_LN" ] && [ "$SC_LN" -lt "$C_LN" ]; } || echo "b=$B_LN section-check=$SC_LN c=$C_LN")"
+
+# Every new ERROR:, WARNING: and NOTE: literal appears identically where it is
+# raised (a = Argument Parsing, d = destinations.md, p = agent-spawn-prompts.md)
+# and in the Error Handling table (e).
+MISSING=""
+while IFS='|' read -r where needle; do
+  case "$where" in *a*) printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Argument-Parsing:'$needle'" ;; esac
+  case "$where" in *e*) printf '%s\n' "$ERR_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Error-Handling:'$needle'" ;; esac
+  case "$where" in *d*) grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'" ;; esac
+  case "$where" in *p*) grep -qF -- "$needle" "$SPAWN_MD" || MISSING="$MISSING agent-spawn-prompts.md:'$needle'" ;; esac
+done <<'BODY_LITERALS'
+ae|ERROR: body_format= must be one of markdown, markdown-escaped, html
+ae|WARNING: body_format= ignored (a local: destination always writes Markdown)
+ae|ERROR: auth_scheme= must be bearer, basic or basic-token
+ae|ERROR: source_auth_scheme= must be bearer, basic or basic-token
+ed|NOTE: no Python 3 on this host; the ticket is delivered as preformatted text inside the HTML field
+ed|ERROR: create-ticket delivery refused — the text of <logical id> lost sections while it was prepared (<missing headings>)
+ed|ERROR: destination <kind>:<...>: the stored text of <id> is incomplete (<detail>); the item exists and was not changed; the content field may take another markup: re-run with body_format=markdown, body_format=markdown-escaped or body_format=html (final ticket texts: {scratch}/final-*.md)
+ed|WARNING: the stored text of <id> differs slightly from the ticket (<detail>)
+ed|NOTE: the stored text of <id> could not be read back; its completeness was not checked
+ed|NOTE: no Python 3 on this host; the stored text was checked by its heading titles only
+ed| (the request declared the field markup; a platform version that does not take the declaration needs body_format=html)
+ep|WARNING: the round-<n> draft of <logical id> dropped sections (<headings>)
+BODY_LITERALS
+check "every new body-fidelity ERROR:, WARNING: and NOTE: literal appears where it is raised and in the Error Handling table" "$MISSING"
+
+# Old wording that re-typed the ticket, the old scheme list and the old
+# removal command must be gone from the whole tree.
+check "no stale re-type, scheme, removal or heading-check wording remains (file-write of a ticket, bearer|basic without basic-token, rm -r, a heading check before any write)" \
+  "$(grep -rnF -e 'with the file-write tool, write the title to' -e 'write `{ticket_dir_i}/ticket.md` with the file-write tool' -e 'starting from its last evaluated draft:' -e 'must be bearer or basic' -e 'rm -r "' -e 'a failed `rm -r`' -e 'a body shape, a parent link' -e '--rawfile body "{scratch}/body-{i}.md"' -e '?<query omitted>' -e 'every printed line and re-run token drops them' -e 'the retry planner of the round before' -e 'before any write or create' -e 'Before a write or create' -e 'nothing written or created for that ticket' -e '(headings only)` included' -e 'the read is never skipped while' -e 'finds each kept id on as many lines' "$SKILL_DIR" | cut -c1-160 || true)$(grep -rnE -- 'bearer\|basic([^|]|$)' "$SKILL_DIR" | cut -c1-160 || true)$(grep -nE -- 'rm -r "|`rm -r`' "$MANIFEST_DIR/README.md" | cut -c1-160 || true)"
+
+TB_PY="$SKILL_DIR/scripts/ticket_body.py"
+check "the ticket body script is ASCII-only, backtick-free and starts with a python3 shebang" \
+  "$(head -n 1 "$TB_PY" | grep -qx '#!/usr/bin/env python3' || echo 'no shebang')$(grep -n '`' "$TB_PY" | head -n 3 || true)$(LC_ALL=C grep -n '[^ -~]' "$TB_PY" | head -n 3 || true)"
+if command -v python3 >/dev/null 2>&1; then
+  TBD="$TMP_ROOT/ticket-body"
+  mkdir -p "$TBD"
+  check "the ticket body script parses as Python 3.8" \
+    "$(python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="ascii").read(), feature_version=(3, 8))' "$TB_PY" 2>&1 | tail -n 1)"
+  # The Basic headers: every encoding substitution of the generated curl
+  # forms (destinations.md and sources.md, basic and basic-token) is run as
+  # printed and compared with an independent base64 of the expected string.
+  cat >"$TBD/basic-cmds.py" <<'PYBASIC'
+import sys
+for path in sys.argv[1:]:
+    for line in open(path, encoding="utf-8"):
+        if line.lstrip().startswith("printf 'header = \"Authorization: Basic %s\"") and '"$(' in line:
+            i = line.index('"$(')
+            sub = line[i:line.index(')"', i) + 2]
+            print(("basic-token" if "':%s'" in sub else "basic") + "\t" + sub)
+PYBASIC
+  MISSING=""; N_BASIC=0; N_TOKEN=0
+  while IFS=$'\t' read -r kind sub; do
+    got="$(VAR='tok-123' sh -c "printf '%s' $sub")"
+    if [ "$kind" = basic-token ]; then
+      N_TOKEN=$((N_TOKEN + 1)); want="$(python3 -I -c 'import base64; print(base64.b64encode(b":tok-123").decode())')"
+    else
+      N_BASIC=$((N_BASIC + 1)); want="$(python3 -I -c 'import base64; print(base64.b64encode(b"tok-123").decode())')"
+    fi
+    [ -n "$got" ] && [ "$got" = "$want" ] || MISSING="$MISSING $kind:got='$got',want='$want'"
+  done < <(python3 -I "$TBD/basic-cmds.py" "$DEST_MD" "$SOURCES_MD")
+  check "the Basic header substitutions of destinations.md and sources.md encode the value (basic) and \":\" plus the value (basic-token)" \
+    "$MISSING$([ "$N_BASIC" = 2 ] && [ "$N_TOKEN" = 2 ] || echo " forms: basic=$N_BASIC basic-token=$N_TOKEN")"
+  # Fixtures in the shape of references/ticket-template.md: Japanese text
+  # (written with \u escapes, so this file stays English), angle-bracket
+  # placeholders inside and outside code, count<limit ... ->, >=, an
+  # ampersand and an entity reference, an HTML comment, tables with escaped
+  # pipes, a fenced block holding table syntax. Further fixtures pin the
+  # three thresholds at their limits, comment markers in list items and
+  # table rows, stored JSON nested in a string or printed after a line, a
+  # body returned twice, a heading holding a link and angle-bracket texts,
+# letters of a script written without word spaces, a section whose title
+# recurs in prose, reference links and a second level-two heading.
+  cat >"$TBD/make.py" <<'PYTB'
+import importlib.util, json, os, sys, unicodedata
+d = sys.argv[1]
+spec = importlib.util.spec_from_file_location("tb", sys.argv[2])
+tb = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tb)
+BT = chr(96)
+F = BT * 3
+JA = "\u65e5\u672c\u8a9e\u306e\u8aac\u660e\u6587\u3067\u3059"
+JA2 = "\u5883\u754c\u5024"
+t = """## fixture-part-1: Limit batch size of the importer
+
+| Field | Value |
+|-------|-------|
+| Priority | **P1 \\| P2 \\| P3** |
+| Category | Feature |
+| Size | M |
+| Dependencies | -- |
+
+### Background
+
+The importer reads every row at once. """ + JA + """ and the operators see timeouts (a & b, x &lt; y).
+<!-- reviewer note: this comment is not part of the ticket -->
+Sources: S1:L1-L5
+
+### Scope
+
+| File | Lines | Change |
+|------|-------|--------|
+| src/import.py | 10-40 | add a limit check |
+| src/config.py | 5 | read the limit (""" + BT + "a \\| b" + BT + """) |
+
+### Acceptance Criteria
+
+1. """ + BT + "import" + BT + """ rejects a batch when count<limit is false and prints """ + BT + "batch too large" + BT + """ for the """ + JA2 + """ case.
+2. An empty batch is accepted and the exit status is 0.
+3. A batch of exactly the limit (>= 1 row) is accepted.
+
+#### Failure-Class Coverage (Gate 9)
+
+**Boundary: """ + BT + "<surface name>" + BT + """** and the <surface name> placeholder outside code.
+
+| Failure class | AC(s) or n/a justification |
+|------|------|
+| R1 FULL-DOMAIN INVARIANT (whole valid domain incl. min/max/empty) | AC-2 \\| AC-3 |
+| R2 HOSTILE (malformed/oversized -> bounded error in bounded time) | AC-1 |
+
+### Implementation Notes
+
+- Batch limit comes from config, default 5000 rows.
+  The value is validated at start-up.
+- Run the checks:
+
+  """ + F + """bash
+  | not | a | table |
+  |---|---|
+  python3 -m importer --limit 10 <input.csv
+  """ + F + """
+
+- Nested:
+  - first nested item
+  - second nested item
+
+### Capabilities
+
+| Name | Type | Purpose | Used by | Bound AC(s) |
+|------|------|---------|---------|-------------|
+| pytest | test runner | runs the importer tests | implementer | AC-1, AC-2 |
+"""
+def w(name, text, raw=False):
+    with open(os.path.join(d, name), "wb") as fh:
+        fh.write(text if raw else text.encode("utf-8"))
+w("ticket.md", t)
+a = t.index("<limit"); b = t.index("->", a) + 2
+w("s-swallow.md", t[:a] + t[b:])
+a = t.index("### Implementation Notes"); b = t.index("### Capabilities")
+w("s-section.md", t[:a] + t[b:])
+w("s-surface.md", t.replace("the <surface name> placeholder", "the  placeholder"))
+w("s-decoded.md", t)
+w("s-idurl.json", json.dumps({"id": 42, "url": "https://tracker.example.invalid/items/42"}))
+w("s-uescape.json", json.dumps({"id": 43, "fields": {"title": "x", "description": t}}, ensure_ascii=True))
+w("crlf.md", ("\ufeff" + t).replace("\n", "\r\n").encode("utf-8"), raw=True)
+w("bad.md", b"abc \xff\xfe\xfd", raw=True)
+hostile = ("## T\n### H\nWrite \\<script\\>alert(1)\\</script\\> and \\<img src=x\\> as text.\nText <script>alert(1)</script> <img src=x onerror=y> <<>> </p> x<y a&b &amp; &lt;tag&gt;\n"
+           "- a <b>\n  - b\n    1. c\n       continued\n- d\n\n| <th> | x \\| y | " + BT + "p | q" + BT + " |\n|---|---|---|\n| </table> | 1 | 2 | extra |\n\n"
+           + F + "\n| a | b |\n|---|---|\n### not a heading\n<!-- kept as code -->\n" + F + "\n"
+           "text <!-- unclosed comment stays visible\n" + ("long" * 5000) + "\n"
+           + F + "html\n<p>caf&eacute; &#65;</p>\n" + F + "\nentity in a code span " + BT + "caf&eacute;" + BT + " and outside &#65;BC\n\n"
+           "3. three\n4. four\n\nbetween\n\n1. one\n2. two\n5. five\n\n- lazy item\ncontinues here\n- next\n\n"
+           + F + "\"><img src=x onerror=y>\ninfo string\n" + F + "\n"
+           + F + "js\nunclosed fence <x>\n")
+w("hostile.md", hostile)
+# A stray comment opener whose only closing marker is an arrow inside a later
+# fenced block: an HTML renderer would hide everything between the two.
+stray = ("## fixture-part-2: Stray comment opener\n\n### Background\n\nOperators upload spreadsheets every morning, and large uploads time out "
+         "before any row is stored, which blocks the nightly reconciliation job and the weekly audit export.\n"
+         "The importer <!-- note about the importer\nreads rows.\n\n"
+         "### Scope\n\n| File | Change |\n|---|---|\n| src/import.py | add a limit check |\n\n### Acceptance Criteria\n\n"
+         "1. Rejects a batch above the configured limit with a bounded error.\n2. Accepts an empty batch and exits with status zero.\n\n"
+         "### Implementation Notes\n\n" + F + "mermaid\nimporter --> limit check\n" + F + "\n\n"
+         "The limit is read once at start-up from the configuration file, logged with the effective value, "
+         "and exposed through the health endpoint so that operators can confirm what the running process enforces.\n")
+w("stray.md", stray)
+a = stray.index("<!-- note"); b = stray.index("-->") + 3
+w("stray-swallowed.md", stray[:a] + stray[b:])
+# Entity references and decomposed characters in a faithful store.
+w("s-ncr.md", t.replace(JA, "".join("&#%d;" % ord(c) for c in JA)))
+w("s-nfd.md", unicodedata.normalize("NFD", t))
+# JSON nested in a string value (a tool result whose text block is the
+# response) and JSON printed after a line of text (a client's output).
+w("s-mcp.json", json.dumps({"content": [{"type": "text", "text": json.dumps({"id": 77, "description": t})}], "isError": False}))
+w("s-cli.txt", "Created item 77\n" + json.dumps({"id": 77, "body": t}) + "\n")
+# The body returned twice, both copies without acceptance criterion 2.
+ac2 = "2. An empty batch is accepted and the exit status is 0.\n"
+lossy = t.replace(ac2, "")
+obj = {"id": 9, "fields": {"description": lossy}}
+w("s-dup-block.json", json.dumps({"content": [{"type": "text", "text": json.dumps(obj)}], "structuredContent": obj}))
+w("s-dup-rendered.json", json.dumps({"id": 9, "fields": {"description": lossy}, "renderedFields": {"description": tb.to_html(lossy)}}))
+w("s-dup-nested.json", json.dumps({"content": [{"type": "text", "text": json.dumps({"id": 9, "fields": {"description": lossy}, "renderedFields": {"description": tb.to_html(lossy)}})}]}))
+# A lost passage holding a control character: the excerpt shows a space.
+ctl = ("## fixture-part-8: Control\n\n### Notes\n\nThe notes keep these words in this order so that the excerpt has context around them: "
+       "alpha\x07bravo \"charlie\" delta echo foxtrot golf hotel india juliet kilo lima mike and a few more words close the paragraph.\n")
+w("ctl.md", ctl)
+w("ctl-lost.md", ctl.replace("alpha\x07bravo \"charlie\" delta echo foxtrot golf hotel india juliet kilo lima mike ", ""))
+w("s-once.json", json.dumps(obj))
+# The same loss in two copies that are not separate values: one text that
+# holds the body twice; a faithful body followed by a 90 percent copy.
+w("s-dup-text.txt", lossy + "\n\n" + lossy)
+w("s-partial.txt", t + "\n\n" + t[: len(t) * 9 // 10])
+# The lossy body next to a preview of its first 90 percent, as two values.
+w("s-dup-preview.json", json.dumps({"id": 9, "fields": {"description": lossy, "preview": lossy[: len(lossy) * 9 // 10]}}))
+# A UTF-16 file with its byte order mark.
+w("s-utf16.md", t.encode("utf-16"), raw=True)
+# A content field that keeps only the first 255 characters.
+w("s-cut255.json", json.dumps({"id": 7, "fields": {"description": t[:255]}}))
+# A structured document stores each paragraph as its own value: two
+# near-identical criteria are distinct parts of the ticket, never copies.
+ac = "The importer rejects a batch of %d rows with exit status 2 and prints the line batch too large to standard error before any row is stored."
+w("peer.md", "## fixture-part-7: Peer criteria\n\n### Acceptance Criteria\n\n1. " + ac % 5001 + "\n2. " + ac % 5002 + "\n")
+w("s-peer.json", json.dumps({"type": "doc", "content": [{"type": "heading", "text": "Acceptance Criteria"}] + [{"type": "listItem", "text": ac % n} for n in (5001, 5002)]}))
+# Three criteria whose numbers are no words: losing the second loses no word
+# the others do not hold. A structured document (one value per criterion)
+# next to the rendered field, and a page text showing the field twice.
+bg = "Operators upload spreadsheets every morning and large uploads time out, which blocks the nightly reconciliation job and the weekly audit export."
+w("peer3.md", "## fixture-part-9: Peer criteria\n\n### Background\n\n" + bg + "\n\n### Acceptance Criteria\n\n" + "".join("%d. %s\n" % (k + 1, ac % n) for k, n in enumerate((501, 502, 503))))
+def peer_store(ns):
+    doc = {"type": "doc", "content": [{"type": "heading", "text": "Background"}, {"type": "paragraph", "text": bg}, {"type": "heading", "text": "Acceptance Criteria"}] + [{"type": "listItem", "text": ac % n} for n in ns]}
+    return json.dumps({"id": 11, "fields": {"description": doc}, "renderedFields": {"description": "<h3>Background</h3><p>" + bg + "</p><h3>Acceptance Criteria</h3><ol>" + "".join("<li>%s</li>" % (ac % n) for n in ns) + "</ol>"}})
+w("s-peer3.json", peer_store((501, 502, 503)))
+w("s-peer3-lost.json", peer_store((501, 503)))
+page = "Background\n" + bg + "\nAcceptance Criteria\n" + "".join("%s\n" % (ac % n) for n in (501, 503))
+w("s-peer3-page.txt", page + "\n" + page)
+# Threshold fixtures: 394 unique words and four headings, 400 words in all.
+def zq(k):
+    s = ""
+    for _ in range(3):
+        s = chr(97 + k % 26) + s
+        k //= 26
+    return "zq" + s
+body = [zq(k) for k in range(394)]
+heads = [("Background", 0, 100), ("Scope", 100, 200), ("Acceptance Criteria", 200, 300), ("Implementation Notes", 300, 394)]
+def thr(drop=()):
+    out = ["## fixture-part-3: Thresholds", ""]
+    for h, a, b in heads:
+        out += ["### " + h, "", " ".join(body[k] for k in range(a, b) if k not in drop), ""]
+    return "\n".join(out)
+w("thr.md", thr())
+w("thr-run11.md", thr(range(150, 161)))
+w("thr-run12.md", thr(range(150, 162)))
+w("thr-scatter12.md", thr([10 + 30 * j for j in range(12)]))
+w("thr-scatter13.md", thr([10 + 28 * j for j in range(13)]))
+order = ["background"] + body[0:100] + ["scope"] + body[100:200] + ["acceptance", "criteria"] + body[200:300] + ["implementation", "notes"] + body[300:394]
+w("thr-found79.txt", " ".join(order[::5][:79]) + "\n")
+w("thr-start79.txt", " ".join(order[:79]) + "\n")
+w("thr-found80.txt", " ".join(order[:80]) + "\n")
+# Comment markers inside list items and table rows, an empty comment, and a
+# block comment that holds list and table lines.
+lst = ("## fixture-part-4: Comment markers in list items\n\n### Acceptance Criteria\n\n"
+       "1. The scanner reports an opening <!-- marker that is never closed.\n"
+       "2. The importer rejects a batch above the configured limit with a bounded error and exit status 2.\n"
+       "3. An empty batch is accepted and the exit status is 0.\n"
+       "4. The state machine only allows draft --> review and review --> published.\n\n"
+       "### Scope\n\n| File | Change |\n|------|--------|\n| src/scan.py | report <!-- without a closer |\n"
+       "| src/import.py | add the limit check and the bounded error |\n| src/flow.py | allow draft --> review only |\n\n"
+       "### Implementation Notes\n\nUse <!--> as the shortest comment, then alpha bravo charlie.\n"
+       "Second line foxtrot golf --> hotel india.\n\n<!--\n- hidden item\n| hidden | row |\n-->\nAfter the block comment.\n")
+w("list.md", lst)
+w("list-lost.md", lst.replace("2. The importer rejects a batch above the configured limit with a bounded error and exit status 2.\n", "")
+  .replace("3. An empty batch is accepted and the exit status is 0.\n", "").replace("| src/import.py | add the limit check and the bounded error |\n", ""))
+# A heading that holds a link, and autolinks, stored as a renderer writes them.
+w("link.md", "## fixture-part-5: Link heading\n\n### See [the design note](https://example.invalid/design) first\n\nBody text of the section with several words in it.\n"
+  "See <https://example.invalid/x> and <ops@example.invalid> for the Map<K, V> details.\n")
+w("link.html", '<h3>See <a href="https://example.invalid/design">the design note</a> first</h3>\n<p>Body text of the section with several words in it.<br>\n'
+  'See <a href="https://example.invalid/x">https://example.invalid/x</a> and <a href="mailto:ops@example.invalid">ops@example.invalid</a> for the Map&lt;K, V&gt; details.</p>\n')
+# A link whose long target a page text never shows, and line-break tags
+# written in table cells, which a renderer turns into line breaks.
+lt = ("## fixture-part-10: Link target\n\n### Background\n\nThe limit is described in [the design note]"
+      "(https://git.example.invalid/org/repo/blob/main/docs/design/importer-limits.md#batch-size \"Importer limits\") of the importer.\n\n"
+      "### Scope\n\n| File | Change |\n|---|---|\n| src/import.py | add the check<br>log the limit |\n| src/config.py | read the limit<br />once |\n")
+w("lt.md", lt)
+# Link syntax inside a code span is text: its target counts in full.
+lc = "## fixture-part-11: Code link\n\n### Notes\n\nWrite " + BT + "[the guide](https://docs.example.invalid/very/long/path/to/one/page/with/many/segments/here)" + BT + " exactly as shown.\n"
+w("lc.md", lc)
+w("lc-lost.md", lc.replace("https://docs.example.invalid/very/long/path/to/one/page/with/many/segments/here", ""))
+w("lt-page.txt", "Link target\nBackground\nThe limit is described in the design note of the importer.\nScope\nFile Change\nsrc/import.py add the check\nlog the limit\nsrc/config.py read the limit\nonce\n")
+# Angle-bracket texts whose letters are too short to count as words.
+kv = ("## fixture-part-6: Types\n\n### Type <!-- checked --> Notes\n\nThe cache is a Map<K, V> of List<T> values and Result<T, E> errors; use Option<T> for the key.\n"
+      "A pair is written Pair<A, <!-- second type --> B> in the notes.\n")
+w("kv.md", kv)
+w("kv-lost.md", kv.replace("<K, V>", "").replace("<T>", "").replace("<T, E>", ""))
+# Letters of a script written without word spaces: each is a word of its own,
+# weighing half a word in the thresholds (1000 distinct letters and six
+# heading words: 1006 words, weight 506, 3 percent of it 15.18).
+U = [chr(0x4E00 + k) for k in range(1000)]
+cheads = [("Background", 0, 250), ("Scope", 250, 500), ("Acceptance Criteria", 500, 750), ("Implementation Notes", 750, 1000)]
+def cjk(drop=()):
+    out = ["## fixture-part-12: Unspaced thresholds", ""]
+    for h, a, b in cheads:
+        out += ["### " + h, "", "".join(U[k] for k in range(a, b) if k not in drop), ""]
+    return "\n".join(out)
+w("cjk.md", cjk())
+w("cjk-run23.md", cjk(range(300, 323)))
+w("cjk-run24.md", cjk(range(300, 324)))
+w("cjk-scatter30.md", cjk([5 + 33 * j for j in range(30)]))
+w("cjk-scatter31.md", cjk([5 + 32 * j for j in range(31)]))
+# Such a clause next to code spans and bold text, and the page text a browser
+# shows for it, where nothing separates the code or bold text from the clause.
+jl = ["1. " + BT + "import" + BT + JA + "**" + JA2 + "**" + JA,
+      "2. " + JA2 + BT + "2" + BT + JA + BT + "batch too large" + BT + JA2,
+      "3. " + JA + BT + "IMPORT_BATCH_LIMIT" + BT + JA2 + "**" + JA + "**"]
+w("jp.md", "## fixture-part-13: Unspaced page text\n\n### Acceptance Criteria\n\n" + "\n".join(jl) + "\n")
+w("jp-page.txt", "Unspaced page text\nAcceptance Criteria\n" + "\n".join(l[3:].replace(BT, "").replace("**", "") for l in jl) + "\n")
+# A removed section whose one-word title also occurs in prose; the same
+# heading kept while the title word is lost from a placeholder and a link
+# target only.
+rk = ("## fixture-part-14: Risk section\n\n### Background\n\n" + bg + " The main risks are listed below, and the reviewers read them first. "
+      "Fill in the <risks list> placeholder and see [the register](https://example.invalid/risks) before review.\n\n"
+      "### Acceptance Criteria\n\n1. " + ac % 5001 + "\n2. " + ac % 5002 + "\n3. " + ac % 5003 + "\n\n"
+      "### Risks\n\n- A slow disk.\n\n### Implementation Notes\n\nRead the limit once at start-up and log the effective value.\n")
+w("rk.md", rk)
+w("rk-lost.md", rk.replace("### Risks\n\n- A slow disk.\n\n", ""))
+w("rk-page.txt", rk.replace("<risks list> ", "").replace("(https://example.invalid/risks)", "").replace("[the register]", "the register"))
+# A reference link and its definition, which a page text never shows, and a
+# line in the same shape that is no definition (its text is no destination
+# and title), which a page text shows.
+rf = ("## fixture-part-15: Reference link\n\n### Background\n\n" + bg + " See [the design note][imp lim spec ref] for the limits of the importer.\n\n"
+      "[AC-9]: the importer rejects a batch above the configured limit with a bounded error and exit status two\n\n"
+      "### Acceptance Criteria\n\n1. " + ac % 5001 + "\n2. " + ac % 5002 + "\n\n"
+      "[imp lim spec ref]: https://git.example.invalid/org/repo/blob/main/docs/design/importer-limits.md 'Importer limits'\n")
+w("rf.md", rf)
+w("rf-page.txt", rf.replace("[the design note][imp lim spec ref]", "the design note").replace("[imp lim spec ref]: https://git.example.invalid/org/repo/blob/main/docs/design/importer-limits.md 'Importer limits'\n", ""))
+w("rf-nodef.txt", rf.replace("[AC-9]: the importer rejects a batch above the configured limit with a bounded error and exit status two\n\n", ""))
+# A second level-two heading after the title line, its heading line lost.
+h2 = "## fixture-part-16: Second heading\n\n### Background\n\n" + bg + "\n\n## Follow-up Work\n\n" + ac % 7 + "\n"
+w("h2.md", h2)
+w("h2-lost.md", h2.replace("## Follow-up Work\n\n", ""))
+PYTB
+  python3 -I "$TBD/make.py" "$TBD" "$TB_PY"
+  # has_tb OUT NEEDLE... — prints every NEEDLE missing from OUT (fixed strings).
+  has_tb() {
+    local text="$1" n
+    shift
+    for n in "$@"; do printf '%s\n' "$text" | grep -qF -- "$n" || printf " missing:'%s'" "$n"; done
+  }
+  tb_check() {
+    python3 -I "$TB_PY" check --sent "$1" --stored "$2" 2>&1
+  }
+  set +e
+  CONV_OUT="$(python3 -I "$TB_PY" convert --to html --in "$TBD/ticket.md" --out "$TBD/ticket.html" 2>&1)"; CONV_RC=$?
+  set -e
+  HTML_OUT="$(cat "$TBD/ticket.html" 2>/dev/null || true)"
+  # Every tag of the output is one the converter writes; a text "<" never
+  # opens one (parsed with the standard library's HTML parser).
+  cat >"$TBD/tags.py" <<'PYTAGS'
+import sys
+from html.parser import HTMLParser
+OK = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "table", "thead", "tbody", "tr", "th", "td", "ol", "ul", "li", "pre", "code", "strong"}
+class P(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.bad = []
+        self.stack = []
+    def handle_starttag(self, tag, attrs):
+        if tag not in OK:
+            self.bad.append("<%s>" % tag)
+        for k, v in attrs:
+            if not ((tag, k) in (("ol", "start"), ("li", "value")) and (v or "").isdigit()) and (tag, k) != ("code", "class"):
+                self.bad.append("%s %s=" % (tag, k))
+        if tag != "br":
+            self.stack.append(tag)
+    def handle_endtag(self, tag):
+        if not self.stack or self.stack[-1] != tag:
+            self.bad.append("</%s> unbalanced" % tag)
+        else:
+            self.stack.pop()
+    def handle_comment(self, data):
+        self.bad.append("comment")
+p = P()
+p.feed(open(sys.argv[1], encoding="utf-8").read())
+p.close()
+print(" ".join(p.bad + ["unclosed %s" % t for t in p.stack]))
+PYTAGS
+  check "ticket_body.py convert --to html: one Converted: line, the structure kept, every text < escaped, the comment dropped, only converter tags" \
+    "$([ "$CONV_RC" -eq 0 ] || echo "rc=$CONV_RC")$(printf '%s\n' "$CONV_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo " line='$CONV_OUT'")$(has_tb "$HTML_OUT" '<h2>fixture-part-1: Limit batch size of the importer</h2>' '<td><strong>P1 | P2 | P3</strong></td>' '<code>a | b</code>' 'count&lt;limit is false' '<code>&lt;surface name&gt;</code>' 'the &lt;surface name&gt; placeholder' '(&gt;= 1 row)' 'oversized -&gt; bounded' '<li><code>import</code> rejects' '<pre><code class="language-bash">| not | a | table |' 'python3 -m importer --limit 10 &lt;input.csv' '<li>first nested item</li>')$(printf '%s\n' "$HTML_OUT" | grep -nE '<surface|<limit|<input|reviewer note' || true)$(python3 -I "$TBD/tags.py" "$TBD/ticket.html")"
+  python3 -I -c 'import json, sys; json.dump({"id": 7, "fields": {"title": "x", "description": open(sys.argv[1], encoding="utf-8").read()}}, open(sys.argv[2], "w"))' "$TBD/ticket.html" "$TBD/s-json-html.json"
+  python3 -I "$TB_PY" convert --to markdown-escaped --in "$TBD/ticket.md" --out "$TBD/s-escaped.md" >/dev/null
+  python3 -I -c 'import html, sys; open(sys.argv[2], "w", encoding="utf-8").write(html.unescape(open(sys.argv[1], encoding="utf-8").read()))' "$TBD/s-escaped.md" "$TBD/s-escaped-decoded.md"
+  MISSING=""
+  for pair in 'ticket.html|Body check: complete' 's-json-html.json|Body check: complete' 's-escaped.md|Body check: complete' 's-escaped-decoded.md|Body check: complete' 's-uescape.json|Body check: complete' 's-decoded.md|Body check: complete'; do
+    got="$(tb_check "$TBD/ticket.md" "$TBD/${pair%%|*}")"
+    [ "$got" = "${pair#*|}" ] || MISSING="$MISSING ${pair%%|*}:'$got'"
+  done
+  grep -qF '\u' "$TBD/s-uescape.json" || MISSING="$MISSING s-uescape.json:no-\\u-escape"
+  check "ticket_body.py check: the converted HTML, a JSON response holding it, the escaped Markdown (stored as is or entity-decoded) and a \\uXXXX-escaped JSON copy are complete" "$MISSING"
+  SWALLOW="$(tb_check "$TBD/ticket.md" "$TBD/s-swallow.md")"
+  SECTION="$(tb_check "$TBD/ticket.md" "$TBD/s-section.md")"
+  SURFACE="$(tb_check "$TBD/ticket.md" "$TBD/s-surface.md")"
+  IDURL="$(tb_check "$TBD/ticket.md" "$TBD/s-idurl.json")"
+  check "ticket_body.py check: a text swallowed from <limit to -> is incomplete and names the heading it lost" \
+    "$(printf '%s\n' "$SWALLOW" | grep -qE '^Body check: incomplete \(missing [0-9]+ of [0-9]+ words in 1 spans and 2 angle-bracket texts; headings missing: "Failure-Class Coverage \(Gate 9\)"; longest span under "Acceptance Criteria": "limit is false' || echo "got: $SWALLOW")"
+  SECTION_EXCERPT="$(printf '%s\n' "$SECTION" | sed -n 's/.*longest span under "Implementation Notes": "\(.*\)")$/\1/p')"
+  check "ticket_body.py check: a whole ### section removed is incomplete, with that heading listed and its excerpt cut to 80 characters" \
+    "$(printf '%s\n' "$SECTION" | grep -qE '^Body check: incomplete \(.*headings missing: "Implementation Notes"; longest span under "Implementation Notes"' || echo "got: $SECTION")$([ "${#SECTION_EXCERPT}" -eq 80 ] && [ "${SECTION_EXCERPT%...}" != "$SECTION_EXCERPT" ] || echo " excerpt of ${#SECTION_EXCERPT} characters: '$SECTION_EXCERPT'")"
+  check "ticket_body.py check: only <surface name> dropped from a stored Markdown copy is a minor difference" \
+    "$(printf '%s\n' "$SURFACE" | grep -qxF 'Body check: minor differences (missing 2 of 185 words in 1 spans and 1 angle-bracket texts; first under "Failure-Class Coverage (Gate 9)": "surface name")' || echo "got: $SURFACE")"
+  check "ticket_body.py check: a create response with only an id and a URL holds no content field" \
+    "$(printf '%s\n' "$IDURL" | grep -qxF 'Body check: no content field (0 of 185 words found)' || echo "got: $IDURL")"
+  python3 -I "$TB_PY" convert --to html --in "$TBD/crlf.md" --out "$TBD/crlf.html" >/dev/null
+  check "ticket_body.py: a CRLF ticket with a byte order mark converts to the same HTML (UTF-8, LF, no BOM) and checks complete" \
+    "$(cmp -s "$TBD/crlf.html" "$TBD/ticket.html" || echo 'html differs')$([ "$(LC_ALL=C grep -c $'\r' "$TBD/crlf.html" || true)" = 0 ] || echo ' CR in output')$(head -c 3 "$TBD/crlf.html" | od -An -tx1 | grep -q 'ef bb bf' && echo ' BOM in output' || true)$(tb_check "$TBD/crlf.md" "$TBD/ticket.html" | grep -qxF 'Body check: complete' || echo ' check not complete')"
+  # The two shell conversions of destinations.md, run as printed, write what
+  # the script's own --to markdown-escaped and --to pre write.
+  cat >"$TBD/cmds.py" <<'PYCMDS'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+out = []
+for start in ("written by the shell tool running `", "the shell tool writes that preformatted form, `"):
+    i = text.index(start) + len(start)
+    out.append(text[i:text.index("`", i)])
+print("\n".join(out))
+PYCMDS
+  SHELL_CMDS="$(python3 -I "$TBD/cmds.py" "$DEST_MD" | sed -e "s#{scratch}#$TBD#g" -e 's#{i}#0#g')"
+  cp "$TBD/ticket.md" "$TBD/body-0.md"
+  printf '%s\n' "$SHELL_CMDS" | sh
+  python3 -I "$TB_PY" convert --to pre --in "$TBD/body-0.md" --out "$TBD/py-pre.html" >/dev/null
+  check "the markdown-escaped and preformatted shell commands of destinations.md write what ticket_body.py writes" \
+    "$([ "$(printf '%s\n' "$SHELL_CMDS" | wc -l | tr -d ' ')" = 2 ] || echo "commands: $SHELL_CMDS")$(cmp -s "$TBD/send-0.md" "$TBD/s-escaped.md" || echo ' markdown-escaped differs')$(cmp -s "$TBD/send-0.html" "$TBD/py-pre.html" || echo ' pre differs')$([ "$(grep -c '<surface' "$TBD/send-0.html" || true)" = 0 ] || echo ' unescaped < in pre')$(has_tb "$(cat "$TBD/send-0.html")" 'timeouts (a &amp; b, x &amp;lt; y).')$(has_tb "$(cat "$TBD/send-0.md")" 'timeouts (a & b, x &lt; y).')"
+  set +e
+  HOST_OUT="$(python3 -I "$TB_PY" convert --to html --in "$TBD/hostile.md" --out "$TBD/hostile.html" 2>&1)"
+  python3 -I "$TB_PY" >/dev/null 2>&1; RC_NONE=$?
+  python3 -I "$TB_PY" convert --to xml --in "$TBD/ticket.md" --out "$TBD/x.out" >/dev/null 2>&1; RC_TO=$?
+  python3 -I "$TB_PY" convert --to html --in "$TBD/ticket.md" --out "$TBD/ticket.md" >/dev/null 2>&1; RC_SAME=$?
+  python3 -I "$TB_PY" check --sent "$TBD/missing.md" --stored "$TBD/ticket.html" >/dev/null 2>&1; RC_MISS=$?
+  python3 -I "$TB_PY" convert --to html --in "$TBD/bad.md" --out "$TBD/bad.html" >/dev/null 2>&1; RC_BAD=$?
+  python3 -I "$TB_PY" convert --to html --in "$TBD/ticket.md" --out "$TBD/no-such-dir/x.html" >/dev/null 2>&1; RC_OUT=$?
+  INC_RC=0; tb_check "$TBD/ticket.md" "$TBD/s-section.md" >/dev/null || INC_RC=$?
+  # -X utf8=0 keeps Python from switching to UTF-8 by itself under the C
+  # locale, so stdout really is ASCII and only the script's own stream
+  # reconfiguration lets the Japanese excerpt through.
+  LC_OUT="$(LC_ALL=C python3 -I -X utf8=0 "$TB_PY" check --sent "$TBD/ticket.md" --stored "$TBD/s-swallow.md" 2>&1)"; RC_LC=$?
+  set -e
+  check "ticket_body.py: hostile Markdown (tags, nested lists, escaped and code-span pipes, fences holding tables, unclosed comment and fence, a long line, an info string that would close its attribute, list numbers that start at 3 or jump, a lazy continuation line) converts to escaped HTML with converter tags only and checks complete" \
+    "$(printf '%s\n' "$HOST_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo "line='$HOST_OUT'")$(python3 -I "$TBD/tags.py" "$TBD/hostile.html")$(tb_check "$TBD/hostile.md" "$TBD/hostile.html" | grep -qxF 'Body check: complete' || echo ' check not complete')$(has_tb "$(cat "$TBD/hostile.html")" '&lt;script&gt;alert(1)&lt;/script&gt;' 'Write &lt;script&gt;alert(1)&lt;/script&gt; and &lt;img src=x&gt; as text.' '<th>x | y</th>' '<code>p | q</code>' '<td>extra</td>' '### not a heading' '&lt;!-- kept as code --&gt;' 'text &lt;!-- unclosed comment stays visible' 'unclosed fence &lt;x&gt;' '<li>c<br>' '&lt;p&gt;caf&amp;eacute; &amp;#65;&lt;/p&gt;' '<code>caf&amp;eacute;</code> and outside ABC' '<pre><code class="language-&quot;&gt;&lt;img src=x onerror=y&gt;">info string' '<ol start="3">' '<li value="5">five</li>' '<li>lazy item<br>' 'continues here</li>')"
+  python3 -I "$TB_PY" convert --to html --in "$TBD/stray.md" --out "$TBD/stray.html" >/dev/null
+  STRAY_HTML="$(cat "$TBD/stray.html")"
+  STRAY_SELF="$(tb_check "$TBD/stray.md" "$TBD/stray.html")"
+  STRAY_LOST="$(tb_check "$TBD/stray.md" "$TBD/stray-swallowed.md")"
+  check "ticket_body.py: a comment opener that is not closed within its paragraph is text, so the sections after it are converted and a store that hid them up to a later --> is incomplete" \
+    "$(has_tb "$STRAY_HTML" 'The importer &lt;!-- note about the importer<br>' '<h3>Scope</h3>' '<td>src/import.py</td>' '<li>Accepts an empty batch and exits with status zero.</li>' 'importer --&gt; limit check')$([ "$STRAY_SELF" = 'Body check: complete' ] || echo " self-check: $STRAY_SELF")$(printf '%s\n' "$STRAY_LOST" | grep -qE '^Body check: incomplete \(.*headings missing: "Scope", "Acceptance Criteria", "Implementation Notes"' || echo " hidden middle: $STRAY_LOST")"
+  # A text stored exactly as sent is complete, whatever comment markers it
+  # holds; so are entity references and decomposed characters, and a JSON
+  # response that reaches the file inside a string or after a line of text.
+  MISSING=""
+  for f in ticket.md hostile.md stray.md list.md link.md kv.md thr.md cjk.md jp.md rk.md rf.md h2.md; do
+    got="$(tb_check "$TBD/$f" "$TBD/$f")"
+    [ "$got" = 'Body check: complete' ] || MISSING="$MISSING $f:'$got'"
+  done
+  cmp -s "$TBD/ticket.md" "$TBD/s-nfd.md" && MISSING="$MISSING s-nfd.md:not-decomposed"
+  for f in s-ncr.md s-nfd.md s-mcp.json s-cli.txt s-partial.txt s-utf16.md; do
+    got="$(tb_check "$TBD/ticket.md" "$TBD/$f")"
+    [ "$got" = 'Body check: complete' ] || MISSING="$MISSING $f:'$got'"
+  done
+  got="$(tb_check "$TBD/peer.md" "$TBD/s-peer.json")"
+  [ "$got" = 'Body check: complete' ] || MISSING="$MISSING s-peer.json:'$got'"
+  got="$(tb_check "$TBD/peer3.md" "$TBD/s-peer3.json")"
+  [ "$got" = 'Body check: complete' ] || MISSING="$MISSING s-peer3.json:'$got'"
+  check "ticket_body.py check: a store identical to the sent text is complete (comments in code, stray openers, a comment inside an angle-bracket text), as are numeric character references, decomposed characters, JSON inside a tool-result string, JSON printed after a line, near-identical criteria stored as separate values, a structured document next to its rendered field, a body followed by a 90 percent copy of itself, and a UTF-16 file with its byte order mark" "$MISSING"
+  MISSING=""
+  for f in s-once.json s-dup-block.json s-dup-rendered.json s-dup-nested.json s-dup-text.txt s-dup-preview.json; do
+    got="$(tb_check "$TBD/ticket.md" "$TBD/$f")"
+    printf '%s\n' "$got" | grep -qE '^Body check: incomplete \(missing [0-9]+ of 185 words in 1 spans; headings missing: none; longest span under "Acceptance Criteria": "An empty batch is accepted' || MISSING="$MISSING $f:'$got'"
+  done
+  CTL="$(tb_check "$TBD/ctl.md" "$TBD/ctl-lost.md")"
+  printf '%s\n' "$CTL" | grep -qF -- "longest span under \"Notes\": \"alpha bravo 'charlie' delta" || MISSING="$MISSING ctl-lost.md:'$CTL'"
+  printf '%s' "$CTL" | LC_ALL=C grep -q '[[:cntrl:]]' && MISSING="$MISSING ctl-lost.md:control-character-in-line"
+  python3 -I "$TB_PY" convert --to html --in "$TBD/ctl.md" --out "$TBD/ctl.html" >/dev/null
+  tr -d '\n' <"$TBD/ctl.html" | LC_ALL=C grep -q '[[:cntrl:]]' && MISSING="$MISSING ctl.html:control-character-in-html"
+  for f in s-peer3-lost.json s-peer3-page.txt; do
+    got="$(tb_check "$TBD/peer3.md" "$TBD/$f")"
+    printf '%s\n' "$got" | grep -qE '^Body check: incomplete \(missing 24 of 96 words in 1 spans; headings missing: none; longest span under "Acceptance Criteria": "The importer rejects a batch of 50[0-9] rows' || MISSING="$MISSING $f:'$got'"
+  done
+  check "ticket_body.py check: a criterion lost from a body the response returns twice (a JSON text block and a structured field, raw and rendered, both inside a tool-result string, twice in one text, a structured document next to the rendered field, a page text showing the field twice) is incomplete, as with one copy, also when its words occur in other criteria or a second value is a shorter preview; an excerpt shows a control character as a space and a double quote as a single one, and the HTML holds no control character" "$MISSING"
+  # The three thresholds, each on both sides of its limit (400 words).
+  MISSING=""
+  while IFS='|' read -r f want; do
+    got="$(tb_check "$TBD/thr.md" "$TBD/$f")"
+    printf '%s\n' "$got" | grep -qE -- "$want" || MISSING="$MISSING $f:'$got'"
+  done <<'THRESHOLDS'
+thr-run11.md|^Body check: minor differences \(missing 11 of 400 words in 1 spans; first under "Scope"
+thr-run12.md|^Body check: incomplete \(missing 12 of 400 words in 1 spans; headings missing: none; longest span under "Scope"
+thr-scatter12.md|^Body check: minor differences \(missing 12 of 400 words in 12 spans;
+thr-scatter13.md|^Body check: incomplete \(missing 13 of 400 words in 13 spans; headings missing: none;
+thr-found79.txt|^Body check: no content field \(79 of 400 words found\)$
+thr-start79.txt|^Body check: no content field \(79 of 400 words found; start of the ticket only\)$
+thr-found80.txt|^Body check: incomplete \(missing 320 of 400 words
+THRESHOLDS
+  got="$(tb_check "$TBD/ticket.md" "$TBD/s-cut255.json")"
+  [ "$got" = 'Body check: no content field (34 of 185 words found; start of the ticket only)' ] || MISSING="$MISSING s-cut255.json:'$got'"
+  check "ticket_body.py check thresholds: 11 lost words in a row minor, 12 incomplete; 12 of 400 scattered (3%) minor, 13 incomplete; 79 of 400 found (under 20%) no content field, 80 incomplete; under 20% found, the first words in a row (a field that keeps the first 255 characters) mark the start of the ticket" "$MISSING"
+  # Comment markers inside list items and table rows.
+  LIST_OUT="$(python3 -I "$TB_PY" convert --to html --in "$TBD/list.md" --out "$TBD/list-out.html" 2>&1)"
+  LIST_HTML="$(cat "$TBD/list-out.html")"
+  LIST_LOST="$(tb_check "$TBD/list.md" "$TBD/list-lost.md")"
+  check "ticket_body.py: a comment opener inside a list item or table row is text, so the items and rows after it are converted; <!--> hides nothing; a block comment holding list and table lines is dropped; a store without the items is incomplete" \
+    "$(printf '%s\n' "$LIST_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo "line='$LIST_OUT'")$(has_tb "$LIST_HTML" '<li>The scanner reports an opening &lt;!-- marker that is never closed.</li>' '<li>The importer rejects a batch above the configured limit with a bounded error and exit status 2.</li>' '<li>An empty batch is accepted and the exit status is 0.</li>' '<tr><td>src/import.py</td><td>add the limit check and the bounded error</td></tr>' '<td>allow draft --&gt; review only</td>' '<p>Use  as the shortest comment, then alpha bravo charlie.<br>' 'Second line foxtrot golf --&gt; hotel india.</p>' '<p>After the block comment.</p>')$(printf '%s\n' "$LIST_HTML" | grep -n 'hidden' || true)$(printf '%s\n' "$LIST_LOST" | grep -qE '^Body check: incomplete \(missing 35 of 94 words in 2 spans' || echo " lossy: $LIST_LOST")"
+  # A link target a page text never shows is at most a minor difference;
+  # line-break tags are markup, not text.
+  python3 -I "$TB_PY" convert --to html --in "$TBD/lt.md" --out "$TBD/lt.html" >/dev/null
+  LT_PAGE="$(tb_check "$TBD/lt.md" "$TBD/lt-page.txt")"
+  check "ticket_body.py check: a page text without a long link target is a minor difference, never incomplete; line-break tags in table cells are not counted; the converted HTML is complete; the target of link syntax inside a code span is text" \
+    "$(printf '%s\n' "$LT_PAGE" | grep -qE '^Body check: minor differences \(missing 17 of 48 words in 1 spans; first under "Background": "https://git\.example\.invalid/org/repo/blob/main/docs/design/importer-limits\.md' || echo "page text: $LT_PAGE")$(tb_check "$TBD/lt.md" "$TBD/lt.html" | grep -qxF 'Body check: complete' || echo ' converted')$(tb_check "$TBD/lc.md" "$TBD/lc-lost.md" | grep -qE '^Body check: incomplete \(missing 1[0-9] of [0-9]+ words in 1 spans' || echo " link in a code span: $(tb_check "$TBD/lc.md" "$TBD/lc-lost.md")")"
+  # A heading holding a link, and angle-bracket texts of one-letter words.
+  python3 -I "$TB_PY" convert --to html --in "$TBD/kv.md" --out "$TBD/kv-out.html" >/dev/null
+  python3 -I "$TB_PY" convert --to markdown-escaped --in "$TBD/kv.md" --out "$TBD/kv-esc.md" >/dev/null
+  KV_LOST="$(tb_check "$TBD/kv.md" "$TBD/kv-lost.md")"
+  check "ticket_body.py check: a heading holding a link, and autolinks, are found in a renderer's HTML; angle-bracket texts are counted (dropped: minor differences; converted or escaped: complete)" \
+    "$(tb_check "$TBD/link.md" "$TBD/link.html" | grep -qxF 'Body check: complete' || echo ' link heading')$(printf '%s\n' "$KV_LOST" | grep -qxF 'Body check: minor differences (missing 0 of 24 words in 0 spans and 4 angle-bracket texts; first under "Type Notes": "<K, V>")' || echo " dropped: $KV_LOST")$(tb_check "$TBD/kv.md" "$TBD/kv-out.html" | grep -qxF 'Body check: complete' || echo ' converted')$(tb_check "$TBD/kv.md" "$TBD/kv-esc.md" | grep -qxF 'Body check: complete' || echo ' escaped')"
+  # Letters of a script written without word spaces: a word each, half a
+  # word in the thresholds (weight 506 here, 3 percent of it 15.18).
+  MISSING=""
+  while IFS='|' read -r f want; do
+    got="$(tb_check "$TBD/cjk.md" "$TBD/$f")"
+    printf '%s\n' "$got" | grep -qE -- "$want" || MISSING="$MISSING $f:'$got'"
+  done <<'UNSPACED'
+cjk-run23.md|^Body check: minor differences \(missing 23 of 1006 words in 1 spans; first under "Scope"
+cjk-run24.md|^Body check: incomplete \(missing 24 of 1006 words in 1 spans; headings missing: none; longest span under "Scope"
+cjk-scatter30.md|^Body check: minor differences \(missing 30 of 1006 words in 30 spans;
+cjk-scatter31.md|^Body check: incomplete \(missing 31 of 1006 words in 31 spans; headings missing: none;
+UNSPACED
+  got="$(tb_check "$TBD/jp.md" "$TBD/jp-page.txt")"
+  [ "$got" = 'Body check: complete' ] || MISSING="$MISSING jp-page.txt:'$got'"
+  for f in cjk jp rk rf h2; do
+    python3 -I "$TB_PY" convert --to html --in "$TBD/$f.md" --out "$TBD/$f.html" >/dev/null
+    got="$(tb_check "$TBD/$f.md" "$TBD/$f.html")"
+    [ "$got" = 'Body check: complete' ] || MISSING="$MISSING $f.html:'$got'"
+  done
+  check "ticket_body.py check: each letter of a script written without word spaces is a word that weighs half a word (24 in a row incomplete, 23 minor; 31 scattered incomplete, 30 minor), a page text joining such text with code spans and bold text is complete, and the converted HTML of the new fixtures is complete" "$MISSING"
+  RK_LOST="$(tb_check "$TBD/rk.md" "$TBD/rk-lost.md")"
+  RK_PAGE="$(tb_check "$TBD/rk.md" "$TBD/rk-page.txt")"
+  H2_LOST="$(tb_check "$TBD/h2.md" "$TBD/h2-lost.md")"
+  check "ticket_body.py check: a short section removed is incomplete with its heading listed although its title occurs in prose, the title word lost from a placeholder and a link target only leaves the heading found, and a lost ## heading line after the title line is listed" \
+    "$(printf '%s\n' "$RK_LOST" | grep -qxF 'Body check: incomplete (missing 3 of 144 words in 1 spans; headings missing: "Risks"; longest span under "Risks": "Risks - A slow disk")' || echo "section: $RK_LOST")$(printf '%s\n' "$RK_PAGE" | grep -qE '^Body check: minor differences \(missing 6 of 144 words in 2 spans and 1 angle-bracket texts; first under "Background"' || echo " placeholder: $RK_PAGE")$(printf '%s\n' "$H2_LOST" | grep -qE '^Body check: incomplete \(.*; headings missing: "Follow-up Work";' || echo " level two: $H2_LOST")"
+  RF_PAGE="$(tb_check "$TBD/rf.md" "$TBD/rf-page.txt")"
+  RF_LINE="$(tb_check "$TBD/rf.md" "$TBD/rf-nodef.txt")"
+  check "ticket_body.py check: a page text without a reference link's label and definition is a minor difference, while a lost line of the same shape that is no definition is incomplete" \
+    "$(printf '%s\n' "$RF_PAGE" | grep -qxF 'Body check: minor differences (missing 23 of 123 words in 2 spans; first under "Background": "imp lim spec ref")' || echo "page text: $RF_PAGE")$(printf '%s\n' "$RF_LINE" | grep -qE '^Body check: incomplete \(missing 16 of 123 words in 1 spans; headings missing: none;' || echo " no definition: $RF_LINE")"
+  # Every conversion under a non-UTF-8 locale writes the same UTF-8 file.
+  LC_CONV=""
+  for to in html markdown-escaped pre; do
+    LC_ALL=C python3 -I -X utf8=0 "$TB_PY" convert --to "$to" --in "$TBD/ticket.md" --out "$TBD/lc-$to.out" >/dev/null 2>&1 || LC_CONV="$LC_CONV $to:rc=$?"
+    python3 -I "$TB_PY" convert --to "$to" --in "$TBD/ticket.md" --out "$TBD/utf-$to.out" >/dev/null 2>&1 || LC_CONV="$LC_CONV $to:utf-rc=$?"
+    cmp -s "$TBD/lc-$to.out" "$TBD/utf-$to.out" || LC_CONV="$LC_CONV $to:differs"
+  done
+  check "ticket_body.py convert under LC_ALL=C (no UTF-8 mode) writes the same files as under a UTF-8 locale (html, markdown-escaped, pre)" "$LC_CONV"
+  # The converter's own fallback: a structured result that fails the
+  # self-check is replaced by the preformatted form.
+  FB_OUT="$(python3 -I -c 'import importlib.util, sys
+spec = importlib.util.spec_from_file_location("tb", sys.argv[1])
+tb = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tb)
+tb.to_html = lambda text: "<p>" + text[: len(text) // 2] + "</p>\n"
+sys.exit(tb.main(["convert", "--to", "html", "--in", sys.argv[2], "--out", sys.argv[3]]))' "$TB_PY" "$TBD/ticket.md" "$TBD/fallback.html" 2>&1)"
+  check "ticket_body.py convert --to html: a result that fails its self-check is replaced by the preformatted form and says so" \
+    "$(printf '%s\n' "$FB_OUT" | grep -qxE 'Converted: preformatted fallback \(.+\)' || echo "line='$FB_OUT'")$(cmp -s "$TBD/fallback.html" "$TBD/py-pre.html" || echo ' output is not the pre form')"
+  check "ticket_body.py exit status: 0 for an incomplete check, 2 on a usage error (no subcommand, unknown --to, --in equal to --out), 3 on an unreadable input or output; a non-UTF-8 locale still prints the Japanese excerpt line" \
+    "$([ "$INC_RC" -eq 0 ] || echo "incomplete rc=$INC_RC")$([ "$RC_NONE" -eq 2 ] || echo " none rc=$RC_NONE")$([ "$RC_TO" -eq 2 ] || echo " --to rc=$RC_TO")$([ "$RC_SAME" -eq 2 ] || echo " same rc=$RC_SAME")$([ "$RC_MISS" -eq 3 ] || echo " missing rc=$RC_MISS")$([ "$RC_BAD" -eq 3 ] || echo " non-UTF-8 rc=$RC_BAD")$([ "$RC_OUT" -eq 3 ] || echo " unwritable rc=$RC_OUT")$([ "$RC_LC" -eq 0 ] && [ "$LC_OUT" = "$SWALLOW" ] || echo " LC_ALL=C rc=$RC_LC: $LC_OUT")$(printf '%s' "$LC_OUT" | LC_ALL=C grep -q '[^ -~]' || echo ' LC_ALL=C: no non-ASCII excerpt')"
+else
+  fail "ticket_body.py checks" "python3 is not on the PATH"
 fi
 
 # --- mutation: the audit is the exit gate ----------------------------------------
@@ -1717,8 +2430,8 @@ fi
 # placeholder, the intake caps say what they bound, and the read-only rule
 # names the one input it cannot verify.
 # shellcheck disable=SC2016  # literal backticks
-check "review wording: content type placeholder in both curl forms, cap excess stated, typed cli: command named unverified" \
-  "$({ [ "$(grep -cF -- '-H "Content-Type: <content_type>"' "$DEST_MD" || true)" = 2 ] || printf ' destinations.md:placeholder-count';
+check "review wording: content type placeholder in the three curl forms, cap excess stated, typed cli: command named unverified" \
+  "$({ [ "$(grep -cF -- '-H "Content-Type: <content_type>"' "$DEST_MD" || true)" = 3 ] || printf ' destinations.md:placeholder-count';
        grep -qF -- '-H "Content-Type: application/json"' "$DEST_MD" && printf ' destinations.md:literal-content-type';
        grep -qF -- 'or `application/json` when none is given' "$DEST_MD" || printf ' destinations.md:default';
        grep -qF -- 'are counted by `Chars:` but by neither limit' "$SOURCES_MD" || printf ' sources.md:cap-excess';
