@@ -48,6 +48,51 @@ jobs:
       - name: Run test suite
         run: bash tests/run-all.sh
 
+  standalone-skill-build:
+    name: Standalone skill (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the standalone create-ticket skill
+        run: bash tools/build-standalone-skill.sh --out "$RUNNER_TEMP/standalone"
+      - name: Upload the built skill
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-create-ticket
+          path: ${{ runner.temp }}/standalone/create-ticket
+          if-no-files-found: error
+
+  standalone-skill-powershell:
+    name: Standalone skill PowerShell forms (Windows)
+    runs-on: windows-latest
+    needs: standalone-skill-build
+    steps:
+      - name: Keep line ends as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - name: Download the built skill
+        uses: actions/download-artifact@v4
+        with:
+          name: standalone-create-ticket
+          path: built/create-ticket
+      - name: Python 3 for the forms that run the skill's scripts
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: PowerShell forms under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          & ./tests/test-standalone-skill-powershell.ps1 -SkillDir built/create-ticket -RequireAll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: PowerShell forms under PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          & ./tests/test-standalone-skill-powershell.ps1 -SkillDir built/create-ticket -RequireAll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   # Level 1 integration tests (claude -p) are intentionally excluded from CI
   # to avoid Anthropic API charges. Run locally when needed:
   #   bash tests/test-integration.sh

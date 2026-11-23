@@ -109,8 +109,8 @@ else
   fail "--out on a non-empty target without --force exits non-zero" "rc=$REFUSE_RC $(cat "$TMP_ROOT/refuse.log")"
 fi
 check "--force rebuilds a non-empty target" "$([ "$FORCE_RC" -eq 0 ] || cat "$TMP_ROOT/force.log")"
-check "the build reports 22 files and a clean exit audit" \
-  "$(grep -qF '(22 files, ' "$BUILD_LOG" || echo 'file count is not 22')$(grep -qF 'exit audit clean' "$BUILD_LOG" || echo ' audit not clean')"
+check "the build reports 23 files and a clean exit audit" \
+  "$(grep -qF '(23 files, ' "$BUILD_LOG" || echo 'file count is not 23')$(grep -qF 'exit audit clean' "$BUILD_LOG" || echo ' audit not clean')"
 
 # --- tree shape ---------------------------------------------------------------
 EXPECTED="README.md
@@ -127,6 +127,7 @@ references/destinations.md
 references/findings-schema.md
 references/interview-templates.md
 references/mode-dispatch-flows.md
+references/shell-powershell.md
 references/sources.md
 references/spec-decomposer-input.md
 references/split-plan-schema.md
@@ -136,7 +137,7 @@ scripts/ticket_body.py
 scripts/xlsx_render.py
 scripts/xlsx_to_text.py"
 ACTUAL="$(cd "$SKILL_DIR" && find . -type f | sed 's#^\./##' | sort)"
-check "tree holds exactly README.md + SKILL.md + the 17 shipped references + the xlsx converter, the sheet renderer and the ticket body script (22 files)" \
+check "tree holds exactly README.md + SKILL.md + the 18 shipped references + the xlsx converter, the sheet renderer and the ticket body script (23 files)" \
   "$(diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL") || true)"
 
 NOT_SHIPPED=""
@@ -377,7 +378,7 @@ MISSING=""
 for needle in '## Intake' 'source=<spec>' 'source_auth_env=' '{intent}' '## Source dossier' 'source_refs' 'Partition basis'; do
   grep -qF -- "$needle" "$SKILL_MD" || MISSING="$MISSING SKILL.md:'$needle'"
 done
-for needle in '## `file:<path>`' '## `dir:<path>`' '## `mcp:<server>/<tool>' '## `api:<url>`' 'xlsx_to_text.py' 'python3 -I' 'S<n>:L<a>-L<b>' '60,000' '150,000' 'source_auth_env' '## Source excerpts' 'Sources:' '## Partition basis'; do
+for needle in '## `file:<path>`' '## `dir:<path>`' '## `mcp:<server>/<tool>' '## `api:<url>`' 'xlsx_to_text.py' '{python} -I' 'S<n>:L<a>-L<b>' '60,000' '150,000' 'source_auth_env' '## Source excerpts' 'Sources:' '## Partition basis'; do
   grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'"
 done
 for needle in '## Source dossier handling' 'source_refs' '**Partition basis**' '## Source dossier' 'Dossier role: candidate' 'Dossier role: context'; do
@@ -1210,6 +1211,99 @@ FAKE
     "$([ "$MISSING_RC" -eq 2 ] || echo "missing rc=$MISSING_RC")$([ "$(printf '%s\n' "$MISSING_ERR" | wc -l | tr -d ' ')" = 1 ] || echo ' missing: more than one line')$([ "$BOGUS_RC" -eq 2 ] || echo " bogus rc=$BOGUS_RC")$([ "$R_RC" -eq 2 ] || echo " empty-out rc=$R_RC")"
   check "sheet renderer: nothing is written outside --out, and --out holds only the PDF" \
     "$(diff <(printf '%s\n' "$FIX_BEFORE") <(cd "$FIX_DIR" && find . | sort) || true)$([ "$(cd "$RENDER_OUT" && find . -mindepth 1 | sort)" = './fixture.pdf' ] || echo " out holds: $(cd "$RENDER_OUT" && find . -mindepth 1 | tr '\n' ' ')")"
+  # --- converter --out, UTF-8 streams, the renderer's OSError line -------------
+  # The skill runs the converter with --out, so the dossier file is written by
+  # the program and never typed out again; stdout then carries one line with
+  # the facts of the header (characters, lines, truncation).
+  OUTD="$TMP_ROOT/xlsx-out"
+  mkdir -p "$OUTD"
+  set +e
+  python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" >"$OUTD/stdout.md" 2>/dev/null
+  CONV_LINE="$(python3 -I "$XLSX_PY" --out "$OUTD/out.md" -- "$FIX_DIR/fixture.xlsx" 2>&1)"; CONV_RC=$?
+  CONV_LINE2="$(python3 -I "$XLSX_PY" --max-chars 120 --out "$OUTD/out120.md" -- "$FIX_DIR/fixture.xlsx" 2>&1)"
+  set -e
+  CONV_WANT="$(python3 -I -c 'import sys
+t = open(sys.argv[1], encoding="utf-8", newline="").read()
+print("Converted: %d characters, %d lines, truncated: %s" % (len(t), t.count("\n") + (1 if t and not t.endswith("\n") else 0), "yes" if any(l.startswith("[truncated:") for l in t.split("\n")) else "no"))' "$OUTD/out.md")"
+  check "xlsx converter --out: the file is the stdout text byte for byte, and stdout is one Converted: line with its characters, lines and truncation" \
+    "$([ "$CONV_RC" -eq 0 ] || echo "rc=$CONV_RC")$(cmp -s "$OUTD/out.md" "$OUTD/stdout.md" || echo ' file differs from stdout')$([ "$CONV_LINE" = "$CONV_WANT" ] || echo " line='$CONV_LINE' want='$CONV_WANT'")$(printf '%s\n' "$CONV_LINE2" | grep -qxE 'Converted: [0-9]+ characters, [0-9]+ lines, truncated: yes' || echo " capped line='$CONV_LINE2'")"
+  # A workbook holding Japanese text, an em dash, an emoji and an astral
+  # character (written with \u escapes, so this file stays English), run with
+  # an ASCII stdout: -X utf8=0 under LC_ALL=C keeps Python from switching to
+  # UTF-8 by itself (-I already ignores PYTHONIOENCODING), which is how a
+  # Windows pipe in a legacy code page behaves.
+  python3 -I - "$OUTD/ja.xlsx" <<'PYJA'
+import sys, zipfile
+sheet = "\u30b7\u30fc\u30c81"
+text = "\u898b\u7a4d\u3082\u308a \u2014 \u78ba\u8a8d \u2705 \U00020bb7"
+parts = {
+    "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+    "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="%s" sheetId="1" r:id="rId1"/></sheets></workbook>' % sheet,
+    "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+    "xl/worksheets/sheet1.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>%s</t></is></c></row></sheetData></worksheet>' % text,
+}
+with zipfile.ZipFile(sys.argv[1], "w") as zf:
+    for name, body in parts.items():
+        zf.writestr(name, body.encode("utf-8"))
+PYJA
+  JA_TEXT="$(python3 -I -c 'import sys; sys.stdout.buffer.write("\u898b\u7a4d\u3082\u308a \u2014 \u78ba\u8a8d \u2705 \U00020bb7".encode("utf-8"))')"
+  set +e
+  LC_ALL=C python3 -I -X utf8=0 "$XLSX_PY" -- "$OUTD/ja.xlsx" >"$OUTD/ja-stdout.md" 2>"$OUTD/ja-stdout.err"; JA_RC=$?
+  JA_LINE="$(LC_ALL=C python3 -I -X utf8=0 "$XLSX_PY" --out "$OUTD/ja-out.md" -- "$OUTD/ja.xlsx" 2>&1)"; JA_OUT_RC=$?
+  python3 -I "$XLSX_PY" -- "$OUTD/ja.xlsx" >"$OUTD/ja-utf8.md" 2>/dev/null
+  set -e
+  check "xlsx converter: a Japanese workbook under an ASCII stdout prints UTF-8 with line feeds (stdout and --out alike) instead of failing" \
+    "$([ "$JA_RC" -eq 0 ] || echo "stdout rc=$JA_RC: $(tail -n 1 "$OUTD/ja-stdout.err")")$(grep -qF -- "$JA_TEXT" "$OUTD/ja-stdout.md" || echo ' stdout lacks the text')$(cmp -s "$OUTD/ja-stdout.md" "$OUTD/ja-utf8.md" || echo ' stdout differs from a UTF-8 run')$([ "$JA_OUT_RC" -eq 0 ] || echo " --out rc=$JA_OUT_RC")$(cmp -s "$OUTD/ja-out.md" "$OUTD/ja-utf8.md" || echo ' --out file differs from a UTF-8 run')$(printf '%s\n' "$JA_LINE" | grep -qxE 'Converted: [0-9]+ characters, [0-9]+ lines, truncated: no' || echo " line='$JA_LINE'")$([ "$(LC_ALL=C grep -c $'\r' "$OUTD/ja-out.md" || true)" = 0 ] || echo ' CR in --out file')"
+  set +e
+  BAD_OUT_ERR="$(python3 -I "$XLSX_PY" --out "$OUTD/no-such-dir/x.md" -- "$FIX_DIR/fixture.xlsx" 2>&1 >/dev/null)"; BAD_OUT_RC=$?
+  cp "$FIX_DIR/fixture.xlsx" "$OUTD/self.xlsx"
+  python3 -I "$XLSX_PY" --out "$OUTD/self.xlsx" -- "$OUTD/self.xlsx" >/dev/null 2>&1; SELF_RC=$?
+  set -e
+  check "xlsx converter --out: an unwritable file exits 1 with one line and no traceback; --out naming the workbook exits 2 and leaves it untouched" \
+    "$([ "$BAD_OUT_RC" -eq 1 ] || echo "unwritable rc=$BAD_OUT_RC")$([ "$(printf '%s\n' "$BAD_OUT_ERR" | wc -l | tr -d ' ')" = 1 ] || echo " unwritable: $BAD_OUT_ERR")$([ "$SELF_RC" -eq 2 ] || echo " self rc=$SELF_RC")$(cmp -s "$OUTD/self.xlsx" "$FIX_DIR/fixture.xlsx" || echo ' workbook changed')"
+  # Every text file the three scripts write names its line end explicitly,
+  # so a Windows Python (whose default would be CR LF) writes the same bytes.
+  check "the shipped scripts open every text file they write with an explicit newline=" \
+    "$(grep -nE 'open\([^)]*"[wa]t?"' "$XLSX_PY" "$RENDER_PY" "$SKILL_DIR/scripts/ticket_body.py" | grep -v 'newline=' || true)"
+  # The renderer: a PDF that cannot be moved into --out (a directory holds its
+  # name) and an --out where nothing can be created end with the one
+  # documented Rendered: no line and exit 0, never a traceback; stderr is
+  # UTF-8 under an ASCII locale too.
+  mkdir -p "$OUTD/render-blocked/fixture.pdf"
+  set +e
+  BLOCK_OUT="$(python3 -I "$RENDER_PY" --chain soffice --soffice "$FIX_DIR/fake-soffice" --out "$OUTD/render-blocked" -- "$FIX_DIR/fixture.xlsx" 2>&1)"; BLOCK_RC=$?
+  set -e
+  RO_DETAIL=""
+  if [ "$(id -u)" != 0 ]; then
+    mkdir -p "$OUTD/render-ro"
+    chmod 555 "$OUTD/render-ro"
+    set +e
+    RO_OUT="$(python3 -I "$RENDER_PY" --chain soffice --soffice "$FIX_DIR/fake-soffice" --out "$OUTD/render-ro" -- "$FIX_DIR/fixture.xlsx" 2>&1)"; RO_RC=$?
+    set -e
+    chmod 755 "$OUTD/render-ro"
+    RO_DETAIL="$([ "$RO_RC" -eq 0 ] || echo " read-only rc=$RO_RC")$(printf '%s\n' "$RO_OUT" | grep -qxE 'Rendered: no \(cannot write under --out: [^()]+\)' || echo " read-only line='$RO_OUT'")"
+  fi
+  # The script runs in-process with an ASCII stderr (what a Windows console
+  # in a legacy code page gives it) and a missing workbook whose name is
+  # Japanese, built from \u escapes so no non-ASCII text crosses argv or the
+  # locale: its one error line must still reach stderr as UTF-8.
+  JA_R_OUT="$(python3 -I -c 'import io, runpy, sys
+script, out = sys.argv[1], sys.argv[2]
+name = out + "/" + "\u672a\u4f5c\u6210.xlsx"
+buf = io.BytesIO()
+sys.stderr = io.TextIOWrapper(buf, encoding="ascii", errors="backslashreplace")
+sys.argv = [script, "--out", out + "/r", "--", name]
+code = 0
+try:
+    runpy.run_path(script, run_name="__main__")
+except SystemExit as exc:
+    code = exc.code
+sys.stderr.flush()
+want = "\u672a\u4f5c\u6210.xlsx".encode("utf-8")
+sys.stdout.write("rc=%s utf8=%s\n" % (code, "yes" if want in buf.getvalue() else "no"))' "$RENDER_PY" "$OUTD" 2>&1)"
+  check "sheet renderer: a PDF that cannot be written and an --out where nothing can be created give one Rendered: no line (exit 0); a Japanese path on an ASCII stderr is written as UTF-8" \
+    "$([ "$BLOCK_RC" -eq 0 ] || echo "blocked rc=$BLOCK_RC")$(printf '%s\n' "$BLOCK_OUT" | grep -qxE 'Rendered: no \(soffice: cannot write the PDF: [^()]+\)' || echo " blocked line='$BLOCK_OUT'")$RO_DETAIL$([ "$JA_R_OUT" = "rc=2 utf8=yes" ] || echo " ASCII stderr: $JA_R_OUT")"
 else
   fail "xlsx converter checks" "python3 is not on the PATH"
 fi
@@ -1300,8 +1394,10 @@ README.md|NOTE: this host has no ask-user tool; running as if confirm=yes was pa
 references/destinations.md|NOTE: this host has no ask-user tool; running as if confirm=yes was passed (a remote create is not confirmed first, and a ticket still graded FAIL is delivered as FAIL (unresolved)); pass confirm=no to stop instead
 SKILL.md|ERROR: confirm= must be yes or no
 SKILL.md|ERROR: keep_scratch= must be yes or no
-SKILL.md|grep -qxF '**/.local/*' "<root>/.gitignore"
-SKILL.md|printf '%s\n' '**/.local/*' >> "<root>/.gitignore"
+SKILL.md|grep -qE '^\*\*/\.local/\*[[:space:]]*$' "<root>/.gitignore"
+SKILL.md|[ -e "<root>/.gitignore" ]
+SKILL.md|printf '\n%s\n' '**/.local/*' >> "<root>/.gitignore"
+SKILL.md|printf '%s\n' '**/.local/*' > "<root>/.gitignore"
 SKILL.md|WARNING: could not remove the scratch directory <{scratch}> (<reason>)
 references/write-path-templates.md|WARNING: could not remove the scratch directory <{scratch}> (<reason>)
 NEEDLES
@@ -1597,7 +1693,7 @@ MISSING=""
 SHELL_BULLET="$(printf '%s\n' "$HOST_NOTES" | grep -F -- '- **Shell commands**:' || true)"
 APPROVE_PARA="$(grep -F -- 'Approve only the commands the steps name' "$SKILL_DIR/README.md" || true)"
 # shellcheck disable=SC2016  # literal backticks
-for cmd in '`date`' '`mktemp`' '`mkdir`' '`ls`' '`mv`' '`cp`' '`sed`' '`printf`' '`git`' '`command`' '`curl`' '`jq`' '`base64`' '`tr`' '`dd`' '`od`' '`grep`' '`rm`' '`rmdir`' '`python3`' '`python`' '`[`' '`echo`' '`case`'; do
+for cmd in '`date`' '`mktemp`' '`mkdir`' '`ls`' '`mv`' '`cp`' '`command mv`' '`command cp`' '`sed`' '`printf`' '`git`' '`command`' '`curl`' '`jq`' '`base64`' '`tr`' '`dd`' '`od`' '`grep`' '`rm`' '`rmdir`' '`python3`' '`python`' '`py -3`' '`[`' '`echo`' '`case`'; do
   printf '%s\n' "$SHELL_BULLET" | grep -qF -- "$cmd" || MISSING="$MISSING Host-notes:$cmd"
   printf '%s\n' "$APPROVE_PARA" | grep -qF -- "$cmd" || MISSING="$MISSING README:$cmd"
 done
@@ -1686,7 +1782,7 @@ done
 while IFS='|' read -r rel needle; do
   grep -qF -- "$needle" "$SKILL_DIR/$rel" || MISSING="$MISSING $rel:'$needle'"
 done <<'NEEDLES'
-SKILL.md|`cp "<draft file>" "{scratch}/final-{i}.md"`
+SKILL.md|`command cp "<draft file>" "{scratch}/final-{i}.md"`
 SKILL.md|its 0-based position in the topological order of Step DL-1, `i` = `0..N-1`
 SKILL.md|**Graded draft**
 SKILL.md|**last evaluated draft**
@@ -1695,8 +1791,8 @@ SKILL.md|(**Whole text, never re-typed**, [references/destinations.md](reference
 SKILL.md|`rm -rf "{scratch}"`
 SKILL.md|`[ -d "{scratch}" ]`
 SKILL.md|the **Stored text check** reads back what the platform stored
-references/destinations.md|`cp "{scratch}/final-{i}.md" "{ticket_dir_i}/ticket.md"`
-references/destinations.md|`cp "{scratch}/final-{i}.md" "{scratch}/body-{i}.md"`
+references/destinations.md|`command cp "{scratch}/final-{i}.md" "{ticket_dir_i}/ticket.md"`
+references/destinations.md|`command cp "{scratch}/final-{i}.md" "{scratch}/body-{i}.md"`
 references/destinations.md|runs from the highest part number down to the lowest and replaces whole ids only
 references/destinations.md|read with the file-read tool immediately before the call and passed whole and unchanged
 references/destinations.md|read with the file-read tool immediately before the fill and passed whole and unchanged
@@ -1704,10 +1800,10 @@ references/destinations.md|The ticket text never goes on the command line
 references/destinations.md|never through command substitution, never with the text written inline
 references/destinations.md|the word "description" in a request (which names the destination's long-form field), never shorten the delivered text
 references/destinations.md|it cannot see text a platform hides only when it renders the field
-references/destinations.md|`sed -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "{scratch}/body-{i}.md" > "{scratch}/send-{i}.md"`
-references/destinations.md|`{ printf '<pre>'; sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "{scratch}/body-{i}.md"; printf '</pre>\n'; } > "{scratch}/send-{i}.html"`
-references/destinations.md|`python3 -I "{skill_root}/scripts/ticket_body.py" convert --to html --in "{scratch}/body-{i}.md" --out "{scratch}/send-{i}.html"`
-references/destinations.md|`python3 -I "{skill_root}/scripts/ticket_body.py" check --sent "{scratch}/body-{i}.md" --stored "<file>"`
+references/destinations.md|`sed -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "{scratch}/body-{i}.md" >| "{scratch}/send-{i}.md"`
+references/destinations.md|`{ printf '<pre>'; sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "{scratch}/body-{i}.md"; printf '</pre>\n'; } >| "{scratch}/send-{i}.html"`
+references/destinations.md|`{python} -I "{skill_root}/scripts/ticket_body.py" convert --to html --in "{scratch}/body-{i}.md" --out "{scratch}/send-{i}.html"`
+references/destinations.md|`{python} -I "{skill_root}/scripts/ticket_body.py" check --sent "{scratch}/body-{i}.md" --stored "<file>"`
 references/destinations.md|`Converted: html (<n> characters)`
 references/destinations.md|`Converted: preformatted fallback (<detail>)`
 references/destinations.md|`Body check: complete`
@@ -1770,9 +1866,9 @@ references/destinations.md|an occurrence that ends the file with no line end tog
 references/destinations.md|the same search with `<logical id of a created ticket>([^0-9]|$)` finds no logical id of an already-created ticket, followed by a non-digit or by the end of a line, left in `{scratch}/body-{i}.md`
 references/destinations.md|finds each kept id that begins with the id of an already-created ticket (the only kept ids a replacement can reach) on as many lines of `{scratch}/body-{i}.md` as of `{scratch}/final-{i}.md`, the first heading line of each left out (the adapter rewrites it)
 references/destinations.md|a read that (b) calls for is never skipped while a read-only tool or the page is at hand
-references/destinations.md|exit status 127 in a POSIX shell, also means no Python 3: the no-Python form of that step runs, with its `NOTE:`, never the failure branch of a conversion or check
-references/destinations.md|(other than the no-Python status above) is replaced by the same shell command, without the `NOTE:`
-references/destinations.md|except the no-Python status of **Content-field markup**, which runs the heading lookup below instead
+references/destinations.md|when that rule finds no Python 3, every conversion and check of the run takes its no-Python form, with its `NOTE:`, and no `ticket_body.py` command runs
+references/destinations.md|a `convert` command that exits with a status other than 0 is replaced by the same shell command, without the `NOTE:`
+references/destinations.md|A check that exits with a status other than 0 counts as `no content field`.
 references/destinations.md|a ticket not yet created, the one being built included, keeps its logical id (a **kept id**)
 references/destinations.md|When the check of (a) reports, or counts as, `no content field` or `incomplete`, ONE read of the new item
 references/destinations.md|whose output is never checked as stored text
@@ -2471,6 +2567,555 @@ else
   fail "ticket_body.py checks" "python3 is not on the PATH"
 fi
 
+# Path grammar and other OS assumptions: drive and network share paths, the
+# home-path comparison, byte order marks and CR LF line ends, the interpreter
+# choice written once as {python}, the shell fallback of a host without a
+# search tool and the login-shell options, each stated once and named where
+# it applies.
+MISSING=""
+HOST_NOTES_NOW="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+while IFS='|' read -r where needle; do
+  case "$where" in
+    ARGS) printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'" ;;
+    HOST) printf '%s\n' "$HOST_NOTES_NOW" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Host-notes:'$needle'" ;;
+    *) grep -qF -- "$needle" "$SKILL_DIR/$where" || MISSING="$MISSING $where:'$needle'" ;;
+  esac
+done <<'NEEDLES'
+ARGS|**Drive and share paths**: a path value, or a `source=` spec, that starts with one letter, `:` and `/` or `\` (a drive path, such as `C:\work\spec.md`), or with `\\` or `//` (a network share path), is a path, never a `<kind>:` prefix
+ARGS|it counts as an absolute path wherever these rules tell an absolute path from a relative one, whatever the host
+ARGS|its frontmatter is still the block between its first two `---` lines, read with the byte order mark and every line's trailing CR disregarded
+ARGS|grep -qE '^\*\*/\.local/\*[[:space:]]*$' "<root>/.gitignore"
+references/sources.md|A drive or network share path (SKILL.md Argument Parsing, **Drive and share paths**
+references/sources.md|the shell tool runs `python3 --version`, then `python --version`, then `py -3 --version`, one command each, stopping at the first whose output starts with `Python 3.`
+references/sources.md|is `{python}` for the rest of the run, written unquoted at the start of every Python command (`py -3` is two words)
+references/sources.md|`ERROR: reading an .xlsx source needs Python 3 on the PATH (tried python3, python, py -3)`
+references/sources.md|--out "{scratch}/sources/S<n>.md" [--sheet="<name>" ...] -- "<path>"
+references/sources.md|`Converted: <chars> characters, <lines> lines, truncated: yes|no`; the orchestrator never types that text out to build this file
+references/sources.md|The header block of **Normalized file** is then inserted at the top of that file with the file-edit tool
+references/sources.md|with the file-edit tool (the file's last lines, as many as make the match unique, replaced by themselves followed by that line), never by writing the file again
+references/sources.md|`Rendered: no (cannot write under --out: <error>)`
+references/sources.md|`<command> >|"{scratch}/sources/S<n>.body" 2>|"{scratch}/sources/S<n>.err"`
+SKILL.md|its text written by the converter itself to `{scratch}/sources/S<n>.md` (`--out`), never typed out by the orchestrator
+HOST|case-insensitively on a host whose file system ignores case, and for every spelling the host uses for the home directory (illustrative only: a drive-letter form)
+HOST|the search tools → the shell tool does each search the steps name, read-only and one file per command: it lists the matching lines of one file with `grep -nE '<pattern>' "<file>"`
+HOST|- **Login-shell options**:
+HOST|`cp` and `mv` run as `command cp` and `command mv`, the scratch removal is `rm -rf`
+references/destinations.md|with a leading byte order mark and surrounding whitespace (a trailing CR LF included) removed
+references/destinations.md|a printed path is a match, and anything else is none: no output, or an exit status other than 0 and only an error that the pattern matched nothing
+references/destinations.md|`command mv "<entry>" "{dir}/.rollback/{parent-slug}-{ts}/"`
+references/destinations.md|then `printf '\n%s\n' "{rel}/.rollback/" >> "<root>/.gitignore"` for a file that exists, or `printf '%s\n' "{rel}/.rollback/" > "<root>/.gitignore"` for one that does not
+references/destinations.md|"<template>" >|"{scratch}/request-{i}.json"
+references/destinations.md|`<command> >|"{scratch}/response-{i}.txt" 2>|"{scratch}/response-{i}.err"`
+references/destinations.md|`<command> >|"{scratch}/stored-{i}.txt" 2>|"{scratch}/stored-{i}.err"`
+NEEDLES
+[ "$(grep -cF -- '**Drive and share paths**:' "$SKILL_MD" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md:'Drive and share paths' defined more than once"
+[ "$(grep -cF -- '**Python interpreter.**' "$SOURCES_MD" || true)" -eq 1 ] || MISSING="$MISSING sources.md:'Python interpreter' defined more than once"
+[ "$(grep -cF -- '**Login-shell options**' "$SKILL_MD" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md:'Login-shell options' stated more than once"
+# shellcheck disable=SC2016  # literal braces
+[ "$(cat "$SKILL_MD" "$SKILL_DIR"/references/*.md | grep -oF -- '{python} -I "{skill_root}/scripts/' | wc -l | tr -d ' ')" -ge 4 ] || MISSING="$MISSING fewer than 4 {python} -I commands"
+check "drive and share paths, the home-path comparison, BOM and CR LF tolerance, the interpreter choice as {python}, the converter's --out, the no-search-tool fallback and the login-shell forms are stated once and named where they apply" "$MISSING"
+# shellcheck disable=SC2016  # literal backticks
+check "no stale interpreter or shell form remains (python3 -I, python3 not found, exit status 127, grep -qxF on .gitignore, plain cp/mv, > onto a rebuilt file, a re-written workbook file)" \
+  "$(grep -rnE -- 'python3 -I|python3 not found|exit status 127|grep -qxF|`(cp|mv) "|" > "\{scratch\}|[^|]>"\{scratch\}|write the file again and compute' "$SKILL_MD" "$SKILL_DIR/README.md" "$SKILL_DIR"/references/*.md | cut -c1-160 || true)"
+
+# --- POSIX forms under login-shell options (no-clobber, nomatch, aliases) ------
+# A host's shell tool may be a login shell with a no-clobber option, an
+# unmatched pattern raised as an error, and rm / cp / mv aliased to forms that
+# ask first. The forms the generated tree prints are taken from it as printed
+# (placeholders filled with fixture values), run with stdin closed under zsh
+# (setopt noclobber; nomatch is its default), sh and bash (set -C), each with
+# interactive rm, cp and mv aliases defined on earlier lines, every form run
+# twice so the second run meets the files of the first; canaries prove that
+# the options and aliases were in force.
+if command -v python3 >/dev/null 2>&1; then
+  FORMS_DIR="$TMP_ROOT/forms"
+  mkdir -p "$FORMS_DIR"
+  cat >"$FORMS_DIR/forms.py" <<'PYFORMS'
+import json, os, re, sys
+
+# gen SKILL_DIR KIND WORK: write WORK/run.sh, the POSIX forms of the skill as
+# printed (placeholders filled with fixture values), run twice where a second
+# run meets the files of the first, under the shell options and aliases of KIND.
+# verify WORK KIND: print one line per problem.
+
+def spans(path):
+    text = open(path, encoding="utf-8").read()
+    out = []
+    for line in text.split("\n"):
+        parts = line.split("`")
+        out.extend(parts[k] for k in range(1, len(parts), 2))
+    return text, out
+
+def one(found, name, start, exact=False):
+    hits = sorted(set(s for s in found if (s == start if exact else s.startswith(start))))
+    if len(hits) != 1:
+        sys.exit("form %s: %d spans start with %r" % (name, len(hits), start))
+    return hits[0]
+
+def gen(skill, kind, work):
+    skill_md, sk = spans(os.path.join(skill, "SKILL.md"))
+    dest_md, de = spans(os.path.join(skill, "references", "destinations.md"))
+    src_md, so = spans(os.path.join(skill, "references", "sources.md"))
+    f = {}
+    f["mkdir_scratch"] = one(sk, "mkdir_scratch", "mkdir -p .local/create-ticket-scratch", True)
+    f["mktemp"] = one(sk, "mktemp", "mktemp -d .local/create-ticket-scratch/run.XXXXXX", True)
+    f["gi_check"] = one(sk, "gi_check", "grep -qE '^\\*\\*/\\.local/")
+    f["gi_exist"] = one(sk, "gi_exist", '[ -e "<root>/.gitignore" ]', True)
+    f["gi_append"] = one(sk, "gi_append", "printf '\\n%s\\n' '**/.local/*' >>")
+    f["gi_create"] = one(sk, "gi_create", "printf '%s\\n' '**/.local/*' > ")
+    f["cp_final"] = one(sk, "cp_final", 'command cp "<draft file>"')
+    f["cp_body"] = one(de, "cp_body", 'command cp "{scratch}/final-{i}.md" "{scratch}/body-{i}.md"', True)
+    f["cp_ticket"] = one(de, "cp_ticket", 'command cp "{scratch}/final-{i}.md" "{ticket_dir_i}/ticket.md"', True)
+    f["sed_esc"] = one(de, "sed_esc", "sed -e 's/</")
+    f["pre"] = one(de, "pre", "{ printf '<pre>';")
+    f["cli_resp"] = one(de, "cli_resp", '<command> >|"{scratch}/response-{i}.txt"')
+    f["cli_stored"] = one(de, "cli_stored", '<command> >|"{scratch}/stored-{i}.txt"')
+    f["cli_src"] = one(so, "cli_src", '<command> >|"{scratch}/sources/S<n>.body"')
+    f["ls_coll"] = one(de, "ls_coll", 'ls -d "{dir}"/*/{NNN}-*')
+    f["mkdir_parent"] = one(de, "mkdir_parent", 'mkdir -p "{dir}/{parent-slug}"', True)
+    f["mkdir_td"] = one(de, "mkdir_td", 'mkdir -p "{ticket_dir_i}"', True)
+    f["mkdir_rb"] = one(de, "mkdir_rb", 'mkdir -p "{dir}/.rollback/{parent-slug}-{ts}"', True)
+    f["mv_rb"] = one(de, "mv_rb", 'command mv "<entry>"')
+    f["rb_append"] = one(de, "rb_append", "printf '\\n%s\\n' \"{rel}/.rollback/\" >>")
+    f["rb_create"] = one(de, "rb_create", "printf '%s\\n' \"{rel}/.rollback/\" > ")
+    f["nul"] = one(so, "nul", 'dd if="<path>"')
+    f["rm"] = one(sk, "rm", 'rm -rf "{scratch}"', True)
+    f["exist_scr"] = one(sk, "exist_scr", '[ -d "{scratch}" ]', True)
+    f["rmdir1"] = one(sk, "rmdir1", "rmdir .local/create-ticket-scratch", True)
+    f["rmdir2"] = one(sk, "rmdir2", "rmdir .local", True)
+    m = re.search(r"```bash\n( *)(jq --rawfile title .*?)\n *```", dest_md, re.S)
+    if not m:
+        sys.exit("form jq_build: no fenced jq block")
+    f["jq_build"] = "\n".join(l[len(m.group(1)):] if l.startswith(m.group(1)) else l for l in m.group(2).split("\n"))
+    fill = [("{scratch}", "$SCR"), ("{ticket_dir_i}", "tickets/p/001-x"), ("{i}", "0"),
+            ("<draft file>", "draft.md"), ("{dir}", "tickets"), ("{parent-slug}", "p"),
+            ("<entry>", "tickets/p/split-plan.md"), ("{rel}", "tickets"), ("S<n>", "S1"),
+            ("<command>", "printf 'ID-1\\n'"), ("<sent body>", "$SCR/body-0.md"), ("<id>", "P-1"),
+            ("<template>", "template.json")]
+    for k in f:
+        for a, b in fill:
+            f[k] = f[k].replace(a, b)
+    alias = ["alias rm='rm -i'", "alias cp='cp -i'", "alias mv='mv -i'"]
+    if kind == "zsh":
+        prelude = ["setopt noclobber"] + alias
+    elif kind == "bash":
+        prelude = ["set -C", "shopt -s expand_aliases"] + alias
+    else:
+        prelude = ["set -C"] + alias
+    L = prelude + ['cd "$1" || exit 99']
+    def rc(name, form):
+        L.append(form)
+        L.append('echo "rc %s $?" >>log.txt' % name)
+    def out(name, form):
+        L.append("OUT=$(%s)" % form)
+        L.append('echo "rc %s $? out=[$OUT]" >>log.txt' % name)
+    # canaries: the conditions are in force in this shell
+    L.append("printf 'one\\n' >canary.txt")
+    L.append("printf 'two\\n' >canary.txt")
+    L.append('echo "rc canary_clobber $?" >>log.txt')
+    L.append("cp draft.md canary.txt")
+    L.append('echo "rc canary_alias $?" >>log.txt')
+    if kind == "zsh":
+        L.append("OUT=$(ls -d tickets/*/999-* 2>/dev/null)")
+        L.append('echo "rc canary_nomatch $?" >>log.txt')
+    # scratch, once
+    rc("mkdir_scratch", f["mkdir_scratch"])
+    L.append("SCR=$(%s)" % f["mktemp"])
+    L.append('echo "rc mktemp $? out=[$SCR]" >>log.txt')
+    L.append('mkdir -p "$SCR/sources"')
+    for g in ("g1", "g2", "g3"):
+        for run in (1, 2):
+            chk = f["gi_check"].replace("<root>", g)
+            ex = f["gi_exist"].replace("<root>", g)
+            L.append(chk)
+            L.append("if [ $? -ne 0 ]; then")
+            L.append(ex)
+            L.append("if [ $? -eq 0 ]; then")
+            L.append(f["gi_append"].replace("<root>", g))
+            L.append('echo "rc gi_append_%s_%d $?" >>log.txt' % (g, run))
+            L.append("else")
+            L.append(f["gi_create"].replace("<root>", g))
+            L.append('echo "rc gi_create_%s_%d $?" >>log.txt' % (g, run))
+            L.append("fi")
+            L.append("fi")
+    for g in ("r1", "r2"):
+        L.append(f["gi_exist"].replace("<root>", g))
+        L.append("if [ $? -eq 0 ]; then")
+        L.append(f["rb_append"].replace("<root>", g))
+        L.append('echo "rc rb_append_%s $?" >>log.txt' % g)
+        L.append("else")
+        L.append(f["rb_create"].replace("<root>", g))
+        L.append('echo "rc rb_create_%s $?" >>log.txt' % g)
+        L.append("fi")
+    for run in (1, 2):
+        if run == 2:
+            L.append("printf 'second run line\\n' >>draft.md")
+        rc("cp_final_%d" % run, f["cp_final"])
+        rc("mkdir_parent_%d" % run, f["mkdir_parent"])
+        rc("mkdir_td_%d" % run, f["mkdir_td"])
+        rc("cp_ticket_%d" % run, f["cp_ticket"])
+        rc("cp_body_%d" % run, f["cp_body"])
+        rc("sed_esc_%d" % run, f["sed_esc"])
+        rc("pre_%d" % run, f["pre"])
+        L.append("printf 'Title of the ticket\\r\\n' >|\"$SCR/title-0.txt\"")
+        L.append("if command -v jq >/dev/null 2>&1; then")
+        L.append(f["jq_build"])
+        L.append('echo "rc jq_build_%d $?" >>log.txt' % run)
+        L.append("fi")
+        rc("cli_resp_%d" % run, f["cli_resp"])
+        rc("cli_stored_%d" % run, f["cli_stored"])
+        rc("cli_src_%d" % run, f["cli_src"])
+        out("ls001_%d" % run, f["ls_coll"].replace("{NNN}", "001"))
+        out("ls002_%d" % run, f["ls_coll"].replace("{NNN}", "002"))
+        out("nul_text_%d" % run, f["nul"].replace("<path>", "draft.md"))
+        out("nul_bin_%d" % run, f["nul"].replace("<path>", "bin.dat"))
+        L.append("printf 'plan %d\\n' >|tickets/p/split-plan.md" % run)
+        rc("mkdir_rb_%d" % run, f["mkdir_rb"].replace("{ts}", "T%d" % run))
+        rc("mv_rb_%d" % run, f["mv_rb"].replace("{ts}", "T%d" % run))
+    for name in ("final-0.md", "body-0.md", "send-0.md", "send-0.html", "request-0.json", "response-0.txt", "response-0.err", "stored-0.txt", "stored-0.err", "sources/S1.body", "sources/S1.err"):
+        L.append('if [ -f "$SCR/%s" ]; then cat "$SCR/%s" >|"snap-%s"; fi' % (name, name, name.replace("/", "-")))
+    L.append("chmod 444 \"$SCR/final-0.md\"")
+    for run in (1, 2):
+        rc("rm_%d" % run, f["rm"])
+        rc("exist_scr_%d" % run, f["exist_scr"])
+        rc("rmdir1_%d" % run, f["rmdir1"])
+        rc("rmdir2_%d" % run, f["rmdir2"])
+    os.makedirs(work, exist_ok=True)
+    def put(name, data):
+        with open(os.path.join(work, name), "wb") as fh:
+            fh.write(data)
+    draft = ("## T: Ticket \u898b\u7a4d\u3082\u308a\n\n### Scope\n\n| a \\| b | count<limit -> x >= 3 & y |\n"
+             "\n<surface name> and `<code>`\n\n```\n<tag> & </tag>\n```\n")
+    put("draft.md", draft.encode("utf-8"))
+    put("bin.dat", b"abc\x00def")
+    put("canary.txt", b"")
+    os.remove(os.path.join(work, "canary.txt"))
+    put("log.txt", b"")
+    put("template.json", b'[{"fields": {"summary": "{title}", "description": "{body}", "parent": {"key": "{parent}"}}}]\n')
+    for g, data in (("g2", b"a\r\nb"), ("g3", b"x\r\n**/.local/*\r\n"), ("r1", b"y")):
+        os.makedirs(os.path.join(work, g), exist_ok=True)
+        put(os.path.join(g, ".gitignore"), data)
+    for g in ("g1", "r2"):
+        os.makedirs(os.path.join(work, g), exist_ok=True)
+    os.makedirs(os.path.join(work, ".local", "tickets"), exist_ok=True)
+    put(os.path.join(".local", "tickets", "keep.md"), b"keep\n")
+    put("run.sh", ("\n".join(L) + "\n").encode("utf-8"))
+
+def verify(work, kind):
+    bad = []
+    def rd(name):
+        try:
+            with open(os.path.join(work, name), "rb") as fh:
+                return fh.read()
+        except OSError:
+            return None
+    log = {}
+    for line in (rd("log.txt") or b"").decode("utf-8", "replace").split("\n"):
+        m = re.match(r"rc (\S+) (\d+)(?: out=\[(.*)\])?$", line)
+        if m:
+            log[m.group(1)] = (int(m.group(2)), m.group(3))
+    def rcis(name, want=0):
+        got = log.get(name)
+        if got is None:
+            bad.append("%s did not run" % name)
+        elif (got[0] == 0) != (want == 0):
+            bad.append("%s exit %d" % (name, got[0]))
+        return got
+    # the conditions were in force
+    if log.get("canary_clobber", (0,))[0] == 0:
+        bad.append("canary: > onto an existing file was not refused (no-clobber not in force)")
+    if rd("canary.txt") != b"two\n" and rd("canary.txt") != b"one\n":
+        bad.append("canary file holds %r" % rd("canary.txt"))
+    if rd("canary.txt") == rd("draft.md"):
+        bad.append("canary: plain cp overwrote a file (interactive alias not in force)")
+    if kind == "zsh" and log.get("canary_nomatch", (0,))[0] == 0:
+        bad.append("canary: an unmatched pattern was not an error (nomatch not in force)")
+    rcis("mkdir_scratch")
+    mk = rcis("mktemp")
+    if mk and not re.match(r"^\.local/create-ticket-scratch/run\.[A-Za-z0-9]{6}$", mk[1] or ""):
+        bad.append("mktemp printed %r" % (mk[1],))
+    want_gi = {"g1": b"**/.local/*\n", "g2": b"a\r\nb\n**/.local/*\n", "g3": b"x\r\n**/.local/*\r\n"}
+    for g, want in want_gi.items():
+        got = rd(os.path.join(g, ".gitignore"))
+        if got != want:
+            bad.append("%s/.gitignore is %r, want %r" % (g, got, want))
+    for k in ("gi_create_g1_1", "gi_append_g2_1"):
+        rcis(k)
+    for k in ("gi_create_g1_2", "gi_append_g1_2", "gi_append_g1_1", "gi_append_g2_2", "gi_create_g2_1", "gi_append_g3_1", "gi_append_g3_2", "gi_create_g3_1"):
+        if k in log:
+            bad.append("%s ran (the line was already there, or the file existed)" % k)
+    for g, want in (("r1", b"y\ntickets/.rollback/\n"), ("r2", b"tickets/.rollback/\n")):
+        got = rd(os.path.join(g, ".gitignore"))
+        if got != want:
+            bad.append("%s/.gitignore is %r, want %r" % (g, got, want))
+    rcis("rb_append_r1")
+    rcis("rb_create_r2")
+    draft = rd("draft.md")
+    for run in (1, 2):
+        for k in ("cp_final", "mkdir_parent", "mkdir_td", "cp_ticket", "cp_body", "sed_esc", "pre", "cli_resp", "cli_stored", "cli_src", "mkdir_rb", "mv_rb"):
+            rcis("%s_%d" % (k, run))
+        if ("jq_build_%d" % run) in log:
+            rcis("jq_build_%d" % run)
+        l1 = log.get("ls001_%d" % run)
+        if not l1 or (l1[1] or "").strip() != "tickets/p/001-x":
+            bad.append("ls001_%d printed %r" % (run, l1))
+        l2 = log.get("ls002_%d" % run)
+        if not l2 or (l2[1] or "") != "":
+            bad.append("ls002_%d printed %r (no match must print no path)" % (run, l2))
+        for k, want in (("nul_text", "text"), ("nul_bin", "binary")):
+            got = log.get("%s_%d" % (k, run))
+            if not got or got[1] != want:
+                bad.append("%s_%d printed %r" % (k, run, got))
+        mv = rd("tickets/.rollback/p-T%d/split-plan.md" % run)
+        if mv != b"plan %d\n" % run:
+            bad.append("quarantine T%d holds %r" % (run, mv))
+    body = draft.decode("utf-8")
+    want = {
+        "snap-final-0.md": draft,
+        "snap-body-0.md": draft,
+        "snap-send-0.md": body.replace("<", "&lt;").replace(">", "&gt;").encode("utf-8"),
+        "snap-send-0.html": ("<pre>" + body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>\n").encode("utf-8"),
+        "snap-response-0.txt": b"ID-1\n", "snap-response-0.err": b"",
+        "snap-stored-0.txt": b"ID-1\n", "snap-stored-0.err": b"",
+        "snap-sources-S1.body": b"ID-1\n", "snap-sources-S1.err": b"",
+    }
+    for name, data in want.items():
+        got = rd(name)
+        if got != data:
+            bad.append("%s is %r, want %r" % (name[5:], (got or b"")[:80], data[:80]))
+    if "jq_build_2" in log:
+        try:
+            req = json.loads(rd("snap-request-0.json").decode("utf-8"))
+            fields = req[0]["fields"]
+            if not (isinstance(req, list) and len(req) == 1 and fields["summary"] == "Title of the ticket"
+                    and fields["description"] == body and fields["parent"]["key"] == "P-1"):
+                bad.append("request-0.json holds %r" % (req,))
+        except Exception as exc:
+            bad.append("request-0.json: %s" % exc)
+    if os.path.exists(os.path.join(work, "tickets", "p", "split-plan.md")):
+        bad.append("split-plan.md was not moved")
+    if rd("tickets/p/001-x/ticket.md") != draft:
+        bad.append("ticket.md is not the second run's text (a copy did not overwrite)")
+    if (rd("canary.txt") or b"")[:3] == b"two":
+        bad.append("canary: > onto an existing file overwrote it")
+    for run in (1, 2):
+        rcis("rm_%d" % run)
+        rcis("exist_scr_%d" % run, 1)
+    rcis("rmdir1_1")
+    if os.path.exists(os.path.join(work, ".local", "create-ticket-scratch")):
+        bad.append(".local/create-ticket-scratch is still there")
+    if rd(".local/tickets/keep.md") != b"keep\n":
+        bad.append(".local/tickets/keep.md was touched")
+    if log.get("rmdir2_1", (0,))[0] == 0:
+        bad.append("rmdir .local removed a non-empty directory")
+    return bad
+
+if __name__ == "__main__":
+    if sys.argv[1] == "gen":
+        gen(sys.argv[2], sys.argv[3], sys.argv[4])
+    else:
+        for line in verify(sys.argv[2], sys.argv[3]):
+            print(line)
+PYFORMS
+  for kind in zsh sh bash; do
+    if ! command -v "$kind" >/dev/null 2>&1; then
+      printf '  SKIP %s\n' "POSIX forms under $kind: $kind is not installed"
+      continue
+    fi
+    FW="$FORMS_DIR/$kind"
+    GEN_ERR="$(python3 -I "$FORMS_DIR/forms.py" gen "$SKILL_DIR" "$kind" "$FW" 2>&1)" || { fail "POSIX forms under $kind" "$GEN_ERR"; continue; }
+    set +e
+    if [ "$kind" = zsh ]; then
+      zsh -f "$FW/run.sh" "$FW" <&- >"$FORMS_DIR/$kind.out" 2>&1
+    else
+      "$kind" "$FW/run.sh" "$FW" <&- >"$FORMS_DIR/$kind.out" 2>&1
+    fi
+    set -e
+    check "POSIX forms under $kind (no-clobber, $([ "$kind" = zsh ] && echo 'nomatch, ')interactive rm/cp/mv aliases, stdin closed, each form run twice): scratch, .gitignore check/create/append (CRLF, no final newline), copies, both conversions, request build, captured outputs, collision listing, quarantine, text probe, removal" \
+      "$(python3 -I "$FORMS_DIR/forms.py" verify "$FW" "$kind" 2>&1)"
+  done
+else
+  fail "POSIX forms under login-shell options" "python3 is not on the PATH"
+fi
+
+# --- PowerShell forms (references/shell-powershell.md) -------------------------
+# Static checks of the PowerShell file: every fenced powershell block sits
+# under an id heading, uses no syntax of PowerShell 7 only, no POSIX alias at
+# the start of a statement, no cmdlet that writes a file in another encoding,
+# no redirection and no exit; Remove-Item appears once, with -LiteralPath and
+# -Recurse, in the scratch removal; every POSIX form the three files print is
+# quoted verbatim in the file (coverage), and every command of the Host notes
+# approval list appears in a quoted POSIX form. The forms themselves are run by
+# tests/test-standalone-skill-powershell.ps1 (PowerShell 5.1 and 7).
+if command -v python3 >/dev/null 2>&1; then
+  cat >"$TMP_ROOT/ps-static.py" <<'PYPS'
+import re, sys
+skill = sys.argv[1]
+def rd(rel):
+    return open(skill + "/" + rel, encoding="utf-8").read()
+md = rd("references/shell-powershell.md")
+mode = sys.argv[2]
+out = []
+# entries: id heading -> body up to the next ## or ### heading
+entries = []
+for m in re.finditer(r"^### (PS-[A-Z]+-[0-9]+): .*$", md, re.M):
+    entries.append((m.group(1), m.start(), m.end()))
+bodies = {}
+for k, (eid, st, en) in enumerate(entries):
+    nxt = re.compile(r"^##+ ", re.M).search(md, en)
+    bodies[eid] = md[en:nxt.start() if nxt else len(md)]
+blocks = []
+for m in re.finditer(r"^```powershell\n(.*?)^```$", md, re.M | re.S):
+    owner = None
+    for eid, st, en in entries:
+        if st < m.start():
+            owner = eid
+    head = md.rfind("\n## ", 0, m.start())
+    if owner is not None and md.rfind("\n### ", 0, m.start()) < head:
+        owner = None
+    blocks.append((owner, m.group(1)))
+def strip_strings(t):
+    t = re.sub(r"'[^'\n]*'", "''", t)
+    return re.sub(r'"[^"\n]*"', '""', t)
+if mode == "blocks":
+    ids = [e[0] for e in entries]
+    if len(ids) != len(set(ids)):
+        out.append("duplicate ids: " + " ".join(sorted(set(i for i in ids if ids.count(i) > 1))))
+    if len(blocks) < 30:
+        out.append("only %d powershell blocks" % len(blocks))
+    seen = {}
+    for owner, code in blocks:
+        if owner is None:
+            out.append("a powershell block without an id heading: " + code[:60])
+            continue
+        seen[owner] = seen.get(owner, 0) + 1
+        bare = strip_strings(code)
+        for tok, why in (("&&", "&&"), ("||", "||"), (" ?? ", "??"), ("Out-File", "Out-File"), ("Set-Content", "Set-Content"),
+                         ("Add-Content", "Add-Content"), ("Tee-Object", "Tee-Object"), ("Get-Content", "Get-Content"),
+                         ("-Encoding UTF8", "-Encoding UTF8"), ("/dev/null", "/dev/null"), ("-AsHashtable", "-AsHashtable"),
+                         ("-NoEnumerate", "-NoEnumerate"), ("-AsByteStream", "-AsByteStream"), ("-SkipHttpErrorCheck", "-SkipHttpErrorCheck"),
+                         ("utf8NoBOM", "utf8NoBOM"), ("::new(", "::new("), ("Invoke-Expression", "Invoke-Expression"), ("Start-Process", "Start-Process")):
+            if tok in code:
+                out.append("%s: %s" % (owner, why))
+        if re.search(r"(^|[;{(|]\s*|&\s+)(rm|rmdir|ls|cat|cp|mv|curl|echo|mkdir|wget|sort|tee|del|dir|type|copy|move)\s", bare):
+            out.append("%s: a POSIX alias at the start of a statement" % owner)
+        if re.search(r" \? [^:]* : ", bare):
+            out.append("%s: a ternary" % owner)
+        if re.search(r"(^|[^-\w])exit(\s|$)", bare):
+            out.append("%s: an exit statement" % owner)
+        red = re.sub(r"2>&1|2>\$null|<[^<>\n]+>", "", bare)
+        if ">" in red.replace("-gt", "").replace("-ge", ""):
+            out.append("%s: a > redirection" % owner)
+        if "@\"" in code or "@'" in code:
+            out.append("%s: an unquoted @ before a quoted argument" % owner)
+        if "Remove-Item" in code and not ("-LiteralPath" in code and "-Recurse" in code):
+            out.append("%s: Remove-Item without -LiteralPath and -Recurse" % owner)
+        if re.search(r"[^\x00-\x7f]", code):
+            out.append("%s: a non-ASCII character" % owner)
+    for owner, n in seen.items():
+        if n > 1:
+            out.append("%s: %d blocks" % (owner, n))
+    ri = [o for o, c in blocks if "Remove-Item" in c]
+    if ri != ["PS-DL-2"]:
+        out.append("Remove-Item appears in %s, want PS-DL-2 only" % (ri,))
+    if "Directory]::Delete(" not in dict(blocks).get("PS-DL-4", "") or ", $false)" not in dict(blocks).get("PS-DL-4", ""):
+        out.append("PS-DL-4 does not remove the parents with the .NET call that refuses a directory that is not empty")
+    for eid, body in bodies.items():
+        if "POSIX" not in body:
+            out.append("%s: no quoted POSIX form" % eid)
+        if "```powershell" not in body and not re.search(r"No (PowerShell )?form", body):
+            out.append("%s: neither a form nor a No form line" % eid)
+    for ref in sorted(set(re.findall(r"PS-[A-Z]+-[0-9]+", md))):
+        if ref not in bodies:
+            out.append("reference to a missing id " + ref)
+    if re.search(r"[^\x00-\x7f]", md):
+        out.append("the file holds a non-ASCII character")
+elif mode == "coverage":
+    words = r"(date|ls|mkdir|mktemp|git|grep|printf|command|cp|mv|rm|rmdir|sed|jq|curl|dd|od|base64|tr|python3|python|py|\{python\}|\[|case|echo|<command>|<probe command>|\{ printf)"
+    skip = {"[ -d ]", "[ -e ]", "command -v", "command cp", "command mv", "rm -rf", "curl -K -", "curl -v", "git check-ignore", "py -3", "{python} -I"}
+    for rel in ("SKILL.md", "references/sources.md", "references/destinations.md"):
+        text = rd(rel)
+        for line in text.split("\n"):
+            parts = line.split("`")
+            for k in range(1, len(parts), 2):
+                sp = parts[k]
+                if not re.match(r"^" + words + r"(\s|$)", sp) or " " not in sp or "..." in sp or sp in skip:
+                    continue
+                if sp not in md:
+                    out.append("%s: `%s` has no entry" % (rel, sp))
+        for m in re.finditer(r"^( *)```bash\n(.*?)^ *```$", text, re.M | re.S):
+            ind = m.group(1)
+            code = "\n".join(l[len(ind):] if l.startswith(ind) else l for l in m.group(2).rstrip("\n").split("\n"))
+            if code not in md:
+                out.append("%s: fenced form `%s` has no entry" % (rel, code.split("\n")[0][:70]))
+    quoted = " ".join(re.findall(r"^POSIX.*$", md, re.M)) + " " + " ".join(re.findall(r"^```text\n(.*?)^```$", md, re.M | re.S))
+    host = re.search(r"^- \*\*Shell commands\*\*:.*$", rd("SKILL.md"), re.M).group(0)
+    names = set(re.findall(r"`([a-z0-9[]+)`", host.split("Under PowerShell")[0]))
+    for n in sorted(names):
+        if n in ("allowed-tools", "cli", "api"):
+            continue
+        if not re.search(r"`[^`]*(^|[^\w-])" + re.escape(n) + r"([^\w-]|$)[^`]*`|(^|\s)" + re.escape(n) + r"\s", quoted):
+            out.append("approval-list command `%s` is in no quoted POSIX form" % n)
+print("\n".join(out))
+PYPS
+  check "references/shell-powershell.md: every powershell block sits under one PS-<AREA>-<n> heading, uses no 7-only syntax, no POSIX alias, no file-writing cmdlet, no > redirection, no exit, is ASCII; Remove-Item only in PS-DL-2 with -LiteralPath and -Recurse; parents removed by the .NET call that refuses a non-empty directory; every entry quotes its POSIX form" \
+    "$(python3 -I "$TMP_ROOT/ps-static.py" "$SKILL_DIR" blocks 2>&1)"
+  check "references/shell-powershell.md covers every POSIX form of SKILL.md, sources.md and destinations.md verbatim, and every command of the Host notes approval list appears in a quoted POSIX form" \
+    "$(python3 -I "$TMP_ROOT/ps-static.py" "$SKILL_DIR" coverage 2>&1)"
+else
+  fail "references/shell-powershell.md static checks" "python3 is not on the PATH"
+fi
+# The dialect rule, stated once and named where it applies.
+MISSING=""
+HOST_NOTES_PS="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+PCC="$(awk '/^## Pre-computed Context$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+while IFS='|' read -r where needle; do
+  case "$where" in
+    PCC) printf '%s\n' "$PCC" | grep -qF -- "$needle" || MISSING="$MISSING Pre-computed-Context:'$needle'" ;;
+    HOST) printf '%s\n' "$HOST_NOTES_PS" | grep -qF -- "$needle" || MISSING="$MISSING Host-notes:'$needle'" ;;
+    *) grep -qF -- "$needle" "$SKILL_DIR/$where" || MISSING="$MISSING $where:'$needle'" ;;
+  esac
+done <<'NEEDLES'
+PCC|1. `Shell:` the dialect of the shell tool
+PCC|`echo $PSVersionTable.PSVersion.Major`
+PCC|`ERROR: this host's shell tool is neither a POSIX shell nor PowerShell`
+PCC|forwarded verbatim into the researcher spawn prompt and every planner spawn prompt
+HOST|the **shell tool** (run a shell command; every command this skill names is written in its POSIX form
+HOST|- **Shell dialect**:
+HOST|NEVER run a POSIX form
+HOST|Under PowerShell the forms PS-HN-1 to PS-HN-3 of `references/shell-powershell.md`
+HOST|Under PowerShell the commands to approve are the forms of `references/shell-powershell.md`
+HOST|Under PowerShell only the forms that `references/shell-powershell.md` marks one statement are single commands
+HOST|the spelling is the same under PowerShell
+SKILL.md|compatibility: Any agent host that loads SKILL.md skills and offers file read, file write, file edit, a shell tool (a POSIX shell, or PowerShell 5.1 or later)
+SKILL.md|| The shell tool is neither a POSIX shell nor PowerShell
+SKILL.md|no typographic quote (U+2018 to U+201E), which PowerShell reads as a quote
+SKILL.md|(also written `${NAME}`, `$env:NAME` or `%NAME%`, each naming the variable `NAME`)
+references/sources.md|each one runs as the PowerShell form that `references/shell-powershell.md` lists for it
+references/destinations.md|each one runs as the PowerShell form that `references/shell-powershell.md` lists for it
+references/agent-spawn-prompts.md|the `Shell:` and `Available user skills:` lines verbatim (Pre-computed Context)
+references/agent-spawn-prompts.md|it also carries the `Shell:` line of Pre-computed Context verbatim
+references/agents/researcher.md|When your spawn prompt carries a `Shell: powershell <n>` line
+references/agents/planner.md|When your spawn prompt carries a `Shell: powershell <n>` line
+README.md|a shell tool (a POSIX shell, or PowerShell 5.1 or later; the skill finds out which before it starts)
+README.md|### Windows
+README.md|| `references/shell-powershell.md` |
+README.md|are exercised by an automated test under Windows PowerShell 5.1 and PowerShell 7 on Windows
+README.md|A POSIX shell on Windows without `jq` cannot use an `api:` destination
+README.md|when other text follows it in the stored file (a field after the content field, the rest of a page)
+references/shell-powershell.md|1. **Syntax of both versions.**
+references/shell-powershell.md|`$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath("<path>")`
+NEEDLES
+[ "$(grep -cF -- '- **Shell dialect**:' "$SKILL_MD" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md:'Shell dialect' stated more than once"
+[ "$(grep -cF -- 'references/shell-powershell.md` lists for it' "$SOURCES_MD" || true)" -eq 1 ] || MISSING="$MISSING sources.md: the pointer sentence is not there exactly once"
+[ "$(grep -cF -- 'references/shell-powershell.md` lists for it' "$DEST_MD" || true)" -eq 1 ] || MISSING="$MISSING destinations.md: the pointer sentence is not there exactly once"
+grep -qF -- 'Get-ChildItem' "$SOURCES_MD" "$DEST_MD" && MISSING="$MISSING a PowerShell form is duplicated into sources.md or destinations.md"
+COMPAT_LEN="$(printf '%s\n' "$FM" | sed -n 's/^compatibility:[[:space:]]*//p' | awk '{printf "%d", length($0)}')"
+[ "$COMPAT_LEN" -le 500 ] || MISSING="$MISSING compatibility is $COMPAT_LEN characters (more than 500)"
+check "the Shell: item, the Shell dialect rule (stated once), the pointer sentences, the frontmatter and README requirements, the Windows subsection, the role sentence and the spawn-prompt carriers name the PowerShell forms where they apply" "$MISSING"
+
 # --- mutation: the audit is the exit gate ----------------------------------------
 MUT_SRC="$TMP_ROOT/mutated-src"
 mkdir -p "$MUT_SRC/skills/brief"
@@ -2531,5 +3176,57 @@ check "review wording: content type placeholder in the three curl forms, cap exc
        grep -qF -- 'is run as given and is not checked for what it does' "$SOURCES_MD" || printf ' sources.md:read-only-exception';
        grep -qF -- 'is not checked for what it does' "$SKILL_DIR/README.md" || printf ' README.md:limit';
        grep -qF -- 'the one input the skill does not check' "$SKILL_DIR/SKILL.md" || printf ' SKILL.md:host-notes'; } || true)"
+
+# Shell-dialect review fixes: braced variable references in a cli: command,
+# the typographic-quote ban for URLs, follow-up URLs under the derived rule,
+# searches before {scratch} exists, the prompt-free scratch removal, the
+# link-safe parent removal, the emphasis-free agent grep form, the decomposer
+# without shell commands, and the README limits.
+PS_MD="$SKILL_DIR/references/shell-powershell.md"
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+check "shell-dialect review: \${env:NAME} rule, URL typographic quotes, follow-up URLs, pre-scratch lookups, -Confirm:\$false, reparse points kept, agent grep projection, decomposer, README limits" \
+  "$({ grep -qF -- 'and one already written `$env:NAME`, is written `${env:NAME}` before the command runs' "$PS_MD" || printf ' shell-powershell.md:env-braces';
+       grep -qF -- 'a `$NAME` reference becomes `${env:NAME}`' "$PS_MD" || printf ' shell-powershell.md:PS-SRC-11-braces';
+       grep -qF -- 'and, when the `Shell:` line of Pre-computed Context names PowerShell, no typographic quote (U+2018 to U+201E), which PowerShell reads as a quote (`references/shell-powershell.md`, general rule 4). Else `ERROR: destination api: unusable URL (<rule>)`' "$DEST_MD" || printf ' destinations.md:url-typographic';
+       grep -qF -- "a further request's URL, taken from a response, follows the **Derived URL rule** below" "$SKILL_MD" || printf ' SKILL.md:follow-up-url';
+       grep -qF -- 'before `{scratch}` exists, when nothing may be written yet (the lookups of **Prose resolution**, Argument Parsing), the shell tool instead tests each path a statement names with PS-SRC-1 and PS-SRC-2' "$SKILL_MD" || printf ' SKILL.md:pre-scratch-lookup';
+       grep -qF -- '(for the listing of a `dir:` source, `{scratch}/sources/shell-result.txt`)' "$SKILL_MD" || printf ' SKILL.md:dir-result-file';
+       grep -qF -- 'running `mkdir -p`, before any `dir:` source is listed' "$SKILL_MD" || printf ' SKILL.md:sources-dir-first';
+       grep -qF -- 'Remove-Item -LiteralPath $s -Recurse -Force -Confirm:$false -ErrorAction Stop' "$PS_MD" || printf ' shell-powershell.md:confirm';
+       grep -qF -- '[System.IO.FileAttributes]::ReparsePoint) -ne 0) { '"'kept'"' }' "$PS_MD" || printf ' shell-powershell.md:reparse';
+       grep -qF -- 'the `created` of `references/split-plan-schema.md`' "$PS_MD" || printf ' shell-powershell.md:created';
+       grep -qF -- 'ERROR: destination api: needs curl.exe on PATH' "$PS_MD" || printf ' shell-powershell.md:curl-exe-error';
+       grep -qF -- '-CaseSensitive -Encoding UTF8 | ForEach-Object { [string]$_.LineNumber + '"':'"' + $_.Line }' "$SKILL_DIR/references/agents/researcher.md" || printf ' researcher.md:grep-projection';
+       grep -qF -- 'read-only shell commands' "$SKILL_DIR/references/agents/decomposer.md" && printf ' decomposer.md:shell-commands';
+       grep -qF -- 'read-only shell commands' "$SKILL_DIR/references/agents/planner.md" || printf ' planner.md:shell-commands';
+       grep -qF -- 'nor an error that names `PSVersionTable` as an unset variable' "$SKILL_MD" || printf ' SKILL.md:dialect-error-row';
+       grep -qF -- 'copied verbatim, followed by' "$SOURCES_MD" && printf ' sources.md:xlsx-verbatim';
+       grep -qF -- "PowerShell's full language mode" "$SKILL_DIR/README.md" || printf ' README.md:language-mode';
+       grep -qF -- 'that holds a typographic quote (U+2018 to U+201E) is refused' "$SKILL_DIR/README.md" || printf ' README.md:typographic';
+       grep -qF -- 'may accept text that `jq` refuses' "$SKILL_DIR/README.md" || printf ' README.md:json-reader'; } || true)"
+
+# Second review of the PowerShell forms: the dialect is settled before any other
+# shell command; a client's first word is the program file PS-AP-1 printed and a
+# command that does not start says why; an interpreter that cannot start is
+# skipped; the header pipe is ASCII through a static encoding; a relative path
+# with a colon gets ./; an empty probe body is JSON as for jq empty; an
+# unreadable sibling does not hide a taken number; matches stay case-sensitive.
+# shellcheck disable=SC2016  # literal backticks, braces and dollars
+check "shell-dialect review 2: Shell: item first, found: <file name> and not started (<reason>), interpreter try/catch, ASCII header pipe, ./ before a colon path, empty probe body, unreadable sibling skipped, case-sensitive matches, login-shell output, dossier limit" \
+  "$({ grep -qF -- 'it is settled before any other shell command of the run, the probes and existence tests of Argument Parsing included' "$SKILL_MD" || printf ' SKILL.md:shell-first';
+       grep -qF -- 'is written as the file name PS-AP-1 printed for it after `found: `' "$PS_MD" || printf ' shell-powershell.md:rule2-file-name';
+       grep -qF -- "{ 'found: ' + @(Get-Command -Name \"<first word>\" -CommandType Application -ErrorAction SilentlyContinue)[0].Name }" "$PS_MD" || printf ' shell-powershell.md:PS-AP-1';
+       [ "$(grep -cF -- "catch { 'not started (' + \$_.Exception.Message + ')' }" "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:not-started-count';
+       grep -qF -- "\$v = ''; try { \$v = [string](& \$exe @rest --version 2>\$null | Out-String) } catch { };" "$PS_MD" || printf ' shell-powershell.md:PS-SRC-4-try';
+       [ "$(grep -cF -- '$OutputEncoding = [System.Text.Encoding]::ASCII;' "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:ascii-pipe-count';
+       grep -qF -- 'New-Object System.Text.ASCIIEncoding' "$PS_MD" && printf ' shell-powershell.md:new-object-ascii';
+       grep -qF -- 'A relative path that holds a `:` is written with `./` in front' "$PS_MD" || printf ' shell-powershell.md:colon-path';
+       grep -qF -- "if (\$t.Trim() -eq '') { 'json' }" "$PS_MD" || printf ' shell-powershell.md:PS-DST-16-empty';
+       grep -qF -- 'or with an empty key, cannot be read by PowerShell' "$PS_MD" || printf ' shell-powershell.md:empty-key';
+       grep -qF -- 'try { $es = [System.IO.Directory]::GetFileSystemEntries($a) } catch { }' "$PS_MD" || printf ' shell-powershell.md:PS-DST-7-sibling';
+       [ "$(grep -cF -- '-ceq $m.Groups[1].Value' "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:ceq-count';
+       grep -qF -- "if (\$l.Contains('<text>'))" "$PS_MD" || printf ' shell-powershell.md:PS-HN-2-case';
+       grep -qF -- 'prints on its standard output exactly what it prints in a plain shell; the only other output is that error line of the collision listing' "$SKILL_MD" || printf ' SKILL.md:login-shell-output';
+       grep -qF -- 'so the orchestrator types that text (up to 60,000 characters) out once more there' "$SKILL_DIR/README.md" || printf ' README.md:dossier-limit'; } || true)"
 
 print_summary

@@ -8,6 +8,7 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (befor
 
 | Trigger | Output |
 |---|---|
+| The shell tool is neither a POSIX shell nor PowerShell (the dialect probe of Pre-computed Context printed neither a number, nor `.PSVersion.Major`, nor an error that names `PSVersionTable` as an unset variable) | `ERROR: this host's shell tool is neither a POSIX shell nor PowerShell` |
 | Empty arguments | Print Usage line, stop (before any preflight) |
 | Both `brief=` and `findings=` | `ERROR: brief= and findings= are mutually exclusive. Pass exactly one.` |
 | Scratch directory cannot be created | `ERROR: create-ticket cannot create the scratch directory .local/create-ticket-scratch/ in the working directory (<reason>)` |
@@ -65,7 +66,7 @@ Every `ERROR:` before Delivery is atomic: nothing reaches the destination (befor
 | The user answers no at the confirmation before the first remote create | `ERROR: remote delivery declined; nothing created` |
 | `local:` path already exists | `ERROR: create-ticket write refused — <path> already exists` — nothing written, counter untouched |
 | `local:` ticket number already used under another parent (another run is delivering to `{dir}`, or an earlier counter write failed) | `ERROR: create-ticket write refused — ticket number {NNN} is already used by <path>; fix {dir}/.ticket-counter, or re-run when the other run has finished` — nothing written, counter untouched |
-| `local:` split-plan validation fails | `ERROR: split-plan validation failed — <reason>` — quarantined like a write failure (`mv` to `{dir}/.rollback/{parent-slug}-{ts}/`, never delete) |
+| `local:` split-plan validation fails | `ERROR: split-plan validation failed — <reason>` — quarantined like a write failure (`command mv` to `{dir}/.rollback/{parent-slug}-{ts}/`, never delete) |
 | `local:` write failure | `ERROR: create-ticket write failed — partial output quarantined at {dir}/.rollback/{parent-slug}-{ts}/ (<reason>)` — counter untouched; re-run with the same inputs is safe |
 | `local:` counter write fails after the tickets are written | `ERROR: create-ticket counter write failed — set {dir}/.ticket-counter to <counter + N> (<reason>)` — the tickets stay in place; stop |
 | `local:` counter was changed by another run between the read and the write of Delivery | `ERROR: create-ticket counter changed during delivery — {dir}/.ticket-counter was <counter> and is now <value>; another run delivered to {dir}; check {dir} for a ticket number used twice and set the counter above the highest one` — the tickets stay in place, the counter is not written; stop |
