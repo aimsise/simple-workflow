@@ -3191,6 +3191,7 @@ check "shell-dialect review: \${env:NAME} rule, URL typographic quotes, follow-u
        grep -qF -- "a further request's URL, taken from a response, follows the **Derived URL rule** below" "$SKILL_MD" || printf ' SKILL.md:follow-up-url';
        grep -qF -- 'before `{scratch}` exists, when nothing may be written yet (the lookups of **Prose resolution**, Argument Parsing), the shell tool instead tests each path a statement names with PS-SRC-1 and PS-SRC-2' "$SKILL_MD" || printf ' SKILL.md:pre-scratch-lookup';
        grep -qF -- '(for the listing of a `dir:` source, `{scratch}/sources/shell-result.txt`)' "$SKILL_MD" || printf ' SKILL.md:dir-result-file';
+       grep -qF -- 'so two such searches never run at the same time or in one batch of tool calls' "$SKILL_MD" || printf ' SKILL.md:one-search-at-a-time';
        grep -qF -- 'running `mkdir -p`, before any `dir:` source is listed' "$SKILL_MD" || printf ' SKILL.md:sources-dir-first';
        grep -qF -- 'Remove-Item -LiteralPath $s -Recurse -Force -Confirm:$false -ErrorAction Stop' "$PS_MD" || printf ' shell-powershell.md:confirm';
        grep -qF -- '[System.IO.FileAttributes]::ReparsePoint) -ne 0) { '"'kept'"' }' "$PS_MD" || printf ' shell-powershell.md:reparse';
