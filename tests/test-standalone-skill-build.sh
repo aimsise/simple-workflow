@@ -44,13 +44,27 @@
 #     section, the Error Handling table and the reference file), the Usage
 #     line stays consistent with the argument-hint, and the Delivery jq
 #     filter and the source_content_path= extraction run on fixtures
-#   - --name: a tree built as zq-x7 holds no create-ticket and, mapped back,
-#     equals the default build byte for byte (so does create-ticket-v2);
-#     --name create-ticket is the default build; invalid, reserved,
-#     YAML-typed and audit-tripping names exit 2 before anything is written;
-#     --force replaces <out>/<name> only; every create-ticket of the default
-#     tree sits in a known name context; the name audit catches a name the
-#     probe misses and a description the name makes too long
+#   - --name: a tree built as zq-x7 holds no other spelling of create-ticket
+#     (with the exit audit's variant check, that shows no occurrence was
+#     missed) and, mapped back, equals the default build byte for byte (the
+#     rename changed nothing else; so does create-ticket-v2); --name
+#     create-ticket is the default build; names that resemble plugin words or
+#     folders (hooks, brief, test-plan, best-effort, home) build; invalid,
+#     reserved, YAML-typed and foreign-tool names exit 2 before anything is
+#     written, also against an absent --out; --force replaces <out>/<name>
+#     only, and only when it holds a generated skill (a non-generated
+#     directory, a file and a dangling link are refused); a failed build
+#     leaves the previous skill byte for byte and a missing source file
+#     leaves nothing; a relative --out lands under the working directory
+#     with an exported CDPATH; every create-ticket of the default tree sits in
+#     a known name context; the role prompts and the description do not
+#     depend on the name being unusual; the name audit catches a foreign tool
+#     name the probe misses, a rename that misses occurrences and a
+#     description the name makes too long
+#   - the exit audit's variant check reports every other spelling of the
+#     name planted in a copied source (another case, underscore, camel case,
+#     glued, wrapped, an upstream skills/create-ticket/ path) and a file named
+#     after it, for the default name and for --name, and publishes nothing
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -66,6 +80,10 @@ BUILD="$REPO_DIR/tools/build-standalone-skill.sh"
 MANIFEST_DIR="$REPO_DIR/tools/standalone-skill"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/test-standalone-skill.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
+# The generator builds in a staging directory under TMPDIR and keeps it after
+# a failed audit; every build of this suite stages inside TMP_ROOT instead.
+export TMPDIR="$TMP_ROOT/tmp"
+mkdir -p "$TMPDIR"
 OUT="$TMP_ROOT/out"
 SKILL_DIR="$OUT/create-ticket"
 
@@ -163,24 +181,28 @@ DESC="$(printf '%s\n' "$FM" | awk '/^description:/ {d = 1; next} d && /^[a-z-]+:
 check "description is non-empty and at most 1024 chars" \
   "$({ [ -n "$DESC" ] && [ "${#DESC}" -le 1024 ]; } || echo "length=${#DESC}")"
 check "description allows invocation by name only (no phrase trigger, no by-name contradiction)" \
-  "$(printf '%s\n' "$DESC" | grep -q 'Invoke only when the user names this skill' || echo 'name-only rule missing')$(printf '%s\n' "$DESC" | grep -E -o 'Triggers on|Only invoke when called by name|\(2\) user' || true)"
+  "$(grep -q 'Invoke only when the user names this skill' <<<"$DESC" || echo 'name-only rule missing')$(printf '%s\n' "$DESC" | grep -E -o 'Triggers on|Only invoke when called by name|\(2\) user' || true)"
 check "frontmatter carries no allowed-tools key" "$(printf '%s\n' "$FM" | grep '^allowed-tools:' || true)"
 check "frontmatter metadata names the source version" \
-  "$(printf '%s\n' "$FM" | grep -qE '^  source-version: "[0-9]+\.[0-9]+\.[0-9]+"$' || echo missing)"
+  "$(grep -qE '^  source-version: "[0-9]+\.[0-9]+\.[0-9]+"$' <<<"$FM" || echo missing)"
 COMMIT_VAL="$(printf '%s\n' "$FM" | sed -n 's/^  source-commit: //p')"
 # The pattern sits in a variable: bash 3.2 misreads a double quote inside
 # single quotes inside "$( ... )".
 COMMIT_RE='^"([0-9a-f]{7,40}|unknown)"$'
 check "frontmatter metadata names the source commit (short sha or unknown)" \
-  "$(printf '%s\n' "$COMMIT_VAL" | grep -qE -- "$COMMIT_RE" || echo "source-commit='$COMMIT_VAL'")"
+  "$(grep -qE -- "$COMMIT_RE" <<<"$COMMIT_VAL" || echo "source-commit='$COMMIT_VAL'")"
 check "frontmatter metadata.source is neutral (no plugin name, no generator path)" \
-  "$(printf '%s\n' "$FM" | grep -qx '  source: generated skill; do not edit by hand' || echo "$(printf '%s\n' "$FM" | grep '^  source:')")"
+  "$(grep -qx '  source: generated skill; do not edit by hand' <<<"$FM" || echo "$(printf '%s\n' "$FM" | grep '^  source:')")"
 
 # --- --name: any valid skill name, with nothing left of the canonical one ----
 # The manifests carry the canonical name create-ticket; --name renames the
-# audited tree. The default tree above, built from the same source, is the
-# reference: a renamed tree mapped back to create-ticket must equal it byte
-# for byte, which proves no occurrence was missed and nothing else changed.
+# audited tree. No other spelling of create-ticket left in the renamed tree,
+# together with the exit audit's variant check on the canonical text, shows
+# that no occurrence was missed. The default tree above, built from the same
+# source, is the reference for the rest: a renamed tree mapped back to
+# create-ticket must equal it byte for byte, which shows the rename changed
+# nothing else (a missed occurrence would map back to itself, so the round
+# trip cannot show that none was missed).
 # frontmatter_of FILE / description_of — the frontmatter block and its
 # joined description, as above.
 frontmatter_of() { awk 'NR == 1 && $0 == "---" {fm = 1; next} fm && $0 == "---" {exit} fm {print}' "$1"; }
@@ -212,8 +234,8 @@ check "--name zq-x7: exit 0, the tree is <out>/zq-x7, no <out>/create-ticket is 
   "$([ "$NB_RC" -eq 0 ] || echo "rc=$NB_RC $(head -n 5 "$NAME_LOG")")$([ -d "$NAME_DIR" ] || echo ' no <out>/zq-x7')$([ ! -e "$NAME_OUT/create-ticket" ] || echo ' <out>/create-ticket was created')$([ "$(entries_of "$NAME_OUT")" = "zq-x7 " ] || echo " <out> holds: $(entries_of "$NAME_OUT")")$([ ! -d "$NAME_DIR" ] || diff <(printf '%s\n' "$ACTUAL") <(cd "$NAME_DIR" && find . -type f | sed 's#^\./##' | sort) || true)"
 check "--name zq-x7: the build reports the 23 files and a clean name audit that renamed every create-ticket of the default tree ($CANON_COUNT)" \
   "$(grep -qF '(23 files, ' "$NAME_LOG" || echo 'file count is not 23')$(grep -qF "; exit audit clean; name audit clean ($CANON_COUNT occurrences of create-ticket renamed to zq-x7)" "$NAME_LOG" || echo " log: $(tail -n 1 "$NAME_LOG")")"
-check "--name zq-x7: no create-ticket, in any case, is left in the renamed tree" \
-  "$(grep -rniF 'create-ticket' "$NAME_DIR" | cut -c1-160 || true)"
+check "--name zq-x7: no create-ticket, create_ticket or createTicket, in any case, is left in the renamed tree" \
+  "$(grep -rniE 'create[-_]?ticket' "$NAME_DIR" | cut -c1-160 || true)"
 check "zq-x7 does not occur in the default tree (so the round trip below is exact)" \
   "$(grep -rnF 'zq-x7' "$SKILL_DIR" | cut -c1-160 || true)"
 RT_DIR="$TMP_ROOT/roundtrip/create-ticket"
@@ -252,7 +274,7 @@ build_name "$TMP_ROOT/name-64" "$N64"
 DESC64=""
 [ ! -f "$TMP_ROOT/name-64/$N64/SKILL.md" ] || DESC64="$(frontmatter_of "$TMP_ROOT/name-64/$N64/SKILL.md" | description_of)"
 check "a 64-character name builds and its description stays within 1024 characters" \
-  "$([ "${#N64}" -eq 64 ] || echo "the fixture name has ${#N64} characters")$([ "$NB_RC" -eq 0 ] || echo " rc=$NB_RC $(head -n 5 "$NB_LOG")")$({ [ -n "$DESC64" ] && [ "${#DESC64}" -le 1024 ]; } || echo " description length ${#DESC64}")$(printf '%s\n' "$DESC64" | grep -qF "\`/$N64\`" || echo ' the name is not in the description')"
+  "$([ "${#N64}" -eq 64 ] || echo "the fixture name has ${#N64} characters")$([ "$NB_RC" -eq 0 ] || echo " rc=$NB_RC $(head -n 5 "$NB_LOG")")$({ [ -n "$DESC64" ] && [ "${#DESC64}" -le 1024 ]; } || echo " description length ${#DESC64}")$(grep -qF "\`/$N64\`" <<<"$DESC64" || echo ' the name is not in the description')"
 mkdir -p "$TMP_ROOT/name-65"
 build_name "$TMP_ROOT/name-65" "${N64}e"
 check "a 65-character name exits 2 and creates nothing" \
@@ -283,40 +305,63 @@ set -e
 check "invalid names (empty, uppercase, underscore, hyphen first, last or doubled, path parts, space, ampersand, backslash, dot) and --name without a value exit 2 and create nothing" \
   "$INVALID_DETAIL"
 
+# refused_before_write NAME — run the build with NAME against an --out that
+# does not exist; print nothing when it exits 2 without creating that
+# directory, a detail otherwise.
+refused_before_write() {
+  local absent rc
+  absent="$TMP_ROOT/name-absent-$(printf '%s' "$1" | tr -c 'a-z0-9-' '_')"
+  set +e
+  bash "$BUILD" --out "$absent" --name "$1" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || printf ' absent-out:%s:rc=%s' "$1" "$rc"
+  [ ! -e "$absent" ] || printf ' absent-out:%s:created' "$1"
+}
+
 YAML_DETAIL=""
-for bad in 123 true yes null y 0x1f 1e3 1e-3 2024-01-01; do
+for bad in 123 true false yes no on off null y n 0x1f 0o17 0b101 1e3 1e-3 2024-01-01 2024-1-1; do
   build_name "$INV_OUT" "$bad"
   [ "$NB_RC" -eq 2 ] || YAML_DETAIL="$YAML_DETAIL $bad:rc=$NB_RC"
   grep -qF 'a YAML reader takes it for a number, a boolean, null or a date' "$NB_LOG" || YAML_DETAIL="$YAML_DETAIL $bad:no-yaml-message"
 done
 [ "$(entries_of "$INV_OUT")" = "keep.txt " ] || YAML_DETAIL="$YAML_DETAIL created:$(entries_of "$INV_OUT")"
-check "spec-valid names a YAML reader takes for a number, boolean, null or date (the frontmatter name would not be a string) exit 2 and create nothing" "$YAML_DETAIL"
+YAML_DETAIL="$YAML_DETAIL$(refused_before_write 2024-1-1)"
+check "spec-valid names a YAML reader takes for a number, boolean, null or date (the frontmatter name would not be a string) exit 2 and create nothing, not even an absent --out" "$YAML_DETAIL"
 
 RESERVED_DETAIL=""
-for bad in planner researcher decomposer ticket-evaluator; do
+for bad in planner researcher decomposer ticket-evaluator evaluator orchestrator; do
   build_name "$INV_OUT" "$bad"
   [ "$NB_RC" -eq 2 ] || RESERVED_DETAIL="$RESERVED_DETAIL $bad:rc=$NB_RC"
   grep -qF "reserved --name '$bad'" "$NB_LOG" || RESERVED_DETAIL="$RESERVED_DETAIL $bad:no-reserved-message"
 done
 [ "$(entries_of "$INV_OUT")" = "keep.txt " ] || RESERVED_DETAIL="$RESERVED_DETAIL created:$(entries_of "$INV_OUT")"
-check "the role names used inside the skill (planner, researcher, decomposer, ticket-evaluator) are reserved: exit 2" "$RESERVED_DETAIL"
+RESERVED_DETAIL="$RESERVED_DETAIL$(refused_before_write orchestrator)"
+check "the names the skill's text uses for its roles (planner, researcher, decomposer, ticket-evaluator, evaluator, orchestrator) are reserved: exit 2, nothing created, not even an absent --out" "$RESERVED_DETAIL"
 # A spec-valid name that the exit audit's foreign-tool-name rule rejects.
 DENY_NAME="$(manifest_lines "$MANIFEST_DIR/tool-vocabulary.txt" | awk '$1 == "deny" {print $2}' | grep -xE '[a-z0-9]+(-[a-z0-9]+)*' | head -n 1 || true)"
 if [ -z "$DENY_NAME" ]; then
   echo "  SKIP a spec-valid foreign tool name is refused (no deny row of tool-vocabulary.txt is a valid skill name)"
 else
   build_name "$INV_OUT" "$DENY_NAME"
-  check "a spec-valid name from a deny row of tool-vocabulary.txt ($DENY_NAME) exits 2 naming the foreign tool name rule" \
-    "$([ "$NB_RC" -eq 2 ] || echo "rc=$NB_RC")$(grep -qF 'foreign tool name rule' "$NB_LOG" || echo " message: $(head -n 2 "$NB_LOG")")$([ "$(entries_of "$INV_OUT")" = "keep.txt " ] || echo ' something was created')"
+  DENY_DETAIL="$(refused_before_write "$DENY_NAME")"
+  check "a spec-valid name from a deny row of tool-vocabulary.txt ($DENY_NAME) exits 2 naming the foreign tool name rule, and creates nothing, not even an absent --out" \
+    "$([ "$NB_RC" -eq 2 ] || echo "rc=$NB_RC")$(grep -qF 'foreign tool name rule' "$NB_LOG" || echo " message: $(head -n 2 "$NB_LOG")")$([ "$(entries_of "$INV_OUT")" = "keep.txt " ] || echo ' something was created')$DENY_DETAIL"
 fi
-# A name that trips a denylist rule in one of its contexts (a skill-root path).
-if manifest_lines "$MANIFEST_DIR/denylist.txt" | grep -qxF 'hooks/'; then
-  build_name "$INV_OUT" hooks
-  check "a name that trips a denylist rule in one of its contexts (hooks, in .claude/skills/hooks/) exits 2 naming the rule" \
-    "$([ "$NB_RC" -eq 2 ] || echo "rc=$NB_RC")$(grep -qF 'denylist rule [hooks/]' "$NB_LOG" || echo " message: $(head -n 2 "$NB_LOG")")$([ "$(entries_of "$INV_OUT")" = "keep.txt " ] || echo ' something was created')"
-else
-  echo "  SKIP a name that trips a denylist rule is refused (the denylist has no hooks/ row)"
-fi
+# The name is not a leak: a name that resembles a word of the source plugin
+# or a folder (one a denylist row would match in one of its contexts, such as
+# .claude/skills/hooks/) builds, and the name audit does not run the
+# denylist on it.
+RESEMBLE_DETAIL=""
+for ok in hooks brief test-plan best-effort home; do
+  build_name "$TMP_ROOT/name-resemble" "$ok"
+  [ "$NB_RC" -eq 0 ] || { RESEMBLE_DETAIL="$RESEMBLE_DETAIL $ok:rc=$NB_RC:$(head -n 3 "$NB_LOG")"; continue; }
+  grep -qF "; exit audit clean; name audit clean ($CANON_COUNT occurrences of create-ticket renamed to $ok)" "$NB_LOG" || RESEMBLE_DETAIL="$RESEMBLE_DETAIL $ok:no-clean-name-audit"
+  [ -f "$TMP_ROOT/name-resemble/$ok/SKILL.md" ] || RESEMBLE_DETAIL="$RESEMBLE_DETAIL $ok:no-tree"
+done
+RESEMBLE_DETAIL="$RESEMBLE_DETAIL$(grep -rniE 'create[-_]?ticket' "$TMP_ROOT/name-resemble/hooks" | cut -c1-160 || true)"
+check "names that resemble a word of the source plugin or a folder (hooks, brief, test-plan, best-effort, home) build with exit 0 and a clean name audit, and the hooks tree holds no create-ticket" \
+  "$RESEMBLE_DETAIL"
 
 # --force replaces <out>/<name> only.
 FORCE_OUT="$TMP_ROOT/name-force"
@@ -350,6 +395,138 @@ fi
 check "--force --name zq-x7 replaces <out>/zq-x7 only (a create-ticket sibling and an unrelated directory untouched); without --force a non-empty <out>/zq-x7 is refused with exit 2" \
   "$FORCE_DETAIL"
 
+# --force replaces only a skill this generator wrote: a directory without a
+# SKILL.md, or with one that lacks the generated marker line, is refused with
+# exit 2 and left byte for byte.
+GUARD_OUT="$TMP_ROOT/name-force-guard"
+mkdir -p "$GUARD_OUT/docs/sub" "$GUARD_OUT/handmade"
+printf 'keep\n' >"$GUARD_OUT/docs/readme.txt"
+printf 'nested\n' >"$GUARD_OUT/docs/sub/n.txt"
+printf -- '---\nname: handmade\ndescription: written by hand\n---\n\n# handmade\n' >"$GUARD_OUT/handmade/SKILL.md"
+cp -R "$GUARD_OUT" "$TMP_ROOT/name-force-guard-before"
+# The generator prints the path resolved by cd and pwd (no doubled slash, as
+# a TMPDIR that ends in a slash gives TMP_ROOT).
+GUARD_REAL="$(CDPATH='' cd -- "$GUARD_OUT" && pwd)"
+GUARD_DETAIL=""
+for n in docs handmade; do
+  set +e
+  bash "$BUILD" --out "$GUARD_OUT" --name "$n" --force >"$TMP_ROOT/name-force-guard-$n.log" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || GUARD_DETAIL="$GUARD_DETAIL $n:rc=$rc"
+  grep -qF "refusing to replace $GUARD_REAL/$n: it is not a skill this generator wrote" "$TMP_ROOT/name-force-guard-$n.log" ||
+    GUARD_DETAIL="$GUARD_DETAIL $n:message:$(head -n 1 "$TMP_ROOT/name-force-guard-$n.log")"
+done
+GUARD_DETAIL="$GUARD_DETAIL$(diff -r "$TMP_ROOT/name-force-guard-before" "$GUARD_OUT" 2>&1 | head -n 5 || true)"
+check "--force on a non-empty directory that is not a generated skill (no SKILL.md; a SKILL.md without the generated marker line) exits 2 and leaves every file byte for byte" \
+  "$GUARD_DETAIL"
+
+# A file or a dangling link at <out>/<name> is refused with or without --force
+# and left as it was.
+NOTDIR_OUT="$TMP_ROOT/name-notdir"
+mkdir -p "$NOTDIR_OUT"
+printf 'a file\n' >"$NOTDIR_OUT/plain"
+ln -s "$NOTDIR_OUT/nowhere" "$NOTDIR_OUT/dangling"
+NOTDIR_REAL="$(CDPATH='' cd -- "$NOTDIR_OUT" && pwd)"
+NOTDIR_DETAIL=""
+for n in plain dangling; do
+  for force in "" --force; do
+    set +e
+    bash "$BUILD" --out "$NOTDIR_OUT" --name "$n" ${force:+"$force"} >"$TMP_ROOT/name-notdir.log" 2>&1
+    rc=$?
+    set -e
+    [ "$rc" -eq 2 ] || NOTDIR_DETAIL="$NOTDIR_DETAIL $n${force:+ $force}:rc=$rc"
+    grep -qF "refusing to overwrite $NOTDIR_REAL/$n: it exists and is not a directory" "$TMP_ROOT/name-notdir.log" ||
+      NOTDIR_DETAIL="$NOTDIR_DETAIL $n${force:+ $force}:message:$(head -n 1 "$TMP_ROOT/name-notdir.log")"
+  done
+done
+{ [ -f "$NOTDIR_OUT/plain" ] && [ ! -L "$NOTDIR_OUT/plain" ] && [ "$(cat "$NOTDIR_OUT/plain")" = 'a file' ]; } || NOTDIR_DETAIL="$NOTDIR_DETAIL plain-changed"
+{ [ -L "$NOTDIR_OUT/dangling" ] && [ "$(readlink "$NOTDIR_OUT/dangling")" = "$NOTDIR_OUT/nowhere" ] && [ ! -e "$NOTDIR_OUT/nowhere" ]; } || NOTDIR_DETAIL="$NOTDIR_DETAIL dangling-changed"
+[ "$(entries_of "$NOTDIR_OUT")" = "dangling plain " ] || NOTDIR_DETAIL="$NOTDIR_DETAIL out-holds:$(entries_of "$NOTDIR_OUT")"
+check "a regular file and a dangling link at <out>/<name> exit 2 (it exists and is not a directory), with and without --force, and are left as they were" \
+  "$NOTDIR_DETAIL"
+
+# The audited tree is moved next to <out>/<name> before the old tree is
+# removed, so an <out> that cannot be written leaves the previous skill byte
+# for byte (exit 2). Root writes anywhere, so the check is skipped for root.
+if [ "$(id -u)" -eq 0 ]; then
+  echo "  SKIP an --out that cannot be written leaves the previous skill (running as root)"
+else
+  RO_OUT="$TMP_ROOT/name-readonly"
+  mkdir -p "$RO_OUT"
+  cp -R "$SKILL_DIR" "$RO_OUT/create-ticket"
+  chmod 555 "$RO_OUT"
+  set +e
+  bash "$BUILD" --out "$RO_OUT" --force >"$TMP_ROOT/name-readonly.log" 2>&1
+  RO_RC=$?
+  set -e
+  RO_DETAIL="$([ "$RO_RC" -eq 2 ] || echo "rc=$RO_RC")$(grep -qF 'create-ticket is unchanged' "$TMP_ROOT/name-readonly.log" || echo " log: $(tail -n 1 "$TMP_ROOT/name-readonly.log")")$([ "$(entries_of "$RO_OUT")" = "create-ticket " ] || echo " <out> holds: $(entries_of "$RO_OUT")")$(diff -r "$SKILL_DIR" "$RO_OUT/create-ticket" 2>&1 | head -n 5 || true)"
+  chmod 755 "$RO_OUT"
+  check "--force into an --out that cannot be written exits 2 and leaves the previous skill byte for byte, with nothing else in <out>" \
+    "$RO_DETAIL"
+fi
+
+# A failed build leaves the previous skill byte for byte: a copy of the
+# generator whose own manifest copy has one more denylist row, one the
+# canonical text trips, fails the exit audit of a --force rebuild. The failed
+# tree is kept in the staging directory, outside <out>.
+FAILED_TOOLS="$TMP_ROOT/gen-extra-deny/tools"
+mkdir -p "$FAILED_TOOLS"
+cp "$BUILD" "$FAILED_TOOLS/build-standalone-skill.sh"
+cp -R "$MANIFEST_DIR" "$FAILED_TOOLS/standalone-skill"
+printf 'Do not auto-invoke\n' >>"$FAILED_TOOLS/standalone-skill/denylist.txt"
+FAILED_DETAIL=""
+if [ -f "$FORCE_OUT/zq-x7/SKILL.md" ]; then
+  cp -R "$FORCE_OUT/zq-x7" "$TMP_ROOT/name-force-before-failed"
+  set +e
+  bash "$FAILED_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$FORCE_OUT" --name zq-x7 --force >"$TMP_ROOT/name-force-failed.log" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || FAILED_DETAIL="$FAILED_DETAIL rc=$rc"
+  grep -qF 'exit audit FAILED' "$TMP_ROOT/name-force-failed.log" || FAILED_DETAIL="$FAILED_DETAIL no-exit-audit-failure:$(head -n 2 "$TMP_ROOT/name-force-failed.log")"
+  grep -qF 'denylist [Do not auto-invoke] SKILL.md:' "$TMP_ROOT/name-force-failed.log" || FAILED_DETAIL="$FAILED_DETAIL the-extra-row-did-not-fire"
+  FAILED_DETAIL="$FAILED_DETAIL$(diff -r "$TMP_ROOT/name-force-before-failed" "$FORCE_OUT/zq-x7" 2>&1 | head -n 5 || true)"
+  LEFT_AT="$(sed -n 's/.* output left at \(.*\) for inspection.*/\1/p' "$TMP_ROOT/name-force-failed.log" | head -n 1)"
+  [ -n "$LEFT_AT" ] || FAILED_DETAIL="$FAILED_DETAIL no-output-left-at-path"
+  [ -z "$LEFT_AT" ] || [ -f "$LEFT_AT/SKILL.md" ] || FAILED_DETAIL="$FAILED_DETAIL left-at-path-missing:$LEFT_AT"
+  FORCE_REAL="$(CDPATH='' cd -- "$FORCE_OUT" && pwd)"
+  case "$LEFT_AT" in "$FORCE_REAL"/*|"$FORCE_OUT"/*) FAILED_DETAIL="$FAILED_DETAIL left-at-path-under-out:$LEFT_AT" ;; esac
+  [ "$(entries_of "$FORCE_OUT")" = "create-ticket unrelated zq-x7 " ] || FAILED_DETAIL="$FAILED_DETAIL out-holds:$(entries_of "$FORCE_OUT")"
+else
+  FAILED_DETAIL="no previously generated <out>/zq-x7 to start from"
+fi
+check "a failed --force rebuild (exit audit) exits 1, leaves the previous <out>/zq-x7 byte for byte and keeps the failed tree at the printed path outside <out>" \
+  "$FAILED_DETAIL"
+
+# A build that stops with exit 2 (a source file missing) leaves nothing
+# behind: no <out>/<name>, no staging directory.
+MISS_SRC="$TMP_ROOT/src-missing"
+mkdir -p "$MISS_SRC/skills/brief"
+cp -R "$REPO_DIR/skills/create-ticket" "$MISS_SRC/skills/create-ticket"
+cp -R "$REPO_DIR/skills/brief/references" "$MISS_SRC/skills/brief/references"
+cp -R "$REPO_DIR/agents" "$MISS_SRC/agents"
+cp -R "$REPO_DIR/.claude-plugin" "$MISS_SRC/.claude-plugin"
+rm -f "$MISS_SRC/agents/planner.md"
+mkdir -p "$TMP_ROOT/tmp-missing"
+set +e
+TMPDIR="$TMP_ROOT/tmp-missing" bash "$BUILD" --src "$MISS_SRC" --out "$TMP_ROOT/name-missing-out" >"$TMP_ROOT/name-missing.log" 2>&1
+MISS_RC=$?
+set -e
+check "a build that stops on a missing source file exits 2 and leaves no <out>/create-ticket and no staging directory" \
+  "$([ "$MISS_RC" -eq 2 ] || echo "rc=$MISS_RC")$(grep -qF 'source file missing: agents/planner.md' "$TMP_ROOT/name-missing.log" || echo " message: $(head -n 1 "$TMP_ROOT/name-missing.log")")$([ ! -e "$TMP_ROOT/name-missing-out/create-ticket" ] || echo ' <out>/create-ticket was created')$([ -z "$(entries_of "$TMP_ROOT/tmp-missing")" ] || echo " left behind: $(entries_of "$TMP_ROOT/tmp-missing")")"
+
+# With an exported CDPATH that holds a directory of the same name as a
+# relative --out, the tree lands under the working directory's --out.
+CDP_DIR="$TMP_ROOT/cdpath"
+CDP_WD="$TMP_ROOT/cdpath-wd"
+mkdir -p "$CDP_DIR/rel-out" "$CDP_WD"
+set +e
+(cd "$CDP_WD" && CDPATH="$CDP_DIR" bash "$BUILD" --out rel-out >"$TMP_ROOT/cdpath.log" 2>&1)
+CDP_RC=$?
+set -e
+check "a relative --out with an exported CDPATH lands under the working directory, and nothing is written under the CDPATH directory" \
+  "$([ "$CDP_RC" -eq 0 ] || echo "rc=$CDP_RC $(head -n 3 "$TMP_ROOT/cdpath.log")")$([ -f "$CDP_WD/rel-out/create-ticket/SKILL.md" ] || echo ' no tree under the working directory')$([ -z "$(entries_of "$CDP_DIR/rel-out")" ] || echo " written under CDPATH: $(entries_of "$CDP_DIR/rel-out")")"
+
 # What the skill does is stated without the name: in the description, under
 # the top heading of SKILL.md and in the README; the README's Install says the
 # name is not changed by hand.
@@ -358,7 +535,7 @@ for d in "$SKILL_DIR" "$NAME_DIR"; do
   n="$(basename "$d")"
   [ -f "$d/SKILL.md" ] || { WHAT_DETAIL="$WHAT_DETAIL $n:no-SKILL.md"; continue; }
   fm="$(frontmatter_of "$d/SKILL.md")"
-  printf '%s\n' "$fm" | grep -qx "name: $n" || WHAT_DETAIL="$WHAT_DETAIL $n:name-line"
+  grep -qx "name: $n" <<<"$fm" || WHAT_DETAIL="$WHAT_DETAIL $n:name-line"
   desc="$(printf '%s\n' "$fm" | description_of)"
   case "$desc" in "Do not auto-invoke. "*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:description-does-not-start-with-Do-not-auto-invoke" ;; esac
   second="$(printf '%s\n' "$desc" | sed -E 's/^Do not auto-invoke\. ([^.]*\.).*/\1/')"
@@ -366,7 +543,14 @@ for d in "$SKILL_DIR" "$NAME_DIR"; do
   for w in 'drafts implementation tickets' 'quality rubric' 'delivers them'; do
     case "$second" in *"$w"*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:description-purpose:'$w'" ;; esac
   done
-  printf '%s\n' "$desc" | grep -qF 'A request about tickets that does not name this skill is never a trigger.' || WHAT_DETAIL="$WHAT_DETAIL $n:closing-sentence"
+  grep -qF 'A request about tickets that does not name this skill is never a trigger.' <<<"$desc" || WHAT_DETAIL="$WHAT_DETAIL $n:closing-sentence"
+  case "$desc" in *'A request about tickets that does not name this skill is never a trigger.') ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:description-does-not-end-with-the-closing-sentence" ;; esac
+  # The wording does not depend on the name being unusual: a name that is
+  # also a word (tickets) or a command (grep) still reads as the skill.
+  grep -qF 'The name used as an ordinary word does not name the skill. A request about tickets that does not name this skill is never a trigger.' <<<"$desc" || WHAT_DETAIL="$WHAT_DETAIL $n:description-ordinary-word-sentence"
+  for role in planner researcher decomposer; do
+    grep -qF "You MUST NOT run the \`$n\` skill (the skill that spawned you)" "$d/references/agents/$role.md" || WHAT_DETAIL="$WHAT_DETAIL $n:$role-never-run-the-skill"
+  done
   top="$(awk -v H="# /$n" 'f && NF {print; exit} $0 == H {f = 1}' "$d/SKILL.md")"
   case "$top" in *"$n"*|'') WHAT_DETAIL="$WHAT_DETAIL $n:SKILL.md-top-sentence:'$top'" ;; esac
   case "$top" in *'implementation tickets'*'quality rubric'*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:SKILL.md-top-sentence-purpose" ;; esac
@@ -377,7 +561,7 @@ for d in "$SKILL_DIR" "$NAME_DIR"; do
   # shellcheck disable=SC2016  # literal backticks
   grep -qF 'The directory name must stay equal to the `name` in the frontmatter of `SKILL.md`, and neither may be changed by hand' "$d/README.md" || WHAT_DETAIL="$WHAT_DETAIL $n:README-install-rename-rule"
 done
-check "default and renamed trees: name: line, a description that starts with Do not auto-invoke. and says without the name that the skill drafts, grades and delivers implementation tickets, the same under the SKILL.md top heading and in the README's first paragraph, and the README's do-not-rename rule" \
+check "default and renamed trees: name: line, a description that starts with Do not auto-invoke., says without the name that the skill drafts, grades and delivers implementation tickets and ends with the name-as-a-word and closing sentences, the same under the SKILL.md top heading and in the README's first paragraph, the README's do-not-rename rule, and the planner, researcher and decomposer told not to run the <name> skill (the skill that spawned you)" \
   "$WHAT_DETAIL"
 
 # Every occurrence of create-ticket in the default tree sits in a known name
@@ -415,24 +599,68 @@ printf 'one `create-ticket` and one create-ticket here\n' >"$TMP_ROOT/name-conte
 check "the context check reports an occurrence outside the known contexts" \
   "$([ "$(unclassified_in "$TMP_ROOT/name-context-fixture.md")" = '1:one `@NAME@` and one create-ticket here' ] || echo "got: $(unclassified_in "$TMP_ROOT/name-context-fixture.md")")"
 
-# The name audit is the backstop for a context the probe does not hold, and
-# it names a description the name made too long: both proven on a copy of the
-# generator (with the probe switched off, then with a padded description).
+# The name audit is the backstop for a context the probe does not hold, it
+# catches a rename that missed occurrences, and it names a description the
+# name made too long: proven on copies of the generator (with the probe
+# switched off, with the g flag of the rename dropped, then with a padded
+# description).
 NB_TOOLS="$TMP_ROOT/name-backstop/tools"
 mkdir -p "$NB_TOOLS"
 cp -R "$MANIFEST_DIR" "$NB_TOOLS/standalone-skill"
 # shellcheck disable=SC2016  # the literal variable name is the pattern
 sed 's/^  if \[ -n "\$PROBE_FAIL" \]; then$/  if false; then/' "$BUILD" >"$NB_TOOLS/build-standalone-skill.sh"
-if [ "$(grep -c '^  if false; then$' "$NB_TOOLS/build-standalone-skill.sh" || true)" = 1 ]; then
+if [ -z "$DENY_NAME" ]; then
+  echo "  SKIP name audit backstop for a foreign tool name (no deny row of tool-vocabulary.txt is a valid skill name)"
+elif [ "$(grep -c '^  if false; then$' "$NB_TOOLS/build-standalone-skill.sh" || true)" = 1 ]; then
   set +e
-  bash "$NB_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/name-backstop/out" --name hooks >"$TMP_ROOT/name-backstop.log" 2>&1
+  bash "$NB_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/name-backstop/out" --name "$DENY_NAME" >"$TMP_ROOT/name-backstop.log" 2>&1
   NBS_RC=$?
   set -e
-  check "name audit backstop: with the probe switched off, --name hooks fails the build (exit 1) with a denylist finding attributed to the name" \
-    "$([ "$NBS_RC" -eq 1 ] || echo "rc=$NBS_RC")$(grep -qF 'name audit FAILED' "$TMP_ROOT/name-backstop.log" || echo ' no name audit failure')$(grep -qF 'name audit (caused by --name hooks): denylist [hooks/] SKILL.md:' "$TMP_ROOT/name-backstop.log" || echo " log: $(head -n 3 "$TMP_ROOT/name-backstop.log")")"
+  check "name audit backstop: with the probe switched off, --name $DENY_NAME fails the build (exit 1) with a foreign tool name finding attributed to the name, and publishes nothing" \
+    "$([ "$NBS_RC" -eq 1 ] || echo "rc=$NBS_RC")$(grep -qF 'name audit FAILED' "$TMP_ROOT/name-backstop.log" || echo ' no name audit failure')$(grep -q "^  name audit (caused by --name $DENY_NAME): foreign tool name " "$TMP_ROOT/name-backstop.log" || echo " log: $(head -n 3 "$TMP_ROOT/name-backstop.log")")$([ -z "$(entries_of "$TMP_ROOT/name-backstop/out")" ] || echo " published: $(entries_of "$TMP_ROOT/name-backstop/out")")"
 else
   fail "name audit backstop: the probe could not be switched off in the copy of the generator"
 fi
+# A rename that misses occurrences (the g flag dropped, so only the first
+# create-ticket of each line is renamed) fails the occurrence count and the
+# left-over check.
+NG_TOOLS="$TMP_ROOT/name-backstop-g/tools"
+mkdir -p "$NG_TOOLS"
+cp -R "$MANIFEST_DIR" "$NG_TOOLS/standalone-skill"
+# The lines sit in variables: bash 3.2 misreads a double quote inside single
+# quotes inside "$( ... )".
+# shellcheck disable=SC2016  # the literal variable names are the text
+RENAME_G='  sed "s/$CANON_NAME/$NAME/g" "$p" >"$p.tmp"'
+# shellcheck disable=SC2016  # the literal variable names are the text
+RENAME_1='  sed "s/$CANON_NAME/$NAME/" "$p" >"$p.tmp"'
+# shellcheck disable=SC2016  # the literal variable names are the pattern
+sed 's|^  sed "s/\$CANON_NAME/\$NAME/g" "\$p" >"\$p.tmp"$|  sed "s/$CANON_NAME/$NAME/" "$p" >"$p.tmp"|' "$BUILD" >"$NG_TOOLS/build-standalone-skill.sh"
+if [ "$(grep -cxF -- "$RENAME_G" "$BUILD" || true)" = 1 ] &&
+   [ "$(grep -cxF -- "$RENAME_1" "$NG_TOOLS/build-standalone-skill.sh" || true)" = 1 ] &&
+   [ "$(grep -cxF -- "$RENAME_G" "$NG_TOOLS/build-standalone-skill.sh" || true)" = 0 ]; then
+  set +e
+  bash "$NG_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/name-backstop-g/out" --name zq-x7 >"$TMP_ROOT/name-backstop-g.log" 2>&1
+  NBG_RC=$?
+  set -e
+  check "name audit backstop: a rename without the g flag (one create-ticket per line) fails the build (exit 1) on the occurrence count and on the create-ticket left, and publishes nothing" \
+    "$([ "$NBG_RC" -eq 1 ] || echo "rc=$NBG_RC")$(grep -qF 'occurrence(s) of the name after the rename, expected' "$TMP_ROOT/name-backstop-g.log" || echo ' no occurrence-count finding')$(grep -qF 'occurrence(s) of create-ticket left after the rename' "$TMP_ROOT/name-backstop-g.log" || echo ' no left-over finding')$([ -z "$(entries_of "$TMP_ROOT/name-backstop-g/out")" ] || echo " published: $(entries_of "$TMP_ROOT/name-backstop-g/out")")"
+else
+  fail "name audit backstop: the g flag of the rename could not be dropped in the copy of the generator"
+fi
+# A generated file named after the skill fails the exit audit's variant check
+# (the rename does not rename files): a copy of the generator whose own
+# manifest copy maps one more destination, named Create_Ticket-notes.md.
+NF_TOOLS="$TMP_ROOT/variant-file/tools"
+mkdir -p "$NF_TOOLS"
+cp "$BUILD" "$NF_TOOLS/build-standalone-skill.sh"
+cp -R "$MANIFEST_DIR" "$NF_TOOLS/standalone-skill"
+printf 'references/Create_Ticket-notes.md\tskills/create-ticket/references/ticket-template.md\n' >>"$NF_TOOLS/standalone-skill/files.tsv"
+set +e
+bash "$NF_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/variant-file/out" >"$TMP_ROOT/variant-file.log" 2>&1
+NF_RC=$?
+set -e
+check "exit audit variant check: a generated file named after the skill (references/Create_Ticket-notes.md) fails the build (exit 1) and publishes nothing" \
+  "$([ "$NF_RC" -eq 1 ] || echo "rc=$NF_RC")$(grep -qF 'exit audit FAILED' "$TMP_ROOT/variant-file.log" || echo ' no exit audit failure')$(grep -qxF '  name in a file name (the rename does not rename files): references/Create_Ticket-notes.md' "$TMP_ROOT/variant-file.log" || echo " log: $(head -n 3 "$TMP_ROOT/variant-file.log")")$([ -z "$(entries_of "$TMP_ROOT/variant-file/out")" ] || echo " published: $(entries_of "$TMP_ROOT/variant-file/out")")"
 # Pad the canonical description to 20 characters under the limit: the
 # 64-character name (51 more than create-ticket) then overflows it.
 PAD=$((1024 - 20 - ${#DESC}))
@@ -477,7 +705,7 @@ HITS=""
 while IFS= read -r pat; do
   h="$(cd "$SKILL_DIR" && grep -rnE -- "$pat" . || true)"
   [ -z "$h" ] || HITS="$HITS
-[$pat] $(printf '%s\n' "$h" | head -n 3 | cut -c1-160)"
+[$pat] $(head -n 3 <<<"$h" | cut -c1-160)"
 done < <(manifest_lines "$MANIFEST_DIR/denylist.txt")
 check "every denylist pattern has zero hits" "${HITS#$'\n'}"
 
@@ -498,7 +726,7 @@ DECOUPLE_HITS=""
 while IFS= read -r pat; do
   h="$(cd "$SKILL_DIR" && grep -rnE -- "$pat" . || true)"
   [ -z "$h" ] || DECOUPLE_HITS="$DECOUPLE_HITS
-[$pat] $(printf '%s\n' "$h" | head -n 3 | cut -c1-160)"
+[$pat] $(head -n 3 <<<"$h" | cut -c1-160)"
 done <<<"$DECOUPLE_ERES"
 check "no plugin name, backlog layout, ticket-dir or reuse key in the tree" "${DECOUPLE_HITS#$'\n'}"
 
@@ -533,7 +761,7 @@ JARGON_HITS=""
 while IFS= read -r pat; do
   h="$(cd "$SKILL_DIR" && grep -rnE -- "$pat" . || true)"
   [ -z "$h" ] || JARGON_HITS="$JARGON_HITS
-[$pat] $(printf '%s\n' "$h" | head -n 3 | cut -c1-160)"
+[$pat] $(head -n 3 <<<"$h" | cut -c1-160)"
 done <<<"$JARGON_ERES"
 check "no undefined plugin jargon (eval panel, floor shorthands, role names, Read tool, generator paths)" "${JARGON_HITS#$'\n'}"
 # The mid-sentence Read pattern must catch the tool-name form it targets
@@ -590,7 +818,7 @@ HOST_HITS=""
 while IFS= read -r pat; do
   h="$(cd "$SKILL_DIR" && grep -rnE -- "$pat" . || true)"
   [ -z "$h" ] || HOST_HITS="$HOST_HITS
-[$pat] $(printf '%s\n' "$h" | head -n 3 | cut -c1-160)"
+[$pat] $(head -n 3 <<<"$h" | cut -c1-160)"
 done <<<"$HOST_ERES"
 check "no host name or host-bound phrasing in the tree" "${HOST_HITS#$'\n'}"
 COMPAT="$(printf '%s\n' "$FM" | sed -n 's/^compatibility:[[:space:]]*//p')"
@@ -610,7 +838,7 @@ done
 check "SKILL.md and destinations.md name destination= and the local:/mcp:/api:/browser:/cli: kinds" "$MISSING"
 HOST_NOTES="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
 check "Host notes cover the auth_env secret and non-transactional remote creates" \
-  "$(printf '%s\n' "$HOST_NOTES" | grep -q 'auth_env' || echo 'no auth_env')$(printf '%s\n' "$HOST_NOTES" | grep -q 'not transactional' || echo ' no non-transactional note')"
+  "$(grep -q 'auth_env' <<<"$HOST_NOTES" || echo 'no auth_env')$(grep -q 'not transactional' <<<"$HOST_NOTES" || echo ' no non-transactional note')"
 check "the run scratch directory comes from mktemp -d" \
   "$(grep -qF 'mktemp -d' "$SKILL_MD" || echo 'mktemp -d missing from SKILL.md')"
 # shellcheck disable=SC2016  # literal backticks
@@ -743,7 +971,7 @@ MISSING=""
 ARGS_PART="$(awk '/^## Argument Parsing$/ {a = 1; next} a && /^## / {a = 0} a' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks
 for needle in '`render=auto|off|excel|soffice`' '[render=auto|off|excel|soffice]' 'ERROR: render= must be auto, off, excel or soffice' 'prose never sets `confirm=`, `depth=`, `render=`'; do
-  printf '%s\n' "$ARGS_PART" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+  grep -qF -- "$needle" <<<"$ARGS_PART" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
 done
 printf '%s\n' "$FM" | grep -E '^argument-hint:' | grep -qF -- '[render=auto|off|excel|soffice]' || MISSING="$MISSING argument-hint:'render='"
 grep -qF -- 'xlsx_render.py' "$SKILL_MD" || MISSING="$MISSING SKILL.md:'xlsx_render.py'"
@@ -753,9 +981,9 @@ for needle in '**Sheet rendering (optional)**' 'xlsx_render.py' 'Rendered:' '--o
 done
 FILE_TABLE="$(awk '/^## `file:<path>`$/ {f = 1; next} f && /^## / {f = 0} f && /^\|/' "$SOURCES_MD")"
 # shellcheck disable=SC2016  # literal backticks
-printf '%s\n' "$FILE_TABLE" | grep -qE -- '^\| `\.pdf` \|' || MISSING="$MISSING sources-table:'.pdf'"
+grep -qE -- '^\| `\.pdf` \|' <<<"$FILE_TABLE" || MISSING="$MISSING sources-table:'.pdf'"
 # shellcheck disable=SC2016  # literal backticks
-printf '%s\n' "$FILE_TABLE" | grep -qE -- '^\| `\.png`, ' || MISSING="$MISSING sources-table:'.png'"
+grep -qE -- '^\| `\.png`, ' <<<"$FILE_TABLE" || MISSING="$MISSING sources-table:'.png'"
 # shellcheck disable=SC2016  # literal backticks
 for needle in '### Sheet rendering' '[render=auto|off|excel|soffice]' '`render=auto`' 'scripts/xlsx_render.py' 'Rendered:' '`.docx` sources are not supported' 'no OCR' 'not exercised by the test suite' 'the Windows shell interpreter (powershell.exe)'; do
   grep -qF -- "$needle" "$SKILL_DIR/README.md" || MISSING="$MISSING README.md:'$needle'"
@@ -769,7 +997,7 @@ grep -qxF -- $'scripts/xlsx_render.py\t-' "$MANIFEST_DIR/files.tsv" || MISSING="
 HOST_PART="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks
 for needle in 'xlsx_render.py' '`osascript`' 'the Windows shell interpreter (powershell.exe)' '`soffice`' 'approves what it launches' 'is optional'; do
-  printf '%s\n' "$HOST_PART" | grep -qF -- "$needle" || MISSING="$MISSING Host-notes:'$needle'"
+  grep -qF -- "$needle" <<<"$HOST_PART" || MISSING="$MISSING Host-notes:'$needle'"
 done
 check "render=, the sheet render chain, its Rendered: line and the PDF / image sources are documented in SKILL.md, sources.md and both READMEs" "$MISSING"
 check "Intake precedes Mode dispatch in SKILL.md" \
@@ -888,9 +1116,9 @@ PYFIX
   MISSING=""
   [ "$XLSX_RC" -eq 0 ] || MISSING="$MISSING rc=$XLSX_RC:$(head -n 1 "$FIX_DIR/err.txt")"
   for needle in '## Sheet: Backlog' '| row | c1 | c2 | c3 | c4 |' '| 1 | ID | Title | Due | Done |' 'Add login \| form' '2023-03-15 | TRUE' '2023-03-15T12:00:00 | #N/A' '| 5 | 3 |  |  |  |' '[truncated: sheet Backlog has columns beyond c64' '## Sheet: Notes (hidden)' 'hidden note'; do
-    printf '%s\n' "$XLSX_OUT" | grep -qF -- "$needle" || MISSING="$MISSING '$needle'"
+    grep -qF -- "$needle" <<<"$XLSX_OUT" || MISSING="$MISSING '$needle'"
   done
-  printf '%s\n' "$XLSX_OUT" | grep -qF -- 'PHONETIC' && MISSING="$MISSING 'phonetic rPh run leaked into the cell text'"
+  grep -qF -- 'PHONETIC' <<<"$XLSX_OUT" && MISSING="$MISSING 'phonetic rPh run leaked into the cell text'"
   # The fixture covers: shared / rich / inline strings with a phonetic run,
   # numbers, dates, booleans, errors and formulas, a hidden sheet, the column
   # cap, an in-cell line break, two merged ranges (one with an empty top-left
@@ -907,12 +1135,12 @@ PYFIX
   check "xlsx converter: shared / rich / inline strings, numbers, dates, booleans, errors, formulas, hidden sheets and the column cap" "$MISSING"
   XLSX_OUT2="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-rows 2 --max-cols 3 2>/dev/null)"
   MISSING=""
-  printf '%s\n' "$XLSX_OUT2" | grep -qF -- '[truncated: sheet Backlog has more than 2 rows; only the first 2 were read]' || MISSING="$MISSING 'row cap marker'"
-  printf '%s\n' "$XLSX_OUT2" | grep -qF -- '[truncated: sheet Backlog has columns beyond c3' || MISSING="$MISSING 'column cap marker'"
-  printf '%s\n' "$XLSX_OUT2" | grep -qF -- '| 4 |' && MISSING="$MISSING 'row 4 leaked past the cap'"
-  printf '%s\n' "$XLSX_OUT" | grep -qF -- '[truncated: sheet Grid has columns beyond c64' || MISSING="$MISSING 'merged range beyond the column cap not marked'"
+  grep -qF -- '[truncated: sheet Backlog has more than 2 rows; only the first 2 were read]' <<<"$XLSX_OUT2" || MISSING="$MISSING 'row cap marker'"
+  grep -qF -- '[truncated: sheet Backlog has columns beyond c3' <<<"$XLSX_OUT2" || MISSING="$MISSING 'column cap marker'"
+  grep -qF -- '| 4 |' <<<"$XLSX_OUT2" && MISSING="$MISSING 'row 4 leaked past the cap'"
+  grep -qF -- '[truncated: sheet Grid has columns beyond c64' <<<"$XLSX_OUT" || MISSING="$MISSING 'merged range beyond the column cap not marked'"
   XLSX_OUT3="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --max-chars 120 2>/dev/null)"
-  printf '%s\n' "$XLSX_OUT3" | grep -qF -- '[truncated: output exceeds 120 characters' || MISSING="$MISSING 'char cap marker'"
+  grep -qF -- '[truncated: output exceeds 120 characters' <<<"$XLSX_OUT3" || MISSING="$MISSING 'char cap marker'"
   # The cap is a total: the marker line counts toward it (the command
   # substitution drops the one trailing newline, hence the + 1), and a cap
   # shorter than the marker prints the marker alone.
@@ -923,19 +1151,19 @@ PYFIX
   check "xlsx converter: every cap is marked, never silent" "$MISSING"
   XLSX_OUT4="$(python3 -I "$XLSX_PY" --sheet=Notes -- "$FIX_DIR/fixture.xlsx" 2>/dev/null)"
   MISSING=""
-  printf '%s\n' "$XLSX_OUT4" | grep -qF -- '## Sheet: Notes (hidden)' || MISSING="$MISSING 'selected sheet missing'"
-  printf '%s\n' "$XLSX_OUT4" | grep -qF -- '## Sheet: Backlog' && MISSING="$MISSING 'unselected sheet leaked'"
+  grep -qF -- '## Sheet: Notes (hidden)' <<<"$XLSX_OUT4" || MISSING="$MISSING 'selected sheet missing'"
+  grep -qF -- '## Sheet: Backlog' <<<"$XLSX_OUT4" && MISSING="$MISSING 'unselected sheet leaked'"
   set +e
   SHEET_ERR="$(python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" --sheet Nope 2>&1 >/dev/null)"; SHEET_RC=$?
   set -e
   [ "$SHEET_RC" -eq 2 ] || MISSING="$MISSING 'unknown sheet rc=$SHEET_RC'"
-  printf '%s\n' "$SHEET_ERR" | grep -qF -- 'the workbook has: Backlog, Notes' || MISSING="$MISSING 'unknown sheet does not list the names'"
+  grep -qF -- 'the workbook has: Backlog, Notes' <<<"$SHEET_ERR" || MISSING="$MISSING 'unknown sheet does not list the names'"
   check "xlsx converter: --sheet selects one worksheet and an unknown name exits 2 listing the names" "$MISSING"
   # has_all OUT NEEDLE... — prints every NEEDLE missing from OUT (fixed strings).
   has_all() {
     local text="$1" n
     shift
-    for n in "$@"; do printf '%s\n' "$text" | grep -qF -- "$n" || printf " '%s'" "$n"; done
+    for n in "$@"; do grep -qF -- "$n" <<<"$text" || printf " '%s'" "$n"; done
   }
   check "xlsx converter: an in-cell line break prints as <br>, other whitespace collapses" \
     "$(has_all "$XLSX_OUT" '| 6 | 4 | first line<br>second line |')"
@@ -949,12 +1177,12 @@ PYFIX
     "$(has_all "$XLSX_OUT" '| ~~bold word~~ | ~~keep struck run plain run~~ |')"
   check "xlsx converter: a hidden row and a hidden column are marked and still printed" \
     "$(has_all "$XLSX_OUT" '| 7 (hidden) | 5 | old version |' '| row | c1 | c2 | c3 | c4 | c5 (hidden) |' '| Done | Owner |')"
-  NOTES_PART="$(printf '%s\n' "$XLSX_OUT" | awk '/^### Notes$/ {n = 1; next} n && /^$/ {exit} n')"
+  NOTES_PART="$(awk '/^### Notes$/ {n = 1; next} n && /^$/ {exit} n' <<<"$XLSX_OUT")"
   check "xlsx converter: ### Notes lists each note with its cell, author and text in row order" \
     "$(has_all "$XLSX_OUT" '### Notes')$(printf '%s\n' "$NOTES_PART" | sed -n 1p | grep -qxF -- '- c2 row 2 (B2), Reviewer A: needs a spec' || echo ' first note line')$(printf '%s\n' "$NOTES_PART" | sed -n 2p | grep -qxF -- '- c3 row 4 (C4), Reviewer A: confirm the<br>time zone' || echo ' second note line')"
   check "xlsx converter: a threaded comment replaces the legacy placeholder of its cell and takes its author from the persons part" \
     "$(printf '%s\n' "$NOTES_PART" | sed -n 3p | grep -qxF -- '- c5 row 9 (E9), Pat Person: threaded body' || echo ' threaded note line')$([ "$(printf '%s\n' "$NOTES_PART" | grep -c .)" = 3 ] || echo ' ### Notes does not hold exactly 3 lines')$(printf '%s\n' "$XLSX_OUT" | grep -F '[Threaded comment]' || true)"
-  SHAPES_PART="$(printf '%s\n' "$XLSX_OUT" | awk '/^### Shapes$/ {n = 1; next} n && /^$/ {exit} n')"
+  SHAPES_PART="$(awk '/^### Shapes$/ {n = 1; next} n && /^$/ {exit} n' <<<"$XLSX_OUT")"
   check "xlsx converter: ### Shapes lists text boxes, grouped shapes and charts, never connectors" \
     "$(has_all "$XLSX_OUT" '### Shapes' '- "TextBox 1" at c3 row 5 to c6 row 9: First paragraph<br>Second paragraph' '- "Callout 3" at c1 row 12: Grouped callout' '- chart "Chart 5" at c10 row 2 to c15 row 13: (chart; data not read)' '- "Lead 7" at c1 row 14: <br>after an empty paragraph' '- "Break 8" at c1 row 16: ends in a break<br><br>next paragraph')$(printf '%s\n' "$XLSX_OUT" | grep -F -e 'Connector 4' -e 'at c7 row 2 to c9 row 4' || true)$([ "$(printf '%s\n' "$SHAPES_PART" | grep -c .)" = 5 ] || echo ' ### Shapes does not hold exactly 5 lines')"
   check "xlsx converter: ### Images lists each picture with its media name and byte count, nothing extracted by default" \
@@ -963,13 +1191,13 @@ PYFIX
   check "xlsx converter: --extract-media writes the image as <sheet-slug>-<media name> and says so" \
     "$(has_all "$XLSX_MEDIA" "image1.png (70 bytes), extracted to $FIX_DIR/media/Backlog-image1.png")$([ "$(wc -c <"$FIX_DIR/media/Backlog-image1.png" 2>/dev/null | tr -d ' ')" = 70 ] || echo ' media file missing or wrong size')$([ "$(find "$FIX_DIR/media" -type f | wc -l | tr -d ' ')" = 1 ] || echo ' unexpected files in the media dir')"
   check "xlsx converter: auto picks the cells layout for the sparse wide sheet and keeps the table elsewhere" \
-    "$(has_all "$XLSX_OUT" '## Sheet: Grid (layout: cells)' '- r1 c1 [merged c1-c2 rows 1-2]: Title block' '- r1 c15: far right' '- r2 c20: edge')$(printf '%s\n' "$XLSX_OUT" | grep -qx '## Sheet: Backlog' || echo ' Backlog heading changed')"
+    "$(has_all "$XLSX_OUT" '## Sheet: Grid (layout: cells)' '- r1 c1 [merged c1-c2 rows 1-2]: Title block' '- r1 c15: far right' '- r2 c20: edge')$(grep -qx '## Sheet: Backlog' <<<"$XLSX_OUT" || echo ' Backlog heading changed')"
   check "xlsx converter: auto picks cells on either branch alone (a sparse wide sheet without a merge; a narrow sheet with a 2x2 merge)" \
-    "$(has_all "$XLSX_OUT" '## Sheet: Wide (layout: cells)' '- r2 c20: wide edge')$(has_all "$XLSX_OUT2" '## Sheet: Grid (layout: cells)' '- r1 c1 [merged c1-c2 rows 1-2]: Title block')$(printf '%s\n' "$XLSX_OUT2" | grep -qx '## Sheet: Wide' || echo ' narrow Wide not printed as a table')"
+    "$(has_all "$XLSX_OUT" '## Sheet: Wide (layout: cells)' '- r2 c20: wide edge')$(has_all "$XLSX_OUT2" '## Sheet: Grid (layout: cells)' '- r1 c1 [merged c1-c2 rows 1-2]: Title block')$(grep -qx '## Sheet: Wide' <<<"$XLSX_OUT2" || echo ' narrow Wide not printed as a table')"
   XLSX_TABLE="$(python3 -I "$XLSX_PY" --layout table --sheet Grid -- "$FIX_DIR/fixture.xlsx" 2>&1)"
   XLSX_CELLS="$(python3 -I "$XLSX_PY" --layout cells --sheet Backlog -- "$FIX_DIR/fixture.xlsx" 2>&1)"
   check "xlsx converter: --layout table and --layout cells force the layout" \
-    "$(printf '%s\n' "$XLSX_TABLE" | grep -qx '## Sheet: Grid' || echo ' Grid not forced to table')$(has_all "$XLSX_TABLE" '| 1 | [merged c1-c2 rows 1-2] Title block |')$(has_all "$XLSX_CELLS" '## Sheet: Backlog (layout: cells)' '- r1 c5 (hidden): Owner' '- r7 (hidden) c2: old version' '- r9 c1 [merged c1-c3]: Section heading' '- r10 c5 (hidden) [merged rows 10-11]:')$(printf '%s\n' "$XLSX_CELLS" | grep -F '| row |' || true)"
+    "$(grep -qx '## Sheet: Grid' <<<"$XLSX_TABLE" || echo ' Grid not forced to table')$(has_all "$XLSX_TABLE" '| 1 | [merged c1-c2 rows 1-2] Title block |')$(has_all "$XLSX_CELLS" '## Sheet: Backlog (layout: cells)' '- r1 c5 (hidden): Owner' '- r7 (hidden) c2: old version' '- r9 c1 [merged c1-c3]: Section heading' '- r10 c5 (hidden) [merged rows 10-11]:')$(printf '%s\n' "$XLSX_CELLS" | grep -F '| row |' || true)"
   python3 -I "$FIX_DIR/make_fixture.py" "$FIX_DIR/broken.xlsx" --broken >/dev/null
   set +e
   XLSX_BROKEN="$(python3 -I "$XLSX_PY" "$FIX_DIR/broken.xlsx" 2>&1)"; BROKEN_RC=$?
@@ -1000,7 +1228,7 @@ open('damaged.xlsx', 'wb').write(bytes(data))
   DAMAGED_ERR="$(python3 -I "$XLSX_PY" "$FIX_DIR/damaged.xlsx" 2>&1 >/dev/null)"; DAMAGED_RC=$?
   set -e
   check "xlsx converter: a damaged member exits 2 with one line, not a traceback" \
-    "$([ "$DAMAGED_RC" -eq 2 ] || echo "rc=$DAMAGED_RC")$([ "$(printf '%s\n' "$DAMAGED_ERR" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(printf '%s\n' "$DAMAGED_ERR" | grep -q '^xlsx_to_text: cannot \(read\|parse\) xl/workbook.xml' || echo " line: $DAMAGED_ERR")"
+    "$([ "$DAMAGED_RC" -eq 2 ] || echo "rc=$DAMAGED_RC")$([ "$(printf '%s\n' "$DAMAGED_ERR" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(grep -q '^xlsx_to_text: cannot \(read\|parse\) xl/workbook.xml' <<<"$DAMAGED_ERR" || echo " line: $DAMAGED_ERR")"
   check "xlsx converter: a non-zip file and a zip without a workbook exit 2" \
     "$([ "$NOT_ZIP_RC" -eq 2 ] || echo "not-zip rc=$NOT_ZIP_RC")$([ "$NO_WB_RC" -eq 2 ] || echo " no-workbook rc=$NO_WB_RC")"
   # --- the character cap bounds the work, not only the printed text ----------
@@ -1167,7 +1395,7 @@ PYRUN
     for layout in table cells; do
       CAP_RES="$(python3 -I "$CAP_DIR/run_capped.py" "$XLSX_PY" --max-chars 5000 --layout "$layout" -- "$CAP_DIR/$kind.xlsx" 2>&1 | tail -n 1)"
       read -r _ CAP_PEAK CAP_LEN _ _ _ CAP_LAST <<<"$CAP_RES" || true
-      if printf '%s\n' "$CAP_RES" | grep -qE '^0 [0-9]+ [0-9]+ 1 [0-9]+ [0-9]+ [^ ]+$'; then
+      if grep -qE '^0 [0-9]+ [0-9]+ 1 [0-9]+ [0-9]+ [^ ]+$' <<<"$CAP_RES"; then
         [ "$CAP_PEAK" -le "$CAP_PEAK_LIMIT" ] || MISSING="$MISSING $kind/$layout: peak $CAP_PEAK bytes exceeds $CAP_PEAK_LIMIT"
         [ "$CAP_LEN" -eq 5000 ] || MISSING="$MISSING $kind/$layout: $CAP_LEN characters printed under a cap of 5000, expected exactly 5000"
         [ "$CAP_LAST" = a ] || MISSING="$MISSING $kind/$layout: the output is not cut inside the long string (last character before the notice: $CAP_LAST)"
@@ -1190,7 +1418,7 @@ PYRUN
     python3 -I "$CAP_DIR/make_cap.py" "$kind" "$CAP_DIR/$kind.xlsx"
     res="$(python3 -I "$CAP_DIR/run_capped.py" "$XLSX_PY" "$@" -- "$CAP_DIR/$kind.xlsx" 2>&1 | tail -n 1)"
     read -r _ peak _ _ parses escaped _ <<<"$res" || true
-    if printf '%s\n' "$res" | grep -qE '^0 [0-9]+ [0-9]+ [01] [0-9]+ [0-9]+ [^ ]+$'; then
+    if grep -qE '^0 [0-9]+ [0-9]+ [01] [0-9]+ [0-9]+ [^ ]+$' <<<"$res"; then
       [ "$peak" -le "$CAP_PEAK_LIMIT" ] || MISSING="$MISSING $kind $*: peak $peak bytes exceeds $CAP_PEAK_LIMIT"
       [ "$parses" -le "$max_parses" ] || MISSING="$MISSING $kind $*: $parses XML documents parsed, expected at most $max_parses"
       [ "$escaped" -le "$max_escaped" ] || MISSING="$MISSING $kind $*: $escaped characters escaped, expected at most $max_escaped"
@@ -1246,7 +1474,7 @@ NOTES
   set -e
   CAP_EXACT_LEN="$(python3 -I "$XLSX_PY" --max-chars "$CAP_L" -- "$CAP_DIR/boundary.xlsx" 2>/dev/null | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8")))' || true)"
   check "xlsx converter: a worksheet that starts exactly at --max-chars is not parsed, and skipping it is reported" \
-    "$([ "$CAP_EXACT_RC" -eq 0 ] || echo "rc=$CAP_EXACT_RC")$([ ! -s "$CAP_DIR/exact.err" ] || echo " stderr: $(head -n 1 "$CAP_DIR/exact.err")")$(printf '%s\n' "$CAP_EXACT" | tail -n 1 | grep -qxF -- "[truncated: output exceeds $CAP_L characters; the rest of the workbook was not emitted]" || echo ' no truncation notice on the last line')$(printf '%s\n' "$CAP_EXACT" | grep -qF -- '## Sheet: First' || echo ' first sheet heading missing')$([ "${CAP_EXACT_LEN:-0}" -le "$CAP_L" ] || echo " $CAP_EXACT_LEN characters printed under a cap of $CAP_L")$([ "$CAP_ABOVE_RC" -eq 2 ] || echo " one character above the cap: rc=$CAP_ABOVE_RC, expected 2")$(grep -q '^xlsx_to_text: cannot parse xl/worksheets/sheet2.xml' "$CAP_DIR/above.err" || echo ' one character above the cap: the second sheet was not parsed')"
+    "$([ "$CAP_EXACT_RC" -eq 0 ] || echo "rc=$CAP_EXACT_RC")$([ ! -s "$CAP_DIR/exact.err" ] || echo " stderr: $(head -n 1 "$CAP_DIR/exact.err")")$(printf '%s\n' "$CAP_EXACT" | tail -n 1 | grep -qxF -- "[truncated: output exceeds $CAP_L characters; the rest of the workbook was not emitted]" || echo ' no truncation notice on the last line')$(grep -qF -- '## Sheet: First' <<<"$CAP_EXACT" || echo ' first sheet heading missing')$([ "${CAP_EXACT_LEN:-0}" -le "$CAP_L" ] || echo " $CAP_EXACT_LEN characters printed under a cap of $CAP_L")$([ "$CAP_ABOVE_RC" -eq 2 ] || echo " one character above the cap: rc=$CAP_ABOVE_RC, expected 2")$(grep -q '^xlsx_to_text: cannot parse xl/worksheets/sheet2.xml' "$CAP_DIR/above.err" || echo ' one character above the cap: the second sheet was not parsed')"
   # A sheet that was read keeps its pictures: they are written even when the
   # cap cuts the output before the sheet's ### Images section.
   python3 -I "$XLSX_PY" --max-chars 120 --extract-media "$CAP_DIR/media" -- "$FIX_DIR/fixture.xlsx" >"$CAP_DIR/media.out" 2>/dev/null || true
@@ -1439,19 +1667,19 @@ FAKE
   }
   render_run --chain soffice --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
   check "sheet renderer: --chain soffice with a stand-in writes <out>/fixture.pdf, creates the directory and prints the success line" \
-    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by soffice, [0-9]+ bytes, all sheets\)" || echo " line: $R_OUT")$(head -c 4 "$RENDER_OUT/fixture.pdf" 2>/dev/null | grep -qx '%PDF' || echo ' no %PDF file')"
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by soffice, [0-9]+ bytes, all sheets\)" <<<"$R_OUT" || echo " line: $R_OUT")$(head -c 4 "$RENDER_OUT/fixture.pdf" 2>/dev/null | grep -qx '%PDF' || echo ' no %PDF file')"
   render_run --chain excel --excel-cmd "$FIX_DIR/fake-excel" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
   check "sheet renderer: --chain excel with an interpreter stand-in renders by excel and a second run overwrites the PDF" \
-    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by excel, [0-9]+ bytes, all sheets\)" || echo " line: $R_OUT")$(grep -qF 'fake excel render' "$RENDER_OUT/fixture.pdf" || echo ' PDF not overwritten')"
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by excel, [0-9]+ bytes, all sheets\)" <<<"$R_OUT" || echo " line: $R_OUT")$(grep -qF 'fake excel render' "$RENDER_OUT/fixture.pdf" || echo ' PDF not overwritten')"
   render_run --chain excel --excel-cmd "$FIX_DIR/fake-excel" --sheet Backlog --sheet=Grid --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
   check "sheet renderer: --sheet names the first selected sheet and says the others were not rendered" \
-    "$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by excel, [0-9]+ bytes, sheet Backlog; other selected sheets not rendered\)" || echo "line: $R_OUT")"
+    "$(grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by excel, [0-9]+ bytes, sheet Backlog; other selected sheets not rendered\)" <<<"$R_OUT" || echo "line: $R_OUT")"
   render_run --chain auto --excel-cmd "$FIX_DIR/fake-fail" --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
   check "sheet renderer: auto falls through a failing excel to soffice and prints only the success line" \
-    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by soffice, [0-9]+ bytes, all sheets\)" || echo " line: $R_OUT")$([ "$(printf '%s\n' "$R_OUT" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(printf '%s\n' "$R_OUT" | grep -F -e 'excel:' -e 'boom' || true)"
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(grep -qxE "Rendered: $RENDER_OUT/fixture\.pdf \(by soffice, [0-9]+ bytes, all sheets\)" <<<"$R_OUT" || echo " line: $R_OUT")$([ "$(printf '%s\n' "$R_OUT" | wc -l | tr -d ' ')" = 1 ] || echo ' more than one line')$(printf '%s\n' "$R_OUT" | grep -F -e 'excel:' -e 'boom' || true)"
   render_run --chain auto --excel-cmd "$FIX_DIR/fake-fail" --soffice "$FIX_DIR/fake-fail" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
   check "sheet renderer: every renderer failing exits 0 with each exit status and the first line of its error output" \
-    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxF 'Rendered: no (excel: exit status 3: boom; soffice: exit status 3: boom)' || echo " line: $R_OUT")"
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(grep -qxF 'Rendered: no (excel: exit status 3: boom; soffice: exit status 3: boom)' <<<"$R_OUT" || echo " line: $R_OUT")"
   HANG_PIDS="$TMP_ROOT/hang.pids"
   export HANG_PIDS
   SECONDS=0
@@ -1463,7 +1691,7 @@ FAKE
     if kill -0 "$pid" 2>/dev/null; then STRAY="$STRAY $pid"; kill -9 "$pid" 2>/dev/null || true; fi
   done
   check "sheet renderer: a hanging renderer times out (its whole process group killed) and a non-PDF output is refused" \
-    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(printf '%s\n' "$R_OUT" | grep -qxF 'Rendered: no (excel: timed out after 1 s; soffice: no PDF produced)' || echo " line: $R_OUT")$([ "$HANG_SECS" -le 10 ] || echo " took ${HANG_SECS}s")$([ -s "$TMP_ROOT/hang.pids" ] || echo ' the hanging stand-in never ran')$([ -z "$STRAY" ] || echo " stray processes:$STRAY")"
+    "$([ "$R_RC" -eq 0 ] || echo "rc=$R_RC")$(grep -qxF 'Rendered: no (excel: timed out after 1 s; soffice: no PDF produced)' <<<"$R_OUT" || echo " line: $R_OUT")$([ "$HANG_SECS" -le 10 ] || echo " took ${HANG_SECS}s")$([ -s "$TMP_ROOT/hang.pids" ] || echo ' the hanging stand-in never ran')$([ -z "$STRAY" ] || echo " stray processes:$STRAY")"
   PY3="$(command -v python3)"
   EMPTY_BIN="$TMP_ROOT/empty-bin"
   mkdir -p "$EMPTY_BIN"
@@ -1474,7 +1702,7 @@ FAKE
     pass "sheet renderer: soffice absent from the PATH and the install locations is not installed (skipped: LibreOffice is installed on this host)"
   else
     check "sheet renderer: soffice absent from the PATH and the install locations is not installed" \
-      "$(printf '%s\n' "$NOSOFF_OUT" | grep -qxF 'Rendered: no (soffice: not installed)' || echo "line: $NOSOFF_OUT")"
+      "$(grep -qxF 'Rendered: no (soffice: not installed)' <<<"$NOSOFF_OUT" || echo "line: $NOSOFF_OUT")"
   fi
   printf 'Source: S1\n\nno structure here\n' >"$TMP_ROOT/plain.md"
   python3 -I "$XLSX_PY" "$FIX_DIR/fixture.xlsx" >"$TMP_ROOT/structured.md" 2>/dev/null
@@ -1484,7 +1712,7 @@ FAKE
   GATE_STRUCT="$R_OUT"
   render_run --chain soffice --only-if-structured "$TMP_ROOT/plain.md" --soffice "$FIX_DIR/fake-soffice" --out "$RENDER_OUT" -- "$FIX_DIR/fixture.xlsx"
   check "sheet renderer: --only-if-structured skips a converter output without shapes, images, cells layout or merges, unless a renderer is forced" \
-    "$(printf '%s\n' "$GATE_PLAIN" | grep -qxF 'Rendered: no (not structured)' || echo "plain: $GATE_PLAIN")$(printf '%s\n' "$GATE_STRUCT" | grep -q '(by soffice, ' || echo " structured: $GATE_STRUCT")$(printf '%s\n' "$R_OUT" | grep -q '(by soffice, ' || echo " forced: $R_OUT")"
+    "$(grep -qxF 'Rendered: no (not structured)' <<<"$GATE_PLAIN" || echo "plain: $GATE_PLAIN")$(grep -q '(by soffice, ' <<<"$GATE_STRUCT" || echo " structured: $GATE_STRUCT")$(grep -q '(by soffice, ' <<<"$R_OUT" || echo " forced: $R_OUT")"
   render_run --out "$RENDER_OUT" -- "$FIX_DIR/no-such.xlsx"
   MISSING_RC=$R_RC
   MISSING_ERR=$R_OUT
@@ -1510,7 +1738,7 @@ FAKE
 t = open(sys.argv[1], encoding="utf-8", newline="").read()
 print("Converted: %d characters, %d lines, truncated: %s" % (len(t), t.count("\n") + (1 if t and not t.endswith("\n") else 0), "yes" if any(l.startswith("[truncated:") for l in t.split("\n")) else "no"))' "$OUTD/out.md")"
   check "xlsx converter --out: the file is the stdout text byte for byte, and stdout is one Converted: line with its characters, lines and truncation" \
-    "$([ "$CONV_RC" -eq 0 ] || echo "rc=$CONV_RC")$(cmp -s "$OUTD/out.md" "$OUTD/stdout.md" || echo ' file differs from stdout')$([ "$CONV_LINE" = "$CONV_WANT" ] || echo " line='$CONV_LINE' want='$CONV_WANT'")$(printf '%s\n' "$CONV_LINE2" | grep -qxE 'Converted: [0-9]+ characters, [0-9]+ lines, truncated: yes' || echo " capped line='$CONV_LINE2'")"
+    "$([ "$CONV_RC" -eq 0 ] || echo "rc=$CONV_RC")$(cmp -s "$OUTD/out.md" "$OUTD/stdout.md" || echo ' file differs from stdout')$([ "$CONV_LINE" = "$CONV_WANT" ] || echo " line='$CONV_LINE' want='$CONV_WANT'")$(grep -qxE 'Converted: [0-9]+ characters, [0-9]+ lines, truncated: yes' <<<"$CONV_LINE2" || echo " capped line='$CONV_LINE2'")"
   # A workbook holding Japanese text, an em dash, an emoji and an astral
   # character (written with \u escapes, so this file stays English), run with
   # an ASCII stdout: -X utf8=0 under LC_ALL=C keeps Python from switching to
@@ -1538,7 +1766,7 @@ PYJA
   python3 -I "$XLSX_PY" -- "$OUTD/ja.xlsx" >"$OUTD/ja-utf8.md" 2>/dev/null
   set -e
   check "xlsx converter: a Japanese workbook under an ASCII stdout prints UTF-8 with line feeds (stdout and --out alike) instead of failing" \
-    "$([ "$JA_RC" -eq 0 ] || echo "stdout rc=$JA_RC: $(tail -n 1 "$OUTD/ja-stdout.err")")$(grep -qF -- "$JA_TEXT" "$OUTD/ja-stdout.md" || echo ' stdout lacks the text')$(cmp -s "$OUTD/ja-stdout.md" "$OUTD/ja-utf8.md" || echo ' stdout differs from a UTF-8 run')$([ "$JA_OUT_RC" -eq 0 ] || echo " --out rc=$JA_OUT_RC")$(cmp -s "$OUTD/ja-out.md" "$OUTD/ja-utf8.md" || echo ' --out file differs from a UTF-8 run')$(printf '%s\n' "$JA_LINE" | grep -qxE 'Converted: [0-9]+ characters, [0-9]+ lines, truncated: no' || echo " line='$JA_LINE'")$([ "$(LC_ALL=C grep -c $'\r' "$OUTD/ja-out.md" || true)" = 0 ] || echo ' CR in --out file')"
+    "$([ "$JA_RC" -eq 0 ] || echo "stdout rc=$JA_RC: $(tail -n 1 "$OUTD/ja-stdout.err")")$(grep -qF -- "$JA_TEXT" "$OUTD/ja-stdout.md" || echo ' stdout lacks the text')$(cmp -s "$OUTD/ja-stdout.md" "$OUTD/ja-utf8.md" || echo ' stdout differs from a UTF-8 run')$([ "$JA_OUT_RC" -eq 0 ] || echo " --out rc=$JA_OUT_RC")$(cmp -s "$OUTD/ja-out.md" "$OUTD/ja-utf8.md" || echo ' --out file differs from a UTF-8 run')$(grep -qxE 'Converted: [0-9]+ characters, [0-9]+ lines, truncated: no' <<<"$JA_LINE" || echo " line='$JA_LINE'")$([ "$(LC_ALL=C grep -c $'\r' "$OUTD/ja-out.md" || true)" = 0 ] || echo ' CR in --out file')"
   set +e
   BAD_OUT_ERR="$(python3 -I "$XLSX_PY" --out "$OUTD/no-such-dir/x.md" -- "$FIX_DIR/fixture.xlsx" 2>&1 >/dev/null)"; BAD_OUT_RC=$?
   cp "$FIX_DIR/fixture.xlsx" "$OUTD/self.xlsx"
@@ -1566,7 +1794,7 @@ PYJA
     RO_OUT="$(python3 -I "$RENDER_PY" --chain soffice --soffice "$FIX_DIR/fake-soffice" --out "$OUTD/render-ro" -- "$FIX_DIR/fixture.xlsx" 2>&1)"; RO_RC=$?
     set -e
     chmod 755 "$OUTD/render-ro"
-    RO_DETAIL="$([ "$RO_RC" -eq 0 ] || echo " read-only rc=$RO_RC")$(printf '%s\n' "$RO_OUT" | grep -qxE 'Rendered: no \(cannot write under --out: [^()]+\)' || echo " read-only line='$RO_OUT'")"
+    RO_DETAIL="$([ "$RO_RC" -eq 0 ] || echo " read-only rc=$RO_RC")$(grep -qxE 'Rendered: no \(cannot write under --out: [^()]+\)' <<<"$RO_OUT" || echo " read-only line='$RO_OUT'")"
   fi
   # The script runs in-process with an ASCII stderr (what a Windows console
   # in a legacy code page gives it) and a missing workbook whose name is
@@ -1587,7 +1815,7 @@ sys.stderr.flush()
 want = "\u672a\u4f5c\u6210.xlsx".encode("utf-8")
 sys.stdout.write("rc=%s utf8=%s\n" % (code, "yes" if want in buf.getvalue() else "no"))' "$RENDER_PY" "$OUTD" 2>&1)"
   check "sheet renderer: a PDF that cannot be written and an --out where nothing can be created give one Rendered: no line (exit 0); a Japanese path on an ASCII stderr is written as UTF-8" \
-    "$([ "$BLOCK_RC" -eq 0 ] || echo "blocked rc=$BLOCK_RC")$(printf '%s\n' "$BLOCK_OUT" | grep -qxE 'Rendered: no \(soffice: cannot write the PDF: [^()]+\)' || echo " blocked line='$BLOCK_OUT'")$RO_DETAIL$([ "$JA_R_OUT" = "rc=2 utf8=yes" ] || echo " ASCII stderr: $JA_R_OUT")"
+    "$([ "$BLOCK_RC" -eq 0 ] || echo "blocked rc=$BLOCK_RC")$(grep -qxE 'Rendered: no \(soffice: cannot write the PDF: [^()]+\)' <<<"$BLOCK_OUT" || echo " blocked line='$BLOCK_OUT'")$RO_DETAIL$([ "$JA_R_OUT" = "rc=2 utf8=yes" ] || echo " ASCII stderr: $JA_R_OUT")"
 else
   fail "xlsx converter checks" "python3 is not on the PATH"
 fi
@@ -1598,12 +1826,12 @@ ARGS_SECTION="$(awk '/^## Argument Parsing$/ {a = 1; next} a && /^## / {a = 0} a
 TERM_ENTRY="$(grep -E '^- \*\*Policy kill switch\*\*:' "$GEN_RUBRIC" || true)"
 MISSING=""
 for key in oracle_verification independent_evidence failure_class_coverage peer_uniformity; do
-  printf '%s\n' "$ARGS_SECTION" | grep -qF -- "\`$key\`" || MISSING="$MISSING SKILL.md:'$key'"
+  grep -qF -- "\`$key\`" <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md:'$key'"
   grep -qF -- "constraint_$key" "$GEN_RUBRIC" || MISSING="$MISSING rubric:'constraint_$key'"
 done
 # shellcheck disable=SC2016  # literal backticks
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`constraint_<key>=off`' || MISSING="$MISSING SKILL.md:'constraint_<key>=off'"
-printf '%s\n' "$TERM_ENTRY" | grep -qF -- 'constraint_<key>=off' || MISSING="$MISSING rubric-Terminology:'constraint_<key>=off'"
+grep -qF -- '`constraint_<key>=off`' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md:'constraint_<key>=off'"
+grep -qF -- 'constraint_<key>=off' <<<"$TERM_ENTRY" || MISSING="$MISSING rubric-Terminology:'constraint_<key>=off'"
 grep -qF -- 'Constraints:' "$SKILL_DIR/references/agent-spawn-prompts.md" || MISSING="$MISSING agent-spawn-prompts.md:'Constraints:'"
 for f in planner ticket-evaluator; do
   grep -qF -- 'Constraints:' "$SKILL_DIR/references/agents/$f.md" || MISSING="$MISSING agents/$f.md:'Constraints:'"
@@ -1716,19 +1944,19 @@ check "every shipped agent prompt is frontmatter-free" \
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks, braces and dollars
 for needle in '**Platform item URLs**' '**access channel**' '**Best guess**' '**Auth**' '**Sign-in rule**' 'source_content_path=' 'source_auth_scheme=' 'content_type=' 'auth_scheme=' '{scratch}/template-derived.json' 'Derived: input from' 'Derived: output from' 'Derived:' 'Tried: input <item URL without query> via <channel>' 'Probe: output <item URL without query> via <channel>' '**read probe**' 'sign-in page even with a 2xx status' 'once a create has been attempted, nothing falls through' '**re-run tokens**' 'it never reads a value and never prints one' 'the name it uses is always printed on the `Resolved:` line' 'never written into the dossier, a ticket, the Final summary or a spawn prompt' '`source=cli:<command>`' '`source=browser:<item URL>`' '`destination=cli:<command template>`' '`destination=browser:<item URL>`' 'read every way instead of being asked about' 'percent-encoded' 'A `cli:` command (a source or a destination template, typed or derived) is exempt' 'ERROR: auth_scheme= must be bearer, basic or basic-token' 'ERROR: source_auth_scheme= must be bearer, basic or basic-token' 'ERROR: content_type= applies only to an api: destination' 'ERROR: auth_scheme= applies only to an api: destination' 'ERROR: source_auth_scheme= applies only to an api: source'; do
-  printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+  grep -qF -- "$needle" <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
 done
 HOST_SECTION="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks and dollars
 for needle in 'spells out the tokens to pass' 'the **browser tool**' 'never required' 'no `browser:` channel is ever a candidate' 'with one carve-out: a `cli:` command, typed or derived, runs as given and is printed in full before it runs' '`$VAR` references are allowed' 'control characters and newlines are refused' 'may name an account'; do
-  printf '%s\n' "$HOST_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Host-notes:'$needle'"
+  grep -qF -- "$needle" <<<"$HOST_SECTION" || MISSING="$MISSING SKILL.md-Host-notes:'$needle'"
 done
 # shellcheck disable=SC2016  # literal backticks
-printf '%s\n' "$HOST_SECTION" | grep -qF -- 'any other role except the URL-fetch tool → `ERROR: this host offers no <role>`' || MISSING="$MISSING SKILL.md-Host-notes:'browser tool exempt from the missing-role ERROR'"
+grep -qF -- 'any other role except the URL-fetch tool → `ERROR: this host offers no <role>`' <<<"$HOST_SECTION" || MISSING="$MISSING SKILL.md-Host-notes:'browser tool exempt from the missing-role ERROR'"
 INTAKE_SECTION="$(awk '/^## Intake$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks
 for needle in 'source_content_path=' 'Derived from:' '`cli:` by one run of the command' '`browser:` by the browser tool' 'Tried:' 'a `cli:` command'"'"'s first word'; do
-  printf '%s\n' "$INTAKE_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Intake:'$needle'"
+  grep -qF -- "$needle" <<<"$INTAKE_SECTION" || MISSING="$MISSING SKILL.md-Intake:'$needle'"
 done
 # shellcheck disable=SC2016  # literal backticks, braces and dollars
 for needle in '### A platform item named by URL in prose' '## `cli:<command>`' '## `browser:<url>`' 'source_content_path=' 'source_auth_scheme=basic' 'Derived from: <' 'has no content at <path>' '**A sign-in page is a failed read.**' 'Tried: input <item URL without query> via <channel>' 'Kind: file | dir | mcp | api | cli | browser' 'A value that begins with `cli:` is always one spec' 'never a transcription of a screenshot' "printf 'header = \"Authorization: Basic %s\"\\n' \"\$(printf '%s' \"\$VAR\" | base64 | tr -d '\\n')\" | curl" 'lines 1-7'; do
@@ -1756,8 +1984,8 @@ for needle in 'source_content_path=' 'Derived:' 'inside a longer template string
   grep -qF -- "$needle" "$MANIFEST_DIR/README.md" || MISSING="$MISSING generator-README:'$needle'"
 done
 # shellcheck disable=SC2016  # literal backticks
-printf '%s\n' "$DESC" | grep -qF -- 'a signed-in command-line' || MISSING="$MISSING description:'signed-in command-line client'"
-printf '%s\n' "$DESC" | grep -qF -- 'browser-automation tool of the session' || MISSING="$MISSING description:'browser-automation tool of the session'"
+grep -qF -- 'a signed-in command-line' <<<"$DESC" || MISSING="$MISSING description:'signed-in command-line client'"
+grep -qF -- 'browser-automation tool of the session' <<<"$DESC" || MISSING="$MISSING description:'browser-automation tool of the session'"
 # The confidence floor and the never-invent rule are replaced by the best
 # guess and the set/unset name probe; their literals must be gone everywhere.
 STALE_HITS="$(grep -rnF -e 'cannot derive the HTTP API' -e 'never invents an environment-variable name' -e '**Confidence floor**' -e 'needs a token; re-run with' -e 'needs a token`' "$SKILL_DIR" | cut -c1-160 || true)"
@@ -1771,8 +1999,8 @@ check "platform item URLs in prose: access channels, best guess with Tried:/Prob
 ERR_SECTION="$(awk '/^## Error Handling$/ {h = 1; next} h && /^## / {h = 0} h' "$SKILL_MD")"
 MISSING=""
 while IFS='|' read -r where needle; do
-  case "$where" in *a*) printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Argument-Parsing:'$needle'" ;; esac
-  case "$where" in *e*) printf '%s\n' "$ERR_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Error-Handling:'$needle'" ;; esac
+  case "$where" in *a*) grep -qF -- "$needle" <<<"$ARGS_SECTION" || MISSING="$MISSING Argument-Parsing:'$needle'" ;; esac
+  case "$where" in *e*) grep -qF -- "$needle" <<<"$ERR_SECTION" || MISSING="$MISSING Error-Handling:'$needle'" ;; esac
   case "$where" in *s*) grep -qF -- "$needle" "$SOURCES_MD" || MISSING="$MISSING sources.md:'$needle'" ;; esac
   case "$where" in *d*) grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'" ;; esac
 done <<'CHANNEL_ERRORS'
@@ -1864,7 +2092,7 @@ for kind in mcp api cli browser; do
   sect="$(awk -v k="$kind" 'index($0, "## `" k ":") == 1 {s = 1; print; next} s && /^## / {s = 0} s' "$DEST_MD")"
   # shellcheck disable=SC2016  # literal backticks
   for needle in '**Confirmation possible.**' 'ERROR: remote delivery needs an interactive confirmation; re-run with confirm=yes to skip it' 'ERROR: remote delivery declined; nothing created'; do
-    printf '%s\n' "$sect" | grep -qF -- "$needle" || MISSING="$MISSING destinations.md-$kind:'$needle'"
+    grep -qF -- "$needle" <<<"$sect" || MISSING="$MISSING destinations.md-$kind:'$needle'"
   done
 done
 check "rounds=, max_tickets= (Max tickets: line, overflow file), the B1 preflight confirmation check, the declined literal, follow-up reads, per-source derived values and the text probe are documented where they apply" "$MISSING"
@@ -1899,16 +2127,16 @@ case "$HINT_VALUE" in *'[confirm=yes|no]'*) ;; *) MISSING="$MISSING argument-hin
 case "$USAGE_VALUE" in *'[confirm=yes|no]'*) ;; *) MISSING="$MISSING Usage:'[confirm=yes|no]'" ;; esac
 grep -qF -- '[confirm=yes|no]' "$README_MD" || MISSING="$MISSING README.md:'[confirm=yes|no]'"
 HOST_SECTION="$(awk '/^## Host notes$/ {a = 1; next} a && /^## / {a = 0} a' "$SKILL_MD")"
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$IMPLIED_NOTE" || MISSING="$MISSING SKILL.md-Argument-Parsing:NOTE"
-printf '%s\n' "$HOST_SECTION" | grep -qF -- "$IMPLIED_NOTE" || MISSING="$MISSING SKILL.md-Host-notes:NOTE"
+grep -qF -- "$IMPLIED_NOTE" <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:NOTE"
+grep -qF -- "$IMPLIED_NOTE" <<<"$HOST_SECTION" || MISSING="$MISSING SKILL.md-Host-notes:NOTE"
 [ "$(grep -cF -- "$IMPLIED_NOTE" "$SKILL_MD" || true)" -ge 3 ] || MISSING="$MISSING SKILL.md:NOTE (Argument Parsing, Error Handling, Host notes)"
 grep -qF -- "$IMPLIED_NOTE" "$SKILL_DIR/references/write-path-templates.md" || MISSING="$MISSING write-path-templates.md:NOTE (Final summary)"
 for kind in mcp api cli browser; do
   sect="$(awk -v k="$kind" 'index($0, "## `" k ":") == 1 {s = 1; print; next} s && /^## / {s = 0} s' "$DEST_MD")"
   # shellcheck disable=SC2016  # literal backticks
-  printf '%s\n' "$sect" | grep -qF -- 'When the request carries `confirm=no` and this host has no ask-user tool' || MISSING="$MISSING destinations.md-$kind:'confirm=no preflight stop'"
+  grep -qF -- 'When the request carries `confirm=no` and this host has no ask-user tool' <<<"$sect" || MISSING="$MISSING destinations.md-$kind:'confirm=no preflight stop'"
   # shellcheck disable=SC2016  # literal backticks
-  printf '%s\n' "$sect" | grep -qF -- 'Only `confirm=yes`, typed or implied, skips the question.' || MISSING="$MISSING destinations.md-$kind:'typed or implied skip'"
+  grep -qF -- 'Only `confirm=yes`, typed or implied, skips the question.' <<<"$sect" || MISSING="$MISSING destinations.md-$kind:'typed or implied skip'"
 done
 check "implied confirm=yes on a host with no ask-user tool: [confirm=yes|no], the NOTE line where it is printed and repeated, and the confirm=no preflight stop" "$MISSING"
 
@@ -1919,12 +2147,12 @@ WP_MD="$SKILL_DIR/references/write-path-templates.md"
 DELIVERY_SECTION="$(awk '/^## Delivery$/ {d = 1; next} d && /^## / {d = 0} d' "$SKILL_MD")"
 # shellcheck disable=SC2016  # literal backticks and braces
 for needle in '`rm -rf "{scratch}"`' '`[ -d "{scratch}" ]`' '`rmdir .local/create-ticket-scratch`' '`rmdir .local`' 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' 'Scratch: removed' 'Scratch: <{scratch} path> (kept: <reason>)' '`keep_scratch=yes`, `error`, `a ticket was delivered with a FAIL verdict` and `overflow findings`' 'is expected and ignored silently' 'the only delete commands of this skill'; do
-  printf '%s\n' "$DELIVERY_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Delivery:'$needle'"
+  grep -qF -- "$needle" <<<"$DELIVERY_SECTION" || MISSING="$MISSING SKILL.md-Delivery:'$needle'"
 done
 [ "$(grep -cF -- 'WARNING: could not remove the scratch directory <{scratch}> (<reason>)' "$SKILL_MD" || true)" -ge 2 ] || MISSING="$MISSING SKILL.md:WARNING (Delivery and Error Handling)"
 # shellcheck disable=SC2016  # literal backticks
 for needle in '- `keep_scratch=yes|no`:' 'ERROR: keep_scratch= must be yes or no'; do
-  printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
+  grep -qF -- "$needle" <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'"
 done
 # shellcheck disable=SC2016  # literal backticks
 grep -qF -- '| Unknown `keep_scratch=` value | `ERROR: keep_scratch= must be yes or no` |' "$SKILL_MD" || MISSING="$MISSING SKILL.md-Error-Handling:keep_scratch row"
@@ -1939,13 +2167,13 @@ for needle in 'Scratch: removed' 'Scratch: .local/create-ticket-scratch/run.k3Qz
 done
 # shellcheck disable=SC2016  # literal backticks
 ONE_DEST='**One destination.** A run delivers to exactly one destination. When the destination is not `local:`, no `ticket.md`, `split-plan.md` or counter file is written anywhere, and the default `.local/tickets` directory is never created.'
-[ "$(printf '%s\n' "$DELIVERY_SECTION" | awk 'NF {print; exit}' | grep -cF -- "$ONE_DEST" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md-Delivery:'One destination' is not the first paragraph"
+[ "$(awk 'NF {print; exit}' <<<"$DELIVERY_SECTION" | grep -cF -- "$ONE_DEST" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md-Delivery:'One destination' is not the first paragraph"
 RULES_SECTION="$(awk '/^## Rules for every destination$/ {r = 1; next} r && /^## / {r = 0} r' "$DEST_MD")"
-[ "$(printf '%s\n' "$RULES_SECTION" | awk 'NF {print; exit}' | grep -cF -- "- $ONE_DEST" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:'One destination' is not the first rule"
+[ "$(awk 'NF {print; exit}' <<<"$RULES_SECTION" | grep -cF -- "- $ONE_DEST" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:'One destination' is not the first rule"
 # shellcheck disable=SC2016  # literal backticks
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- 'Absent, and no output statement in the request → `local:.local/tickets`' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Absent, and no output statement'"
+grep -qF -- 'Absent, and no output statement in the request → `local:.local/tickets`' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'Absent, and no output statement'"
 # shellcheck disable=SC2016  # literal backticks and braces
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- 'the `Resolved:` line is mandatory output and Phase 1 must not start before it is printed; a derived destination'"'"'s body template is written only to `{scratch}/template-derived.json` (no other file name)' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Resolved: mandatory'"
+grep -qF -- 'the `Resolved:` line is mandatory output and Phase 1 must not start before it is printed; a derived destination'"'"'s body template is written only to `{scratch}/template-derived.json` (no other file name)' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'Resolved: mandatory'"
 # shellcheck disable=SC2016  # literal backticks
 grep -qF -- 'the only line this skill adds to `.gitignore` for them is the `**/.local/*` line' "$DEST_MD" || MISSING="$MISSING destinations.md:'**/.local/*' tickets sentence"
 check "keep_scratch=, the scratch removal commands and its WARNING, the Scratch: removed / (kept: ...) forms, the **/.local/* line and the One destination rule are stated at every site" "$MISSING"
@@ -1955,17 +2183,17 @@ check "keep_scratch=, the scratch removal commands and its WARNING, the Scratch:
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks and braces
 NO_COPY='For a destination other than `local:`, no copy of any ticket is saved to a local file (not under `.local/tickets`, not anywhere else outside `{scratch}`), not even as a backup or for reference.'
-[ "$(printf '%s\n' "$DELIVERY_SECTION" | awk 'NF {print; exit}' | grep -cF -- "$NO_COPY" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md-Delivery:first paragraph"
-[ "$(printf '%s\n' "$RULES_SECTION" | awk 'NF {print; exit}' | grep -cF -- "$NO_COPY" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:first rule"
+[ "$(awk 'NF {print; exit}' <<<"$DELIVERY_SECTION" | grep -cF -- "$NO_COPY" || true)" -eq 1 ] || MISSING="$MISSING SKILL.md-Delivery:first paragraph"
+[ "$(awk 'NF {print; exit}' <<<"$RULES_SECTION" | grep -cF -- "$NO_COPY" || true)" -eq 1 ] || MISSING="$MISSING destinations.md:first rule"
 grep -qF -- 'saves no copy of any ticket to a local file' "$SKILL_DIR/README.md" || MISSING="$MISSING README.md"
 check "the One destination rule forbids any local copy of a ticket for a destination other than local:" "$MISSING"
 # The same run ended with a free-form recap instead of the summary block.
 MISSING=""
 # shellcheck disable=SC2016  # literal backticks
 RECAP_RULE='with its literal heading and its `Destination:` and `Scratch:` lines (each in the variants that carry it), and is never replaced by a free-form recap.'
-printf '%s\n' "$DELIVERY_SECTION" | grep -qF -- "$RECAP_RULE" || MISSING="$MISSING SKILL.md-Delivery"
+grep -qF -- "$RECAP_RULE" <<<"$DELIVERY_SECTION" || MISSING="$MISSING SKILL.md-Delivery"
 FINAL_FMT="$(awk '/^## Final summary format/ {f = 1; next} f && /^## / {f = 0} f' "$WP_MD")"
-printf '%s\n' "$FINAL_FMT" | grep -qF -- "$RECAP_RULE" || MISSING="$MISSING write-path-templates.md:Final-summary-format"
+grep -qF -- "$RECAP_RULE" <<<"$FINAL_FMT" || MISSING="$MISSING write-path-templates.md:Final-summary-format"
 grep -qF -- 'is never replaced by a free-form recap' "$SKILL_DIR/README.md" || MISSING="$MISSING README.md"
 check "the Final summary block keeps its stated format, heading, Destination: and Scratch: lines and is never replaced by a free-form recap" "$MISSING"
 # shellcheck disable=SC2016  # literal backticks
@@ -1978,8 +2206,8 @@ SHELL_BULLET="$(printf '%s\n' "$HOST_NOTES" | grep -F -- '- **Shell commands**:'
 APPROVE_PARA="$(grep -F -- 'Approve only the commands the steps name' "$SKILL_DIR/README.md" || true)"
 # shellcheck disable=SC2016  # literal backticks
 for cmd in '`date`' '`mktemp`' '`mkdir`' '`ls`' '`mv`' '`cp`' '`command mv`' '`command cp`' '`sed`' '`printf`' '`git`' '`command`' '`curl`' '`jq`' '`base64`' '`tr`' '`dd`' '`od`' '`grep`' '`rm`' '`rmdir`' '`python3`' '`python`' '`py -3`' '`[`' '`echo`' '`case`'; do
-  printf '%s\n' "$SHELL_BULLET" | grep -qF -- "$cmd" || MISSING="$MISSING Host-notes:$cmd"
-  printf '%s\n' "$APPROVE_PARA" | grep -qF -- "$cmd" || MISSING="$MISSING README:$cmd"
+  grep -qF -- "$cmd" <<<"$SHELL_BULLET" || MISSING="$MISSING Host-notes:$cmd"
+  grep -qF -- "$cmd" <<<"$APPROVE_PARA" || MISSING="$MISSING README:$cmd"
 done
 check "the Host notes and README command lists agree and hold rm, rmdir, grep, cp and sed" "$MISSING"
 
@@ -2169,15 +2397,15 @@ SKILL.md|before any create, and for `local:` before `split-plan.md` and the coun
 README.md|Before a ticket is created remotely or kept locally
 NEEDLES
 # shellcheck disable=SC2016  # literal backticks and braces
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- 'body <format>[, field markup declared in the request]' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Derived: output from ... body <format>'"
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`body_format=markdown|markdown-escaped|html`' || MISSING="$MISSING SKILL.md-Argument-Parsing:'body_format= option'"
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`content_type=...`, `auth_env=...`, `auth_scheme=...`, `body_format=...`' || MISSING="$MISSING SKILL.md-Argument-Parsing:'Resolved: body_format='"
-printf '%s\n' "$ARGS_SECTION" | grep -qF -- '`references/destinations.md` **Printed URLs**' || MISSING="$MISSING SKILL.md-Argument-Parsing:'query kept, Printed URLs'"
+grep -qF -- 'body <format>[, field markup declared in the request]' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'Derived: output from ... body <format>'"
+grep -qF -- '`body_format=markdown|markdown-escaped|html`' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'body_format= option'"
+grep -qF -- '`content_type=...`, `auth_env=...`, `auth_scheme=...`, `body_format=...`' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'Resolved: body_format='"
+grep -qF -- '`references/destinations.md` **Printed URLs**' <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'query kept, Printed URLs'"
 for kind in mcp api cli browser; do
   sect="$(awk -v k="$kind" 'index($0, "## `" k ":") == 1 {s = 1; print; next} s && /^## / {s = 0} s' "$DEST_MD")"
   printf '%s\n' "$sect" | grep -F -- '(derived: destination=' | grep -qF -- 'body_format=...)' || MISSING="$MISSING destinations.md-$kind:'(derived: ... body_format=...)'"
-  printf '%s\n' "$sect" | grep -qF -- 'body_format=<format>)?' || MISSING="$MISSING destinations.md-$kind:'question body_format=<format>'"
-  printf '%s\n' "$sect" | grep -qF -- '**Stored text check**' || MISSING="$MISSING destinations.md-$kind:'Stored text check step'"
+  grep -qF -- 'body_format=<format>)?' <<<"$sect" || MISSING="$MISSING destinations.md-$kind:'question body_format=<format>'"
+  grep -qF -- '**Stored text check**' <<<"$sect" || MISSING="$MISSING destinations.md-$kind:'Stored text check step'"
 done
 grep -qxF -- $'scripts/ticket_body.py\t-' "$MANIFEST_DIR/files.tsv" || MISSING="$MISSING files.tsv:'scripts/ticket_body.py'"
 for needle in 'scripts/ticket_body.py' 'overrides/scripts-ticket-body.md' 'body_format=markdown|markdown-escaped|html' 'basic-token' '**Whole text, never re-typed**' '**Stored text check**' 'rm -rf "{scratch}"'; do
@@ -2192,7 +2420,7 @@ DF_LN="$(grep -n '^\*\*Draft file\*\*' "$SKILL_DIR/references/agent-spawn-prompt
 PART_LN="$(grep -n '^### Partition is owned by the decomposer' "$SKILL_DIR/references/agent-spawn-prompts.md" | cut -d: -f1)"
 P4_LN="$(grep -n '^## Phase 4' "$SKILL_DIR/references/agent-spawn-prompts.md" | cut -d: -f1)"
 check "Step DL-3 points to Whole text, never re-typed, and the Draft file rule sits in Phase 3 of the spawn prompts" \
-  "$(printf '%s\n' "$DL3_SECTION" | grep -qF -- '**Whole text, never re-typed**' || echo 'DL-3 pointer missing')$({ [ -n "$DF_LN" ] && [ -n "$PART_LN" ] && [ -n "$P4_LN" ] && [ "$DF_LN" -lt "$PART_LN" ] && [ "$PART_LN" -lt "$P4_LN" ]; } || echo " draft-file=$DF_LN partition=$PART_LN phase4=$P4_LN")"
+  "$(grep -qF -- '**Whole text, never re-typed**' <<<"$DL3_SECTION" || echo 'DL-3 pointer missing')$({ [ -n "$DF_LN" ] && [ -n "$PART_LN" ] && [ -n "$P4_LN" ] && [ "$DF_LN" -lt "$PART_LN" ] && [ "$PART_LN" -lt "$P4_LN" ]; } || echo " draft-file=$DF_LN partition=$PART_LN phase4=$P4_LN")"
 
 # The Section check sits between the retry planner (step b) and the retry
 # evaluator (step c) of the retry loop.
@@ -2208,8 +2436,8 @@ check "the Section check follows the retry planner and precedes the retry evalua
 # and in the Error Handling table (e).
 MISSING=""
 while IFS='|' read -r where needle; do
-  case "$where" in *a*) printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Argument-Parsing:'$needle'" ;; esac
-  case "$where" in *e*) printf '%s\n' "$ERR_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING Error-Handling:'$needle'" ;; esac
+  case "$where" in *a*) grep -qF -- "$needle" <<<"$ARGS_SECTION" || MISSING="$MISSING Argument-Parsing:'$needle'" ;; esac
+  case "$where" in *e*) grep -qF -- "$needle" <<<"$ERR_SECTION" || MISSING="$MISSING Error-Handling:'$needle'" ;; esac
   case "$where" in *d*) grep -qF -- "$needle" "$DEST_MD" || MISSING="$MISSING destinations.md:'$needle'" ;; esac
   case "$where" in *p*) grep -qF -- "$needle" "$SPAWN_MD" || MISSING="$MISSING agent-spawn-prompts.md:'$needle'" ;; esac
 done <<'BODY_LITERALS'
@@ -2569,7 +2797,7 @@ PYTB
   has_tb() {
     local text="$1" n
     shift
-    for n in "$@"; do printf '%s\n' "$text" | grep -qF -- "$n" || printf " missing:'%s'" "$n"; done
+    for n in "$@"; do grep -qF -- "$n" <<<"$text" || printf " missing:'%s'" "$n"; done
   }
   tb_check() {
     python3 -I "$TB_PY" check --sent "$1" --stored "$2" 2>&1
@@ -2610,7 +2838,7 @@ p.close()
 print(" ".join(p.bad + ["unclosed %s" % t for t in p.stack]))
 PYTAGS
   check "ticket_body.py convert --to html: one Converted: line, the structure kept, every text < escaped, the comment dropped, only converter tags" \
-    "$([ "$CONV_RC" -eq 0 ] || echo "rc=$CONV_RC")$(printf '%s\n' "$CONV_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo " line='$CONV_OUT'")$(has_tb "$HTML_OUT" '<h2>fixture-part-1: Limit batch size of the importer</h2>' '<td><strong>P1 | P2 | P3</strong></td>' '<code>a | b</code>' 'count&lt;limit is false' '<code>&lt;surface name&gt;</code>' 'the &lt;surface name&gt; placeholder' '(&gt;= 1 row)' 'oversized -&gt; bounded' '<li><code>import</code> rejects' '<pre><code class="language-bash">| not | a | table |' 'python3 -m importer --limit 10 &lt;input.csv' '<li>first nested item</li>')$(printf '%s\n' "$HTML_OUT" | grep -nE '<surface|<limit|<input|reviewer note' || true)$(python3 -I "$TBD/tags.py" "$TBD/ticket.html")"
+    "$([ "$CONV_RC" -eq 0 ] || echo "rc=$CONV_RC")$(grep -qxE 'Converted: html \([0-9]+ characters\)' <<<"$CONV_OUT" || echo " line='$CONV_OUT'")$(has_tb "$HTML_OUT" '<h2>fixture-part-1: Limit batch size of the importer</h2>' '<td><strong>P1 | P2 | P3</strong></td>' '<code>a | b</code>' 'count&lt;limit is false' '<code>&lt;surface name&gt;</code>' 'the &lt;surface name&gt; placeholder' '(&gt;= 1 row)' 'oversized -&gt; bounded' '<li><code>import</code> rejects' '<pre><code class="language-bash">| not | a | table |' 'python3 -m importer --limit 10 &lt;input.csv' '<li>first nested item</li>')$(printf '%s\n' "$HTML_OUT" | grep -nE '<surface|<limit|<input|reviewer note' || true)$(python3 -I "$TBD/tags.py" "$TBD/ticket.html")"
   python3 -I -c 'import json, sys; json.dump({"id": 7, "fields": {"title": "x", "description": open(sys.argv[1], encoding="utf-8").read()}}, open(sys.argv[2], "w"))' "$TBD/ticket.html" "$TBD/s-json-html.json"
   python3 -I "$TB_PY" convert --to markdown-escaped --in "$TBD/ticket.md" --out "$TBD/s-escaped.md" >/dev/null
   python3 -I -c 'import html, sys; open(sys.argv[2], "w", encoding="utf-8").write(html.unescape(open(sys.argv[1], encoding="utf-8").read()))' "$TBD/s-escaped.md" "$TBD/s-escaped-decoded.md"
@@ -2626,14 +2854,14 @@ PYTAGS
   SURFACE="$(tb_check "$TBD/ticket.md" "$TBD/s-surface.md")"
   IDURL="$(tb_check "$TBD/ticket.md" "$TBD/s-idurl.json")"
   check "ticket_body.py check: a text swallowed from <limit to -> is incomplete and names the heading it lost" \
-    "$(printf '%s\n' "$SWALLOW" | grep -qE '^Body check: incomplete \(missing [0-9]+ of [0-9]+ words in 1 spans and 2 angle-bracket texts; headings missing: "Failure-Class Coverage \(Gate 9\)"; longest span under "Acceptance Criteria": "limit is false' || echo "got: $SWALLOW")"
+    "$(grep -qE '^Body check: incomplete \(missing [0-9]+ of [0-9]+ words in 1 spans and 2 angle-bracket texts; headings missing: "Failure-Class Coverage \(Gate 9\)"; longest span under "Acceptance Criteria": "limit is false' <<<"$SWALLOW" || echo "got: $SWALLOW")"
   SECTION_EXCERPT="$(printf '%s\n' "$SECTION" | sed -n 's/.*longest span under "Implementation Notes": "\(.*\)")$/\1/p')"
   check "ticket_body.py check: a whole ### section removed is incomplete, with that heading listed and its excerpt cut to 80 characters" \
-    "$(printf '%s\n' "$SECTION" | grep -qE '^Body check: incomplete \(.*headings missing: "Implementation Notes"; longest span under "Implementation Notes"' || echo "got: $SECTION")$([ "${#SECTION_EXCERPT}" -eq 80 ] && [ "${SECTION_EXCERPT%...}" != "$SECTION_EXCERPT" ] || echo " excerpt of ${#SECTION_EXCERPT} characters: '$SECTION_EXCERPT'")"
+    "$(grep -qE '^Body check: incomplete \(.*headings missing: "Implementation Notes"; longest span under "Implementation Notes"' <<<"$SECTION" || echo "got: $SECTION")$([ "${#SECTION_EXCERPT}" -eq 80 ] && [ "${SECTION_EXCERPT%...}" != "$SECTION_EXCERPT" ] || echo " excerpt of ${#SECTION_EXCERPT} characters: '$SECTION_EXCERPT'")"
   check "ticket_body.py check: only <surface name> dropped from a stored Markdown copy is a minor difference" \
-    "$(printf '%s\n' "$SURFACE" | grep -qxF 'Body check: minor differences (missing 2 of 185 words in 1 spans and 1 angle-bracket texts; first under "Failure-Class Coverage (Gate 9)": "surface name")' || echo "got: $SURFACE")"
+    "$(grep -qxF 'Body check: minor differences (missing 2 of 185 words in 1 spans and 1 angle-bracket texts; first under "Failure-Class Coverage (Gate 9)": "surface name")' <<<"$SURFACE" || echo "got: $SURFACE")"
   check "ticket_body.py check: a create response with only an id and a URL holds no content field" \
-    "$(printf '%s\n' "$IDURL" | grep -qxF 'Body check: no content field (0 of 185 words found)' || echo "got: $IDURL")"
+    "$(grep -qxF 'Body check: no content field (0 of 185 words found)' <<<"$IDURL" || echo "got: $IDURL")"
   python3 -I "$TB_PY" convert --to html --in "$TBD/crlf.md" --out "$TBD/crlf.html" >/dev/null
   check "ticket_body.py: a CRLF ticket with a byte order mark converts to the same HTML (UTF-8, LF, no BOM) and checks complete" \
     "$(cmp -s "$TBD/crlf.html" "$TBD/ticket.html" || echo 'html differs')$([ "$(LC_ALL=C grep -c $'\r' "$TBD/crlf.html" || true)" = 0 ] || echo ' CR in output')$(head -c 3 "$TBD/crlf.html" | od -An -tx1 | grep -q 'ef bb bf' && echo ' BOM in output' || true)$(tb_check "$TBD/crlf.md" "$TBD/ticket.html" | grep -qxF 'Body check: complete' || echo ' check not complete')"
@@ -2669,13 +2897,13 @@ PYCMDS
   LC_OUT="$(LC_ALL=C python3 -I -X utf8=0 "$TB_PY" check --sent "$TBD/ticket.md" --stored "$TBD/s-swallow.md" 2>&1)"; RC_LC=$?
   set -e
   check "ticket_body.py: hostile Markdown (tags, nested lists, escaped and code-span pipes, fences holding tables, unclosed comment and fence, a long line, an info string that would close its attribute, list numbers that start at 3 or jump, a lazy continuation line) converts to escaped HTML with converter tags only and checks complete" \
-    "$(printf '%s\n' "$HOST_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo "line='$HOST_OUT'")$(python3 -I "$TBD/tags.py" "$TBD/hostile.html")$(tb_check "$TBD/hostile.md" "$TBD/hostile.html" | grep -qxF 'Body check: complete' || echo ' check not complete')$(has_tb "$(cat "$TBD/hostile.html")" '&lt;script&gt;alert(1)&lt;/script&gt;' 'Write &lt;script&gt;alert(1)&lt;/script&gt; and &lt;img src=x&gt; as text.' '<th>x | y</th>' '<code>p | q</code>' '<td>extra</td>' '### not a heading' '&lt;!-- kept as code --&gt;' 'text &lt;!-- unclosed comment stays visible' 'unclosed fence &lt;x&gt;' '<li>c<br>' '&lt;p&gt;caf&amp;eacute; &amp;#65;&lt;/p&gt;' '<code>caf&amp;eacute;</code> and outside ABC' '<pre><code class="language-&quot;&gt;&lt;img src=x onerror=y&gt;">info string' '<ol start="3">' '<li value="5">five</li>' '<li>lazy item<br>' 'continues here</li>')"
+    "$(grep -qxE 'Converted: html \([0-9]+ characters\)' <<<"$HOST_OUT" || echo "line='$HOST_OUT'")$(python3 -I "$TBD/tags.py" "$TBD/hostile.html")$(tb_check "$TBD/hostile.md" "$TBD/hostile.html" | grep -qxF 'Body check: complete' || echo ' check not complete')$(has_tb "$(cat "$TBD/hostile.html")" '&lt;script&gt;alert(1)&lt;/script&gt;' 'Write &lt;script&gt;alert(1)&lt;/script&gt; and &lt;img src=x&gt; as text.' '<th>x | y</th>' '<code>p | q</code>' '<td>extra</td>' '### not a heading' '&lt;!-- kept as code --&gt;' 'text &lt;!-- unclosed comment stays visible' 'unclosed fence &lt;x&gt;' '<li>c<br>' '&lt;p&gt;caf&amp;eacute; &amp;#65;&lt;/p&gt;' '<code>caf&amp;eacute;</code> and outside ABC' '<pre><code class="language-&quot;&gt;&lt;img src=x onerror=y&gt;">info string' '<ol start="3">' '<li value="5">five</li>' '<li>lazy item<br>' 'continues here</li>')"
   python3 -I "$TB_PY" convert --to html --in "$TBD/stray.md" --out "$TBD/stray.html" >/dev/null
   STRAY_HTML="$(cat "$TBD/stray.html")"
   STRAY_SELF="$(tb_check "$TBD/stray.md" "$TBD/stray.html")"
   STRAY_LOST="$(tb_check "$TBD/stray.md" "$TBD/stray-swallowed.md")"
   check "ticket_body.py: a comment opener that is not closed within its paragraph is text, so the sections after it are converted and a store that hid them up to a later --> is incomplete" \
-    "$(has_tb "$STRAY_HTML" 'The importer &lt;!-- note about the importer<br>' '<h3>Scope</h3>' '<td>src/import.py</td>' '<li>Accepts an empty batch and exits with status zero.</li>' 'importer --&gt; limit check')$([ "$STRAY_SELF" = 'Body check: complete' ] || echo " self-check: $STRAY_SELF")$(printf '%s\n' "$STRAY_LOST" | grep -qE '^Body check: incomplete \(.*headings missing: "Scope", "Acceptance Criteria", "Implementation Notes"' || echo " hidden middle: $STRAY_LOST")"
+    "$(has_tb "$STRAY_HTML" 'The importer &lt;!-- note about the importer<br>' '<h3>Scope</h3>' '<td>src/import.py</td>' '<li>Accepts an empty batch and exits with status zero.</li>' 'importer --&gt; limit check')$([ "$STRAY_SELF" = 'Body check: complete' ] || echo " self-check: $STRAY_SELF")$(grep -qE '^Body check: incomplete \(.*headings missing: "Scope", "Acceptance Criteria", "Implementation Notes"' <<<"$STRAY_LOST" || echo " hidden middle: $STRAY_LOST")"
   # A text stored exactly as sent is complete, whatever comment markers it
   # holds; so are entity references and decomposed characters, and a JSON
   # response that reaches the file inside a string or after a line of text.
@@ -2697,23 +2925,23 @@ PYCMDS
   MISSING=""
   for f in s-once.json s-dup-block.json s-dup-rendered.json s-dup-nested.json s-dup-text.txt s-dup-preview.json; do
     got="$(tb_check "$TBD/ticket.md" "$TBD/$f")"
-    printf '%s\n' "$got" | grep -qE '^Body check: incomplete \(missing [0-9]+ of 185 words in 1 spans; headings missing: none; longest span under "Acceptance Criteria": "An empty batch is accepted' || MISSING="$MISSING $f:'$got'"
+    grep -qE '^Body check: incomplete \(missing [0-9]+ of 185 words in 1 spans; headings missing: none; longest span under "Acceptance Criteria": "An empty batch is accepted' <<<"$got" || MISSING="$MISSING $f:'$got'"
   done
   CTL="$(tb_check "$TBD/ctl.md" "$TBD/ctl-lost.md")"
-  printf '%s\n' "$CTL" | grep -qF -- "longest span under \"Notes\": \"alpha bravo 'charlie' delta" || MISSING="$MISSING ctl-lost.md:'$CTL'"
+  grep -qF -- "longest span under \"Notes\": \"alpha bravo 'charlie' delta" <<<"$CTL" || MISSING="$MISSING ctl-lost.md:'$CTL'"
   printf '%s' "$CTL" | LC_ALL=C grep -q '[[:cntrl:]]' && MISSING="$MISSING ctl-lost.md:control-character-in-line"
   python3 -I "$TB_PY" convert --to html --in "$TBD/ctl.md" --out "$TBD/ctl.html" >/dev/null
   tr -d '\n' <"$TBD/ctl.html" | LC_ALL=C grep -q '[[:cntrl:]]' && MISSING="$MISSING ctl.html:control-character-in-html"
   for f in s-peer3-lost.json s-peer3-page.txt; do
     got="$(tb_check "$TBD/peer3.md" "$TBD/$f")"
-    printf '%s\n' "$got" | grep -qE '^Body check: incomplete \(missing 24 of 96 words in 1 spans; headings missing: none; longest span under "Acceptance Criteria": "The importer rejects a batch of 50[0-9] rows' || MISSING="$MISSING $f:'$got'"
+    grep -qE '^Body check: incomplete \(missing 24 of 96 words in 1 spans; headings missing: none; longest span under "Acceptance Criteria": "The importer rejects a batch of 50[0-9] rows' <<<"$got" || MISSING="$MISSING $f:'$got'"
   done
   check "ticket_body.py check: a criterion lost from a body the response returns twice (a JSON text block and a structured field, raw and rendered, both inside a tool-result string, twice in one text, a structured document next to the rendered field, a page text showing the field twice) is incomplete, as with one copy, also when its words occur in other criteria or a second value is a shorter preview; an excerpt shows a control character as a space and a double quote as a single one, and the HTML holds no control character" "$MISSING"
   # The three thresholds, each on both sides of its limit (400 words).
   MISSING=""
   while IFS='|' read -r f want; do
     got="$(tb_check "$TBD/thr.md" "$TBD/$f")"
-    printf '%s\n' "$got" | grep -qE -- "$want" || MISSING="$MISSING $f:'$got'"
+    grep -qE -- "$want" <<<"$got" || MISSING="$MISSING $f:'$got'"
   done <<'THRESHOLDS'
 thr-run11.md|^Body check: minor differences \(missing 11 of 400 words in 1 spans; first under "Scope"
 thr-run12.md|^Body check: incomplete \(missing 12 of 400 words in 1 spans; headings missing: none; longest span under "Scope"
@@ -2731,25 +2959,25 @@ THRESHOLDS
   LIST_HTML="$(cat "$TBD/list-out.html")"
   LIST_LOST="$(tb_check "$TBD/list.md" "$TBD/list-lost.md")"
   check "ticket_body.py: a comment opener inside a list item or table row is text, so the items and rows after it are converted; <!--> hides nothing; a block comment holding list and table lines is dropped; a store without the items is incomplete" \
-    "$(printf '%s\n' "$LIST_OUT" | grep -qxE 'Converted: html \([0-9]+ characters\)' || echo "line='$LIST_OUT'")$(has_tb "$LIST_HTML" '<li>The scanner reports an opening &lt;!-- marker that is never closed.</li>' '<li>The importer rejects a batch above the configured limit with a bounded error and exit status 2.</li>' '<li>An empty batch is accepted and the exit status is 0.</li>' '<tr><td>src/import.py</td>' '<td>add the limit check and the bounded error</td></tr>' '<td>allow draft --&gt; review only</td>' '<p>Use  as the shortest comment, then alpha bravo charlie.<br>' 'Second line foxtrot golf --&gt; hotel india.</p>' '<p>After the block comment.</p>')$(printf '%s\n' "$LIST_HTML" | grep -n 'hidden' || true)$(printf '%s\n' "$LIST_LOST" | grep -qE '^Body check: incomplete \(missing 35 of 94 words in 2 spans' || echo " lossy: $LIST_LOST")"
+    "$(grep -qxE 'Converted: html \([0-9]+ characters\)' <<<"$LIST_OUT" || echo "line='$LIST_OUT'")$(has_tb "$LIST_HTML" '<li>The scanner reports an opening &lt;!-- marker that is never closed.</li>' '<li>The importer rejects a batch above the configured limit with a bounded error and exit status 2.</li>' '<li>An empty batch is accepted and the exit status is 0.</li>' '<tr><td>src/import.py</td>' '<td>add the limit check and the bounded error</td></tr>' '<td>allow draft --&gt; review only</td>' '<p>Use  as the shortest comment, then alpha bravo charlie.<br>' 'Second line foxtrot golf --&gt; hotel india.</p>' '<p>After the block comment.</p>')$(printf '%s\n' "$LIST_HTML" | grep -n 'hidden' || true)$(grep -qE '^Body check: incomplete \(missing 35 of 94 words in 2 spans' <<<"$LIST_LOST" || echo " lossy: $LIST_LOST")"
   # A link target a page text never shows is at most a minor difference;
   # line-break tags are markup, not text.
   python3 -I "$TB_PY" convert --to html --in "$TBD/lt.md" --out "$TBD/lt.html" >/dev/null
   LT_PAGE="$(tb_check "$TBD/lt.md" "$TBD/lt-page.txt")"
   check "ticket_body.py check: a page text without a long link target is a minor difference, never incomplete; line-break tags in table cells are not counted; the converted HTML is complete; the target of link syntax inside a code span is text" \
-    "$(printf '%s\n' "$LT_PAGE" | grep -qE '^Body check: minor differences \(missing 17 of 48 words in 1 spans; first under "Background": "https://git\.example\.invalid/org/repo/blob/main/docs/design/importer-limits\.md' || echo "page text: $LT_PAGE")$(tb_check "$TBD/lt.md" "$TBD/lt.html" | grep -qxF 'Body check: complete' || echo ' converted')$(tb_check "$TBD/lc.md" "$TBD/lc-lost.md" | grep -qE '^Body check: incomplete \(missing 1[0-9] of [0-9]+ words in 1 spans' || echo " link in a code span: $(tb_check "$TBD/lc.md" "$TBD/lc-lost.md")")"
+    "$(grep -qE '^Body check: minor differences \(missing 17 of 48 words in 1 spans; first under "Background": "https://git\.example\.invalid/org/repo/blob/main/docs/design/importer-limits\.md' <<<"$LT_PAGE" || echo "page text: $LT_PAGE")$(tb_check "$TBD/lt.md" "$TBD/lt.html" | grep -qxF 'Body check: complete' || echo ' converted')$(tb_check "$TBD/lc.md" "$TBD/lc-lost.md" | grep -qE '^Body check: incomplete \(missing 1[0-9] of [0-9]+ words in 1 spans' || echo " link in a code span: $(tb_check "$TBD/lc.md" "$TBD/lc-lost.md")")"
   # A heading holding a link, and angle-bracket texts of one-letter words.
   python3 -I "$TB_PY" convert --to html --in "$TBD/kv.md" --out "$TBD/kv-out.html" >/dev/null
   python3 -I "$TB_PY" convert --to markdown-escaped --in "$TBD/kv.md" --out "$TBD/kv-esc.md" >/dev/null
   KV_LOST="$(tb_check "$TBD/kv.md" "$TBD/kv-lost.md")"
   check "ticket_body.py check: a heading holding a link, and autolinks, are found in a renderer's HTML; angle-bracket texts are counted (dropped: minor differences; converted or escaped: complete)" \
-    "$(tb_check "$TBD/link.md" "$TBD/link.html" | grep -qxF 'Body check: complete' || echo ' link heading')$(printf '%s\n' "$KV_LOST" | grep -qxF 'Body check: minor differences (missing 0 of 24 words in 0 spans and 4 angle-bracket texts; first under "Type Notes": "<K, V>")' || echo " dropped: $KV_LOST")$(tb_check "$TBD/kv.md" "$TBD/kv-out.html" | grep -qxF 'Body check: complete' || echo ' converted')$(tb_check "$TBD/kv.md" "$TBD/kv-esc.md" | grep -qxF 'Body check: complete' || echo ' escaped')"
+    "$(tb_check "$TBD/link.md" "$TBD/link.html" | grep -qxF 'Body check: complete' || echo ' link heading')$(grep -qxF 'Body check: minor differences (missing 0 of 24 words in 0 spans and 4 angle-bracket texts; first under "Type Notes": "<K, V>")' <<<"$KV_LOST" || echo " dropped: $KV_LOST")$(tb_check "$TBD/kv.md" "$TBD/kv-out.html" | grep -qxF 'Body check: complete' || echo ' converted')$(tb_check "$TBD/kv.md" "$TBD/kv-esc.md" | grep -qxF 'Body check: complete' || echo ' escaped')"
   # Letters of a script written without word spaces: a word each, half a
   # word in the thresholds (weight 506 here, 3 percent of it 15.18).
   MISSING=""
   while IFS='|' read -r f want; do
     got="$(tb_check "$TBD/cjk.md" "$TBD/$f")"
-    printf '%s\n' "$got" | grep -qE -- "$want" || MISSING="$MISSING $f:'$got'"
+    grep -qE -- "$want" <<<"$got" || MISSING="$MISSING $f:'$got'"
   done <<'UNSPACED'
 cjk-run23.md|^Body check: minor differences \(missing 23 of 1006 words in 1 spans; first under "Scope"
 cjk-run24.md|^Body check: incomplete \(missing 24 of 1006 words in 1 spans; headings missing: none; longest span under "Scope"
@@ -2768,21 +2996,21 @@ UNSPACED
   RK_PAGE="$(tb_check "$TBD/rk.md" "$TBD/rk-page.txt")"
   H2_LOST="$(tb_check "$TBD/h2.md" "$TBD/h2-lost.md")"
   check "ticket_body.py check: a short section removed is incomplete with its heading listed although its title occurs in prose, the title word lost from a placeholder and a link target only leaves the heading found, and a lost ## heading line after the title line is listed" \
-    "$(printf '%s\n' "$RK_LOST" | grep -qxF 'Body check: incomplete (missing 3 of 144 words in 1 spans; headings missing: "Risks"; longest span under "Risks": "Risks - A slow disk")' || echo "section: $RK_LOST")$(printf '%s\n' "$RK_PAGE" | grep -qE '^Body check: minor differences \(missing 6 of 144 words in 2 spans and 1 angle-bracket texts; first under "Background"' || echo " placeholder: $RK_PAGE")$(printf '%s\n' "$H2_LOST" | grep -qE '^Body check: incomplete \(.*; headings missing: "Follow-up Work";' || echo " level two: $H2_LOST")"
+    "$(grep -qxF 'Body check: incomplete (missing 3 of 144 words in 1 spans; headings missing: "Risks"; longest span under "Risks": "Risks - A slow disk")' <<<"$RK_LOST" || echo "section: $RK_LOST")$(grep -qE '^Body check: minor differences \(missing 6 of 144 words in 2 spans and 1 angle-bracket texts; first under "Background"' <<<"$RK_PAGE" || echo " placeholder: $RK_PAGE")$(grep -qE '^Body check: incomplete \(.*; headings missing: "Follow-up Work";' <<<"$H2_LOST" || echo " level two: $H2_LOST")"
   RF_PAGE="$(tb_check "$TBD/rf.md" "$TBD/rf-page.txt")"
   RF_LINE="$(tb_check "$TBD/rf.md" "$TBD/rf-nodef.txt")"
   check "ticket_body.py check: a page text without a reference link's label and definition is a minor difference, while a lost line of the same shape that is no definition is incomplete" \
-    "$(printf '%s\n' "$RF_PAGE" | grep -qxF 'Body check: minor differences (missing 23 of 123 words in 2 spans; first under "Background": "imp lim spec ref")' || echo "page text: $RF_PAGE")$(printf '%s\n' "$RF_LINE" | grep -qE '^Body check: incomplete \(missing 16 of 123 words in 1 spans; headings missing: none;' || echo " no definition: $RF_LINE")"
+    "$(grep -qxF 'Body check: minor differences (missing 23 of 123 words in 2 spans; first under "Background": "imp lim spec ref")' <<<"$RF_PAGE" || echo "page text: $RF_PAGE")$(grep -qE '^Body check: incomplete \(missing 16 of 123 words in 1 spans; headings missing: none;' <<<"$RF_LINE" || echo " no definition: $RF_LINE")"
   # The alignment view: of the views that hold nearly as many sent words as
   # the best one, the shortest (the HTML without its tag names).
   LEAD="$(tb_check "$TBD/lead.md" "$TBD/lead-lost.html")"
   check "ticket_body.py check: a first sentence lost from a store of HTML whose views hold as many sent words with and without the tag names is one span of the view without them (incomplete)" \
-    "$(printf '%s\n' "$LEAD" | grep -qE '^Body check: incomplete \(missing 24 of 688 words in 1 spans; headings missing: none; longest span under "Background": ' || echo "got: $LEAD")"
+    "$(grep -qE '^Body check: incomplete \(missing 24 of 688 words in 1 spans; headings missing: none; longest span under "Background": ' <<<"$LEAD" || echo "got: $LEAD")"
   # No run of the body in a row: no content field, whatever share is found.
   MISSING=""
   while IFS='|' read -r f want; do
     got="$(tb_check "$TBD/jn.md" "$TBD/$f")"
-    printf '%s\n' "$got" | grep -qE -- "$want" || MISSING="$MISSING $f:'$got'"
+    grep -qE -- "$want" <<<"$got" || MISSING="$MISSING $f:'$got'"
   done <<'NORUN'
 jn-other.txt|^Body check: no content field \([0-9]+ of 603 words found\)$
 jn-every.txt|^Body check: no content field \(603 of 603 words found\)$
@@ -2826,7 +3054,7 @@ except subprocess.TimeoutExpired:
     out = "timed out"
 print("%s|%.1f s" % (out, time.time() - start))' "$TB_PY" "$TBD/ticket.md" "$TBD/openers.txt")"
   check "ticket_body.py check: a store followed by 100000 comment openers that one closing marker at its end closes is checked within 20 seconds (complete)" \
-    "$(printf '%s\n' "$OPENERS" | grep -qE '^Body check: complete\|' || echo "got: $OPENERS")"
+    "$(grep -qE '^Body check: complete\|' <<<"$OPENERS" || echo "got: $OPENERS")"
   # Every conversion under a non-UTF-8 locale writes the same UTF-8 file.
   LC_CONV=""
   for to in html markdown-escaped pre; do
@@ -2844,7 +3072,7 @@ spec.loader.exec_module(tb)
 tb.to_html = lambda text: "<p>" + text[: len(text) // 2] + "</p>\n"
 sys.exit(tb.main(["convert", "--to", "html", "--in", sys.argv[2], "--out", sys.argv[3]]))' "$TB_PY" "$TBD/ticket.md" "$TBD/fallback.html" 2>&1)"
   check "ticket_body.py convert --to html: a result that fails its self-check is replaced by the preformatted form and says so" \
-    "$(printf '%s\n' "$FB_OUT" | grep -qxE 'Converted: preformatted fallback \(.+\)' || echo "line='$FB_OUT'")$(cmp -s "$TBD/fallback.html" "$TBD/py-pre.html" || echo ' output is not the pre form')"
+    "$(grep -qxE 'Converted: preformatted fallback \(.+\)' <<<"$FB_OUT" || echo "line='$FB_OUT'")$(cmp -s "$TBD/fallback.html" "$TBD/py-pre.html" || echo ' output is not the pre form')"
   check "ticket_body.py exit status: 0 for an incomplete check, 2 on a usage error (no subcommand, unknown --to, --in equal to --out), 3 on an unreadable input or output; a non-UTF-8 locale still prints the Japanese excerpt line" \
     "$([ "$INC_RC" -eq 0 ] || echo "incomplete rc=$INC_RC")$([ "$RC_NONE" -eq 2 ] || echo " none rc=$RC_NONE")$([ "$RC_TO" -eq 2 ] || echo " --to rc=$RC_TO")$([ "$RC_SAME" -eq 2 ] || echo " same rc=$RC_SAME")$([ "$RC_MISS" -eq 3 ] || echo " missing rc=$RC_MISS")$([ "$RC_BAD" -eq 3 ] || echo " non-UTF-8 rc=$RC_BAD")$([ "$RC_OUT" -eq 3 ] || echo " unwritable rc=$RC_OUT")$([ "$RC_LC" -eq 0 ] && [ "$LC_OUT" = "$SWALLOW" ] || echo " LC_ALL=C rc=$RC_LC: $LC_OUT")$(printf '%s' "$LC_OUT" | LC_ALL=C grep -q '[^ -~]' || echo ' LC_ALL=C: no non-ASCII excerpt')"
 else
@@ -2861,8 +3089,8 @@ HOST_NOTES_NOW="$(awk '/^## Host notes$/ {h = 1; next} h && /^## / {h = 0} h' "$
 # shellcheck disable=SC2016  # literal backticks, braces and dollars
 while IFS='|' read -r where needle; do
   case "$where" in
-    ARGS) printf '%s\n' "$ARGS_SECTION" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'" ;;
-    HOST) printf '%s\n' "$HOST_NOTES_NOW" | grep -qF -- "$needle" || MISSING="$MISSING SKILL.md-Host-notes:'$needle'" ;;
+    ARGS) grep -qF -- "$needle" <<<"$ARGS_SECTION" || MISSING="$MISSING SKILL.md-Argument-Parsing:'$needle'" ;;
+    HOST) grep -qF -- "$needle" <<<"$HOST_NOTES_NOW" || MISSING="$MISSING SKILL.md-Host-notes:'$needle'" ;;
     *) grep -qF -- "$needle" "$SKILL_DIR/$where" || MISSING="$MISSING $where:'$needle'" ;;
   esac
 done <<'NEEDLES'
@@ -3357,8 +3585,8 @@ PCC="$(awk '/^## Pre-computed Context$/ {h = 1; next} h && /^## / {h = 0} h' "$S
 # shellcheck disable=SC2016  # literal backticks, braces and dollars
 while IFS='|' read -r where needle; do
   case "$where" in
-    PCC) printf '%s\n' "$PCC" | grep -qF -- "$needle" || MISSING="$MISSING Pre-computed-Context:'$needle'" ;;
-    HOST) printf '%s\n' "$HOST_NOTES_PS" | grep -qF -- "$needle" || MISSING="$MISSING Host-notes:'$needle'" ;;
+    PCC) grep -qF -- "$needle" <<<"$PCC" || MISSING="$MISSING Pre-computed-Context:'$needle'" ;;
+    HOST) grep -qF -- "$needle" <<<"$HOST_NOTES_PS" || MISSING="$MISSING Host-notes:'$needle'" ;;
     *) grep -qF -- "$needle" "$SKILL_DIR/$where" || MISSING="$MISSING $where:'$needle'" ;;
   esac
 done <<'NEEDLES'
@@ -3420,6 +3648,55 @@ elif [ "$NOGIT_RC" -eq 0 ] && grep -qx '  source-commit: "unknown"' "$TMP_ROOT/n
   pass "a --src outside git stamps source-commit unknown"
 else
   fail "a --src outside git stamps source-commit unknown" "rc=$NOGIT_RC $(head -n 5 "$TMP_ROOT/nogit.log")"
+fi
+check "control: the unmodified source copy builds clean (exit 0, exit audit clean)" \
+  "$([ "$NOGIT_RC" -eq 0 ] || echo "rc=$NOGIT_RC")$(grep -qF 'exit audit clean' "$TMP_ROOT/nogit.log" || echo " log: $(head -n 3 "$TMP_ROOT/nogit.log")")"
+
+# The exit audit's variant check: one paragraph planted in a copy of the
+# source, before a heading whose section passes through to the tree, holds one
+# other spelling of the name per line. The build fails for the default name
+# and for --name (the check runs on the canonical text), each form is named by
+# its own finding, and nothing is published to <out>.
+VAR_SRC="$TMP_ROOT/variant-src"
+cp -R "$MUT_SRC" "$VAR_SRC"
+awk '/^### Form A / && !done {
+       print "Variant fixture underscore: create_ticket."
+       print "Variant fixture camel case: createTicket."
+       print "Variant fixture capitalised: Create-Ticket."
+       print "Variant fixture plural glue: create-tickets."
+       print "Variant fixture prefix glue: pre-create-ticket."
+       print "Variant fixture wrapped pair: the create-"
+       print "ticket skill."
+       print "Variant fixture upstream path: <repo>/skills/create-ticket/SKILL.md."
+       print ""
+       done = 1
+     }
+     { print }' "$MUT_SRC/agents/decomposer.md" >"$VAR_SRC/agents/decomposer.md"
+VARIANT_FORMS='name variant (another spelling of the name)|Variant fixture underscore: create_ticket.
+name variant (another spelling of the name)|Variant fixture camel case: createTicket.
+name variant (another spelling of the name)|Variant fixture capitalised: Create-Ticket.
+name variant (glued to another word)|Variant fixture plural glue: create-tickets.
+name variant (glued to another word)|Variant fixture prefix glue: pre-create-ticket.
+name variant (wrapped over a line end)|Variant fixture wrapped pair: the create- ticket skill.
+upstream path of the skill|Variant fixture upstream path: <repo>/skills/create-ticket/SKILL.md.'
+if [ "$(grep -c '^Variant fixture ' "$VAR_SRC/agents/decomposer.md" || true)" = 7 ]; then
+  for n in create-ticket zq-x7; do
+    VOUT="$TMP_ROOT/variant-out-$n"
+    set +e
+    bash "$BUILD" --src "$VAR_SRC" --out "$VOUT" --name "$n" >"$TMP_ROOT/variant-$n.log" 2>&1
+    VRC=$?
+    set -e
+    VDETAIL="$([ "$VRC" -eq 1 ] || echo "rc=$VRC")$(grep -qF 'exit audit FAILED' "$TMP_ROOT/variant-$n.log" || echo ' no exit audit failure')"
+    while IFS='|' read -r kind text; do
+      awk -v K="  $kind references/agents/decomposer.md:" -v T=": $text" 'index($0, K) == 1 && index($0, T) {f = 1} END {exit !f}' "$TMP_ROOT/variant-$n.log" ||
+        VDETAIL="$VDETAIL missing:'$kind ... $text'"
+    done <<<"$VARIANT_FORMS"
+    [ -z "$(entries_of "$VOUT")" ] || VDETAIL="$VDETAIL published:$(entries_of "$VOUT")"
+    check "exit audit variant check ($n): each other spelling planted in the source (underscore, camel case, capitalised, plural glue, prefix glue, wrapped pair, upstream skills/create-ticket/ path) is named by its own finding, the build exits 1 and nothing is published" \
+      "$VDETAIL"
+  done
+else
+  fail "exit audit variant check: the fixture paragraph could not be planted before ### Form A of agents/decomposer.md"
 fi
 MUT2_SRC="$TMP_ROOT/mutated-src-2"
 cp -R "$MUT_SRC" "$MUT2_SRC"
