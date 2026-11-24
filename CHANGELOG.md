@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [11.9.0] — 2026-11-25
+
+**TL;DR.** Three changes to the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`): a ticket delivered to a remote content field keeps its whole text (whole middle sections could be lost), every shell step has a form for Windows PowerShell 5.1 and PowerShell 7, and `--name <skill-name>` builds the skill under any valid skill name. `--force` now replaces only a skill the generator wrote. The plugin's own skills, agents and hooks are unchanged.
+
+### Added
+
+- `tools/build-standalone-skill.sh --name <skill-name>` builds the skill under another name: the directory, the frontmatter `name` and every place the skill names itself (invocation, skill-root paths, scratch directory, `ERROR:` prefixes, headings, prose). The manifests keep `create-ticket`; a tree whose exit audit is clean is renamed and checked by a name audit. Refused with exit 2 before anything is written: a name outside the Agent Skills rule (1 to 64 lowercase ASCII letters, digits and single hyphens), the names the text uses for its roles (`orchestrator`, `planner`, `researcher`, `decomposer`, `evaluator`, `ticket-evaluator`), a name a YAML reader takes for a number, boolean, null or date (`123`, `true`, `2024-1-1`), and a host tool name the exit audit rejects in backticks (`bash`, `view`). A name that is an ordinary word of the text, a command or folder a host reserves, or a word of the source plugin (`hooks`, `test-plan`) is accepted; that choice is the user's.
+- `body_format=markdown|markdown-escaped|html` says which markup the destination's content field renders; the conversion is done by a program (`sed`, or the new `scripts/ticket_body.py`), never by typing the text again. A destination derived from a platform item URL chooses the value and prints it.
+- Stored text check: after every remote create the text the platform stored is compared with the ticket (`complete`, `minor differences`, `incomplete`, `no content field`); an incomplete store stops the run before the next create.
+- `auth_scheme=basic-token` and `source_auth_scheme=basic-token` (Basic credentials with an empty user name and the token as the password).
+- `references/shell-powershell.md`: one form per shell step for Windows PowerShell 5.1 and PowerShell 7 (no POSIX alias, no `jq`, no `sed`, `curl.exe`, files as UTF-8 without a byte order mark). The run records its shell dialect first (`Shell:` in Pre-computed Context) and never runs a POSIX form under PowerShell.
+- `scripts/xlsx_to_text.py --out <file>`, so a workbook's text reaches the run without being typed again.
+- `tests/test-standalone-skill-powershell.ps1` and the CI job `standalone-skill-powershell` (windows-latest): every PowerShell form of the built tree runs under Windows PowerShell 5.1 and PowerShell 7, on the default tree and on a renamed one.
+
+### Changed
+
+- `--force` replaces `<out>/<skill-name>/` only when it holds a skill this generator wrote (the frontmatter of its `SKILL.md` carries the `source: generated skill; do not edit by hand` line, as every tree since v11.2.1 does); any other non-empty directory is refused with exit 2, and so are a file of that name and a directory that cannot be read. It used to remove any non-empty directory of that name. To build over a directory it refuses, remove that directory by hand first.
+- The skill is built and audited in a temporary directory under `$TMPDIR` and moved into place only after clean audits, so a failed or interrupted build leaves the previous skill as it was; the tree of a failed audit stays in the temporary directory the message names (it was left at `<out>/<skill-name>/` before).
+- The exit audit fails the build when the generated text holds another form of the skill's name beside the exact token: another letter case, an underscore or no separator, the token glued to another word or wrapped over a line end, a file named after it, or an upstream `skills/create-ticket` path. A form that differs by markup, an entity or a non-ASCII character is out of its reach.
+- The description, the sentence under the top heading of `SKILL.md` and the role prompts say what the skill does without relying on its name; the description states that the name used as an ordinary word does not name the skill.
+- Delivery builds the final ticket text by copying the last graded draft and editing it in place, and every adapter copies that file again (rule "Whole text, never re-typed", a heading check before any create or local write, whole-id replacement of logical ids).
+- The Python scripts write UTF-8 with LF on every stream; the interpreter is chosen from `python3`, `python` and `py -3`; a host with no search tool runs the searches through the shell tool, one at a time under PowerShell.
+
+### Fixed
+
+- A ticket delivered to a remote work-item field could lose whole middle sections: the text was typed again at every hop with no completeness check, and raw Markdown sent to a field that renders HTML lost everything from a `<` followed by a letter to the next `>`.
+- The skill's shell steps did not work on a Windows host: every step was a POSIX form, and under PowerShell several command names are aliases of other commands.
+- Under Windows PowerShell 5.1 the token header piped to `curl.exe` arrived behind a byte order mark and was refused (`config file option ... is unknown`, exit 2); both token forms set the console input encoding to UTF-8 without a mark for the call and put it back.
+- The POSIX forms run unchanged under a login shell with a no-clobber option, unmatched-pattern errors, or `rm` / `cp` / `mv` aliased to ask; scratch removal no longer leaves the directory behind silently; drive and network-share paths are read as paths, never as a kind prefix; a byte order mark and CR LF are tolerated in frontmatter and counters.
+- Generator: with `CDPATH` exported, a relative `--out` is no longer resolved through it; an `--out` or temporary directory that cannot be created exits 2 with the generator's own message.
+
+### Verification
+
+- `tests/test-standalone-skill-build.sh` 219 / 219 under bash 5 and bash 3.2 (131 before).
+- `tests/test-standalone-skill-powershell.ps1 -RequireAll` on windows-latest in CI: 42 / 42 under Windows PowerShell 5.1 and under PowerShell 7.6, on the default tree and on a tree built as `zq-x7` (one of the 43 checks needs a POSIX file mode and is not counted on Windows); 43 / 43 on both trees under PowerShell 7.4 on Linux.
+- `--name`: a tree built as `zq-x7` holds no `create-ticket`, `create_ticket` or `createTicket` in any letter case and, mapped back, equals the default build byte for byte; sources mutated with each form the variant check covers fail the exit audit. A review sweep of 253 accepted names gave trees equal to the default tree with the name replaced, each with frontmatter two YAML readers load as a string.
+- Publish, by hand with a slowed `mv`: two concurrent `--force` builds of one name, and a `TERM` inside the swap, each leave one whole tree and nothing else.
+- `tests/test-skill-contracts.sh` 931 / 931, `tests/test-path-consistency.sh` 145 / 145, ShellCheck (`--severity=warning`) clean on the generator and the build test.
+- Untested: a live agent host on Windows, a real ticket platform (the delivery trials ran against a stub), and a live run of a renamed skill.
+
 ## [11.8.7] — 2026-11-13
 
 **TL;DR.** Three wording gaps an external code review found in the generated standalone `create-ticket` skill (`tools/build-standalone-skill.sh`) are closed; no behaviour is added or removed. The plugin's own skills, agents and hooks are unchanged.
