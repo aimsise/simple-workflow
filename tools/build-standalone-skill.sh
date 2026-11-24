@@ -28,7 +28,7 @@
 #   2. paragraph drops by anchor ERE
 #   3. token substitutions
 #   4. exit audit over the whole generated tree (including the variant
-#      check: the canonical name is spelt only as the token create-ticket)
+#      check: no other form of the canonical name that the check covers)
 #   5. with --name: the canonical name `create-ticket` is replaced by the
 #      chosen name in every generated file, then the name audit runs
 # Every manifest entry must match at least once in its scope; a stale entry
@@ -86,11 +86,15 @@ Options:
                        the frontmatter as metadata.source-commit ("unknown"
                        outside git).
   --force              Replace a non-empty <dir>/<skill-name>/ that holds a skill
-                       this generator wrote (its SKILL.md holds the line
+                       this generator wrote (the frontmatter of its SKILL.md
+                       holds the line
                        "  source: generated skill; do not edit by hand"). Any
-                       other non-empty directory, and a file or link that is not
-                       a directory, is refused with or without --force. Nothing
-                       else under <dir> is ever removed.
+                       other non-empty directory, a directory that cannot be
+                       read, and a file or link that is not a directory, is
+                       refused with or without --force. A symbolic link to a
+                       directory is replaced by a real directory; its target
+                       is not touched. Nothing else under <dir> is ever
+                       removed.
   --help               Print this message and exit 0.
 
 Exit status:
@@ -100,8 +104,10 @@ Exit status:
      names, and <dir>/<skill-name>/ is left as it was
   2  usage error (an invalid or reserved --name included), missing source
      file, malformed manifest row (a substitution target glued to its
-     replacement), refused overwrite, or an output directory that cannot be
-     written; nothing is left behind and <dir>/<skill-name>/ is left as it was
+     replacement), refused overwrite, or an output or temporary directory
+     that cannot be created or written; no skill directory and no staging
+     directory is left behind (an --out directory the run created stays) and
+     <dir>/<skill-name>/ is left as it was
 EOF
 }
 
@@ -215,8 +221,9 @@ if command -v git >/dev/null 2>&1; then
 fi
 printf '%s\n' "$SOURCE_COMMIT" | grep -qxE '[0-9a-f]{7,40}' || SOURCE_COMMIT="unknown"
 
-mkdir -p "$OUT_DIR"
-OUT_DIR="$(CDPATH='' cd -- "$OUT_DIR" && pwd)"
+mkdir -p -- "$OUT_DIR" || { err "cannot create --out $OUT_DIR"; exit 2; }
+OUT_ABS="$(CDPATH='' cd -- "$OUT_DIR" && pwd)" || { err "cannot enter --out $OUT_DIR"; exit 2; }
+OUT_DIR="$OUT_ABS"
 # FINAL is checked before the build and changed only after a clean audit.
 FINAL="$OUT_DIR/$NAME"
 # Every tree this generator wrote holds this line in the frontmatter of its
@@ -226,13 +233,26 @@ if { [ -e "$FINAL" ] || [ -L "$FINAL" ]; } && [ ! -d "$FINAL" ]; then
   err "refusing to overwrite $FINAL: it exists and is not a directory"
   exit 2
 fi
-if [ -d "$FINAL" ] && [ -n "$(ls -A "$FINAL")" ]; then
+# The listing ends in "." so that an entry whose name is only line breaks
+# still counts; a directory that cannot be listed is refused, not taken for
+# empty.
+FINAL_LIST="."
+if [ -d "$FINAL" ]; then
+  FINAL_LIST="$(ls -A "$FINAL" && echo .)" || { err "refusing to overwrite $FINAL: it cannot be read"; exit 2; }
+fi
+if [ "$FINAL_LIST" != "." ]; then
   if [ "$FORCE" -ne 1 ]; then
     err "refusing to overwrite non-empty $FINAL (pass --force)"
     exit 2
   fi
-  if ! { [ -f "$FINAL/SKILL.md" ] && grep -qxF -- "$GEN_MARK" "$FINAL/SKILL.md"; }; then
-    err "refusing to replace $FINAL: it is not a skill this generator wrote (no SKILL.md holding the line \"$GEN_MARK\"), and --force does not remove it; remove it by hand if that is really intended"
+  # The line counts only inside the leading frontmatter block: a SKILL.md
+  # written by hand may quote it in its text.
+  if ! { [ -f "$FINAL/SKILL.md" ] && awk -v m="$GEN_MARK" '
+      NR == 1 { if ($0 != "---") exit; next }
+      $0 == "---" { exit }
+      $0 == m { found = 1; exit }
+      END { exit !found }' "$FINAL/SKILL.md"; }; then
+    err "refusing to replace $FINAL: it is not a skill this generator wrote (no SKILL.md whose frontmatter holds the line \"$GEN_MARK\"), and --force does not remove it; remove it by hand if that is really intended"
     exit 2
   fi
 fi
@@ -245,13 +265,14 @@ STAGE=""
 KEEP_STAGE=0
 INCOMING=""
 cleanup() {
+  trap '' INT TERM HUP
   [ -z "$WORK" ] || rm -rf "$WORK"
   [ -z "$INCOMING" ] || rm -rf "$INCOMING"
   [ -z "$STAGE" ] || [ "$KEEP_STAGE" -eq 1 ] || rm -rf "$STAGE"
 }
 trap cleanup EXIT
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/build-standalone-skill.XXXXXX")"
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/build-standalone-skill-out.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/build-standalone-skill.XXXXXX")" || { err "cannot create a working directory under ${TMPDIR:-/tmp}"; exit 2; }
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/build-standalone-skill-out.XXXXXX")" || { err "cannot create a staging directory under ${TMPDIR:-/tmp}"; exit 2; }
 STAGE="$(CDPATH='' cd -- "$STAGE" && pwd)"
 # The basename of TARGET is the name, as the name audit expects.
 TARGET="$STAGE/$NAME"
@@ -615,13 +636,20 @@ DELTA=$((GEN_WC - SRC_WC)); [ "$DELTA" -ge 0 ] || DELTA=$((-DELTA))
 
 # (h) the name has one spelling: the rename of Layer 5, its occurrence count
 #     and its left-over check all use the exact token create-ticket, so the
-#     canonical text may hold no other spelling of it (other case, underscore,
-#     no separator), no create-ticket glued to another word (the scratch
-#     directory create-ticket-scratch is the one compound, and it may not be
-#     glued to a word either), none wrapped over
-#     a line end, and no file named after it (the rename does not rename
-#     files). An upstream path skills/create-ticket/ is reported too, unless
-#     it is a host skill root (.<word>/skills/create-ticket/).
+#     canonical text may hold none of these forms of it: another letter
+#     case, an underscore or no separator (Create-Ticket, create_ticket,
+#     createTicket); create-ticket glued to an ASCII letter, digit, hyphen or
+#     underscore (the scratch directory create-ticket-scratch is the one
+#     compound, and it may not be glued either); the name wrapped over a line
+#     end (create- at the end of a line, trailing blanks aside, and ticket
+#     first on the next one, leading punctuation aside); a file named after
+#     it (the rename does not rename files). An upstream path
+#     skills/create-ticket is reported too, unless it is a host skill root
+#     (.<word>/skills/create-ticket, the dot first in its path segment).
+#     Out of reach of this check: a form that differs by markup, a character
+#     entity, a non-ASCII hyphen or an invisible character, and the two
+#     words with a space between them (the text holds the prose "Create
+#     tickets from").
 for f in "${GEN_FILES[@]}"; do
   awk -v F="$f" '
     {
@@ -630,13 +658,15 @@ for f in "${GEN_FILES[@]}"; do
       if (tolower(m) ~ /create[-_]?ticket/) printf "name variant (another spelling of the name) %s:%d: %s\n", F, NR, l
       g = l; gsub(/create-ticket-scratch/, "\001", g)
       if (g ~ /[A-Za-z0-9_-]create-ticket/ || g ~ /create-ticket[A-Za-z0-9_-]/ || g ~ ("[A-Za-z0-9_-]" "\001") || g ~ ("\001" "[A-Za-z0-9_-]")) printf "name variant (glued to another word) %s:%d: %s\n", F, NR, l
-      if (wrap && tolower(l) ~ /^[ \t]*ticket/) { t = l; sub(/^[ \t]+/, "", t); printf "name variant (wrapped over a line end) %s:%d: %s %s\n", F, NR - 1, prev, t }
-      wrap = (tolower(l) ~ /create-$/); prev = l
-      u = l; gsub(/\.[A-Za-z0-9_-]+\/skills\/create-ticket\//, "\001", u)
-      if (u ~ /skills\/create-ticket\//) printf "upstream path of the skill %s:%d: %s\n", F, NR, l
+      n = l; sub(/^[^A-Za-z0-9]+/, "", n)
+      if ((wrap && tolower(n) ~ /^ticket/) || (wrap2 && tolower(l) ~ /^[ \t]*-ticket/)) { t = l; sub(/^[ \t]+/, "", t); printf "name variant (wrapped over a line end) %s:%d: %s %s\n", F, NR - 1, prev, t }
+      p = l; sub(/[ \t\r]+$/, "", p)
+      wrap = (tolower(p) ~ /create-$/); wrap2 = (tolower(p) ~ /create$/); prev = p
+      u = l; gsub(/\.[A-Za-z0-9_-]+\/skills\/create-ticket/, "\001", u)
+      if (u ~ /skills\/create-ticket([^A-Za-z0-9_-]|$)/ || l ~ /[A-Za-z0-9_.-]\.[A-Za-z0-9_-]+\/skills\/create-ticket([^A-Za-z0-9_-]|$)/) printf "upstream path of the skill %s:%d: %s\n", F, NR, l
     }' "$TARGET/$f" | cut -c1-240
 done >>"$FAIL"
-printf '%s\n' "${GEN_FILES[@]}" | { grep -iE 'create[-_]?ticket' || true; } |
+printf '%s\n' "${GEN_FILES[@]}" | { grep -iE 'create[^A-Za-z0-9]*ticket' || true; } |
   prefix 'name in a file name (the rename does not rename files): ' >>"$FAIL"
 
 if [ -s "$FAIL" ]; then
@@ -651,15 +681,41 @@ fi
 # publish — replace FINAL by the audited staging tree. FINAL was checked
 # before the build: absent, empty, or a tree this generator wrote (--force).
 # The tree is first moved next to FINAL (the step that can fail: another
-# file system, a full disk, a directory that cannot be written), so FINAL is
-# removed only when its replacement is already in <out>.
+# file system, a full disk, a directory that cannot be written). The swap is
+# then two renames inside <out>, the previous tree aside and the new one in,
+# with signals held off, so a run that fails or is interrupted leaves either
+# the previous skill or the new one, never neither. The previous tree is
+# removed last; what cannot be removed is named in a WARNING.
 publish() {
+  local old=""
   INCOMING="$OUT_DIR/.$NAME.incoming.$$"
   rm -rf "$INCOMING"
   mv "$TARGET" "$INCOMING" || { err "cannot write to $OUT_DIR; $FINAL is unchanged"; exit 2; }
-  rm -rf "$FINAL"
-  mv "$INCOMING" "$FINAL"
+  trap '' INT TERM HUP QUIT
+  if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
+    old="$OUT_DIR/.$NAME.replaced.$$"
+    rm -rf "$old"
+    mv "$FINAL" "$old" || { err "cannot move the previous $FINAL aside; $FINAL is unchanged"; exit 2; }
+  fi
+  if ! mv "$INCOMING" "$FINAL"; then
+    if [ -n "$old" ] && ! mv "$old" "$FINAL"; then
+      err "cannot move the new tree to $FINAL; the previous skill is at $old"
+    else
+      err "cannot move the new tree to $FINAL; $FINAL is unchanged"
+    fi
+    exit 2
+  fi
+  # A directory that another build of the same name put at FINAL between the
+  # two renames received this tree as a subdirectory: that build's tree
+  # stays whole and this one is dropped.
+  if [ -e "$FINAL/.$NAME.incoming.$$" ]; then
+    rm -rf "$FINAL/.$NAME.incoming.$$"
+  fi
   INCOMING=""
+  if [ -n "$old" ]; then
+    rm -rf "$old" 2>/dev/null || err "WARNING: the previous tree could not be removed completely; what is left of it is at $old"
+  fi
+  trap - INT TERM HUP QUIT
 }
 
 if [ "$NAME" = "$CANON_NAME" ]; then
@@ -671,10 +727,10 @@ fi
 
 # --- Layer 5: the chosen name and the name audit ----------------------------
 
-# The generated tree names the skill only by the exact token create-ticket
-# (no case, underscore, glued or line-wrapped variant, no file named after
-# it: the exit audit's check (h) enforces this), so one sed pass per file
-# renames it; the validated name needs no escaping in sed. The name audit
+# The generated tree names the skill by the exact token create-ticket (the
+# exit audit's check (h) fails the build on a case, underscore, glued or
+# line-wrapped variant and on a file named after it), so one sed pass per
+# file renames it; the validated name needs no escaping in sed. The name audit
 # then proves the pass per file: the occurrences of the name, minus those the
 # canonical text already held (counted with every create-ticket masked),
 # equal the create-ticket occurrences counted before the pass, and no

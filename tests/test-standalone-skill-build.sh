@@ -45,8 +45,8 @@
 #     line stays consistent with the argument-hint, and the Delivery jq
 #     filter and the source_content_path= extraction run on fixtures
 #   - --name: a tree built as zq-x7 holds no other spelling of create-ticket
-#     (with the exit audit's variant check, that shows no occurrence was
-#     missed) and, mapped back, equals the default build byte for byte (the
+#     (with the exit audit's variant check, that shows no occurrence in a
+#     form that check covers was missed) and, mapped back, equals the default build byte for byte (the
 #     rename changed nothing else; so does create-ticket-v2); --name
 #     create-ticket is the default build; names that resemble plugin words or
 #     folders (hooks, brief, test-plan, best-effort, home) build; invalid,
@@ -61,10 +61,16 @@
 #     depend on the name being unusual; the name audit catches a foreign tool
 #     name the probe misses, a rename that misses occurrences and a
 #     description the name makes too long
-#   - the exit audit's variant check reports every other spelling of the
-#     name planted in a copied source (another case, underscore, camel case,
-#     glued, wrapped, an upstream skills/create-ticket/ path) and a file named
-#     after it, for the default name and for --name, and publishes nothing
+#   - the exit audit's variant check reports the other forms of the name it
+#     covers, planted in a copied source (another case, underscore, camel
+#     case, glued, wrapped, an upstream skills/create-ticket path), and a file
+#     named after it, for the default name and for --name, and publishes
+#     nothing; a form that differs by markup, an entity or a non-ASCII
+#     character is out of its reach
+#   - publish: a dotfile-only or unreadable <out>/<name> is refused, a
+#     near-miss marker line is not the marker, a publish that fails after a
+#     partial copy leaves only the previous skill, and a previous tree that
+#     cannot be removed completely is still replaced, with a WARNING
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -198,7 +204,7 @@ check "frontmatter metadata.source is neutral (no plugin name, no generator path
 # The manifests carry the canonical name create-ticket; --name renames the
 # audited tree. No other spelling of create-ticket left in the renamed tree,
 # together with the exit audit's variant check on the canonical text, shows
-# that no occurrence was missed. The default tree above, built from the same
+# that no occurrence in a form that check covers was missed. The default tree above, built from the same
 # source, is the reference for the rest: a renamed tree mapped back to
 # create-ticket must equal it byte for byte, which shows the rename changed
 # nothing else (a missed occurrence would map back to itself, so the round
@@ -466,6 +472,115 @@ else
     "$RO_DETAIL"
 fi
 
+# A directory holding only a dotfile is not empty: refused without --force.
+DOT_OUT="$TMP_ROOT/name-dotonly"
+mkdir -p "$DOT_OUT/dotonly"
+printf 'KEY=1\n' >"$DOT_OUT/dotonly/.env"
+cp -R "$DOT_OUT" "$TMP_ROOT/name-dotonly-before"
+set +e
+bash "$BUILD" --out "$DOT_OUT" --name dotonly >"$TMP_ROOT/name-dotonly.log" 2>&1
+DOT_RC=$?
+set -e
+check "a directory holding only a dotfile is refused without --force (exit 2) and left byte for byte" \
+  "$([ "$DOT_RC" -eq 2 ] || echo "rc=$DOT_RC")$(grep -qF '(pass --force)' "$TMP_ROOT/name-dotonly.log" || echo " log: $(head -n 1 "$TMP_ROOT/name-dotonly.log")")$(diff -r "$TMP_ROOT/name-dotonly-before" "$DOT_OUT" 2>&1 | head -n 5 || true)"
+
+# The marker counts only as the exact line inside the leading frontmatter
+# block: another indentation, text after it, CR LF line ends, the line quoted
+# in a sentence or in a fenced block of the text are not the marker.
+NM_OUT="$TMP_ROOT/name-nearmiss"
+mkdir -p "$NM_OUT/indent0" "$NM_OUT/indent4" "$NM_OUT/crlf" "$NM_OUT/sentence" "$NM_OUT/suffix" "$NM_OUT/quoted"
+printf -- '---\nname: indent0\nsource: generated skill; do not edit by hand\n---\n' >"$NM_OUT/indent0/SKILL.md"
+printf -- '---\nname: indent4\nmetadata:\n    source: generated skill; do not edit by hand\n---\n' >"$NM_OUT/indent4/SKILL.md"
+printf -- '---\r\nname: crlf\r\nmetadata:\r\n  source: generated skill; do not edit by hand\r\n---\r\n' >"$NM_OUT/crlf/SKILL.md"
+printf -- '# sentence\n\nA built tree holds the line "  source: generated skill; do not edit by hand" in its frontmatter.\n' >"$NM_OUT/sentence/SKILL.md"
+printf -- '---\nname: suffix\nmetadata:\n  source: generated skill; do not edit by hand (edited since)\n---\n' >"$NM_OUT/suffix/SKILL.md"
+printf -- '---\nname: quoted\ndescription: by hand\n---\n\n# Quoted\n\n```yaml\nmetadata:\n  source: generated skill; do not edit by hand\n```\n' >"$NM_OUT/quoted/SKILL.md"
+for n in indent0 indent4 crlf sentence suffix quoted; do printf 'mine\n' >"$NM_OUT/$n/mine.txt"; done
+cp -R "$NM_OUT" "$TMP_ROOT/name-nearmiss-before"
+NM_REAL="$(CDPATH='' cd -- "$NM_OUT" && pwd)"
+NM_DETAIL=""
+for n in indent0 indent4 crlf sentence suffix quoted; do
+  set +e
+  bash "$BUILD" --out "$NM_OUT" --name "$n" --force >"$TMP_ROOT/name-nearmiss-$n.log" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || NM_DETAIL="$NM_DETAIL $n:rc=$rc"
+  grep -qF "refusing to replace $NM_REAL/$n: it is not a skill this generator wrote" "$TMP_ROOT/name-nearmiss-$n.log" || NM_DETAIL="$NM_DETAIL $n:not-refused"
+done
+NM_DETAIL="$NM_DETAIL$(diff -r "$TMP_ROOT/name-nearmiss-before" "$NM_OUT" 2>&1 | head -n 5 || true)"
+check "--force on a SKILL.md with a near-miss marker (other indentation, CR LF, text after it, quoted in a sentence or in a fenced block of the text) exits 2 and leaves every file byte for byte" \
+  "$NM_DETAIL"
+
+# A publish whose first move fails after it created the directory leaves only
+# the previous tree in <out>: a mv stand-in first on PATH fails for the
+# incoming directory and runs the real mv otherwise.
+STUB_BIN="$TMP_ROOT/name-stub-bin"
+mkdir -p "$STUB_BIN"
+REAL_MV="$(command -v mv)"
+cat >"$STUB_BIN/mv" <<STUBEOF
+#!/bin/sh
+for last; do :; done
+case "\$last" in
+  */.*.incoming.*) mkdir -p "\$last/references"; echo partial >"\$last/SKILL.md"; echo "mv: stand-in: no space left" >&2; exit 1 ;;
+esac
+exec "$REAL_MV" "\$@"
+STUBEOF
+chmod +x "$STUB_BIN/mv"
+PF_OUT="$TMP_ROOT/name-partial"
+mkdir -p "$PF_OUT" "$TMP_ROOT/name-partial-tmp"
+cp -R "$SKILL_DIR" "$PF_OUT/create-ticket"
+printf 'old\n' >"$PF_OUT/create-ticket/old.txt"
+cp -R "$PF_OUT/create-ticket" "$TMP_ROOT/name-partial-before"
+set +e
+PATH="$STUB_BIN:$PATH" TMPDIR="$TMP_ROOT/name-partial-tmp" bash "$BUILD" --out "$PF_OUT" --force >"$TMP_ROOT/name-partial.log" 2>&1
+PF_RC=$?
+set -e
+check "a publish that fails after a partial copy exits 2 and leaves only the previous skill, byte for byte, in <out> and no staging directory" \
+  "$([ "$PF_RC" -eq 2 ] || echo "rc=$PF_RC")$(grep -qF 'create-ticket is unchanged' "$TMP_ROOT/name-partial.log" || echo " log: $(tail -n 1 "$TMP_ROOT/name-partial.log")")$([ "$(entries_of "$PF_OUT")" = "create-ticket " ] || echo " <out> holds: $(entries_of "$PF_OUT")")$(diff -r "$TMP_ROOT/name-partial-before" "$PF_OUT/create-ticket" 2>&1 | head -n 5 || true)$([ -z "$(entries_of "$TMP_ROOT/name-partial-tmp")" ] || echo " left behind: $(entries_of "$TMP_ROOT/name-partial-tmp")")"
+
+# A directory that cannot be listed is refused, not taken for empty; and a
+# previous generated tree that cannot be removed completely is still replaced
+# (it is moved aside first), with a WARNING naming what is left. Root reads
+# and removes anything, so both are skipped for root.
+if [ "$(id -u)" -eq 0 ]; then
+  echo "  SKIP an unreadable <out>/<name> is refused and an undeletable previous tree is still replaced (running as root)"
+else
+  UR_OUT="$TMP_ROOT/name-unreadable"
+  mkdir -p "$UR_OUT/mode0"
+  printf 'mine\n' >"$UR_OUT/mode0/mine.txt"
+  chmod 000 "$UR_OUT/mode0"
+  UR_DETAIL=""
+  for force in "" --force; do
+    set +e
+    bash "$BUILD" --out "$UR_OUT" --name mode0 ${force:+"$force"} >"$TMP_ROOT/name-unreadable.log" 2>&1
+    rc=$?
+    set -e
+    [ "$rc" -eq 2 ] || UR_DETAIL="$UR_DETAIL mode0${force:+ $force}:rc=$rc"
+    grep -qF 'mode0: it cannot be read' "$TMP_ROOT/name-unreadable.log" || UR_DETAIL="$UR_DETAIL mode0${force:+ $force}:message:$(tail -n 1 "$TMP_ROOT/name-unreadable.log")"
+  done
+  chmod 755 "$UR_OUT/mode0"
+  [ "$(cat "$UR_OUT/mode0/mine.txt")" = "mine" ] || UR_DETAIL="$UR_DETAIL content-changed"
+  [ "$(entries_of "$UR_OUT")" = "mode0 " ] || UR_DETAIL="$UR_DETAIL out-holds:$(entries_of "$UR_OUT")"
+  check "a non-empty <out>/<name> that cannot be listed exits 2 (it cannot be read), with and without --force, and is left as it was" \
+    "$UR_DETAIL"
+
+  LK_OUT="$TMP_ROOT/name-locked-old"
+  mkdir -p "$LK_OUT"
+  cp -R "$SKILL_DIR" "$LK_OUT/create-ticket"
+  printf 'old\n' >"$LK_OUT/create-ticket/references/old.txt"
+  chmod 555 "$LK_OUT/create-ticket/references"
+  set +e
+  bash "$BUILD" --out "$LK_OUT" --force >"$TMP_ROOT/name-locked-old.log" 2>&1
+  LK_RC=$?
+  set -e
+  LK_LEFT="$(sed -n 's/.*what is left of it is at \(.*\)$/\1/p' "$TMP_ROOT/name-locked-old.log" | head -n 1)"
+  LK_DETAIL="$([ "$LK_RC" -eq 0 ] || echo "rc=$LK_RC $(tail -n 2 "$TMP_ROOT/name-locked-old.log")")$(grep -qF 'WARNING: the previous tree could not be removed completely' "$TMP_ROOT/name-locked-old.log" || echo ' no WARNING')$(diff -r "$SKILL_DIR" "$LK_OUT/create-ticket" 2>&1 | head -n 5 || true)"
+  { [ -n "$LK_LEFT" ] && [ -f "$LK_LEFT/references/old.txt" ]; } || LK_DETAIL="$LK_DETAIL left-path-missing:$LK_LEFT"
+  [ -z "$LK_LEFT" ] || { chmod -R u+w "$LK_LEFT" 2>/dev/null || true; }
+  check "--force over a generated tree that cannot be removed completely still publishes the new tree (exit 0) and names what is left of the old one in a WARNING" \
+    "$LK_DETAIL"
+fi
+
 # A failed build leaves the previous skill byte for byte: a copy of the
 # generator whose own manifest copy has one more denylist row, one the
 # canonical text trips, fails the exit audit of a --force rebuild. The failed
@@ -644,6 +759,9 @@ if [ "$(grep -cxF -- "$RENAME_G" "$BUILD" || true)" = 1 ] &&
   set -e
   check "name audit backstop: a rename without the g flag (one create-ticket per line) fails the build (exit 1) on the occurrence count and on the create-ticket left, and publishes nothing" \
     "$([ "$NBG_RC" -eq 1 ] || echo "rc=$NBG_RC")$(grep -qF 'occurrence(s) of the name after the rename, expected' "$TMP_ROOT/name-backstop-g.log" || echo ' no occurrence-count finding')$(grep -qF 'occurrence(s) of create-ticket left after the rename' "$TMP_ROOT/name-backstop-g.log" || echo ' no left-over finding')$([ -z "$(entries_of "$TMP_ROOT/name-backstop-g/out")" ] || echo " published: $(entries_of "$TMP_ROOT/name-backstop-g/out")")"
+  NBG_LEFT="$(sed -n 's/.* output left at \(.*\) for inspection.*/\1/p' "$TMP_ROOT/name-backstop-g.log" | head -n 1)"
+  check "a failed name audit keeps the failed tree at the path it prints" \
+    "$([ -n "$NBG_LEFT" ] || echo 'no output-left-at path')$([ -z "$NBG_LEFT" ] || [ -f "$NBG_LEFT/SKILL.md" ] || echo " no SKILL.md at $NBG_LEFT")"
 else
   fail "name audit backstop: the g flag of the rename could not be dropped in the copy of the generator"
 fi
@@ -3668,6 +3786,13 @@ awk '/^### Form A / && !done {
        print "Variant fixture wrapped pair: the create-"
        print "ticket skill."
        print "Variant fixture upstream path: <repo>/skills/create-ticket/SKILL.md."
+       print "Variant fixture trailing blank: the create- "
+       print "ticket skill again."
+       print "> Quoted variant fixture: the create-"
+       print "> ticket skill quoted."
+       print "Variant fixture versioned path: plugin-v1.2.3/skills/create-ticket/SKILL.md."
+       print "Variant fixture slashless path: the upstream directory <repo>/skills/create-ticket."
+       print "Variant fixture host root: the directory .claude/skills/create-ticket stays."
        print ""
        done = 1
      }
@@ -3678,8 +3803,12 @@ name variant (another spelling of the name)|Variant fixture capitalised: Create-
 name variant (glued to another word)|Variant fixture plural glue: create-tickets.
 name variant (glued to another word)|Variant fixture prefix glue: pre-create-ticket.
 name variant (wrapped over a line end)|Variant fixture wrapped pair: the create- ticket skill.
-upstream path of the skill|Variant fixture upstream path: <repo>/skills/create-ticket/SKILL.md.'
-if [ "$(grep -c '^Variant fixture ' "$VAR_SRC/agents/decomposer.md" || true)" = 7 ]; then
+upstream path of the skill|Variant fixture upstream path: <repo>/skills/create-ticket/SKILL.md.
+name variant (wrapped over a line end)|Variant fixture trailing blank: the create- ticket skill again.
+name variant (wrapped over a line end)|> Quoted variant fixture: the create- > ticket skill quoted.
+upstream path of the skill|Variant fixture versioned path: plugin-v1.2.3/skills/create-ticket/SKILL.md.
+upstream path of the skill|Variant fixture slashless path: the upstream directory <repo>/skills/create-ticket.'
+if [ "$(grep -c '^Variant fixture ' "$VAR_SRC/agents/decomposer.md" || true)" = 11 ]; then
   for n in create-ticket zq-x7; do
     VOUT="$TMP_ROOT/variant-out-$n"
     set +e
@@ -3691,8 +3820,10 @@ if [ "$(grep -c '^Variant fixture ' "$VAR_SRC/agents/decomposer.md" || true)" = 
       awk -v K="  $kind references/agents/decomposer.md:" -v T=": $text" 'index($0, K) == 1 && index($0, T) {f = 1} END {exit !f}' "$TMP_ROOT/variant-$n.log" ||
         VDETAIL="$VDETAIL missing:'$kind ... $text'"
     done <<<"$VARIANT_FORMS"
+    # A host skill root (the dot first in its path segment) is not an upstream path.
+    ! grep -qF 'Variant fixture host root' "$TMP_ROOT/variant-$n.log" || VDETAIL="$VDETAIL host-root-reported"
     [ -z "$(entries_of "$VOUT")" ] || VDETAIL="$VDETAIL published:$(entries_of "$VOUT")"
-    check "exit audit variant check ($n): each other spelling planted in the source (underscore, camel case, capitalised, plural glue, prefix glue, wrapped pair, upstream skills/create-ticket/ path) is named by its own finding, the build exits 1 and nothing is published" \
+    check "exit audit variant check ($n): each other spelling planted in the source (underscore, camel case, capitalised, plural glue, prefix glue, a pair wrapped plainly, behind a trailing blank and inside a quote, an upstream skills/create-ticket path with a slash, without one and behind a versioned directory) is named by its own finding, a host skill root is not, the build exits 1 and nothing is published" \
       "$VDETAIL"
   done
 else
