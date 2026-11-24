@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # build-standalone-skill.sh — generate a self-contained, host-neutral Agent
-# Skill `create-ticket/` (SKILL.md + references/) from this plugin's sources.
+# Skill (SKILL.md + references/) from this plugin's sources, named
+# `create-ticket` by default or any valid skill name given with --name.
 #
 # The output needs no plugin, no hooks and no custom agent files, and
 # names tools by role, never by a host's tool name: drop it into the skill
@@ -9,7 +10,7 @@
 # enforced by the exit audit below and by tests/test-standalone-skill-build.sh.
 #
 # Usage:
-#   bash tools/build-standalone-skill.sh --out <dir> [--src <dir>] [--force]
+#   bash tools/build-standalone-skill.sh --out <dir> [--name <skill-name>] [--src <dir>] [--force]
 #   bash tools/build-standalone-skill.sh --help
 #
 # Inputs (tools/standalone-skill/, see its README.md):
@@ -27,8 +28,12 @@
 #   2. paragraph drops by anchor ERE
 #   3. token substitutions
 #   4. exit audit over the whole generated tree
+#   5. with --name: the canonical name `create-ticket` is replaced by the
+#      chosen name in every generated file, then the name audit runs
 # Every manifest entry must match at least once in its scope; a stale entry
-# fails the build so the manifests never rot silently.
+# fails the build so the manifests never rot silently. The manifests always
+# carry the canonical name: layers 1-4 build and audit the canonical text,
+# and the chosen name is applied only to a tree whose exit audit is clean.
 #
 # Tooling: bash + sed/awk/grep only (BSD and GNU compatible, LC_ALL=C).
 
@@ -37,26 +42,41 @@ export LC_ALL=C
 
 print_help() {
   cat <<'EOF'
-build-standalone-skill.sh — generate the standalone, host-neutral `create-ticket` skill
+build-standalone-skill.sh — generate the standalone, host-neutral ticket-creation skill
 
 Usage:
-  bash tools/build-standalone-skill.sh --out <dir> [--src <dir>] [--force]
+  bash tools/build-standalone-skill.sh --out <dir> [--name <skill-name>] [--src <dir>] [--force]
   bash tools/build-standalone-skill.sh --help
 
 Options:
-  --out <dir>   Output directory. The skill is written to <dir>/create-ticket/.
-  --src <dir>   Plugin source root to read (default: this repository's root).
-                Manifests are always read from tools/standalone-skill/ next to
-                this script. Its short git commit is stamped into the
-                frontmatter as metadata.source-commit ("unknown" outside git).
-  --force       Replace a non-empty <dir>/create-ticket/ (refused otherwise).
-  --help        Print this message and exit 0.
+  --out <dir>          Output directory. The skill is written to <dir>/<skill-name>/.
+  --name <skill-name>  Name of the generated skill (default: create-ticket): its
+                       directory name, its frontmatter name and every place the
+                       skill names itself (invocation, skill-root paths, scratch
+                       directory, ERROR: messages). 1 to 64 lowercase ASCII
+                       letters, digits and hyphens, no hyphen first, last or
+                       next to another (^[a-z0-9]+(-[a-z0-9]+)*$). Refused: the
+                       role names used inside the skill (planner, researcher,
+                       decomposer, ticket-evaluator), a name YAML reads as a
+                       number, boolean, null or date (123, true, yes, 1e3,
+                       2024-01-01), and a name the exit audit would reject in
+                       one of the places the name takes.
+  --src <dir>          Plugin source root to read (default: this repository's
+                       root). Manifests are always read from tools/standalone-skill/
+                       next to this script. Its short git commit is stamped into
+                       the frontmatter as metadata.source-commit ("unknown"
+                       outside git).
+  --force              Replace a non-empty <dir>/<skill-name>/ (refused otherwise).
+                       Nothing else under <dir> is ever removed.
+  --help               Print this message and exit 0.
 
 Exit status:
-  0  skill generated and the exit audit is clean
-  1  exit audit failed or a manifest entry is stale (details on stderr)
-  2  usage error, missing source file, malformed manifest row (a
-     substitution target glued to its replacement), or refused overwrite
+  0  skill generated; the exit audit (and with --name, the name audit) is clean
+  1  exit audit or name audit failed, or a manifest entry is stale (details
+     on stderr)
+  2  usage error (an invalid or reserved --name included), missing source
+     file, malformed manifest row (a substitution target glued to its
+     replacement), or refused overwrite
 EOF
 }
 
@@ -69,21 +89,94 @@ MANIFEST_DIR="$SCRIPT_DIR/standalone-skill"
 SRC_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR=""
 FORCE=0
+# The canonical name: every manifest, override and audit rule is written
+# with it; --name replaces it in the generated tree after the exit audit.
+CANON_NAME="create-ticket"
+NAME="$CANON_NAME"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --help|-h) print_help; exit 0 ;;
     --out) [ $# -ge 2 ] || { err "--out requires a value"; exit 2; }; OUT_DIR="$2"; shift 2 ;;
+    --name) [ $# -ge 2 ] || { err "--name requires a value"; exit 2; }; NAME="$2"; shift 2 ;;
     --src) [ $# -ge 2 ] || { err "--src requires a value"; exit 2; }; SRC_ROOT="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
     *) err "unknown argument: $1 (see --help)"; exit 2 ;;
   esac
 done
 
+# --- name validation (before any filesystem action) ----------------------------
+
+NAME_RULE='a skill name is 1 to 64 lowercase ASCII letters, digits and hyphens, with no hyphen first, last or next to another (^[a-z0-9]+(-[a-z0-9]+)*$)'
+# The name as printed in a message: control and non-ASCII bytes shown as '?'.
+NAME_SHOWN="$(printf '%s' "$NAME" | tr -c '[:print:]' '?')"
+case "$NAME" in
+  ''|*[!a-z0-9-]*|-*|*-|*--*) err "invalid --name '$NAME_SHOWN': $NAME_RULE"; exit 2 ;;
+esac
+[ "${#NAME}" -le 64 ] || { err "invalid --name '$NAME_SHOWN' (${#NAME} characters): $NAME_RULE"; exit 2; }
+# The frontmatter writes the name as a plain YAML scalar, so a name a YAML
+# reader resolves to a number, a boolean, null or a date (YAML 1.1 or 1.2) is
+# refused: the frontmatter name would not be the name.
+if grep -qxE '(null|true|false|yes|no|on|off|y|n|[0-9]+|0x[0-9a-f]+|0o[0-7]+|0b[01]+|[0-9]+e-?[0-9]+|[0-9]{4}-[0-9]{2}-[0-9]{2})' <<<"$NAME"; then
+  err "invalid --name '$NAME': a YAML reader takes it for a number, a boolean, null or a date, not a string, so the frontmatter name of SKILL.md would not be the name"
+  exit 2
+fi
+case "$NAME" in
+  planner|researcher|decomposer|ticket-evaluator)
+    err "reserved --name '$NAME': planner, researcher, decomposer and ticket-evaluator are the role names used inside the skill, whose role prompts tell each role never to run the skill by its name"
+    exit 2 ;;
+esac
+
 [ -n "$OUT_DIR" ] || { err "--out is required (see --help)"; exit 2; }
 [ -d "$SRC_ROOT" ] || { err "--src is not a directory: $SRC_ROOT"; exit 2; }
 SRC_ROOT="$(cd "$SRC_ROOT" && pwd)"
 [ -d "$MANIFEST_DIR" ] || { err "manifest directory missing: $MANIFEST_DIR"; exit 2; }
+
+# Read a manifest, dropping comment and blank lines.
+manifest_lines() {
+  grep -vE '^[[:space:]]*(#|$)' "$1" || true
+}
+
+# Foreign tool names of the exit audit (tool-vocabulary.txt "deny <Name>").
+DENY_TOOLS="$(manifest_lines "$MANIFEST_DIR/tool-vocabulary.txt" | awk '$1 == "deny" {printf "%s%s", sep, $2; sep = "|"}')"
+# shellcheck disable=SC2016  # literal backticks, no expansion intended
+DENY_TOOLS_RE='`('"$DENY_TOOLS"')(\([^`]*\))?`'
+
+# A name that would trip the exit audit: the probe holds the name in each
+# context it takes in the generated tree, and a denylist or foreign-tool-name
+# rule that matches a probe line with the name, but not the same line with
+# the canonical name, refuses the name. The name audit after the rename is
+# the backstop for a context the probe does not hold.
+name_probe() {
+  printf '%s\n' "/$1" "\`$1\`" ".claude/skills/$1/" ".local/$1-scratch/run.XXXXXX" \
+    "ERROR: $1 write failed" "the $1 skill" "# $1" "name: $1"
+}
+# probe_findings LABEL ERE — one line per probe line the ERE matches with the
+# name and not with the canonical name.
+probe_findings() {
+  local hc hn ln
+  hc=" $(name_probe "$CANON_NAME" | { grep -nE -- "$2" || true; } | cut -d: -f1 | tr '\n' ' ')"
+  hn="$(name_probe "$NAME" | { grep -nE -- "$2" || true; } | cut -d: -f1)"
+  for ln in $hn; do
+    case "$hc" in *" $ln "*) continue ;; esac
+    printf '%s matches "%s"\n' "$1" "$(name_probe "$NAME" | sed -n "${ln}p")"
+  done
+}
+if [ "$NAME" != "$CANON_NAME" ]; then
+  PROBE_FAIL="$(
+    while IFS= read -r pat; do
+      probe_findings "denylist rule [$pat] (denylist.txt)" "$pat"
+    done < <(manifest_lines "$MANIFEST_DIR/denylist.txt")
+    if [ -n "$DENY_TOOLS" ]; then
+      probe_findings "foreign tool name rule (a deny row of tool-vocabulary.txt)" "$DENY_TOOLS_RE"
+    fi
+  )"
+  if [ -n "$PROBE_FAIL" ]; then
+    err "invalid --name '$NAME': the generated text would fail the exit audit with this name:"
+    printf '%s\n' "$PROBE_FAIL" | sed 's/^/  /' >&2
+    exit 2
+  fi
+fi
 
 PLUGIN_JSON="$SRC_ROOT/.claude-plugin/plugin.json"
 [ -f "$PLUGIN_JSON" ] || { err "missing $PLUGIN_JSON"; exit 2; }
@@ -99,13 +192,13 @@ printf '%s\n' "$SOURCE_COMMIT" | grep -qxE '[0-9a-f]{7,40}' || SOURCE_COMMIT="un
 
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
-TARGET="$OUT_DIR/create-ticket"
+TARGET="$OUT_DIR/$NAME"
 if [ -d "$TARGET" ] && [ -n "$(ls -A "$TARGET")" ]; then
   if [ "$FORCE" -ne 1 ]; then
     err "refusing to overwrite non-empty $TARGET (pass --force)"
     exit 2
   fi
-  [ "$(basename "$TARGET")" = "create-ticket" ] || { err "unexpected target $TARGET"; exit 2; }
+  [ "$(basename "$TARGET")" = "$NAME" ] || { err "unexpected target $TARGET"; exit 2; }
   rm -rf "$TARGET"
 fi
 mkdir -p "$TARGET"
@@ -116,11 +209,6 @@ STALE="$WORK/stale.txt"
 : >"$STALE"
 
 DELIM="$(printf '\001')"
-
-# Read a manifest, dropping comment and blank lines.
-manifest_lines() {
-  grep -vE '^[[:space:]]*(#|$)' "$1" || true
-}
 
 # scope_match DEST GLOB — bash pattern match ('*' matches across '/').
 scope_match() {
@@ -398,20 +486,28 @@ cat "$STALE" >>"$FAIL"
 GEN_FILES=()
 while IFS= read -r f; do GEN_FILES+=("$f"); done < <(cd "$TARGET" && find . -type f | sed 's#^\./##' | sort)
 
-# (a) denylist
-while IFS= read -r pat; do
-  for f in "${GEN_FILES[@]}"; do
-    (cd "$TARGET" && grep -nE -- "$pat" "$f" || true) | prefix "denylist [$pat] $f:" | cut -c1-240 >>"$FAIL"
-  done
-done < <(manifest_lines "$MANIFEST_DIR/denylist.txt")
+# Checks (a), (b) and (e) run again in the name audit (Layer 5); LABEL
+# prefixes each finding ("" in the exit audit).
 
-# (b) foreign tool names in backticks (tool-vocabulary.txt "deny <Name>")
-DENY_TOOLS="$(manifest_lines "$MANIFEST_DIR/tool-vocabulary.txt" | awk '$1 == "deny" {printf "%s%s", sep, $2; sep = "|"}')"
-if [ -n "$DENY_TOOLS" ]; then
+# (a) denylist
+audit_denylist() {
+  while IFS= read -r pat; do
+    for f in "${GEN_FILES[@]}"; do
+      (cd "$TARGET" && grep -nE -- "$pat" "$f" || true) | prefix "${1}denylist [$pat] $f:" | cut -c1-240
+    done
+  done < <(manifest_lines "$MANIFEST_DIR/denylist.txt")
+}
+audit_denylist "" >>"$FAIL"
+
+# (b) foreign tool names in backticks (tool-vocabulary.txt "deny <Name>",
+#     read into DENY_TOOLS before the build)
+audit_tool_names() {
+  [ -n "$DENY_TOOLS" ] || return 0
   for f in "${GEN_FILES[@]}"; do
-    (cd "$TARGET" && grep -nE -- "\`($DENY_TOOLS)(\\([^\`]*\\))?\`" "$f" || true) | prefix "foreign tool name $f:" | cut -c1-240 >>"$FAIL"
+    (cd "$TARGET" && grep -nE -- "$DENY_TOOLS_RE" "$f" || true) | prefix "${1}foreign tool name $f:" | cut -c1-240
   done
-fi
+}
+audit_tool_names "" >>"$FAIL"
 
 # (c) English only: no CJK / Hangul / fullwidth lead bytes (U+3000..U+D7FF).
 CJK="$(printf '[\343-\355]')"
@@ -437,10 +533,13 @@ done
 
 # (e) inline code spans stay balanced outside fences (catches a substitution
 #     that nests a backticked token inside a backticked phrase)
-for f in "${GEN_FILES[@]}"; do
-  awk -v F="$f" '/^ ? ? ?(```|~~~)/ { fz = !fz; next }
-    !fz { n = gsub(/`/, "`"); if (n % 2) printf "unbalanced backticks %s:%d\n", F, NR }' "$TARGET/$f" >>"$FAIL"
-done
+audit_backticks() {
+  for f in "${GEN_FILES[@]}"; do
+    awk -v F="$f" -v L="$1" '/^ ? ? ?(```|~~~)/ { fz = !fz; next }
+      !fz { n = gsub(/`/, "`"); if (n % 2) printf "%sunbalanced backticks %s:%d\n", L, F, NR }' "$TARGET/$f"
+  done
+}
+audit_backticks "" >>"$FAIL"
 
 # (f) frontmatter
 FM="$(awk 'NR == 1 && $0 == "---" {fm = 1; next} fm && $0 == "---" {exit} fm {print}' "$TARGET/SKILL.md")"
@@ -465,10 +564,81 @@ DELTA=$((GEN_WC - SRC_WC)); [ "$DELTA" -ge 0 ] || DELTA=$((-DELTA))
 [ $((DELTA * 100)) -le $((SRC_WC * 5)) ] || printf 'rubric parity: word count %s vs source %s (> 5%%)\n' "$GEN_WC" "$SRC_WC" >>"$FAIL"
 
 if [ -s "$FAIL" ]; then
-  err "exit audit FAILED ($(wc -l <"$FAIL" | tr -d ' ') finding(s)); output left at $TARGET for inspection:"
+  CANON_NOTE=""
+  [ "$NAME" = "$CANON_NAME" ] || CANON_NOTE=" (still the canonical text: --name is applied only after a clean exit audit)"
+  err "exit audit FAILED ($(wc -l <"$FAIL" | tr -d ' ') finding(s)); output left at $TARGET for inspection$CANON_NOTE:"
   sed 's/^/  /' "$FAIL" >&2
   exit 1
 fi
 
-printf '[build-standalone-skill] wrote %s (%s files, source version %s, commit %s); exit audit clean\n' \
-  "$TARGET" "${#GEN_FILES[@]}" "$SOURCE_VERSION" "$SOURCE_COMMIT"
+if [ "$NAME" = "$CANON_NAME" ]; then
+  printf '[build-standalone-skill] wrote %s (%s files, source version %s, commit %s); exit audit clean\n' \
+    "$TARGET" "${#GEN_FILES[@]}" "$SOURCE_VERSION" "$SOURCE_COMMIT"
+  exit 0
+fi
+
+# --- Layer 5: the chosen name and the name audit ----------------------------
+
+# The generated tree names the skill only by the exact token create-ticket
+# (no case, underscore or line-wrapped variant), so one sed pass per file
+# renames it; the validated name needs no escaping in sed. The name audit
+# then proves the pass per file: the occurrences of the name, minus those the
+# canonical text already held (counted with every create-ticket masked),
+# equal the create-ticket occurrences counted before the pass, and no
+# create-ticket is left outside an occurrence of the name. Every check that
+# the name can change runs again on the renamed tree; the canonical tree
+# passed the exit audit, so any finding is caused by the name.
+NFAIL="$WORK/name-audit.txt"
+: >"$NFAIL"
+NLABEL="name audit (caused by --name $NAME): "
+MASK="$(printf '\002')"
+# count_in WORD — occurrences (not lines) of WORD on standard input.
+count_in() { { grep -oF -- "$1" || true; } | wc -l | tr -d ' '; }
+RENAMED=0
+for f in "${GEN_FILES[@]}"; do
+  p="$TARGET/$f"
+  c="$(count_in "$CANON_NAME" <"$p")"
+  [ "$c" -gt 0 ] || continue
+  base="$(sed "s/$CANON_NAME/$MASK/g" "$p" | count_in "$NAME")"
+  sed "s/$CANON_NAME/$NAME/g" "$p" >"$p.tmp"
+  mv "$p.tmp" "$p"
+  after="$(count_in "$NAME" <"$p")"
+  [ $((after - base)) -eq "$c" ] ||
+    printf '%s%s: %s occurrence(s) of the name after the rename, expected %s (%s of create-ticket renamed, %s of the name already in the text)\n' \
+      "$NLABEL" "$f" "$after" $((base + c)) "$c" "$base" >>"$NFAIL"
+  RENAMED=$((RENAMED + c))
+done
+for f in "${GEN_FILES[@]}"; do
+  case "$NAME" in
+    *"$CANON_NAME"*) left="$(sed "s/$NAME/$MASK/g" "$TARGET/$f" | count_in "$CANON_NAME")" ;;
+    *) left="$(count_in "$CANON_NAME" <"$TARGET/$f")" ;;
+  esac
+  [ "$left" -eq 0 ] || printf '%s%s: %s occurrence(s) of create-ticket left after the rename\n' "$NLABEL" "$f" "$left" >>"$NFAIL"
+done
+
+FM_N="$(awk 'NR == 1 && $0 == "---" {fm = 1; next} fm && $0 == "---" {exit} fm {print}' "$TARGET/SKILL.md")"
+FM_N_NAME="$(printf '%s\n' "$FM_N" | sed -n 's/^name: //p')"
+{ [ "$FM_N_NAME" = "$NAME" ] && [ "$FM_N_NAME" = "$(basename "$TARGET")" ]; } ||
+  printf '%sfrontmatter: name is "%s", not the name and directory name %s\n' "$NLABEL" "$FM_N_NAME" "$NAME" >>"$NFAIL"
+DESC_LEN_N="$(printf '%s\n' "$FM_N" | awk '/^description:/ {d = 1; next} d && /^[a-z-]+:/ {d = 0} d {sub(/^ +/, ""); s = s (s == "" ? "" : " ") $0} END {printf "%d", length(s)}')"
+if [ "$DESC_LEN_N" -gt 1024 ]; then
+  printf '%sfrontmatter: description length %s not in 1..1024: the name is too long for the description (%s characters with this %s-character name, %s with create-ticket)\n' \
+    "$NLABEL" "$DESC_LEN_N" "$DESC_LEN_N" "${#NAME}" "$DESC_LEN" >>"$NFAIL"
+elif [ "$DESC_LEN_N" -lt 1 ]; then
+  printf '%sfrontmatter: description length %s not in 1..1024\n' "$NLABEL" "$DESC_LEN_N" >>"$NFAIL"
+fi
+
+{
+  audit_denylist "$NLABEL"
+  audit_tool_names "$NLABEL"
+  audit_backticks "$NLABEL"
+} >>"$NFAIL"
+
+if [ -s "$NFAIL" ]; then
+  err "name audit FAILED ($(wc -l <"$NFAIL" | tr -d ' ') finding(s)); the name '$NAME' caused them, since the canonical text passed the exit audit; output left at $TARGET for inspection:"
+  sed 's/^/  /' "$NFAIL" >&2
+  exit 1
+fi
+
+printf '[build-standalone-skill] wrote %s (%s files, source version %s, commit %s); exit audit clean; name audit clean (%s occurrences of create-ticket renamed to %s)\n' \
+  "$TARGET" "${#GEN_FILES[@]}" "$SOURCE_VERSION" "$SOURCE_COMMIT" "$RENAMED" "$NAME"

@@ -44,6 +44,13 @@
 #     section, the Error Handling table and the reference file), the Usage
 #     line stays consistent with the argument-hint, and the Delivery jq
 #     filter and the source_content_path= extraction run on fixtures
+#   - --name: a tree built as zq-x7 holds no create-ticket and, mapped back,
+#     equals the default build byte for byte (so does create-ticket-v2);
+#     --name create-ticket is the default build; invalid, reserved,
+#     YAML-typed and audit-tripping names exit 2 before anything is written;
+#     --force replaces <out>/<name> only; every create-ticket of the default
+#     tree sits in a known name context; the name audit catches a name the
+#     probe misses and a description the name makes too long
 #   - a --src outside git stamps source-commit "unknown"
 #   - two mutations (a plugin variable, a plugin backlog path, each injected
 #     into a copied source) FAIL the build, proving the audit is the exit gate
@@ -161,10 +168,287 @@ check "frontmatter carries no allowed-tools key" "$(printf '%s\n' "$FM" | grep '
 check "frontmatter metadata names the source version" \
   "$(printf '%s\n' "$FM" | grep -qE '^  source-version: "[0-9]+\.[0-9]+\.[0-9]+"$' || echo missing)"
 COMMIT_VAL="$(printf '%s\n' "$FM" | sed -n 's/^  source-commit: //p')"
+# The pattern sits in a variable: bash 3.2 misreads a double quote inside
+# single quotes inside "$( ... )".
+COMMIT_RE='^"([0-9a-f]{7,40}|unknown)"$'
 check "frontmatter metadata names the source commit (short sha or unknown)" \
-  "$(printf '%s\n' "$COMMIT_VAL" | grep -qE '^"([0-9a-f]{7,40}|unknown)"$' || echo "source-commit='$COMMIT_VAL'")"
+  "$(printf '%s\n' "$COMMIT_VAL" | grep -qE -- "$COMMIT_RE" || echo "source-commit='$COMMIT_VAL'")"
 check "frontmatter metadata.source is neutral (no plugin name, no generator path)" \
   "$(printf '%s\n' "$FM" | grep -qx '  source: generated skill; do not edit by hand' || echo "$(printf '%s\n' "$FM" | grep '^  source:')")"
+
+# --- --name: any valid skill name, with nothing left of the canonical one ----
+# The manifests carry the canonical name create-ticket; --name renames the
+# audited tree. The default tree above, built from the same source, is the
+# reference: a renamed tree mapped back to create-ticket must equal it byte
+# for byte, which proves no occurrence was missed and nothing else changed.
+# frontmatter_of FILE / description_of — the frontmatter block and its
+# joined description, as above.
+frontmatter_of() { awk 'NR == 1 && $0 == "---" {fm = 1; next} fm && $0 == "---" {exit} fm {print}' "$1"; }
+description_of() { awk '/^description:/ {d = 1; next} d && /^[a-z-]+:/ {d = 0} d {sub(/^ +/, ""); s = s (s == "" ? "" : " ") $0} END {print s}'; }
+# map_name DIR FROM TO — replace FROM by TO in every file of DIR.
+map_name() {
+  while IFS= read -r f; do
+    sed "s/$2/$3/g" "$1/$f" >"$1/$f.map"
+    mv "$1/$f.map" "$1/$f"
+  done < <(cd "$1" && find . -type f | sed 's#^\./##')
+}
+# build_name OUT NAME — run the build with --name; sets NB_RC and NB_LOG.
+build_name() {
+  NB_LOG="$TMP_ROOT/name-build-$(printf '%s' "$2" | tr -c 'a-z0-9-' '_').log"
+  set +e
+  bash "$BUILD" --out "$1" --name "$2" >"$NB_LOG" 2>&1
+  NB_RC=$?
+  set -e
+}
+# entries_of DIR — the names directly under DIR, sorted, space-separated.
+entries_of() { find "$1" -mindepth 1 -maxdepth 1 | sed 's#.*/##' | sort | tr '\n' ' '; }
+CANON_COUNT="$(grep -roF 'create-ticket' "$SKILL_DIR" | wc -l | tr -d ' ')"
+
+NAME_OUT="$TMP_ROOT/name-out"
+NAME_DIR="$NAME_OUT/zq-x7"
+build_name "$NAME_OUT" zq-x7
+NAME_LOG="$NB_LOG"
+check "--name zq-x7: exit 0, the tree is <out>/zq-x7, no <out>/create-ticket is created, the same file list as the default build" \
+  "$([ "$NB_RC" -eq 0 ] || echo "rc=$NB_RC $(head -n 5 "$NAME_LOG")")$([ -d "$NAME_DIR" ] || echo ' no <out>/zq-x7')$([ ! -e "$NAME_OUT/create-ticket" ] || echo ' <out>/create-ticket was created')$([ "$(entries_of "$NAME_OUT")" = "zq-x7 " ] || echo " <out> holds: $(entries_of "$NAME_OUT")")$([ ! -d "$NAME_DIR" ] || diff <(printf '%s\n' "$ACTUAL") <(cd "$NAME_DIR" && find . -type f | sed 's#^\./##' | sort) || true)"
+check "--name zq-x7: the build reports the 23 files and a clean name audit that renamed every create-ticket of the default tree ($CANON_COUNT)" \
+  "$(grep -qF '(23 files, ' "$NAME_LOG" || echo 'file count is not 23')$(grep -qF "; exit audit clean; name audit clean ($CANON_COUNT occurrences of create-ticket renamed to zq-x7)" "$NAME_LOG" || echo " log: $(tail -n 1 "$NAME_LOG")")"
+check "--name zq-x7: no create-ticket, in any case, is left in the renamed tree" \
+  "$(grep -rniF 'create-ticket' "$NAME_DIR" | cut -c1-160 || true)"
+check "zq-x7 does not occur in the default tree (so the round trip below is exact)" \
+  "$(grep -rnF 'zq-x7' "$SKILL_DIR" | cut -c1-160 || true)"
+RT_DIR="$TMP_ROOT/roundtrip/create-ticket"
+if [ -d "$NAME_DIR" ]; then
+  mkdir -p "$TMP_ROOT/roundtrip"
+  cp -R "$NAME_DIR" "$RT_DIR"
+  map_name "$RT_DIR" zq-x7 create-ticket
+fi
+check "round trip: the zq-x7 tree with every zq-x7 mapped back to create-ticket equals the default build byte for byte" \
+  "$([ -d "$RT_DIR" ] || echo 'no renamed tree')$([ ! -d "$RT_DIR" ] || { diff -r "$SKILL_DIR" "$RT_DIR" 2>&1 || true; } | head -n 20)"
+
+build_name "$TMP_ROOT/name-canon" create-ticket
+check "--name create-ticket builds the default tree byte for byte, with the default log line" \
+  "$([ "$NB_RC" -eq 0 ] || echo "rc=$NB_RC $(head -n 5 "$NB_LOG")")$(grep -q 'name audit' "$NB_LOG" && echo ' a name audit ran')$([ ! -d "$TMP_ROOT/name-canon/create-ticket" ] || { diff -r "$SKILL_DIR" "$TMP_ROOT/name-canon/create-ticket" 2>&1 || true; } | head -n 20)"
+
+# A name that contains the canonical one.
+V2_DIR="$TMP_ROOT/name-v2/create-ticket-v2"
+build_name "$TMP_ROOT/name-v2" create-ticket-v2
+if [ -d "$V2_DIR" ]; then
+  mkdir -p "$TMP_ROOT/roundtrip-v2"
+  cp -R "$V2_DIR" "$TMP_ROOT/roundtrip-v2/create-ticket"
+  map_name "$TMP_ROOT/roundtrip-v2/create-ticket" create-ticket-v2 create-ticket
+fi
+check "--name create-ticket-v2 (holds the canonical name) builds, keeps create-ticket only inside create-ticket-v2 and maps back to the default build" \
+  "$([ "$NB_RC" -eq 0 ] || echo "rc=$NB_RC $(head -n 5 "$NB_LOG")")$([ -d "$V2_DIR" ] || echo ' no tree')$([ ! -d "$V2_DIR" ] || grep -rnF 'create-ticket' "$V2_DIR" | sed 's/create-ticket-v2//g' | grep -F 'create-ticket' | cut -c1-160 || true)$([ ! -d "$V2_DIR" ] || { diff -r "$SKILL_DIR" "$TMP_ROOT/roundtrip-v2/create-ticket" 2>&1 || true; } | head -n 20)"
+
+# A name the canonical text already holds as a word: the occurrence count of
+# the name audit is relative to the text, so it still builds.
+build_name "$TMP_ROOT/name-word" ticket
+check "--name ticket (a word the text already holds) builds with a clean name audit and leaves no create-ticket" \
+  "$([ "$NB_RC" -eq 0 ] || echo "rc=$NB_RC $(head -n 5 "$NB_LOG")")$(grep -qF "name audit clean ($CANON_COUNT occurrences" "$NB_LOG" || echo ' no clean name audit')$([ ! -d "$TMP_ROOT/name-word/ticket" ] || grep -rnF 'create-ticket' "$TMP_ROOT/name-word/ticket" | cut -c1-160 || true)"
+
+# The longest valid name: 64 characters; one more is refused.
+N64="$(printf 'abcdefghi-%.0s' 1 2 3 4 5 6)abcd"
+build_name "$TMP_ROOT/name-64" "$N64"
+DESC64=""
+[ ! -f "$TMP_ROOT/name-64/$N64/SKILL.md" ] || DESC64="$(frontmatter_of "$TMP_ROOT/name-64/$N64/SKILL.md" | description_of)"
+check "a 64-character name builds and its description stays within 1024 characters" \
+  "$([ "${#N64}" -eq 64 ] || echo "the fixture name has ${#N64} characters")$([ "$NB_RC" -eq 0 ] || echo " rc=$NB_RC $(head -n 5 "$NB_LOG")")$({ [ -n "$DESC64" ] && [ "${#DESC64}" -le 1024 ]; } || echo " description length ${#DESC64}")$(printf '%s\n' "$DESC64" | grep -qF "\`/$N64\`" || echo ' the name is not in the description')"
+mkdir -p "$TMP_ROOT/name-65"
+build_name "$TMP_ROOT/name-65" "${N64}e"
+check "a 65-character name exits 2 and creates nothing" \
+  "$([ "$NB_RC" -eq 2 ] || echo "rc=$NB_RC")$([ -z "$(entries_of "$TMP_ROOT/name-65")" ] || echo ' something was created')$(grep -qF '1 to 64' "$NB_LOG" || echo ' the message does not state the rule')"
+
+# Invalid names: exit 2 before any filesystem action.
+INV_OUT="$TMP_ROOT/name-invalid"
+mkdir -p "$INV_OUT"
+printf 'keep\n' >"$INV_OUT/keep.txt"
+INVALID_DETAIL=""
+for bad in '' 'Foo' 'a_b' '-a' 'a-' 'a--b' '../x' 'a/b' 'a b' 'a&b' 'a\b' 'a.b'; do
+  build_name "$INV_OUT" "$bad"
+  [ "$NB_RC" -eq 2 ] || INVALID_DETAIL="$INVALID_DETAIL '$bad':rc=$NB_RC"
+  grep -qF 'lowercase ASCII letters, digits and hyphens' "$NB_LOG" || INVALID_DETAIL="$INVALID_DETAIL '$bad':no-rule-in-message"
+  [ "$(entries_of "$INV_OUT")" = "keep.txt " ] || INVALID_DETAIL="$INVALID_DETAIL '$bad':created:$(entries_of "$INV_OUT")"
+done
+[ "$(cat "$INV_OUT/keep.txt")" = "keep" ] || INVALID_DETAIL="$INVALID_DETAIL sentinel-changed"
+[ ! -e "$TMP_ROOT/x" ] || INVALID_DETAIL="$INVALID_DETAIL ../x-created-a-sibling"
+set +e
+bash "$BUILD" --out "$INV_OUT" --name >"$TMP_ROOT/name-novalue.log" 2>&1
+NOVALUE_RC=$?
+bash "$BUILD" --out "$TMP_ROOT/name-invalid-absent" --name Foo >/dev/null 2>&1
+ABSENT_RC=$?
+set -e
+[ "$NOVALUE_RC" -eq 2 ] || INVALID_DETAIL="$INVALID_DETAIL --name-without-value:rc=$NOVALUE_RC"
+[ "$ABSENT_RC" -eq 2 ] || INVALID_DETAIL="$INVALID_DETAIL absent-out:rc=$ABSENT_RC"
+[ ! -e "$TMP_ROOT/name-invalid-absent" ] || INVALID_DETAIL="$INVALID_DETAIL absent-out-was-created"
+check "invalid names (empty, uppercase, underscore, hyphen first, last or doubled, path parts, space, ampersand, backslash, dot) and --name without a value exit 2 and create nothing" \
+  "$INVALID_DETAIL"
+
+YAML_DETAIL=""
+for bad in 123 true yes null y 0x1f 1e3 1e-3 2024-01-01; do
+  build_name "$INV_OUT" "$bad"
+  [ "$NB_RC" -eq 2 ] || YAML_DETAIL="$YAML_DETAIL $bad:rc=$NB_RC"
+  grep -qF 'a YAML reader takes it for a number, a boolean, null or a date' "$NB_LOG" || YAML_DETAIL="$YAML_DETAIL $bad:no-yaml-message"
+done
+[ "$(entries_of "$INV_OUT")" = "keep.txt " ] || YAML_DETAIL="$YAML_DETAIL created:$(entries_of "$INV_OUT")"
+check "spec-valid names a YAML reader takes for a number, boolean, null or date (the frontmatter name would not be a string) exit 2 and create nothing" "$YAML_DETAIL"
+
+RESERVED_DETAIL=""
+for bad in planner researcher decomposer ticket-evaluator; do
+  build_name "$INV_OUT" "$bad"
+  [ "$NB_RC" -eq 2 ] || RESERVED_DETAIL="$RESERVED_DETAIL $bad:rc=$NB_RC"
+  grep -qF "reserved --name '$bad'" "$NB_LOG" || RESERVED_DETAIL="$RESERVED_DETAIL $bad:no-reserved-message"
+done
+[ "$(entries_of "$INV_OUT")" = "keep.txt " ] || RESERVED_DETAIL="$RESERVED_DETAIL created:$(entries_of "$INV_OUT")"
+check "the role names used inside the skill (planner, researcher, decomposer, ticket-evaluator) are reserved: exit 2" "$RESERVED_DETAIL"
+# A spec-valid name that the exit audit's foreign-tool-name rule rejects.
+DENY_NAME="$(manifest_lines "$MANIFEST_DIR/tool-vocabulary.txt" | awk '$1 == "deny" {print $2}' | grep -xE '[a-z0-9]+(-[a-z0-9]+)*' | head -n 1 || true)"
+if [ -z "$DENY_NAME" ]; then
+  echo "  SKIP a spec-valid foreign tool name is refused (no deny row of tool-vocabulary.txt is a valid skill name)"
+else
+  build_name "$INV_OUT" "$DENY_NAME"
+  check "a spec-valid name from a deny row of tool-vocabulary.txt ($DENY_NAME) exits 2 naming the foreign tool name rule" \
+    "$([ "$NB_RC" -eq 2 ] || echo "rc=$NB_RC")$(grep -qF 'foreign tool name rule' "$NB_LOG" || echo " message: $(head -n 2 "$NB_LOG")")$([ "$(entries_of "$INV_OUT")" = "keep.txt " ] || echo ' something was created')"
+fi
+# A name that trips a denylist rule in one of its contexts (a skill-root path).
+if manifest_lines "$MANIFEST_DIR/denylist.txt" | grep -qxF 'hooks/'; then
+  build_name "$INV_OUT" hooks
+  check "a name that trips a denylist rule in one of its contexts (hooks, in .claude/skills/hooks/) exits 2 naming the rule" \
+    "$([ "$NB_RC" -eq 2 ] || echo "rc=$NB_RC")$(grep -qF 'denylist rule [hooks/]' "$NB_LOG" || echo " message: $(head -n 2 "$NB_LOG")")$([ "$(entries_of "$INV_OUT")" = "keep.txt " ] || echo ' something was created')"
+else
+  echo "  SKIP a name that trips a denylist rule is refused (the denylist has no hooks/ row)"
+fi
+
+# --force replaces <out>/<name> only.
+FORCE_OUT="$TMP_ROOT/name-force"
+mkdir -p "$FORCE_OUT/unrelated"
+printf 'keep\n' >"$FORCE_OUT/unrelated/keep.txt"
+cp -R "$SKILL_DIR" "$FORCE_OUT/create-ticket"
+FORCE_DETAIL=""
+if [ -d "$NAME_DIR" ]; then
+  cp -R "$NAME_DIR" "$FORCE_OUT/zq-x7"
+  printf 'stale\n' >"$FORCE_OUT/zq-x7/stale.txt"
+  set +e
+  bash "$BUILD" --out "$FORCE_OUT" --name zq-x7 >"$TMP_ROOT/name-force-refuse.log" 2>&1
+  NF_REFUSE_RC=$?
+  set -e
+  [ "$NF_REFUSE_RC" -eq 2 ] || FORCE_DETAIL="$FORCE_DETAIL without-force:rc=$NF_REFUSE_RC"
+  grep -q -- '--force' "$TMP_ROOT/name-force-refuse.log" || FORCE_DETAIL="$FORCE_DETAIL without-force:no-hint"
+  [ -f "$FORCE_OUT/zq-x7/stale.txt" ] || FORCE_DETAIL="$FORCE_DETAIL the-refused-build-touched-the-target"
+  set +e
+  bash "$BUILD" --out "$FORCE_OUT" --name zq-x7 --force >"$TMP_ROOT/name-force.log" 2>&1
+  NF_RC=$?
+  set -e
+  [ "$NF_RC" -eq 0 ] || FORCE_DETAIL="$FORCE_DETAIL with-force:rc=$NF_RC $(head -n 3 "$TMP_ROOT/name-force.log")"
+  [ ! -e "$FORCE_OUT/zq-x7/stale.txt" ] || FORCE_DETAIL="$FORCE_DETAIL stale-file-kept"
+  FORCE_DETAIL="$FORCE_DETAIL$({ diff -r "$NAME_DIR" "$FORCE_OUT/zq-x7" 2>&1 || true; } | head -n 5)"
+  FORCE_DETAIL="$FORCE_DETAIL$({ diff -r "$SKILL_DIR" "$FORCE_OUT/create-ticket" 2>&1 || true; } | head -n 5)"
+  [ "$(cat "$FORCE_OUT/unrelated/keep.txt")" = "keep" ] || FORCE_DETAIL="$FORCE_DETAIL unrelated-touched"
+  [ "$(entries_of "$FORCE_OUT")" = "create-ticket unrelated zq-x7 " ] || FORCE_DETAIL="$FORCE_DETAIL out-holds:$(entries_of "$FORCE_OUT")"
+else
+  FORCE_DETAIL="no renamed tree to start from"
+fi
+check "--force --name zq-x7 replaces <out>/zq-x7 only (a create-ticket sibling and an unrelated directory untouched); without --force a non-empty <out>/zq-x7 is refused with exit 2" \
+  "$FORCE_DETAIL"
+
+# What the skill does is stated without the name: in the description, under
+# the top heading of SKILL.md and in the README; the README's Install says the
+# name is not changed by hand.
+WHAT_DETAIL=""
+for d in "$SKILL_DIR" "$NAME_DIR"; do
+  n="$(basename "$d")"
+  [ -f "$d/SKILL.md" ] || { WHAT_DETAIL="$WHAT_DETAIL $n:no-SKILL.md"; continue; }
+  fm="$(frontmatter_of "$d/SKILL.md")"
+  printf '%s\n' "$fm" | grep -qx "name: $n" || WHAT_DETAIL="$WHAT_DETAIL $n:name-line"
+  desc="$(printf '%s\n' "$fm" | description_of)"
+  case "$desc" in "Do not auto-invoke. "*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:description-does-not-start-with-Do-not-auto-invoke" ;; esac
+  second="$(printf '%s\n' "$desc" | sed -E 's/^Do not auto-invoke\. ([^.]*\.).*/\1/')"
+  case "$second" in *"$n"*) WHAT_DETAIL="$WHAT_DETAIL $n:the-purpose-sentence-uses-the-name" ;; esac
+  for w in 'drafts implementation tickets' 'quality rubric' 'delivers them'; do
+    case "$second" in *"$w"*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:description-purpose:'$w'" ;; esac
+  done
+  printf '%s\n' "$desc" | grep -qF 'A request about tickets that does not name this skill is never a trigger.' || WHAT_DETAIL="$WHAT_DETAIL $n:closing-sentence"
+  top="$(awk -v H="# /$n" 'f && NF {print; exit} $0 == H {f = 1}' "$d/SKILL.md")"
+  case "$top" in *"$n"*|'') WHAT_DETAIL="$WHAT_DETAIL $n:SKILL.md-top-sentence:'$top'" ;; esac
+  case "$top" in *'implementation tickets'*'quality rubric'*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:SKILL.md-top-sentence-purpose" ;; esac
+  rtop="$(awk -v H="# $n" 'f && NF {print; exit} $0 == H {f = 1}' "$d/README.md")"
+  case "$rtop" in *"$n"*|'') WHAT_DETAIL="$WHAT_DETAIL $n:README-first-paragraph" ;; esac
+  case "$rtop" in *'implementation tickets'*) ;; *) WHAT_DETAIL="$WHAT_DETAIL $n:README-first-paragraph-purpose" ;; esac
+  grep -qF "keeping its name \`$n\`" "$d/README.md" || WHAT_DETAIL="$WHAT_DETAIL $n:README-install-name"
+  # shellcheck disable=SC2016  # literal backticks
+  grep -qF 'The directory name must stay equal to the `name` in the frontmatter of `SKILL.md`, and neither may be changed by hand' "$d/README.md" || WHAT_DETAIL="$WHAT_DETAIL $n:README-install-rename-rule"
+done
+check "default and renamed trees: name: line, a description that starts with Do not auto-invoke. and says without the name that the skill drafts, grades and delivers implementation tickets, the same under the SKILL.md top heading and in the README's first paragraph, and the README's do-not-rename rule" \
+  "$WHAT_DETAIL"
+
+# Every occurrence of create-ticket in the default tree sits in a known name
+# context, so a new context (one the rename might not read well in) has to be
+# classified here first. Each context is "<before>|<after>" around the name
+# (EREs without inner groups in <before>); occurrences are removed context by
+# context and whatever is left is reported with its file and line.
+# shellcheck disable=SC2016  # literal backticks and anchors
+NAME_CONTEXTS='^name: |$
+^# /?|$
+\.[a-z]+/skills/|/
+\.local/|-scratch
+ERROR: | (cannot create|write refused|write failed|counter write failed|counter changed|delivery refused)
+`|`
+[Tt]he | (skill|orchestrator)
+[`( ]/|[` ]|$
+^/|[` ]|$'
+NAME_SED=()
+SEP="$(printf '\001')"
+while IFS= read -r ctx; do
+  NAME_SED+=(-e "s${SEP}(${ctx%%|*})create-ticket(${ctx#*|})${SEP}\\1@NAME@\\2${SEP}g")
+done <<<"$NAME_CONTEXTS"
+unclassified_in() { sed -E "${NAME_SED[@]}" "$1" | grep -nF 'create-ticket' | cut -c1-160 || true; }
+UNCLASSIFIED=""
+while IFS= read -r f; do
+  h="$(unclassified_in "$SKILL_DIR/$f")"
+  [ -z "$h" ] || UNCLASSIFIED="$UNCLASSIFIED
+$(printf '%s\n' "$h" | sed "s#^#$f:#")"
+done < <(printf '%s\n' "$ACTUAL")
+check "every create-ticket in the default tree sits in a known name context (slash invocation, skill-root path, -scratch directory, ERROR: prefix, backticked name, frontmatter name:, top headings, the ... skill/orchestrator prose)" \
+  "${UNCLASSIFIED#$'\n'}"
+# shellcheck disable=SC2016  # literal backticks
+printf 'one `create-ticket` and one create-ticket here\n' >"$TMP_ROOT/name-context-fixture.md"
+# shellcheck disable=SC2016  # literal backticks
+check "the context check reports an occurrence outside the known contexts" \
+  "$([ "$(unclassified_in "$TMP_ROOT/name-context-fixture.md")" = '1:one `@NAME@` and one create-ticket here' ] || echo "got: $(unclassified_in "$TMP_ROOT/name-context-fixture.md")")"
+
+# The name audit is the backstop for a context the probe does not hold, and
+# it names a description the name made too long: both proven on a copy of the
+# generator (with the probe switched off, then with a padded description).
+NB_TOOLS="$TMP_ROOT/name-backstop/tools"
+mkdir -p "$NB_TOOLS"
+cp -R "$MANIFEST_DIR" "$NB_TOOLS/standalone-skill"
+# shellcheck disable=SC2016  # the literal variable name is the pattern
+sed 's/^  if \[ -n "\$PROBE_FAIL" \]; then$/  if false; then/' "$BUILD" >"$NB_TOOLS/build-standalone-skill.sh"
+if [ "$(grep -c '^  if false; then$' "$NB_TOOLS/build-standalone-skill.sh" || true)" = 1 ]; then
+  set +e
+  bash "$NB_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/name-backstop/out" --name hooks >"$TMP_ROOT/name-backstop.log" 2>&1
+  NBS_RC=$?
+  set -e
+  check "name audit backstop: with the probe switched off, --name hooks fails the build (exit 1) with a denylist finding attributed to the name" \
+    "$([ "$NBS_RC" -eq 1 ] || echo "rc=$NBS_RC")$(grep -qF 'name audit FAILED' "$TMP_ROOT/name-backstop.log" || echo ' no name audit failure')$(grep -qF 'name audit (caused by --name hooks): denylist [hooks/] SKILL.md:' "$TMP_ROOT/name-backstop.log" || echo " log: $(head -n 3 "$TMP_ROOT/name-backstop.log")")"
+else
+  fail "name audit backstop: the probe could not be switched off in the copy of the generator"
+fi
+# Pad the canonical description to 20 characters under the limit: the
+# 64-character name (51 more than create-ticket) then overflows it.
+PAD=$((1024 - 20 - ${#DESC}))
+FM_OVR="$NB_TOOLS/standalone-skill/overrides/skill-frontmatter.md"
+awk -v P="$(printf '%*s' $((PAD - 1)) '' | tr ' ' 'x')" '{print} /^  Do not auto-invoke\. / && !done {print "  " P; done = 1}' "$FM_OVR" >"$FM_OVR.pad"
+mv "$FM_OVR.pad" "$FM_OVR"
+if [ "$PAD" -gt 1 ] && grep -qE '^  x+$' "$FM_OVR"; then
+  set +e
+  bash "$NB_TOOLS/build-standalone-skill.sh" --src "$REPO_DIR" --out "$TMP_ROOT/name-backstop/long" --name "$N64" >"$TMP_ROOT/name-backstop-long.log" 2>&1
+  NBL_RC=$?
+  set -e
+  check "name audit: a description pushed over 1024 characters by a 64-character name fails the build (exit 1) saying the name is too long for the description" \
+    "$([ "$NBL_RC" -eq 1 ] || echo "rc=$NBL_RC")$(grep -qF 'the name is too long for the description' "$TMP_ROOT/name-backstop-long.log" || echo " log: $(head -n 3 "$TMP_ROOT/name-backstop-long.log")")"
+else
+  fail "name audit: the description of the copy could not be padded (pad $PAD)"
+fi
 
 # --- links and references/ paths ---------------------------------------------
 BROKEN=""

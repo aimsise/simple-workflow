@@ -10,7 +10,7 @@ This directory is generated; `SKILL.md` and everything under `references/` and `
 
 ## Install
 
-1. Copy this directory, keeping its name `create-ticket`, into the skill root your agent host reads: `.github/skills/`, `.claude/skills/` or `.agents/skills/` inside the project (project-wide), or the host's personal skill root under your home directory (every project).
+1. Copy this directory, keeping its name `create-ticket`, into the skill root your agent host reads: `.github/skills/`, `.claude/skills/` or `.agents/skills/` inside the project (project-wide), or the host's personal skill root under your home directory (every project). The directory name must stay equal to the `name` in the frontmatter of `SKILL.md`, and neither may be changed by hand: the skill's own paths, its scratch directory and its messages carry that name.
 2. Nothing else is required: no package, no configuration file, no custom agent definition. Python 3 on the shell (found as `python3`, `python` or `py -3`, whichever first reports version 3) is needed only when an `.xlsx` source is passed (when present, it also converts a ticket to HTML for `body_format=html` and checks the text a remote destination stored; both have a fallback without it); a spreadsheet application or LibreOffice on the host is never required (it only enables the optional sheet render). Each run keeps its investigation, source dossier, drafts and evaluator reports under `.local/create-ticket-scratch/run.<id>/` inside the working directory and removes that directory as its last step after a clean run unless you pass `keep_scratch=yes` (a run that ends in an `ERROR:`, delivers a ticket with a `FAIL` verdict or leaves overflow findings keeps it); `rm -rf` on that one directory (followed by a test that it is gone) and `rmdir` on its two parents (which removes a parent only when it is empty) are the only delete commands the skill runs. In a git repository the skill appends the line `**/.local/*` to the `.gitignore` at the repository root when that line is missing (it creates the file when there is none), so the scratch directory and the default destination `.local/tickets` are both ignored by git; to commit the tickets, pass a `destination=local:<dir>` outside `.local/` (or remove the line). The skill never stages or commits anything.
 3. Invoke it by name, `/create-ticket`, followed by the input: tokens, or plain prose in any language saying what to read and where to deliver (the skill prints a `Resolved:` line with its reading before it runs). The skill never starts on its own.
 
@@ -28,12 +28,12 @@ The skill runs on Windows with either shell. When the host's shell tool is Power
 
 ```text
 /create-ticket <ticket description> | brief=<path> | findings=<path>
-               [source=<spec> ...]
-               [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | browser:<url> | cli:<command>]
-               [parent=<id>]
-               [confirm=yes|no] [depth=<tier>] [rounds=<N>] [max_tickets=<N>] [keep_scratch=yes|no]
-               [render=auto|off|excel|soffice]
-               [constraint_<key>=off]
+  [source=<spec> ...]
+  [destination=local:<dir> | mcp:<server>[/<tool>] | api:<url> | browser:<url> | cli:<command>]
+  [parent=<id>]
+  [confirm=yes|no] [depth=<tier>] [rounds=<N>] [max_tickets=<N>] [keep_scratch=yes|no]
+  [render=auto|off|excel|soffice]
+  [constraint_<key>=off]
 ```
 
 Three input modes, exactly one at a time:

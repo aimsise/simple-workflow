@@ -1,4 +1,5 @@
-# Behaviour test of references/shell-powershell.md in the generated create-ticket skill.
+# Behaviour test of references/shell-powershell.md in the generated standalone
+# skill (named create-ticket by default, or the name it was built with).
 #
 # Every fenced PowerShell form is taken from the built tree by its id, its
 # placeholders are filled with fixture values (a placeholder left over fails the
@@ -11,9 +12,13 @@
 # that need a program the host lacks (git, Python 3, curl.exe) print SKIP;
 # with -RequireAll (the Windows CI job) every SKIP counts as a failure.
 #
+# The skill's name is read from the name: line of <SkillDir>/SKILL.md, which
+# must equal the directory's own name; the scratch directory the forms create
+# and remove carries it, so the same test runs on a tree built under any name.
+#
 # Usage:
-#   powershell -NoProfile -File tests/test-standalone-skill-powershell.ps1 -SkillDir <out>/create-ticket [-RequireAll]
-#   pwsh -NoProfile -File tests/test-standalone-skill-powershell.ps1 -SkillDir <out>/create-ticket [-RequireAll]
+#   powershell -NoProfile -File tests/test-standalone-skill-powershell.ps1 -SkillDir <out>/<skill name> [-RequireAll]
+#   pwsh -NoProfile -File tests/test-standalone-skill-powershell.ps1 -SkillDir <out>/<skill name> [-RequireAll]
 param([Parameter(Mandatory = $true)][string]$SkillDir, [switch]$RequireAll)
 
 $ErrorActionPreference = 'Continue'
@@ -129,6 +134,34 @@ if (-not [System.IO.File]::Exists($MdPath)) {
   Write-Line 'PASS 0 / FAIL 1'
   exit 1
 }
+
+# The skill's name: the name: line of the SKILL.md frontmatter, equal to the
+# directory's own name. The scratch directory is .local/<name>-scratch.
+$SkillRoot = (Resolve-Path -LiteralPath $SkillDir).ProviderPath
+$SkillLeaf = [System.IO.Path]::GetFileName($SkillRoot.TrimEnd([char[]]@('\', '/')))
+$SkillMd = [System.IO.Path]::Combine($SkillRoot, 'SKILL.md')
+$SkillName = $null
+if ([System.IO.File]::Exists($SkillMd)) {
+  $fmLines = [System.IO.File]::ReadAllText($SkillMd, $script:Utf8).Replace($script:CR + $script:LF, $script:LF).Split([char]10)
+  if ($fmLines.Length -gt 1 -and $fmLines[0] -ceq '---') {
+    for ($i = 1; $i -lt $fmLines.Length; $i++) {
+      if ($fmLines[$i] -ceq '---') { break }
+      $nm = [regex]::Match($fmLines[$i], '^name:[ \t]*(\S+)[ \t]*$')
+      if ($nm.Success) { $SkillName = $nm.Groups[1].Value; break }
+    }
+  }
+}
+$nameProblem = ''
+if (-not [System.IO.File]::Exists($SkillMd)) { $nameProblem = 'no SKILL.md under ' + $SkillDir }
+elseif ($null -eq $SkillName) { $nameProblem = 'no name: line in the frontmatter of ' + $SkillMd }
+elseif ($SkillName -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { $nameProblem = 'the name ' + $SkillName + ' in SKILL.md is not lowercase ASCII letters, digits and single hyphens' }
+elseif ($SkillName -cne $SkillLeaf) { $nameProblem = 'the name ' + $SkillName + ' in SKILL.md differs from the directory name ' + $SkillLeaf }
+if ($nameProblem -ne '') {
+  Write-Line ('FAIL: ' + $nameProblem)
+  Write-Line 'PASS 0 / FAIL 1'
+  exit 1
+}
+$ScratchParent = '.local/' + $SkillName + '-scratch'
 $MdText = [System.IO.File]::ReadAllText($MdPath, $script:Utf8).Replace($script:CR + $script:LF, $script:LF)
 $cur = $null
 $inBlock = $false
@@ -208,7 +241,7 @@ function Exit-Command([int]$Code) {
   return "sh -c 'exit " + $Code + "'"
 }
 
-Write-Line ('=== PowerShell forms of the standalone create-ticket skill (PowerShell ' + $PSVersionTable.PSVersion.ToString() + ') ===')
+Write-Line ('=== PowerShell forms of the standalone skill ' + $SkillName + ' (PowerShell ' + $PSVersionTable.PSVersion.ToString() + ') ===')
 
 # --- general rule: the absolute-path idiom ------------------------------------------
 Push-Location -LiteralPath $W
@@ -362,7 +395,7 @@ Check 'PS-AP-3 / PS-AP-4: set/unset and ok/bad without printing the value (quote
 $r1 = Run-Form 'PS-AP-5' @{} $W
 $r2 = Run-Form 'PS-AP-5' @{} $W
 $d = ''
-$pat = '^\.local/create-ticket-scratch/run\.[A-Za-z0-9]{6}$'
+$pat = '^' + [regex]::Escape($ScratchParent) + '/run\.[A-Za-z0-9]{6}$'
 foreach ($r in @($r1, $r2)) {
   if ((Out-Text $r) -cnotmatch $pat) { $d += ' printed ' + (Out-Text $r) }
   elseif (-not [System.IO.Directory]::Exists((WP (Out-Text $r)))) { $d += ' ' + (Out-Text $r) + ' does not exist under the working directory' }
@@ -841,14 +874,14 @@ $x = Run-Form 'PS-DL-3' @{ '{scratch}' = $Other } $W
 if ((Out-Text $x) -ne 'present') { $d += ' existence of the other run: ' + (Out-Text $x) }
 $x = Run-Form 'PS-DL-2' @{ '{scratch}' = $Scratch } $W
 if ((Out-Text $x) -ne 'removed') { $d += ' second removal: ' + (Out-Text $x) }
-$x1 = Run-Form 'PS-DL-4' @{ '<directory>' = '.local/create-ticket-scratch' } $W
+$x1 = Run-Form 'PS-DL-4' @{ '<directory>' = $ScratchParent } $W
 $x2 = Run-Form 'PS-DL-4' @{ '<directory>' = '.local' } $W
 if ((Out-Text $x1) -ne 'kept' -or (Out-Text $x2) -ne 'kept') { $d += ' parents: ' + (Out-Text $x1) + ' / ' + (Out-Text $x2) }
 if ((Read-Text (WP ($Other + '/keep.txt'))) -ne 'keep') { $d += ' the other run was touched' }
 if ((Read-Text (WP '.local/tickets/keep.md')) -ne 'keep') { $d += ' the tickets were touched' }
 [System.IO.File]::Delete((WP ($Other + '/keep.txt')))
 [System.IO.Directory]::Delete((WP $Other))
-$x1 = Run-Form 'PS-DL-4' @{ '<directory>' = '.local/create-ticket-scratch' } $W
+$x1 = Run-Form 'PS-DL-4' @{ '<directory>' = $ScratchParent } $W
 $x2 = Run-Form 'PS-DL-4' @{ '<directory>' = '.local' } $W
 if ((Out-Text $x1) -ne 'removed' -or (Out-Text $x2) -ne 'kept' -or -not [System.IO.Directory]::Exists((WP '.local/tickets'))) { $d += ' after the other run: ' + (Out-Text $x1) + ' / ' + (Out-Text $x2) }
 [System.IO.File]::Delete((WP '.local/tickets/keep.md'))
@@ -862,7 +895,7 @@ Check 'PS-DL-2 / PS-DL-3 / PS-DL-4: the scratch directory goes (read-only file a
 $lw = [System.IO.Path]::Combine($Root, 'linkcase', 'w')
 $lt = [System.IO.Path]::Combine($Root, 'linkcase', 'target')
 $null = [System.IO.Directory]::CreateDirectory([System.IO.Path]::Combine($lt, 'tickets'))
-$null = [System.IO.Directory]::CreateDirectory([System.IO.Path]::Combine($lt, 'create-ticket-scratch'))
+$null = [System.IO.Directory]::CreateDirectory([System.IO.Path]::Combine($lt, $SkillName + '-scratch'))
 $null = [System.IO.Directory]::CreateDirectory($lw)
 Put-Text ([System.IO.Path]::Combine($lt, 'tickets', 'keep.md')) 'keep'
 $link = [System.IO.Path]::Combine($lw, '.local')
@@ -873,7 +906,7 @@ try {
   $linkMade = $true
 } catch { Write-Line ('  NOTE PS-DL-4 link case not run: the link could not be created (' + $_.Exception.Message + ')') }
 if ($linkMade) {
-  $y1 = Run-Form 'PS-DL-4' @{ '<directory>' = '.local/create-ticket-scratch' } $lw
+  $y1 = Run-Form 'PS-DL-4' @{ '<directory>' = $ScratchParent } $lw
   $y2 = Run-Form 'PS-DL-4' @{ '<directory>' = '.local' } $lw
   $d = ''
   if ((Out-Text $y1) -ne 'removed') { $d += ' empty scratch parent behind the link: ' + (Out-Text $y1) }

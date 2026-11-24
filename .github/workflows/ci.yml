@@ -55,11 +55,13 @@ jobs:
       - uses: actions/checkout@v5
       - name: Build the standalone create-ticket skill
         run: bash tools/build-standalone-skill.sh --out "$RUNNER_TEMP/standalone"
-      - name: Upload the built skill
+      - name: Build the same skill under another name (--name zq-x7)
+        run: bash tools/build-standalone-skill.sh --out "$RUNNER_TEMP/standalone" --name zq-x7
+      - name: Upload the built skills (create-ticket/ and zq-x7/)
         uses: actions/upload-artifact@v4
         with:
           name: standalone-create-ticket
-          path: ${{ runner.temp }}/standalone/create-ticket
+          path: ${{ runner.temp }}/standalone
           if-no-files-found: error
 
   standalone-skill-powershell:
@@ -70,11 +72,11 @@ jobs:
       - name: Keep line ends as committed
         run: git config --global core.autocrlf false
       - uses: actions/checkout@v5
-      - name: Download the built skill
+      - name: Download the built skills
         uses: actions/download-artifact@v4
         with:
           name: standalone-create-ticket
-          path: built/create-ticket
+          path: built
       - name: Python 3 for the forms that run the skill's scripts
         uses: actions/setup-python@v5
         with:
@@ -85,12 +87,26 @@ jobs:
           $PSVersionTable.PSVersion.ToString()
           & ./tests/test-standalone-skill-powershell.ps1 -SkillDir built/create-ticket -RequireAll
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: PowerShell forms under Windows PowerShell 5.1 (skill built as zq-x7)
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          & ./tests/test-standalone-skill-powershell.ps1 -SkillDir built/zq-x7 -RequireAll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: PowerShell forms under PowerShell 7
         if: ${{ !cancelled() }}
         shell: pwsh
         run: |
           $PSVersionTable.PSVersion.ToString()
           & ./tests/test-standalone-skill-powershell.ps1 -SkillDir built/create-ticket -RequireAll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: PowerShell forms under PowerShell 7 (skill built as zq-x7)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          & ./tests/test-standalone-skill-powershell.ps1 -SkillDir built/zq-x7 -RequireAll
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # Level 1 integration tests (claude -p) are intentionally excluded from CI
