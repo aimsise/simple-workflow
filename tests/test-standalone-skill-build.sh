@@ -3504,6 +3504,8 @@ check "shell-dialect review 2: Shell: item first, found: <file name> and not sta
        [ "$(grep -cF -- "catch { 'not started (' + \$_.Exception.Message + ')' }" "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:not-started-count';
        grep -qF -- "\$v = ''; try { \$v = [string](& \$exe @rest --version 2>\$null | Out-String) } catch { };" "$PS_MD" || printf ' shell-powershell.md:PS-SRC-4-try';
        [ "$(grep -cF -- '$OutputEncoding = [System.Text.Encoding]::ASCII;' "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:ascii-pipe-count';
+       [ "$(grep -cF -- '$ci = $null; try { $ci = [Console]::InputEncoding; [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { };' "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:console-input-no-mark-count';
+       [ "$(grep -cF -- 'if ($null -ne $ci) { try { [Console]::InputEncoding = $ci } catch { } };' "$PS_MD" || true)" = 2 ] || printf ' shell-powershell.md:console-input-put-back-count';
        grep -qF -- 'New-Object System.Text.ASCIIEncoding' "$PS_MD" && printf ' shell-powershell.md:new-object-ascii';
        grep -qF -- 'A relative path that holds a `:` is written with `./` in front' "$PS_MD" || printf ' shell-powershell.md:colon-path';
        grep -qF -- "if (\$t.Trim() -eq '') { 'json' }" "$PS_MD" || printf ' shell-powershell.md:PS-DST-16-empty';

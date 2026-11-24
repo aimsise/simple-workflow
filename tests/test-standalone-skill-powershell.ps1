@@ -242,6 +242,9 @@ function Exit-Command([int]$Code) {
 }
 
 Write-Line ('=== PowerShell forms of the standalone skill ' + $SkillName + ' (PowerShell ' + $PSVersionTable.PSVersion.ToString() + ') ===')
+$encInfo = 'unknown'
+try { $encInfo = 'console input code page ' + [Console]::InputEncoding.CodePage + ' (byte order mark: ' + [Console]::InputEncoding.GetPreamble().Length + ' bytes), console output code page ' + [Console]::OutputEncoding.CodePage + ', $OutputEncoding ' + $OutputEncoding.WebName + ' (byte order mark: ' + $OutputEncoding.GetPreamble().Length + ' bytes)' } catch { $encInfo = 'not readable (' + $_.Exception.Message + ')' }
+Write-Line ('  host encodings: ' + $encInfo)
 
 # --- general rule: the absolute-path idiom ------------------------------------------
 Push-Location -LiteralPath $W
@@ -1018,6 +1021,18 @@ if ($null -eq $curlName) {
   $handle = $ps.BeginInvoke()
   $savedOut = $OutputEncoding
   $OutputEncoding = [System.Text.Encoding]::UTF8
+  # Windows PowerShell writes the byte order mark of the console input
+  # encoding in front of everything a program reads from a pipe. Give that
+  # encoding a mark here, so the forms are run under the condition wherever a
+  # console is attached, and check below that they put the encoding back.
+  $savedIn = $null
+  $inForced = $false
+  try {
+    $savedIn = [Console]::InputEncoding
+    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+    $inForced = ([Console]::InputEncoding.GetPreamble().Length -gt 0)
+  } catch { }
+  if (-not $inForced) { Write-Line '  NOTE the console input encoding could not be given a byte order mark: the forms run under the encoding the host has' }
   $env:SWPS_TOKEN = 'tok.EN-123_x=='
   $base = 'http://localhost:' + $port
   $null = [System.IO.Directory]::CreateDirectory((WP 'http/.local/s/sources'))
@@ -1070,11 +1085,17 @@ if ($null -eq $curlName) {
   $r = Run-Form 'PS-SRC-8' @{ '{scratch}' = 'http/.local/s'; 'S<n>' = 'S8'; '<url>' = 'http://localhost:1/nothing' } $W
   if (@($r)[-1] -notmatch '^exit=[1-9]') { $d += ' unreachable host: ' + (Out-Text $r) }
   $OutputEncoding = $savedOut
+  if ($inForced) {
+    $inNow = $null
+    try { $inNow = [Console]::InputEncoding } catch { }
+    if ($null -eq $inNow -or $inNow.CodePage -ne 65001 -or $inNow.GetPreamble().Length -eq 0) { $d += ' the console input encoding was not put back after the token forms' }
+  }
+  if ($null -ne $savedIn) { try { [Console]::InputEncoding = $savedIn } catch { } }
   Remove-Item -LiteralPath 'Env:SWPS_TOKEN' -ErrorAction SilentlyContinue
   $listener.Stop()
   $null = $handle.AsyncWaitHandle.WaitOne(5000)
   $ps.Dispose()
-  Check 'PS-SRC-7 / PS-SRC-8 / PS-DST-18 / PS-DST-19: GET and POST through curl.exe with the bearer, basic and basic-token header read from stdin (pipe pinned to ASCII under a UTF-8 caller $OutputEncoding: a non-ASCII token character arrives as ?), the status and exit= printed, the token never printed, files written by curl itself' $d
+  Check 'PS-SRC-7 / PS-SRC-8 / PS-DST-18 / PS-DST-19: GET and POST through curl.exe with the bearer, basic and basic-token header read from stdin (pipe pinned to ASCII under a UTF-8 caller $OutputEncoding: a non-ASCII token character arrives as ?; no byte order mark reaches curl.exe under a console input encoding that has one, and that encoding is put back), the status and exit= printed, the token never printed, files written by curl itself' $d
 }
 
 # --- agent bodies: the read-only inspection forms of the researcher and the planner -----------------
