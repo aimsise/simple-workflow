@@ -21,5 +21,7 @@ references/agents/ticket-evaluator.md	agents/ticket-evaluator.md
 references/brief-template.md	skills/brief/references/brief-body-template.md
 references/destinations.md	-
 references/sources.md	-
+references/shell-powershell.md	-
 scripts/xlsx_to_text.py	-
 scripts/xlsx_render.py	-
+scripts/ticket_body.py	-

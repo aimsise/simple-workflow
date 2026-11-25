@@ -13,6 +13,8 @@ available the script says so on one line and exits 0. Run it as
                               [--excel-cmd PATH] [--only-if-structured FILE]
                               --out DIR -- WORKBOOK
 
+(python3 stands for any Python 3 interpreter, such as python or py -3.)
+
 Chain (--chain auto, the default): try each renderer that applies to the
 platform, in this order, and stop at the first one that produces a PDF.
 
@@ -111,8 +113,14 @@ exit 0:
 Reasons: not installed, no spreadsheet application on this platform,
 timed out after N s, exit status N (followed by ": " and the first line of
 the renderer's error output, cut to 120 characters, when there is one),
-no PDF produced, sheet not found: NAME. Error output is otherwise
-discarded; the home directory prefix in it is written as ~.
+no PDF produced, sheet not found: NAME, cannot write the PDF: ERROR (the
+PDF could not be moved into DIR). A file the script cannot write under
+--out before any renderer ran gives "Rendered: no (cannot write under
+--out: ERROR)" or "Rendered: no (cannot copy the workbook under --out:
+ERROR)", where ERROR is the system's error text without the file name.
+Error output is otherwise discarded; the home directory prefix in it is
+written as ~. Stdout and stderr are UTF-8 with line feeds whatever the
+locale or console code page.
 
 Exit status 2, with one line on stderr: a missing or unreadable workbook,
 an empty --out or one that cannot be created, a bad --chain or --timeout
@@ -145,6 +153,22 @@ def fail(message):
 class Parser(argparse.ArgumentParser):
     def error(self, message):
         fail(message)
+
+
+def setup_streams():
+    # Under -I neither PYTHONUTF8 nor PYTHONIOENCODING applies: both streams
+    # are switched to UTF-8 with line feeds whatever the console code page.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace", newline="\n")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def os_reason(exc):
+    # The error text only, never the file name: a path may hold the home
+    # directory, and this line goes into the source dossier.
+    return clean(exc.strerror or type(exc).__name__, 120)
 
 
 def emit(line):
@@ -525,6 +549,7 @@ def render_soffice(args, copy, tmp):
 
 
 def main():
+    setup_streams()
     parser = Parser(usage="%(prog)s [--chain auto|excel|soffice] [--sheet NAME ...] [--timeout SECONDS] [--soffice PATH] [--excel-cmd PATH] [--only-if-structured FILE] --out DIR -- WORKBOOK", description="Render an .xlsx workbook to PDF through a spreadsheet application or LibreOffice installed on the host, when one is; optional, never required.")
     parser.add_argument("workbook", metavar="WORKBOOK", help="the .xlsx workbook (never modified)")
     parser.add_argument("--chain", choices=("auto", "excel", "soffice"), default="auto", metavar="auto|excel|soffice", help="auto (default): excel, then soffice; or only the one named")
@@ -565,7 +590,13 @@ def main():
         fail("cannot create the output directory: %s" % exc)
     slug = slug_of(args.workbook)
     final = os.path.join(args.out, slug + ".pdf")
-    tmp = tempfile.mkdtemp(prefix=".render-", dir=args.out)
+    try:
+        tmp = tempfile.mkdtemp(prefix=".render-", dir=args.out)
+    except OSError as exc:
+        emit("Rendered: no (cannot write under --out: %s)" % os_reason(exc))
+        return
+    reasons = []
+    current = None
     try:
         tmp = os.path.realpath(tmp)
         src = os.path.join(tmp, "src")
@@ -576,8 +607,8 @@ def main():
         renderers = [("excel", render_excel), ("soffice", render_soffice)]
         if args.chain != "auto":
             renderers = [entry for entry in renderers if entry[0] == args.chain]
-        reasons = []
         for name, render in renderers:
+            current = name
             pdf, reason = render(args, copy, tmp)
             if pdf is None:
                 reasons.append("%s: %s" % (name, reason))
@@ -592,6 +623,15 @@ def main():
                 cover = "all sheets"
             emit("Rendered: %s (by %s, %d bytes, %s)" % (final, name, size, cover))
             return
+        emit("Rendered: no (%s)" % "; ".join(reasons))
+    except OSError as exc:
+        # A file the script itself writes under --out (the private copy, the
+        # PDF moved into place) that cannot be written ends the render with
+        # its one documented line, never a traceback.
+        if current is None:
+            reasons.append("cannot copy the workbook under --out: %s" % os_reason(exc))
+        else:
+            reasons.append("%s: cannot write the PDF: %s" % (current, os_reason(exc)))
         emit("Rendered: no (%s)" % "; ".join(reasons))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

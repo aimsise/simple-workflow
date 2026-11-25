@@ -11,9 +11,16 @@ runs; no third-party package is required. Run it as
     python3 -I xlsx_to_text.py WORKBOOK.xlsx [--max-rows N] [--max-cols N]
                                            [--max-chars N] [--sheet NAME ...]
                                            [--layout table|cells|auto]
-                                           [--extract-media DIR]
+                                           [--extract-media DIR] [--out FILE]
 
-Output (stdout): one "## Sheet: NAME" section per worksheet (every
+(python3 stands for any Python 3 interpreter, such as python or py -3.)
+
+Output: the Markdown text below, on stdout, or with --out FILE written to
+FILE (UTF-8, line feeds only, created or replaced) while stdout gets one
+line, "Converted: C characters, L lines, truncated: yes|no" (C counts the
+characters of the text, L its lines, and truncated says whether a
+"[truncated:" line is in it). Stdout and stderr are UTF-8 with line feeds
+whatever the locale or console code page. The text: one "## Sheet: NAME" section per worksheet (every
 worksheet, or only those named by --sheet, exact match; an unknown name
 exits 2 and lists the names the workbook has). By default each section is
 a Markdown table whose first column is the 1-based row number of the
@@ -114,8 +121,9 @@ marker counts as a value), or when a merged range spans at least 2 rows
 AND at least 2 columns; otherwise it picks table, whose heading is
 unchanged.
 
-Exit status: 0 success (possibly with truncation or unreadable markers), 2
-the file is not a readable .xlsx workbook, 3 the workbook exceeds the
+Exit status: 0 success (possibly with truncation or unreadable markers), 1
+the --out FILE cannot be written, 2 the file is not a readable .xlsx
+workbook (or --out names the workbook itself), 3 the workbook exceeds the
 safety limits (member count, uncompressed size) applied before anything is
 parsed.
 """
@@ -147,6 +155,18 @@ LONG_CELL = 1024
 def fail(code, message):
     sys.stderr.write("xlsx_to_text: " + message + "\n")
     sys.exit(code)
+
+
+def setup_streams():
+    # Under -I neither PYTHONUTF8 nor PYTHONIOENCODING applies, and a piped
+    # stdout on Windows uses the ANSI code page with CR LF line ends: both
+    # streams are switched to UTF-8 with line feeds, so no text can fail to
+    # print and no line end grows past --max-chars.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace", newline="\n")
+        except (AttributeError, ValueError, OSError):
+            pass
 
 
 def column_index(ref):
@@ -1156,6 +1176,7 @@ def dump_sheet(ctx, name, member, hidden, out):
 
 
 def main():
+    setup_streams()
     parser = argparse.ArgumentParser(description="Dump an .xlsx workbook as Markdown text (stdlib only): one section per worksheet with its cells, notes, shapes and images.")
     parser.add_argument("workbook")
     parser.add_argument("--max-rows", type=int, default=2000, help="rows read per sheet (default 2000)")
@@ -1164,11 +1185,21 @@ def main():
     parser.add_argument("--sheet", action="append", default=[], help="worksheet name to read (repeatable); default: every worksheet")
     parser.add_argument("--layout", choices=("table", "cells", "auto"), default="auto", help="table: a Markdown table per sheet; cells: one line per non-empty cell; auto (default): cells for a sheet wider than 12 columns that is less than 30 percent filled, or one with a merged range of at least 2 rows and 2 columns, table otherwise")
     parser.add_argument("--extract-media", metavar="DIR", default=None, help="write every image of a listed sheet to DIR/<sheet-slug>-<media name>, both parts with every character outside A-Z a-z 0-9 . _ - replaced by _ (DIR is created when needed); default: list the images only")
+    parser.add_argument("--out", metavar="FILE", default=None, help="write the text to FILE (UTF-8, line feeds) and print one Converted: line instead; default: the text on stdout")
     limits = parser.parse_args()
     if limits.max_rows < 1 or limits.max_cols < 1 or limits.max_chars < 1:
         fail(2, "every --max-* value must be at least 1")
     if limits.extract_media is not None and not limits.extract_media:
         fail(2, "--extract-media needs a directory")
+    if limits.out is not None:
+        if not limits.out:
+            fail(2, "--out needs a file")
+        try:
+            same = os.path.exists(limits.out) and os.path.samefile(limits.out, limits.workbook)
+        except OSError:
+            same = False
+        if same:
+            fail(2, "--out names the workbook itself")
     try:
         zf = zipfile.ZipFile(limits.workbook)
     except (zipfile.BadZipFile, OSError) as exc:
@@ -1206,7 +1237,17 @@ def main():
     if out.over:
         notice = "\n[truncated: output exceeds %d characters; the rest of the workbook was not emitted]\n" % limits.max_chars
         text = text[: max(limits.max_chars - len(notice), 0)] + notice
-    sys.stdout.write(text)
+    if limits.out is None:
+        sys.stdout.write(text)
+        return
+    try:
+        with open(limits.out, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    except OSError as exc:
+        fail(1, "cannot write the --out file (%s)" % (exc.strerror or type(exc).__name__))
+    lines = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+    truncated = any(line.startswith("[truncated:") for line in text.split("\n"))
+    print("Converted: %d characters, %d lines, truncated: %s" % (len(text), lines, "yes" if truncated else "no"))
 
 
 if __name__ == "__main__":

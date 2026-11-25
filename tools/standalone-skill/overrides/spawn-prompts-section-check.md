@@ -1,0 +1,5 @@
+target: references/agent-spawn-prompts.md
+heading: #### Retry planner FS-search ban (token-efficiency contract)
+mode: before
+---
+**Section check** (after the retry planner of step b returns, before step c): list, with the search tools' text search, the lines matching `^#{2,4} ` of the new draft file and of the previous round's draft file, each searched by its own path, the one the orchestrator named in its planner's spawn prompt (SKILL.md Phase 4, **Graded draft**); an empty list is a search that did not read the file, never a draft without headings, and is handled as the **Heading check** of `references/destinations.md` says. A heading line the previous draft has and the new one lacks, which the evaluator Feedback did not ask to remove, prints `WARNING: the round-<n> draft of <logical id> dropped sections (<headings>)` (`n` = this round's number; repeated in the Final summary). The evaluation continues on the new draft, and the planner is not spawned again for it; the evaluator of step c grades what the draft holds.
