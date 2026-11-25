@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `--force` replaces `<out>/<skill-name>/` only when it holds a skill this generator wrote (the frontmatter of its `SKILL.md` carries the `source: generated skill; do not edit by hand` line, as every tree since v11.2.1 does); any other non-empty directory is refused with exit 2, and so are a file of that name and a directory that cannot be read. It used to remove any non-empty directory of that name. To build over a directory it refuses, remove that directory by hand first.
+- `--force` replaces `<out>/<skill-name>/` only when it holds a skill this generator wrote (the frontmatter of its `SKILL.md` carries the `source: generated skill; do not edit by hand` line, as every tree since v11.2.1 does, CR LF line ends included); any other non-empty directory is refused with exit 2, and so are a file of that name and a directory that cannot be read. It used to remove any non-empty directory of that name. To build over a directory it refuses, remove that directory by hand first.
 - The skill is built and audited in a temporary directory under `$TMPDIR` and moved into place only after clean audits, so a failed or interrupted build leaves the previous skill as it was; the tree of a failed audit stays in the temporary directory the message names (it was left at `<out>/<skill-name>/` before).
 - The exit audit fails the build when the generated text holds another form of the skill's name beside the exact token: another letter case, an underscore or no separator, the token glued to another word or wrapped over a line end, a file named after it, or an upstream `skills/create-ticket` path. A form that differs by markup, an entity or a non-ASCII character is out of its reach.
 - The description, the sentence under the top heading of `SKILL.md` and the role prompts say what the skill does without relying on its name; the description states that the name used as an ordinary word does not name the skill.
@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Verification
 
-- `tests/test-standalone-skill-build.sh` 219 / 219 under bash 5 and bash 3.2 (131 before).
+- `tests/test-standalone-skill-build.sh` 220 / 220 under bash 5 and bash 3.2 (131 before).
 - `tests/test-standalone-skill-powershell.ps1 -RequireAll` on windows-latest in CI: 42 / 42 under Windows PowerShell 5.1 and under PowerShell 7.6, on the default tree and on a tree built as `zq-x7` (one of the 43 checks needs a POSIX file mode and is not counted on Windows); 43 / 43 on both trees under PowerShell 7.4 on Linux.
 - `--name`: a tree built as `zq-x7` holds no `create-ticket`, `create_ticket` or `createTicket` in any letter case and, mapped back, equals the default build byte for byte; sources mutated with each form the variant check covers fail the exit audit. A review sweep of 253 accepted names gave trees equal to the default tree with the name replaced, each with frontmatter two YAML readers load as a string.
 - Publish, by hand with a slowed `mv`: two concurrent `--force` builds of one name, and a `TERM` inside the swap, each leave one whole tree and nothing else.

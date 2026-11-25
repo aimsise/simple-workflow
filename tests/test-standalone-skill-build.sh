@@ -485,21 +485,21 @@ check "a directory holding only a dotfile is refused without --force (exit 2) an
   "$([ "$DOT_RC" -eq 2 ] || echo "rc=$DOT_RC")$(grep -qF '(pass --force)' "$TMP_ROOT/name-dotonly.log" || echo " log: $(head -n 1 "$TMP_ROOT/name-dotonly.log")")$(diff -r "$TMP_ROOT/name-dotonly-before" "$DOT_OUT" 2>&1 | head -n 5 || true)"
 
 # The marker counts only as the exact line inside the leading frontmatter
-# block: another indentation, text after it, CR LF line ends, the line quoted
-# in a sentence or in a fenced block of the text are not the marker.
+# block: another indentation, text after it, the line quoted in a sentence or
+# in a fenced block of the text are not the marker. (CR LF line ends are
+# tolerated: see the check after this one.)
 NM_OUT="$TMP_ROOT/name-nearmiss"
-mkdir -p "$NM_OUT/indent0" "$NM_OUT/indent4" "$NM_OUT/crlf" "$NM_OUT/sentence" "$NM_OUT/suffix" "$NM_OUT/quoted"
+mkdir -p "$NM_OUT/indent0" "$NM_OUT/indent4" "$NM_OUT/sentence" "$NM_OUT/suffix" "$NM_OUT/quoted"
 printf -- '---\nname: indent0\nsource: generated skill; do not edit by hand\n---\n' >"$NM_OUT/indent0/SKILL.md"
 printf -- '---\nname: indent4\nmetadata:\n    source: generated skill; do not edit by hand\n---\n' >"$NM_OUT/indent4/SKILL.md"
-printf -- '---\r\nname: crlf\r\nmetadata:\r\n  source: generated skill; do not edit by hand\r\n---\r\n' >"$NM_OUT/crlf/SKILL.md"
 printf -- '# sentence\n\nA built tree holds the line "  source: generated skill; do not edit by hand" in its frontmatter.\n' >"$NM_OUT/sentence/SKILL.md"
 printf -- '---\nname: suffix\nmetadata:\n  source: generated skill; do not edit by hand (edited since)\n---\n' >"$NM_OUT/suffix/SKILL.md"
 printf -- '---\nname: quoted\ndescription: by hand\n---\n\n# Quoted\n\n```yaml\nmetadata:\n  source: generated skill; do not edit by hand\n```\n' >"$NM_OUT/quoted/SKILL.md"
-for n in indent0 indent4 crlf sentence suffix quoted; do printf 'mine\n' >"$NM_OUT/$n/mine.txt"; done
+for n in indent0 indent4 sentence suffix quoted; do printf 'mine\n' >"$NM_OUT/$n/mine.txt"; done
 cp -R "$NM_OUT" "$TMP_ROOT/name-nearmiss-before"
 NM_REAL="$(CDPATH='' cd -- "$NM_OUT" && pwd)"
 NM_DETAIL=""
-for n in indent0 indent4 crlf sentence suffix quoted; do
+for n in indent0 indent4 sentence suffix quoted; do
   set +e
   bash "$BUILD" --out "$NM_OUT" --name "$n" --force >"$TMP_ROOT/name-nearmiss-$n.log" 2>&1
   rc=$?
@@ -508,8 +508,21 @@ for n in indent0 indent4 crlf sentence suffix quoted; do
   grep -qF "refusing to replace $NM_REAL/$n: it is not a skill this generator wrote" "$TMP_ROOT/name-nearmiss-$n.log" || NM_DETAIL="$NM_DETAIL $n:not-refused"
 done
 NM_DETAIL="$NM_DETAIL$(diff -r "$TMP_ROOT/name-nearmiss-before" "$NM_OUT" 2>&1 | head -n 5 || true)"
-check "--force on a SKILL.md with a near-miss marker (other indentation, CR LF, text after it, quoted in a sentence or in a fenced block of the text) exits 2 and leaves every file byte for byte" \
+check "--force on a SKILL.md with a near-miss marker (other indentation, text after it, quoted in a sentence or in a fenced block of the text) exits 2 and leaves every file byte for byte" \
   "$NM_DETAIL"
+
+# A generated tree checked out with CR LF line ends is still a generated
+# tree: --force replaces it.
+CRLF_OUT="$TMP_ROOT/name-crlf"
+mkdir -p "$CRLF_OUT"
+cp -R "$SKILL_DIR" "$CRLF_OUT/create-ticket"
+awk '{ printf "%s\r\n", $0 }' "$SKILL_DIR/SKILL.md" >"$CRLF_OUT/create-ticket/SKILL.md"
+set +e
+bash "$BUILD" --out "$CRLF_OUT" --force >"$TMP_ROOT/name-crlf.log" 2>&1
+CRLF_RC=$?
+set -e
+check "--force replaces a generated tree whose SKILL.md has CR LF line ends (exit 0, the tree equals the default build)" \
+  "$([ "$CRLF_RC" -eq 0 ] || echo "rc=$CRLF_RC $(tail -n 1 "$TMP_ROOT/name-crlf.log")")$(diff -r "$SKILL_DIR" "$CRLF_OUT/create-ticket" 2>&1 | head -n 5 || true)"
 
 # A publish whose first move fails after it created the directory leaves only
 # the previous tree in <out>: a mv stand-in first on PATH fails for the

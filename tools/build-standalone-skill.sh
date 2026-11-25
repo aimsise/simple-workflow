@@ -246,8 +246,11 @@ if [ "$FINAL_LIST" != "." ]; then
     exit 2
   fi
   # The line counts only inside the leading frontmatter block: a SKILL.md
-  # written by hand may quote it in its text.
+  # written by hand may quote it in its text. A carriage return at a line
+  # end is ignored, so a generated tree checked out with CR LF line ends is
+  # still a generated tree.
   if ! { [ -f "$FINAL/SKILL.md" ] && awk -v m="$GEN_MARK" '
+      { sub(/\r$/, "") }
       NR == 1 { if ($0 != "---") exit; next }
       $0 == "---" { exit }
       $0 == m { found = 1; exit }
